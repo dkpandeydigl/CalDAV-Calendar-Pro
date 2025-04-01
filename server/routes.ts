@@ -5,7 +5,8 @@ import {
   insertCalendarSchema, 
   insertEventSchema, 
   insertServerConnectionSchema,
-  insertUserSchema
+  insertUserSchema,
+  User
 } from "@shared/schema";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
@@ -14,6 +15,16 @@ import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import bcrypt from "bcryptjs";
 import MemoryStoreFactory from "memorystore";
+
+// Define user type for Express
+declare global {
+  namespace Express {
+    interface User {
+      id: number;
+      username: string;
+    }
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Set up session middleware
@@ -37,26 +48,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(passport.initialize());
   app.use(passport.session());
   
-  // Set up Passport authentication
+  // Set up Passport authentication using CalDAV server
   passport.use(new LocalStrategy(async (username, password, done) => {
     try {
-      const user = await storage.getUserByUsername(username);
+      // First check if user exists in local storage
+      let user = await storage.getUserByUsername(username);
       
-      if (!user) {
+      // Try to authenticate against CalDAV server
+      const { DAVClient } = await import('tsdav');
+      const davClient = new DAVClient({
+        serverUrl: process.env.CALDAV_SERVER_URL || 'https://zpush.ajaydata.com/davical/', // Default server, can be changed
+        credentials: {
+          username,
+          password
+        },
+        authMethod: 'Basic',
+        defaultAccountType: 'caldav'
+      });
+      
+      try {
+        // Try to connect to verify credentials
+        await davClient.login();
+        
+        // If we reach here, credentials are valid
+        if (!user) {
+          // Create user if they don't exist in our local storage
+          // Password is stored hashed even though we validate against CalDAV
+          const hashedPassword = await bcrypt.hash(password, 10);
+          user = await storage.createUser({
+            username,
+            password: hashedPassword
+          });
+        }
+        
+        // Store/update the server connection
+        let serverConnection = await storage.getServerConnection(user.id);
+        if (!serverConnection) {
+          serverConnection = await storage.createServerConnection({
+            userId: user.id,
+            url: process.env.CALDAV_SERVER_URL || 'https://zpush.ajaydata.com/davical/', // Default server, can be changed
+            username,
+            password, // Note: In production, you might want to encrypt this
+            autoSync: true,
+            syncInterval: 15
+          });
+        }
+        
+        // Don't return the password
+        const { password: _, ...userWithoutPassword } = user;
+        return done(null, userWithoutPassword);
+      } catch (error) {
+        console.error("CalDAV authentication failed:", error);
         return done(null, false);
       }
-      
-      // Verify password
-      const isValidPassword = await bcrypt.compare(password, user.password);
-      
-      if (!isValidPassword) {
-        return done(null, false);
-      }
-      
-      // Don't return the password
-      const { password: _, ...userWithoutPassword } = user;
-      return done(null, userWithoutPassword);
     } catch (error) {
+      console.error("Authentication error:", error);
       return done(error);
     }
   }));
@@ -165,10 +211,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Calendar routes
-  app.get("/api/calendars", async (req, res) => {
+  app.get("/api/calendars", isAuthenticated, async (req, res) => {
     try {
-      // In a real app, you'd get the userId from the authenticated user
-      const userId = 1; // Using default user for demo
+      // Get userId from authenticated user
+      const userId = req.user!.id;
       const calendars = await storage.getCalendars(userId);
       res.json(calendars);
     } catch (err) {
@@ -332,10 +378,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Server connection routes
-  app.get("/api/server-connection", async (req, res) => {
+  app.get("/api/server-connection", isAuthenticated, async (req, res) => {
     try {
-      // In a real app, you'd get the userId from the authenticated user
-      const userId = 1; // Using default user for demo
+      // Get userId from authenticated user
+      const userId = req.user!.id;
       const connection = await storage.getServerConnection(userId);
       
       if (!connection) {
@@ -412,13 +458,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // CalDAV sync endpoint
-  app.post("/api/sync", async (req, res) => {
+  app.post("/api/sync", isAuthenticated, async (req, res) => {
     try {
-      // In a real app, this would use a CalDAV client to sync with the server
-      // For this demo, we'll just return a success message
-      
-      // In a real app, you'd get the userId from the authenticated user
-      const userId = 1; // Using default user for demo
+      // Get userId from authenticated user
+      const userId = req.user!.id;
       
       // Update the last sync time
       const connection = await storage.getServerConnection(userId);
@@ -427,12 +470,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Server connection not found" });
       }
       
-      const updatedConnection = await storage.updateServerConnection(connection.id, {
-        lastSync: new Date(),
-        status: "connected"
+      // Create a CalDAV client with the stored connection data
+      const { DAVClient } = await import('tsdav');
+      const davClient = new DAVClient({
+        serverUrl: connection.url,
+        credentials: {
+          username: connection.username,
+          password: connection.password
+        },
+        authMethod: 'Basic',
+        defaultAccountType: 'caldav'
       });
       
-      res.json({ message: "Sync successful", lastSync: updatedConnection?.lastSync });
+      try {
+        // Attempt to login and discover calendars
+        await davClient.login();
+        const calendars = await davClient.fetchCalendars();
+        
+        // Update connection status
+        const updatedConnection = await storage.updateServerConnection(connection.id, {
+          lastSync: new Date(),
+          status: "connected"
+        });
+        
+        res.json({ 
+          message: "Sync successful", 
+          lastSync: updatedConnection?.lastSync,
+          calendarsCount: calendars.length
+        });
+      } catch (error) {
+        console.error("CalDAV sync failed:", error);
+        
+        // Update status to reflect failure
+        await storage.updateServerConnection(connection.id, {
+          lastSync: new Date(),
+          status: "error"
+        });
+        
+        res.status(500).json({ message: "Failed to sync with CalDAV server" });
+      }
     } catch (err) {
       console.error("Error syncing with CalDAV server:", err);
       res.status(500).json({ message: "Failed to sync with CalDAV server" });

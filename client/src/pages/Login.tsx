@@ -135,7 +135,7 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">CalDAV Calendar</CardTitle>
-          <CardDescription>Sign in to your account or create a new one</CardDescription>
+          <CardDescription>Sign in with your existing CalDAV server credentials</CardDescription>
         </CardHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -252,7 +252,7 @@ export default function Login() {
         <CardFooter className="flex flex-col gap-4 pt-2">
           <Separator />
           <p className="text-sm text-muted-foreground text-center px-6">
-            By signing in, you'll be able to manage your calendars and events, and sync with CalDAV servers.
+            Use your existing credentials from your CalDAV server (https://zpush.ajaydata.com/davical/). Your calendars and events will be synced between this app and your server.
           </p>
         </CardFooter>
       </Card>
