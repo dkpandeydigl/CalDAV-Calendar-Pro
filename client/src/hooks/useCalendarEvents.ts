@@ -121,43 +121,74 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     }
   });
 
-  const deleteEventMutation = useMutation<any, Error, number>({
-    mutationFn: (id: number) => {
-      return apiRequest('DELETE', `/api/events/${id}`)
-        .then(res => {
-          if (res.status === 204) return { success: true, id };
-          if (res.status === 404) {
-            // Handle a 404 as a success for client UX - the event is gone either way
-            console.log(`Event ${id} not found, considering delete successful anyway`);
-            return { success: true, id, notFound: true };
-          }
-          return res.json().then(data => ({ success: false, id, message: data.message }));
-        })
-        .catch(error => {
-          console.error("Error in delete mutation:", error);
-          // For network errors, we should still remove the event from the client
-          // Most likely it's a transient error
-          return { success: true, id, error: error.message };
-        });
+  const deleteEventMutation = useMutation<{success: boolean, id: number, message?: string}, Error, number>({
+    mutationFn: async (id: number) => {
+      console.log(`Deleting event with ID ${id}`);
+      try {
+        const res = await apiRequest('DELETE', `/api/events/${id}`);
+        
+        if (res.status === 204) {
+          console.log(`Successfully deleted event with ID ${id}`);
+          return { success: true, id };
+        }
+        
+        if (res.status === 404) {
+          // Handle a 404 as a success for client UX - the event is gone either way
+          console.log(`Event ${id} not found, considering delete successful anyway`);
+          return { success: true, id, message: "Event was already deleted" };
+        }
+        
+        // For other status codes, try to get the error message from the response
+        try {
+          const data = await res.json();
+          return { 
+            success: false, 
+            id, 
+            message: data.message || `Server returned ${res.status}` 
+          };
+        } catch (e) {
+          // If we can't parse the JSON, return the status code
+          return { 
+            success: false, 
+            id, 
+            message: `Server returned ${res.status}` 
+          };
+        }
+      } catch (error) {
+        console.error("Error in delete mutation:", error);
+        // Re-throw for the onError handler
+        throw error;
+      }
     },
     onSuccess: (result, id) => {
       // Always update the local cache to remove the event
+      console.log(`Delete mutation succeeded with result:`, result);
+      
+      // Immediately remove the event from the cache
+      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents) => {
+        if (!oldEvents) return [];
+        return oldEvents.filter(e => e.id !== id);
+      });
+      
+      // Then invalidate the queries to refetch fresh data
       queryClient.invalidateQueries({ queryKey: ['/api/events'] });
       
-      // Also handle the calendar-specific invalidation
+      // Find the calendar ID to invalidate calendar-specific data
       const event = eventsQueries.data?.find(e => e.id === id);
       if (event) {
         queryClient.invalidateQueries({ queryKey: ['/api/calendars', event.calendarId, 'events'] });
       }
       
-      // Give user feedback on the operation
+      // Show success toast
       toast({
         title: "Event Deleted",
         description: "Event has been deleted successfully."
       });
     },
-    onError: (error) => {
-      console.error("Error deleting event:", error);
+    onError: (error, id) => {
+      console.error(`Error deleting event with ID ${id}:`, error);
+      
+      // Show error toast
       toast({
         title: "Failed to Delete Event",
         description: error.message || "An error occurred while deleting the event.",

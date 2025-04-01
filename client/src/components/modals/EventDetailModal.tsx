@@ -58,14 +58,34 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     endDate.setHours(endDate.getHours() + 1);
   }
   
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!event) return;
     
-    setIsDeleting(true);
-    deleteEvent(event.id);
-    setIsDeleting(false);
-    setDeleteDialogOpen(false);
-    onClose();
+    try {
+      console.log(`Attempting to delete event with ID: ${event.id}`);
+      setIsDeleting(true);
+      
+      // Use a Promise to properly wait for the deleteEvent operation
+      await new Promise<void>((resolve) => {
+        deleteEvent(event.id, {
+          onSuccess: () => {
+            console.log(`Successfully deleted event with ID: ${event.id}`);
+            resolve();
+          },
+          onError: (error) => {
+            console.error(`Error deleting event: ${error.message}`);
+            resolve(); // Resolve anyway to continue
+          }
+        });
+      });
+    } catch (error) {
+      console.error(`Unexpected error during delete: ${(error as Error).message}`);
+    } finally {
+      // Always cleanup UI state
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+      onClose();
+    }
   };
   
   return (
