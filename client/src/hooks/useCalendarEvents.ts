@@ -14,41 +14,38 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     .filter(calendar => calendar.enabled)
     .map(calendar => calendar.id);
   
-  // Load events for each calendar
+  // Load events for all calendars with date range filtering in a single API call
   const eventsQueries = useQuery<Event[]>({
-    queryKey: ['/api/events', enabledCalendarIds],
+    queryKey: ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()],
     enabled: enabledCalendarIds.length > 0,
     queryFn: async () => {
-      // Load events from all enabled calendars
-      const allEvents = await Promise.all(
-        enabledCalendarIds.map(calendarId => 
-          fetch(`/api/calendars/${calendarId}/events`, { credentials: 'include' })
-            .then(res => {
-              if (!res.ok) throw new Error('Failed to fetch events');
-              return res.json();
-            })
-        )
-      );
+      // Build query parameters
+      const params = new URLSearchParams();
       
-      // Flatten the array of arrays
-      return allEvents.flat();
+      if (startDate) {
+        params.append('start', startDate.toISOString());
+      }
+      
+      if (endDate) {
+        params.append('end', endDate.toISOString());
+      }
+      
+      // Make a single API call to get all events from all enabled calendars
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      const response = await fetch(`/api/events${queryString}`, { 
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch events');
+      }
+      
+      return response.json();
     }
   });
   
-  // Filter events by date range if specified
-  const filteredEvents = (eventsQueries.data || []).filter(event => {
-    if (!startDate || !endDate) return true;
-    
-    const eventStart = new Date(event.startDate);
-    const eventEnd = new Date(event.endDate);
-    
-    // Include events that overlap with the specified range
-    return (
-      (eventStart >= startDate && eventStart <= endDate) || // Starts within range
-      (eventEnd >= startDate && eventEnd <= endDate) || // Ends within range
-      (eventStart <= startDate && eventEnd >= endDate) // Spans the entire range
-    );
-  });
+  // No need to filter events as the API already does that
+  const filteredEvents = eventsQueries.data || [];
 
   const createEventMutation = useMutation({
     mutationFn: (newEvent: Omit<Event, 'id' | 'uid'>) => {

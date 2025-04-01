@@ -11,7 +11,11 @@ interface CalendarEventProps {
 const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
   const { calendars } = useCalendars();
   
-  // Find the calendar this event belongs to
+  // Get calendar metadata, either from rawData or find the calendar
+  const calendarMetadata = event.rawData as any;
+  const calendarColor = calendarMetadata?.calendarColor;
+  
+  // If no metadata was found in rawData, find it from calendars
   const calendar = calendars.find(cal => cal.id === event.calendarId);
   
   // Format event time
@@ -19,7 +23,7 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
   const eventDisplay = event.allDay ? event.title : `${startTime} - ${event.title}`;
   
   // Determine border color based on calendar
-  const borderColor = calendar?.color || '#0078d4';
+  const borderColor = calendarColor || calendar?.color || '#0078d4';
   
   return (
     <div
@@ -27,7 +31,14 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
       style={{ borderLeft: `3px solid ${borderColor}` }}
       onClick={onClick}
     >
-      {eventDisplay}
+      {calendarMetadata?.calendarName ? (
+        <div className="flex flex-col">
+          <span>{eventDisplay}</span>
+          <span className="text-xs text-gray-500">{calendarMetadata.calendarName}</span>
+        </div>
+      ) : (
+        eventDisplay
+      )}
     </div>
   );
 };

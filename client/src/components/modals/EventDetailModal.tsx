@@ -27,6 +27,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   
   if (!event) return null;
   
+  // Get calendar metadata either from the rawData or find it from calendars
+  const calendarMetadata = event.rawData as any;
+  const calendarName = calendarMetadata?.calendarName;
+  const calendarColor = calendarMetadata?.calendarColor;
+  
+  // Fallback to looking up calendar if no metadata
   const calendar = calendars.find(cal => cal.id === event.calendarId);
   const startDate = new Date(event.startDate);
   const endDate = new Date(event.endDate);
@@ -69,7 +75,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           <div className="space-y-4">
             <div>
               <h1 className="text-xl font-semibold">{event.title}</h1>
-              {calendar && (
+              
+              {/* Show calendar info from rawData metadata if available */}
+              {(calendarName && calendarColor) ? (
+                <div className="text-sm text-neutral-500 flex items-center">
+                  <span 
+                    className="w-3 h-3 rounded-full mr-2" 
+                    style={{ backgroundColor: calendarColor }}
+                  ></span>
+                  {calendarName}
+                </div>
+              ) : calendar ? (
                 <div className="text-sm text-neutral-500 flex items-center">
                   <span 
                     className="w-3 h-3 rounded-full mr-2" 
@@ -77,7 +93,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   ></span>
                   {calendar.name} Calendar
                 </div>
-              )}
+              ) : null}
             </div>
             
             <div className="flex items-start">

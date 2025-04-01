@@ -406,6 +406,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch events" });
     }
   });
+  
+  // Get events from all visible calendars within a date range
+  app.get("/api/events", isAuthenticated, async (req, res) => {
+    try {
+      // Get the user ID from the session
+      const userId = req.user!.id;
+      
+      // Parse date range from query parameters
+      const startDateParam = req.query.start as string;
+      const endDateParam = req.query.end as string;
+      
+      // Default to current month if not specified
+      const today = new Date();
+      const startDate = startDateParam ? new Date(startDateParam) : 
+        new Date(today.getFullYear(), today.getMonth(), 1);
+      const endDate = endDateParam ? new Date(endDateParam) : 
+        new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59);
+      
+      // Get all enabled calendars for the user
+      const calendars = await storage.getCalendars(userId);
+      const enabledCalendars = calendars.filter(cal => cal.enabled);
+      
+      if (enabledCalendars.length === 0) {
+        return res.json([]);
+      }
+      
+      // Fetch events for each calendar and combine them
+      // Use any[] to avoid TypeScript errors since we're adding metadata
+      let allEvents: any[] = [];
+      
+      for (const calendar of enabledCalendars) {
+        const calendarEvents = await storage.getEvents(calendar.id);
+        
+        // Filter events in the date range
+        const filteredEvents = calendarEvents.filter(event => {
+          const eventStart = new Date(event.startDate);
+          const eventEnd = new Date(event.endDate);
+          
+          // Include events that:
+          // 1. Start within the range
+          // 2. End within the range
+          // 3. Span over the entire range
+          return (
+            (eventStart >= startDate && eventStart <= endDate) || 
+            (eventEnd >= startDate && eventEnd <= endDate) ||
+            (eventStart <= startDate && eventEnd >= endDate)
+          );
+        });
+        
+        // Add calendar info to each event
+        // Since we're using any[] type, we can just directly merge the data
+        const eventsWithCalendarInfo = filteredEvents.map(event => {
+          // Create a new object with all event properties plus calendar metadata
+          return {
+            ...event,
+            // Store the raw calendar info in rawData field
+            rawData: {
+              ...(event.rawData || {}),
+              calendarName: calendar.name,
+              calendarColor: calendar.color
+            }
+          };
+        });
+        
+        allEvents = [...allEvents, ...eventsWithCalendarInfo];
+      }
+      
+      // Sort events by start date
+      allEvents.sort((a, b) => {
+        const aStartDate = new Date(a.startDate);
+        const bStartDate = new Date(b.startDate);
+        return aStartDate.getTime() - bStartDate.getTime();
+      });
+      
+      res.json(allEvents);
+    } catch (error) {
+      console.error('Error fetching combined events:', error);
+      res.status(500).json({ error: 'Failed to fetch events' });
+    }
+  });
 
   app.get("/api/events/:id", async (req, res) => {
     try {
