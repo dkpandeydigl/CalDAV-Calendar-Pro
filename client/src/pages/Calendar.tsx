@@ -245,14 +245,7 @@ function CalendarContent() {
         {/* Main Calendar */}
         <main className="flex-1 overflow-auto bg-white">
           <div className="p-4 border-b bg-background flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold">Calendar</h1>
-              {user && (
-                <p className="text-sm text-muted-foreground">
-                  Welcome, {user.username}
-                </p>
-              )}
-            </div>
+            <h1 className="text-2xl font-semibold">Calendar</h1>
             
             <div className="flex items-center gap-4">
               <Button 
@@ -260,13 +253,14 @@ function CalendarContent() {
                 size="sm" 
                 onClick={handleSync}
                 disabled={isSyncing}
+                className="text-sm"
               >
                 {isSyncing ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <RefreshCcw className="mr-2 h-4 w-4" />
                 )}
-                Sync Now
+                Sync
               </Button>
               
               <Tabs defaultValue={viewType} onValueChange={(value) => setViewType(value as CalendarViewType)}>

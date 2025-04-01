@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { formatMonthYear } from '@/lib/date-utils';
+import { useAuth } from '@/hooks/use-auth';
 
 interface CalendarHeaderProps {
   onToggleSidebar: () => void;
@@ -23,6 +24,8 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
     goToToday,
     serverStatus
   } = useCalendarContext();
+  
+  const { user } = useAuth();
 
   return (
     <header className="bg-white shadow-sm">
@@ -51,32 +54,32 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
               {serverStatus === 'connected' ? 'Connected' : 'Disconnected'}
             </span>
           </div>
-          <div className="relative">
-            <Button variant="ghost" size="sm" className="flex items-center">
-              <span className="material-icons">account_circle</span>
-              <span className="ml-1 text-sm font-medium hidden md:inline">John Doe</span>
-            </Button>
-          </div>
+          {user && (
+            <div className="relative">
+              <span className="text-sm font-medium">{user.username}</span>
+            </div>
+          )}
         </div>
       </div>
       <div className="border-b border-neutral-200"></div>
       
       {/* Calendar Controls */}
       <div className="flex flex-wrap items-center justify-between px-4 py-2">
-        <div className="flex items-center mb-2 md:mb-0">
-          <Button variant="ghost" size="icon" onClick={goToPreviousPeriod}>
-            <span className="material-icons">chevron_left</span>
-            <span className="sr-only">Previous</span>
-          </Button>
-          <Button variant="ghost" size="icon" onClick={goToToday}>
-            <span className="material-icons">today</span>
-            <span className="sr-only">Today</span>
-          </Button>
-          <Button variant="ghost" size="icon" onClick={goToNextPeriod}>
-            <span className="material-icons">chevron_right</span>
-            <span className="sr-only">Next</span>
-          </Button>
-          <h2 className="ml-2 text-lg font-semibold">{formatMonthYear(currentDate)}</h2>
+        <div className="flex items-center mb-2 md:mb-0 space-x-1">
+          <div className="flex items-center rounded-md border border-input bg-transparent shadow-sm">
+            <Button variant="ghost" size="icon" onClick={goToPreviousPeriod} className="rounded-l-md h-9">
+              <span className="material-icons text-sm">chevron_left</span>
+              <span className="sr-only">Previous</span>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={goToToday} className="h-9 px-2 rounded-none border-x">
+              Today
+            </Button>
+            <Button variant="ghost" size="icon" onClick={goToNextPeriod} className="rounded-r-md h-9">
+              <span className="material-icons text-sm">chevron_right</span>
+              <span className="sr-only">Next</span>
+            </Button>
+          </div>
+          <h2 className="ml-3 text-lg font-semibold">{formatMonthYear(currentDate)}</h2>
         </div>
         <div className="flex items-center">
           <Button 
