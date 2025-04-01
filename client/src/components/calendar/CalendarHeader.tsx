@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { formatMonthYear } from '@/lib/date-utils';
 import { useAuth } from '@/hooks/use-auth';
+import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 
 interface CalendarHeaderProps {
   onToggleSidebar: () => void;
@@ -38,7 +39,7 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
               onClick={onToggleSidebar}
               className="lg:hidden"
             >
-              <span className="material-icons">menu</span>
+              <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle sidebar</span>
             </Button>
           )}
@@ -68,14 +69,14 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
         <div className="flex items-center mb-2 md:mb-0 space-x-1">
           <div className="flex items-center rounded-md border border-input bg-transparent shadow-sm">
             <Button variant="ghost" size="icon" onClick={goToPreviousPeriod} className="rounded-l-md h-9">
-              <span className="material-icons text-sm">chevron_left</span>
+              <ChevronLeft className="h-4 w-4" />
               <span className="sr-only">Previous</span>
             </Button>
             <Button variant="ghost" size="sm" onClick={goToToday} className="h-9 px-2 rounded-none border-x">
               Today
             </Button>
             <Button variant="ghost" size="icon" onClick={goToNextPeriod} className="rounded-r-md h-9">
-              <span className="material-icons text-sm">chevron_right</span>
+              <ChevronRight className="h-4 w-4" />
               <span className="sr-only">Next</span>
             </Button>
           </div>
