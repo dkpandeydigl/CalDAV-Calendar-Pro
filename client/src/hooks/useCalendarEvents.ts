@@ -129,6 +129,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     events: filteredEvents,
     isLoading: eventsQueries.isLoading,
     error: eventsQueries.error,
+    refetch: eventsQueries.refetch,
     createEvent: createEventMutation.mutate,
     updateEvent: updateEventMutation.mutate,
     deleteEvent: deleteEventMutation.mutate

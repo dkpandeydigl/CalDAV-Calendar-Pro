@@ -3,7 +3,7 @@ import { format, addMonths, subMonths, startOfMonth, endOfMonth, addWeeks, subWe
 import { useQuery } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 
-type CalendarViewType = 'month' | 'week' | 'day';
+type CalendarViewType = 'year' | 'month' | 'week' | 'day';
 
 interface CalendarContextType {
   currentDate: Date;
@@ -48,6 +48,11 @@ export const CalendarProvider = ({ children }: CalendarProviderProps) => {
     let start, end;
     
     switch (viewType) {
+      case 'year':
+        // For year view, show the entire year
+        start = new Date(currentDate.getFullYear(), 0, 1);
+        end = new Date(currentDate.getFullYear(), 11, 31);
+        break;
       case 'month':
         start = startOfMonth(currentDate);
         end = endOfMonth(currentDate);
@@ -73,6 +78,12 @@ export const CalendarProvider = ({ children }: CalendarProviderProps) => {
   // Navigation functions
   const goToNextPeriod = () => {
     switch (viewType) {
+      case 'year':
+        // Add one year
+        const nextYear = new Date(currentDate);
+        nextYear.setFullYear(currentDate.getFullYear() + 1);
+        setCurrentDate(nextYear);
+        break;
       case 'month':
         setCurrentDate(addMonths(currentDate, 1));
         break;
@@ -87,6 +98,12 @@ export const CalendarProvider = ({ children }: CalendarProviderProps) => {
 
   const goToPreviousPeriod = () => {
     switch (viewType) {
+      case 'year':
+        // Subtract one year
+        const prevYear = new Date(currentDate);
+        prevYear.setFullYear(currentDate.getFullYear() - 1);
+        setCurrentDate(prevYear);
+        break;
       case 'month':
         setCurrentDate(subMonths(currentDate, 1));
         break;
@@ -106,21 +123,8 @@ export const CalendarProvider = ({ children }: CalendarProviderProps) => {
   // Check server connection status
   const { isLoading, error } = useQuery({
     queryKey: ['/api/server-connection'],
-    onSuccess: (data) => {
-      if (data && data.status === 'connected') {
-        setServerStatus('connected');
-      } else {
-        setServerStatus('disconnected');
-      }
-    },
-    onError: () => {
-      setServerStatus('disconnected');
-      toast({
-        title: "Server Connection Error",
-        description: "Unable to connect to the CalDAV server",
-        variant: "destructive"
-      });
-    },
+    select: (data: any) => data,
+    enabled: false, // We'll handle this with the effect in Calendar component
   });
 
   const value = {
