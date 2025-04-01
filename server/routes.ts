@@ -1,15 +1,96 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { 
   insertCalendarSchema, 
   insertEventSchema, 
-  insertServerConnectionSchema 
+  insertServerConnectionSchema,
+  insertUserSchema
 } from "@shared/schema";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
+import session from "express-session";
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import bcrypt from "bcryptjs";
+import MemoryStoreFactory from "memorystore";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Set up session middleware
+  const MemoryStore = MemoryStoreFactory(session);
+  
+  // Set up session
+  app.use(session({
+    secret: 'caldav-calendar-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+      secure: false, // Set to true in production with HTTPS
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    },
+    store: new MemoryStore({
+      checkPeriod: 86400000 // Clear expired sessions every 24h
+    })
+  }));
+  
+  // Initialize Passport
+  app.use(passport.initialize());
+  app.use(passport.session());
+  
+  // Set up Passport authentication
+  passport.use(new LocalStrategy(async (username, password, done) => {
+    try {
+      const user = await storage.getUserByUsername(username);
+      
+      if (!user) {
+        return done(null, false);
+      }
+      
+      // Verify password
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      
+      if (!isValidPassword) {
+        return done(null, false);
+      }
+      
+      // Don't return the password
+      const { password: _, ...userWithoutPassword } = user;
+      return done(null, userWithoutPassword);
+    } catch (error) {
+      return done(error);
+    }
+  }));
+  
+  // Serialize user to session
+  passport.serializeUser((user: any, done) => {
+    done(null, user.id);
+  });
+  
+  // Deserialize user from session
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      const user = await storage.getUser(id);
+      
+      if (!user) {
+        return done(null, false);
+      }
+      
+      // Don't return the password
+      const { password: _, ...userWithoutPassword } = user;
+      done(null, userWithoutPassword);
+    } catch (error) {
+      done(error);
+    }
+  });
+  
+  // Authentication middleware
+  const isAuthenticated = (req: Request, res: Response, next: NextFunction) => {
+    if (req.isAuthenticated()) {
+      return next();
+    }
+    res.status(401).json({ message: 'Unauthorized' });
+  };
+  
   // All API routes are prefixed with /api
   
   // Error handling middleware for Zod validation errors
@@ -22,6 +103,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     return res.status(500).json({ message: "Internal server error" });
   };
+  
+  // Authentication routes
+  app.post('/api/register', async (req, res) => {
+    try {
+      // Check if user already exists
+      const existingUser = await storage.getUserByUsername(req.body.username);
+      
+      if (existingUser) {
+        return res.status(400).json({ message: 'Username already exists' });
+      }
+      
+      // Hash the password
+      const hashedPassword = await bcrypt.hash(req.body.password, 10);
+      
+      // Validate with zod
+      const validatedData = insertUserSchema.parse({
+        ...req.body,
+        password: hashedPassword
+      });
+      
+      // Create the user
+      const newUser = await storage.createUser(validatedData);
+      
+      // Don't return the password
+      const { password: _, ...userWithoutPassword } = newUser;
+      
+      // Log the user in
+      req.login(userWithoutPassword, (err) => {
+        if (err) {
+          return res.status(500).json({ message: 'Error logging in' });
+        }
+        return res.status(201).json(userWithoutPassword);
+      });
+    } catch (err) {
+      console.error('Error registering user:', err);
+      return handleZodError(err, res);
+    }
+  });
+  
+  app.post('/api/login', passport.authenticate('local'), (req, res) => {
+    // If this function executes, authentication was successful
+    // req.user contains the authenticated user
+    res.json(req.user);
+  });
+  
+  app.post('/api/logout', (req, res) => {
+    req.logout((err) => {
+      if (err) {
+        return res.status(500).json({ message: 'Error logging out' });
+      }
+      res.json({ message: 'Logged out successfully' });
+    });
+  });
+  
+  app.get('/api/user', (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+    res.json(req.user);
+  });
 
   // Calendar routes
   app.get("/api/calendars", async (req, res) => {

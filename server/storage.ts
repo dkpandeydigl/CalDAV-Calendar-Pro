@@ -4,6 +4,7 @@ import {
   events, type Event, type InsertEvent,
   serverConnections, type ServerConnection, type InsertServerConnection
 } from "@shared/schema";
+import bcrypt from "bcryptjs";
 
 export interface IStorage {
   // User methods
@@ -58,43 +59,51 @@ export class MemStorage implements IStorage {
     this.eventIdCounter = 1;
     this.serverConnectionIdCounter = 1;
     
-    // Create sample data
-    this.initializeSampleData();
+    // Create sample data - we'll call this asynchronously,
+    // but for a simple demo app this won't cause issues
+    this.initializeSampleData().catch(err => {
+      console.error("Error initializing sample data:", err);
+    });
   }
   
   // Initialize with a sample user and default calendars
-  private initializeSampleData(): void {
-    // Create a default user
-    const defaultUser: InsertUser = {
-      username: "demo",
-      password: "password" // In a real app, this should be hashed
-    };
-    const user = this.createUser(defaultUser);
-    
-    // Create default calendars
-    this.createCalendar({
-      name: "Work",
-      color: "#0078d4",
-      userId: user.id,
-      url: null,
-      enabled: true
-    });
-    
-    this.createCalendar({
-      name: "Personal",
-      color: "#107c10",
-      userId: user.id,
-      url: null,
-      enabled: true
-    });
-    
-    this.createCalendar({
-      name: "Holidays",
-      color: "#ffaa44",
-      userId: user.id,
-      url: null,
-      enabled: true
-    });
+  private async initializeSampleData(): Promise<void> {
+    try {
+      // Create a default user with hashed password
+      const hashedPassword = await bcrypt.hash("password", 10);
+      const defaultUser: InsertUser = {
+        username: "demo",
+        password: hashedPassword
+      };
+      const user = await this.createUser(defaultUser);
+      
+      // Create default calendars with proper types
+      await this.createCalendar({
+        name: "Work",
+        color: "#0078d4",
+        userId: user.id,
+        url: null,
+        enabled: true
+      });
+      
+      await this.createCalendar({
+        name: "Personal",
+        color: "#107c10",
+        userId: user.id,
+        url: null,
+        enabled: true
+      });
+      
+      await this.createCalendar({
+        name: "Holidays",
+        color: "#ffaa44",
+        userId: user.id,
+        url: null,
+        enabled: true
+      });
+    } catch (error) {
+      console.error("Error creating sample data:", error);
+    }
   }
 
   // User methods
@@ -128,7 +137,18 @@ export class MemStorage implements IStorage {
   
   async createCalendar(insertCalendar: InsertCalendar): Promise<Calendar> {
     const id = this.calendarIdCounter++;
-    const calendar: Calendar = { ...insertCalendar, id };
+    
+    // Create the calendar with all required fields explicitly set
+    const calendar: Calendar = { 
+      id,
+      name: insertCalendar.name,
+      color: insertCalendar.color,
+      userId: insertCalendar.userId,
+      url: insertCalendar.url ?? null,
+      syncToken: null,
+      enabled: insertCalendar.enabled ?? true
+    };
+    
     this.calendarsMap.set(id, calendar);
     return calendar;
   }
@@ -165,7 +185,25 @@ export class MemStorage implements IStorage {
   
   async createEvent(insertEvent: InsertEvent): Promise<Event> {
     const id = this.eventIdCounter++;
-    const event: Event = { ...insertEvent, id };
+    
+    // Create event with all required fields explicitly set
+    const event: Event = {
+      id,
+      uid: insertEvent.uid,
+      calendarId: insertEvent.calendarId,
+      title: insertEvent.title,
+      description: insertEvent.description ?? null,
+      location: insertEvent.location ?? null,
+      startDate: insertEvent.startDate,
+      endDate: insertEvent.endDate,
+      allDay: insertEvent.allDay ?? false,
+      timezone: insertEvent.timezone ?? "UTC",
+      recurrenceRule: insertEvent.recurrenceRule ?? null,
+      etag: insertEvent.etag ?? null,
+      url: insertEvent.url ?? null,
+      rawData: insertEvent.rawData ?? null
+    };
+    
     this.eventsMap.set(id, event);
     return event;
   }
@@ -192,12 +230,20 @@ export class MemStorage implements IStorage {
   
   async createServerConnection(insertConnection: InsertServerConnection): Promise<ServerConnection> {
     const id = this.serverConnectionIdCounter++;
-    const connection: ServerConnection = { 
-      ...insertConnection, 
-      id, 
+    
+    // Create server connection with all required fields explicitly set
+    const connection: ServerConnection = {
+      id,
+      userId: insertConnection.userId,
+      url: insertConnection.url,
+      username: insertConnection.username,
+      password: insertConnection.password,
+      autoSync: insertConnection.autoSync ?? true,
+      syncInterval: insertConnection.syncInterval ?? 15,
       lastSync: null,
       status: "disconnected"
     };
+    
     this.serverConnectionsMap.set(id, connection);
     return connection;
   }
