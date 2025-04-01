@@ -8,8 +8,11 @@ import bcrypt from "bcryptjs";
 
 import session from "express-session";
 import createMemoryStore from "memorystore";
+import { DatabaseStorage } from './database-storage';
 
 export interface IStorage {
+  // Initialize database
+  initializeDatabase(): Promise<void>;
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -57,6 +60,11 @@ export class MemStorage implements IStorage {
   
   // Initialize memory store for sessions
   public sessionStore: session.Store;
+  
+  // Initialize database (for interface implementation)
+  async initializeDatabase(): Promise<void> {
+    await this.initializeSampleData();
+  }
 
   constructor() {
     this.users = new Map();
@@ -342,4 +350,20 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Use PostgreSQL storage if DATABASE_URL is available, otherwise fall back to in-memory
+let storage: IStorage;
+
+if (process.env.DATABASE_URL) {
+  console.log("Using PostgreSQL database storage");
+  storage = new DatabaseStorage();
+  
+  // Initialize the database
+  storage.initializeDatabase()
+    .then(() => console.log("Database initialized successfully"))
+    .catch(err => console.error("Error initializing database:", err));
+} else {
+  console.log("No DATABASE_URL found, using in-memory storage");
+  storage = new MemStorage();
+}
+
+export { storage };
