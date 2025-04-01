@@ -583,15 +583,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Connecting to CalDAV server at ${connection.url}`);
       console.log(`Using credentials for user: ${connection.username}`);
       
-      // Try a more direct approach
-      const serverUrl = connection.url;
-      // Remove trailing slash if present
-      const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+      // Normalize the server URL
+      let serverUrl = connection.url;
+      if (!serverUrl.startsWith('http')) {
+        serverUrl = `https://${serverUrl}`;
+      }
       
-      // Add /caldav.php/username/calendar/ to the URL if using DAViCal
-      // This is a common path pattern for DAViCal servers
-      const principalUrl = `${baseUrl}/caldav.php/${connection.username}/`;
-      const calendarUrl = `${baseUrl}/caldav.php/${connection.username}/calendar/`;
+      // Create a URL object to properly handle the URL parts
+      let baseUrl: string;
+      let principalUrl: string;
+      let calendarUrl: string;
+      
+      try {
+        const serverUrlObj = new URL(serverUrl);
+        // Remove trailing slash from the host + path
+        baseUrl = serverUrlObj.origin + 
+          (serverUrlObj.pathname === '/' ? '' : serverUrlObj.pathname.replace(/\/$/, ''));
+        
+        // Add /caldav.php/username/ and /caldav.php/username/calendar/ for principal and calendar URLs
+        // These are common path patterns for DAViCal servers
+        principalUrl = `${baseUrl}/caldav.php/${connection.username}/`;
+        calendarUrl = `${baseUrl}/caldav.php/${connection.username}/calendar/`;
+        
+        // Ensure no double slashes in the path
+        principalUrl = principalUrl.replace(/([^:])\/\//g, '$1/');
+        calendarUrl = calendarUrl.replace(/([^:])\/\//g, '$1/');
+      } catch (error) {
+        console.error(`Error parsing server URL: ${serverUrl}`, error);
+        // Fallback to simple string manipulation
+        baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+        principalUrl = `${baseUrl}/caldav.php/${connection.username}/`;
+        calendarUrl = `${baseUrl}/caldav.php/${connection.username}/calendar/`;
+      }
       
       console.log(`Trying principal URL: ${principalUrl}`);
       console.log(`Trying calendar URL: ${calendarUrl}`);
@@ -801,7 +824,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const calendarUrls = hrefMatches
                   .map(match => {
                     // Extract URL from href tag with any namespace prefix
-                    const url = match.replace(/<[^>]*href>|<\/[^>]*href>/g, '');
+                    let url = match.replace(/<[^>]*href>|<\/[^>]*href>/g, '');
+                    
+                    // Handle relative URLs by converting them to absolute URLs
+                    if (url.startsWith('/') && !url.startsWith('//')) {
+                      // Extract the base URL (scheme + host) from the server URL
+                      const serverUrlObj = new URL(connection.url);
+                      const baseUrl = `${serverUrlObj.protocol}//${serverUrlObj.host}`;
+                      url = `${baseUrl}${url}`;
+                    }
+                    
                     console.log(`Extracted URL: ${url}`);
                     return url;
                   })
@@ -839,12 +871,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     if (calendarCheckResponse.ok) {
                       const calendarCheckText = await calendarCheckResponse.text();
                       
-                      // Check if this is a calendar resource
-                      if (
+                      // Debug resource type for this URL
+                      console.log(`Resource response for ${url}:`, calendarCheckText.substring(0, 300));
+                      
+                      // Check for any calendar resource identifiers
+                      const isCalResource = 
                         calendarCheckText.includes('<C:calendar') || 
                         calendarCheckText.includes('<calendar') || 
-                        calendarCheckText.includes('calendar-collection')
-                      ) {
+                        calendarCheckText.includes('calendar-collection') ||
+                        calendarCheckText.includes('resourcetype') && 
+                        (
+                          calendarCheckText.includes('calendar') ||
+                          url.includes('/calendar/') ||
+                          url.includes('/Lalii/') ||  // Looking for specific calendar names from logs
+                          url.includes('/ashu/') ||
+                          url.includes('/dkpandey/')
+                        );
+                      
+                      if (isCalResource) {
                         // Extract display name if available
                         let displayName = url.split('/').filter(Boolean).pop() || 'Calendar';
                         
