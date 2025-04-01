@@ -614,24 +614,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Try to access calendars directly
         let serverCalendars = [];
         
+        // Try multiple discovery methods to find all available calendars
+        let discoveredCalendars: any[] = [];
+        
         try {
-          // First try standard discovery
-          serverCalendars = await davClient.fetchCalendars();
-          console.log(`Standard discovery found ${serverCalendars.length} calendars`);
+          // 1. First try standard discovery
+          discoveredCalendars = await davClient.fetchCalendars();
+          console.log(`Standard discovery found ${discoveredCalendars.length} calendars`);
+          
+          // If we found calendars using standard discovery, use those
+          if (discoveredCalendars.length > 0) {
+            serverCalendars = discoveredCalendars;
+          }
         } catch (error) {
           const discoverError = error as Error;
-          console.log("Standard calendar discovery failed, trying direct approach:", discoverError.message);
+          console.log("Standard calendar discovery failed:", discoverError.message);
+        }
+        
+        // 2. If standard discovery failed or found no calendars, try manual principal-based approaches
+        if (serverCalendars.length === 0) {
+          try {
+            // Try common principal URLs directly
+            const principalUrls = [
+              `${baseUrl}/principals/${connection.username}`,
+              `${baseUrl}/principals/users/${connection.username}`,
+              `${baseUrl}/caldav.php/${connection.username}`,
+              `${baseUrl}/${connection.username}`
+            ];
+            
+            for (const principalUrl of principalUrls) {
+              try {
+                console.log(`Trying principal URL: ${principalUrl}`);
+                // Try to directly fetch calendars from this principal URL
+                const calendarsFromPath = await davClient.fetchCalendars({
+                  account: {
+                    serverUrl: principalUrl,
+                    accountType: 'caldav',
+                    credentials: {
+                      username: connection.username,
+                      password: connection.password
+                    }
+                  }
+                });
+                
+                if (calendarsFromPath.length > 0) {
+                  console.log(`Found ${calendarsFromPath.length} calendars using principal URL: ${principalUrl}`);
+                  serverCalendars = calendarsFromPath;
+                  break;
+                }
+              } catch (e) {
+                // Continue to next URL if there's an error
+              }
+            }
+          } catch (principalError) {
+            console.log("Principal-based discovery failed:", (principalError as Error).message);
+          }
+        }
+        
+        // 3. Try discovery with each of these common paths for CalDAV servers
+        const commonPaths = [
+          `/caldav.php/${connection.username}/`,
+          `/caldav.php/${connection.username}/calendar/`,
+          `/caldav.php/${connection.username}/home/`,
+          `/caldav.php/${connection.username}/default/`,
+          `/caldav.php/personal/${connection.username}/`,
+          `/caldav.php/calendars/${connection.username}/`,
+          `/cal.php/${connection.username}/`,
+          `/calendars/${connection.username}/`,
+          `/dav/${connection.username}/`,
+          `/dav/calendars/${connection.username}/`,
+          `/${connection.username}/`,
+          `/calendar/${connection.username}/`,
+          `/principals/${connection.username}/`,
+          `/principals/users/${connection.username}/`
+        ];
+        
+        // If we still haven't found any calendars, try common paths
+        if (serverCalendars.length === 0) {
+          for (const path of commonPaths) {
+            if (serverCalendars.length > 0) break; // Stop if we found calendars
+            
+            try {
+              const fullPath = `${baseUrl}${path}`;
+              console.log(`Trying path: ${fullPath}`);
+              
+              // Create a new client for this path
+              const pathClient = new DAVClient({
+                serverUrl: fullPath,
+                credentials: {
+                  username: connection.username,
+                  password: connection.password
+                },
+                authMethod: 'Basic',
+                defaultAccountType: 'caldav'
+              });
+              
+              // Try to fetch calendars using this path
+              try {
+                const pathCalendars = await pathClient.fetchCalendars();
+                
+                if (pathCalendars.length > 0) {
+                  console.log(`Found ${pathCalendars.length} calendars at path: ${path}`);
+                  serverCalendars = pathCalendars;
+                  break;
+                }
+              } catch (calendarError) {
+                // Try manual XML discovery as a fallback
+                try {
+                  const response = await fetch(fullPath, {
+                    method: 'PROPFIND',
+                    headers: {
+                      'Content-Type': 'application/xml',
+                      'Depth': '1',
+                      'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                    },
+                    body: '<?xml version="1.0" encoding="UTF-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:displayname/></D:prop></D:propfind>'
+                  });
+                  
+                  if (response.ok) {
+                    console.log(`PROPFIND succeeded for path: ${path}`);
+                    const text = await response.text();
+                    
+                    // Look for calendar types in the response
+                    if (text.includes('<cal:calendar') || text.includes('<calendar') || text.includes('calendar-collection')) {
+                      console.log(`Found calendar indicators in PROPFIND response for ${path}`);
+                      
+                      // Create a simple calendar object
+                      serverCalendars = [{
+                        url: fullPath,
+                        displayName: path.split('/').filter(p => p).pop() || "Calendar",
+                        syncToken: new Date().toISOString(),
+                        resourcetype: { calendar: true },
+                        components: ["VEVENT"]
+                      }];
+                      break;
+                    }
+                  }
+                } catch (propfindError) {
+                  // Continue to next path if this fails too
+                }
+              }
+            } catch (pathError) {
+              // Continue to next path on error
+            }
+          }
+        }
+        
+        // 4. If all discovery methods failed, use the direct approach with a default calendar
+        if (serverCalendars.length === 0) {
+          console.log("All discovery methods failed, using direct calendar URL approach");
           
-          // If standard discovery fails, create a manual calendar object
-          // Create a manual calendar object with proper structure
-          serverCalendars = [{
-            url: calendarUrl,
-            displayName: "Default Calendar",
-            syncToken: new Date().toISOString(), // Use syncToken instead of ctag
-            resourcetype: { calendar: true },
-            components: ["VEVENT"]
-          }];
-          console.log("Using direct calendar URL approach");
+          // Check if we can actually connect to the calendar URL
+          try {
+            const response = await fetch(calendarUrl, {
+              method: 'PROPFIND',
+              headers: {
+                'Content-Type': 'application/xml',
+                'Depth': '0',
+                'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+              },
+              body: '<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+            });
+            
+            console.log(`PROPFIND status: ${response.status}`);
+            
+            if (response.ok) {
+              // Calendar URL exists and is accessible
+              serverCalendars = [{
+                url: calendarUrl,
+                displayName: "Primary Calendar",
+                syncToken: new Date().toISOString(),
+                resourcetype: { calendar: true },
+                components: ["VEVENT"]
+              }];
+            }
+          } catch (propfindError) {
+            console.log("PROPFIND request failed:", (propfindError as Error).message);
+          }
         }
         
         console.log(`Found ${serverCalendars.length} calendars on the server`);
