@@ -509,6 +509,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Get authenticated user ID if available
       const userId = req.user?.id;
+      console.log(`Event create request. Authenticated User ID: ${userId || 'Not authenticated'}`);
+      console.log(`Event create payload:`, JSON.stringify(req.body, null, 2));
       
       // Generate a unique UID for the event if not provided
       const eventData = {
@@ -638,6 +640,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const eventId = parseInt(req.params.id);
       // Get authenticated user ID if available
       const userId = req.user?.id;
+      console.log(`Event update request for ID ${eventId}. Authenticated User ID: ${userId || 'Not authenticated'}`);
+      console.log(`Event update payload:`, JSON.stringify(req.body, null, 2));
       
       // Create a copy of the request body to make modifications
       const eventData = { ...req.body };
@@ -796,6 +800,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const eventId = parseInt(req.params.id);
       // Get authenticated user ID if available
       const userId = req.user?.id;
+      console.log(`Event delete request for ID ${eventId}. Authenticated User ID: ${userId || 'Not authenticated'}`);
       
       // Get the event before deleting it so we have its URL and other data for CalDAV sync
       const eventToDelete = await storage.getEvent(eventId);
