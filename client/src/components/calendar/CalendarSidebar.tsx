@@ -45,11 +45,10 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
       <div className="p-4">
         <div className="mb-6">
           <Button 
-            className="w-full justify-between" 
+            className="w-full" 
             onClick={onCreateEvent}
           >
-            <span>Create Event</span>
-            <span className="material-icons text-sm">add</span>
+            Create Event
           </Button>
         </div>
         
@@ -130,8 +129,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
               className="mt-2 text-primary hover:text-primary/80 p-0 h-auto font-normal"
               onClick={() => setShowAddCalendar(true)}
             >
-              <span className="material-icons text-sm mr-1">add</span>
-              <span>Add Calendar</span>
+              Add Calendar
             </Button>
           )}
         </div>

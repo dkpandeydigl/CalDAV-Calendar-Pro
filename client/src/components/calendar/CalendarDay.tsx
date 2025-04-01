@@ -8,16 +8,18 @@ interface CalendarDayProps {
   day: CalendarDayType;
   events: Event[];
   onEventClick: (event: Event) => void;
+  onDayDoubleClick?: () => void;
 }
 
-const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick }) => {
+const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick, onDayDoubleClick }) => {
   const { date, isCurrentMonth, isToday } = day;
   
   return (
     <div 
-      className={`p-1 border border-neutral-200 min-h-[100px] ${
+      className={`p-1 border border-neutral-200 min-h-[100px] cursor-pointer ${
         isToday ? 'bg-blue-50' : ''
       }`}
+      onDoubleClick={onDayDoubleClick}
     >
       <div className="text-right p-1">
         {isToday ? (

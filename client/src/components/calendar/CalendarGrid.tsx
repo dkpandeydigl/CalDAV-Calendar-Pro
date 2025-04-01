@@ -9,9 +9,10 @@ interface CalendarGridProps {
   events: Event[];
   isLoading: boolean;
   onEventClick: (event: Event) => void;
+  onDayDoubleClick?: () => void;
 }
 
-const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventClick }) => {
+const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventClick, onDayDoubleClick }) => {
   const { currentDate, viewType, selectedTimezone } = useCalendarContext();
   const weekdayHeaders = getWeekdayHeaders();
   
@@ -112,6 +113,7 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
               day={day}
               events={dayEvents}
               onEventClick={onEventClick}
+              onDayDoubleClick={onDayDoubleClick}
             />
           );
         })}
