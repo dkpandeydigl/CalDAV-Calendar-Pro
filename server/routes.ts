@@ -589,9 +589,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Create event on CalDAV server
               // Using a manual PUT request for better compatibility across servers
               try {
-                const eventUrl = `${calendar.url}${eventData.uid}.ics`;
-                console.log(`Creating event at URL: ${eventUrl}`);
+                // Construct a more compatible calendar URL
+                // Ensure the calendar URL ends with a trailing slash
+                const calendarUrlWithSlash = calendar.url.endsWith('/') 
+                  ? calendar.url 
+                  : `${calendar.url}/`;
                 
+                const eventUrl = `${calendarUrlWithSlash}${eventData.uid}.ics`;
+                console.log(`Creating event at URL: ${eventUrl}`);
+                console.log('Event data being sent:');
+                console.log(`Title: ${eventData.title}`);
+                console.log(`Start: ${eventData.startDate.toISOString()}`);
+                console.log(`End: ${eventData.endDate.toISOString()}`);
+                console.log(`Calendar ID: ${eventData.calendarId}`);
+                console.log(`iCalendar data: ${icalEvent}`);
+                
+                // Try multiple approaches for creating the event
+                // First, try a direct PUT request
                 const response = await fetch(eventUrl, {
                   method: 'PUT',
                   headers: {
@@ -601,17 +615,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   body: icalEvent
                 });
                 
-                if (!response.ok) {
-                  throw new Error(`Failed to create event: ${response.status} ${response.statusText}`);
-                }
+                console.log(`PUT response status: ${response.status} ${response.statusText}`);
                 
-                // Update the event URL in our database
-                await storage.updateEvent(newEvent.id, { 
-                  url: eventUrl,
-                  etag: response.headers.get('ETag') || undefined
-                });
-              } catch (putError) {
+                if (!response.ok) {
+                  console.log(`PUT request failed, trying DAV client approach...`);
+                  // If PUT fails, try using the DAV client's createCalendarObject method
+                  const calendarObject = await davClient.createCalendarObject({
+                    calendar: { url: calendarUrlWithSlash },
+                    filename: `${eventData.uid}.ics`,
+                    iCalString: icalEvent
+                  });
+                  
+                  console.log(`Successfully created event using DAV client: ${calendarObject.url}`);
+                  
+                  // Update the event URL in our database
+                  await storage.updateEvent(newEvent.id, { 
+                    url: calendarObject.url,
+                    etag: calendarObject.etag || undefined
+                  });
+                } else {
+                  // Update the event URL in our database
+                  const etag = response.headers.get('ETag');
+                  console.log(`Event created successfully. ETag: ${etag || 'Not provided'}`);
+                  
+                  await storage.updateEvent(newEvent.id, { 
+                    url: eventUrl,
+                    etag: etag || undefined
+                  });
+                }
+              } catch (error) {
+                const putError = error as Error;
                 console.error('Error creating event with PUT:', putError);
+                console.error('Error details:', putError.message);
                 throw putError;
               }
               
@@ -723,44 +758,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               console.log(`Updating event on CalDAV server at URL: ${updatedEvent.url}`);
               
-              // Update event on CalDAV server - need to delete and recreate for compatibility
+              // Update event on CalDAV server - try multiple approaches
               try {
-                // First try to delete the existing event
-                await davClient.deleteCalendarObject({
-                  calendarObject: {
-                    url: updatedEvent.url,
-                    etag: updatedEvent.etag || undefined
-                  }
-                });
+                console.log('Event data being sent for update:');
+                console.log(`Title: ${updatedEvent.title}`);
+                console.log(`Start: ${updatedEvent.startDate.toISOString()}`);
+                console.log(`End: ${updatedEvent.endDate.toISOString()}`);
+                console.log(`Calendar ID: ${updatedEvent.calendarId}`);
+                console.log(`iCalendar data: ${icalEvent}`);
                 
-                // Then create a new event with the updated data
-                // Use manual PUT request instead of createCalendarObject for compatibility
-                const eventUrl = `${calendar.url}${updatedEvent.uid}.ics`;
-                console.log(`Creating new version of event at URL: ${eventUrl}`);
+                // Ensure the calendar URL ends with a trailing slash
+                const calendarUrlWithSlash = calendar.url.endsWith('/') 
+                  ? calendar.url 
+                  : `${calendar.url}/`;
                 
-                const response = await fetch(eventUrl, {
-                  method: 'PUT',
-                  headers: {
-                    'Content-Type': 'text/calendar; charset=utf-8',
-                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
-                  },
-                  body: icalEvent
-                });
-                
-                if (!response.ok) {
-                  throw new Error(`Failed to create updated event: ${response.status} ${response.statusText}`);
-                }
-                
-                // Update the event URL and etag in our database
-                await storage.updateEvent(updatedEvent.id, { 
-                  url: eventUrl,
-                  etag: response.headers.get('ETag') || undefined
-                });
-              } catch (updateError) {
-                console.error('Error during update (delete+create) operation:', updateError);
-                // Fallback to manual PUT request if the delete/create approach failed
+                // Approach 1: Try direct PUT to the event URL with If-Match header
+                console.log(`First approach: Direct PUT to event URL with If-Match: ${updatedEvent.url}`);
                 try {
-                  await fetch(updatedEvent.url, {
+                  const directPutResponse = await fetch(updatedEvent.url, {
                     method: 'PUT',
                     headers: {
                       'Content-Type': 'text/calendar; charset=utf-8',
@@ -769,10 +784,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     },
                     body: icalEvent
                   });
-                } catch (putError) {
-                  console.error('Error during manual PUT request:', putError);
-                  throw putError;
+                  
+                  console.log(`Direct PUT response status: ${directPutResponse.status} ${directPutResponse.statusText}`);
+                  
+                  if (directPutResponse.ok) {
+                    console.log('Direct PUT succeeded');
+                    // Update etag in our database
+                    await storage.updateEvent(updatedEvent.id, { 
+                      etag: directPutResponse.headers.get('ETag') || undefined
+                    });
+                    return; // Exit early if successful
+                  }
+                } catch (directPutError) {
+                  console.error('Error during direct PUT:', directPutError.message);
+                  // Continue to next approach
                 }
+                
+                // Approach 2: Delete and recreate
+                console.log('Second approach: Delete and recreate');
+                try {
+                  console.log(`Deleting event at URL: ${updatedEvent.url}`);
+                  // First try to delete the existing event
+                  await davClient.deleteCalendarObject({
+                    calendarObject: {
+                      url: updatedEvent.url,
+                      etag: updatedEvent.etag || undefined
+                    }
+                  });
+                  
+                  // Then create a new event with the updated data at the same URL
+                  console.log(`Creating new version of event at URL: ${updatedEvent.url}`);
+                  
+                  const response = await fetch(updatedEvent.url, {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'text/calendar; charset=utf-8',
+                      'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                    },
+                    body: icalEvent
+                  });
+                  
+                  console.log(`Recreate response status: ${response.status} ${response.statusText}`);
+                  
+                  if (response.ok) {
+                    console.log('Delete and recreate succeeded');
+                    // Update etag in our database
+                    await storage.updateEvent(updatedEvent.id, { 
+                      etag: response.headers.get('ETag') || undefined
+                    });
+                    return; // Exit early if successful
+                  }
+                } catch (deleteRecreateError) {
+                  console.error('Error during delete-recreate:', deleteRecreateError.message);
+                  // Continue to next approach
+                }
+                
+                // Approach 3: Create at new URL
+                console.log('Third approach: Create at calendar-based URL');
+                try {
+                  // Create a new event URL based on the calendar URL and event UID
+                  const newEventUrl = `${calendarUrlWithSlash}${updatedEvent.uid}.ics`;
+                  console.log(`Creating event at new URL: ${newEventUrl}`);
+                  
+                  const newUrlResponse = await fetch(newEventUrl, {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'text/calendar; charset=utf-8',
+                      'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                    },
+                    body: icalEvent
+                  });
+                  
+                  console.log(`New URL response status: ${newUrlResponse.status} ${newUrlResponse.statusText}`);
+                  
+                  if (newUrlResponse.ok) {
+                    console.log('New URL approach succeeded');
+                    // Update the event URL and etag in our database
+                    await storage.updateEvent(updatedEvent.id, { 
+                      url: newEventUrl,
+                      etag: newUrlResponse.headers.get('ETag') || undefined
+                    });
+                    return; // Exit early if successful
+                  }
+                } catch (newUrlError) {
+                  console.error('Error during new URL creation:', newUrlError.message);
+                  // Continue to next approach
+                }
+                
+                // Approach 4: Try using DAV client's updateCalendarObject method
+                console.log('Fourth approach: Using DAV client updateCalendarObject');
+                try {
+                  const calendarObject = await davClient.updateCalendarObject({
+                    calendarObject: {
+                      url: updatedEvent.url,
+                      etag: updatedEvent.etag || undefined,
+                      data: icalEvent
+                    }
+                  });
+                  
+                  console.log('DAV client update succeeded');
+                  // Update the event URL and etag in our database
+                  await storage.updateEvent(updatedEvent.id, { 
+                    url: calendarObject.url,
+                    etag: calendarObject.etag || undefined
+                  });
+                  return; // Exit early if successful
+                } catch (davClientError) {
+                  console.error('Error during DAV client update:', davClientError.message);
+                  // If all approaches failed, throw an error
+                  throw new Error('All update approaches failed');
+                }
+              } catch (updateError) {
+                console.error('All update approaches failed:', updateError.message);
+                throw updateError;
               }
               
               console.log(`Successfully synchronized updated event "${updatedEvent.title}" to CalDAV server`);
@@ -840,13 +964,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             console.log(`Deleting event from CalDAV server at URL: ${eventToDelete.url}`);
             
-            // Delete event from CalDAV server
-            await davClient.deleteCalendarObject({
-              calendarObject: {
-                url: eventToDelete.url,
-                etag: eventToDelete.etag || undefined
+            console.log(`Attempting to delete event with multiple approaches`);
+            
+            // Approach 1: Try using DAV client's deleteCalendarObject method
+            try {
+              console.log(`First approach: Using DAV client deleteCalendarObject for URL: ${eventToDelete.url}`);
+              await davClient.deleteCalendarObject({
+                calendarObject: {
+                  url: eventToDelete.url,
+                  etag: eventToDelete.etag || undefined
+                }
+              });
+              console.log(`DAV client delete succeeded`);
+              return; // Exit early if successful
+            } catch (davClientError) {
+              console.error(`Error during DAV client delete: ${(davClientError as Error).message}`);
+              // Continue to next approach
+            }
+            
+            // Approach 2: Try direct DELETE request
+            try {
+              console.log(`Second approach: Direct DELETE request to URL: ${eventToDelete.url}`);
+              const deleteResponse = await fetch(eventToDelete.url, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                  'If-Match': eventToDelete.etag || '*'
+                }
+              });
+              
+              console.log(`DELETE response status: ${deleteResponse.status} ${deleteResponse.statusText}`);
+              
+              if (deleteResponse.ok) {
+                console.log(`Direct DELETE succeeded`);
+                return; // Exit early if successful
               }
-            });
+            } catch (deleteError) {
+              console.error(`Error during direct DELETE: ${(deleteError as Error).message}`);
+              // Continue to last approach
+            }
+            
+            // Approach 3: Try to PUT an empty/tombstone event
+            try {
+              console.log(`Third approach: PUT empty tombstone event to URL: ${eventToDelete.url}`);
+              
+              // Create a minimal tombstone event with CANCELLED status
+              const now = new Date().toISOString().replace(/[-:.]/g, '');
+              const tombstoneEvent = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//CalDAV Client//EN',
+                'BEGIN:VEVENT',
+                `UID:${eventToDelete.uid}`,
+                `DTSTAMP:${now}`,
+                'STATUS:CANCELLED',
+                'END:VEVENT',
+                'END:VCALENDAR'
+              ].join('\r\n');
+              
+              const putResponse = await fetch(eventToDelete.url, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'text/calendar; charset=utf-8',
+                  'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                  'If-Match': eventToDelete.etag || '*'
+                },
+                body: tombstoneEvent
+              });
+              
+              console.log(`Tombstone PUT response status: ${putResponse.status} ${putResponse.statusText}`);
+              
+              if (putResponse.ok) {
+                console.log(`Tombstone approach succeeded`);
+                return; // Exit if successful
+              }
+            } catch (tombstoneError) {
+              console.error(`Error during tombstone approach: ${(tombstoneError as Error).message}`);
+              // If all approaches failed, throw an error that will be caught by the parent try/catch
+              throw new Error('All delete approaches failed');
+            }
             
             console.log(`Successfully deleted event "${eventToDelete.title}" from CalDAV server`);
           } else {
