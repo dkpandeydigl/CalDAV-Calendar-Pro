@@ -599,17 +599,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   ? calendar.url 
                   : `${calendar.url}/`;
                 
-                const eventUrl = `${calendarUrlWithSlash}${eventData.uid}.ics`;
+                // Sanitize the UID to make it URL-safe
+                const safeUid = eventData.uid.replace(/[^a-zA-Z0-9-_]/g, '');
+                const eventUrl = `${calendarUrlWithSlash}${safeUid}.ics`;
                 console.log(`Creating event at URL: ${eventUrl}`);
                 console.log('Event data being sent:');
                 console.log(`Title: ${eventData.title}`);
                 console.log(`Start: ${eventData.startDate.toISOString()}`);
                 console.log(`End: ${eventData.endDate.toISOString()}`);
                 console.log(`Calendar ID: ${eventData.calendarId}`);
-                console.log(`iCalendar data: ${icalEvent}`);
+                console.log(`iCalendar data length: ${icalEvent.length} characters`);
                 
-                // Try multiple approaches for creating the event
-                // First, try a direct PUT request
+                // Try DAV client approach first as it's more reliable across servers
+                try {
+                  console.log(`First approach: Using DAV client createCalendarObject`);
+                  const calendarObject = await davClient.createCalendarObject({
+                    calendar: { url: calendarUrlWithSlash },
+                    filename: `${safeUid}.ics`,
+                    iCalString: icalEvent
+                  });
+                  
+                  console.log(`Successfully created event using DAV client: ${calendarObject.url}`);
+                  
+                  // Update the event URL in our database
+                  await storage.updateEvent(newEvent.id, { 
+                    url: calendarObject.url,
+                    etag: calendarObject.etag || undefined,
+                    rawData: icalEvent // Store the raw iCalendar data for future reference
+                  });
+                  
+                  // Success
+                  return;
+                } catch (error) {
+                  const davError = error as Error;
+                  console.error(`DAV client approach failed:`, davError);
+                  console.log(`Falling back to direct PUT method...`);
+                }
+                
+                // Fallback: Try a direct PUT request
                 const response = await fetch(eventUrl, {
                   method: 'PUT',
                   headers: {
@@ -621,31 +648,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 
                 console.log(`PUT response status: ${response.status} ${response.statusText}`);
                 
-                if (!response.ok) {
-                  console.log(`PUT request failed, trying DAV client approach...`);
-                  // If PUT fails, try using the DAV client's createCalendarObject method
-                  const calendarObject = await davClient.createCalendarObject({
-                    calendar: { url: calendarUrlWithSlash },
-                    filename: `${eventData.uid}.ics`,
-                    iCalString: icalEvent
-                  });
-                  
-                  console.log(`Successfully created event using DAV client: ${calendarObject.url}`);
-                  
-                  // Update the event URL in our database
-                  await storage.updateEvent(newEvent.id, { 
-                    url: calendarObject.url,
-                    etag: calendarObject.etag || undefined
-                  });
-                } else {
+                if (response.ok) {
                   // Update the event URL in our database
                   const etag = response.headers.get('ETag');
                   console.log(`Event created successfully. ETag: ${etag || 'Not provided'}`);
                   
                   await storage.updateEvent(newEvent.id, { 
                     url: eventUrl,
-                    etag: etag || undefined
+                    etag: etag || undefined,
+                    rawData: icalEvent // Store the raw iCalendar data for future reference
                   });
+                } else {
+                  throw new Error(`Failed to create event: ${response.status} ${response.statusText}`);
                 }
               } catch (error) {
                 const putError = error as Error;
@@ -799,7 +813,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     });
                     return; // Exit early if successful
                   }
-                } catch (directPutError) {
+                } catch (error) {
+                  const directPutError = error as Error;
                   console.error('Error during direct PUT:', directPutError.message);
                   // Continue to next approach
                 }
@@ -838,7 +853,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     });
                     return; // Exit early if successful
                   }
-                } catch (deleteRecreateError) {
+                } catch (error) {
+                  const deleteRecreateError = error as Error;
                   console.error('Error during delete-recreate:', deleteRecreateError.message);
                   // Continue to next approach
                 }
@@ -847,7 +863,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log('Third approach: Create at calendar-based URL');
                 try {
                   // Create a new event URL based on the calendar URL and event UID
-                  const newEventUrl = `${calendarUrlWithSlash}${updatedEvent.uid}.ics`;
+                  // Sanitize the UID to make it URL-safe
+                  const safeUid = updatedEvent.uid.replace(/[^a-zA-Z0-9-_]/g, '');
+                  const newEventUrl = `${calendarUrlWithSlash}${safeUid}.ics`;
                   console.log(`Creating event at new URL: ${newEventUrl}`);
                   
                   const newUrlResponse = await fetch(newEventUrl, {
@@ -870,7 +888,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     });
                     return; // Exit early if successful
                   }
-                } catch (newUrlError) {
+                } catch (error) {
+                  const newUrlError = error as Error;
                   console.error('Error during new URL creation:', newUrlError.message);
                   // Continue to next approach
                 }
@@ -888,17 +907,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   
                   console.log('DAV client update succeeded');
                   // Update the event URL and etag in our database
-                  await storage.updateEvent(updatedEvent.id, { 
-                    url: calendarObject.url,
-                    etag: calendarObject.etag || undefined
-                  });
+                  if (updatedEvent) {
+                    await storage.updateEvent(updatedEvent.id, { 
+                      url: calendarObject.url,
+                      etag: calendarObject.etag || undefined
+                    });
+                  }
                   return; // Exit early if successful
-                } catch (davClientError) {
+                } catch (error) {
+                  const davClientError = error as Error;
                   console.error('Error during DAV client update:', davClientError.message);
                   // If all approaches failed, throw an error
                   throw new Error('All update approaches failed');
                 }
-              } catch (updateError) {
+              } catch (error) {
+                const updateError = error as Error;
                 console.error('All update approaches failed:', updateError.message);
                 throw updateError;
               }
