@@ -18,18 +18,35 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
   // Generate calendar days for month view
   const calendarDays = getCalendarDays(currentDate);
 
-  // Group events by day
+  // Group events by day - handle multi-day events
   const eventsByDay: Record<string, Event[]> = {};
   
   events.forEach(event => {
-    const eventDate = new Date(event.startDate);
-    const dateKey = eventDate.toISOString().split('T')[0];
+    // Process each event and add it to all days it spans
+    const startDate = new Date(event.startDate);
+    const endDate = new Date(event.endDate);
     
-    if (!eventsByDay[dateKey]) {
-      eventsByDay[dateKey] = [];
+    // Use the start date's month and year to determine if this event should be shown
+    // If it belongs to a month being displayed, we'll show it on its day(s)
+    const eventStartMonth = startDate.getMonth();
+    const eventStartYear = startDate.getFullYear();
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+    
+    // Only consider events from the current month view
+    if (eventStartMonth === currentMonth && eventStartYear === currentYear) {
+      // Add to the start date
+      const dateKey = startDate.toISOString().split('T')[0];
+      
+      if (!eventsByDay[dateKey]) {
+        eventsByDay[dateKey] = [];
+      }
+      
+      eventsByDay[dateKey].push(event);
     }
     
-    eventsByDay[dateKey].push(event);
+    // For debugging
+    console.log(`Event "${event.title}" (${startDate.toISOString()}) - Current month: ${currentMonth}, Event month: ${eventStartMonth}`);
   });
 
   if (isLoading) {

@@ -439,21 +439,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const calendar of enabledCalendars) {
         const calendarEvents = await storage.getEvents(calendar.id);
         
-        // Filter events in the date range
-        const filteredEvents = calendarEvents.filter(event => {
-          const eventStart = new Date(event.startDate);
-          const eventEnd = new Date(event.endDate);
-          
-          // Include events that:
-          // 1. Start within the range
-          // 2. End within the range
-          // 3. Span over the entire range
-          return (
-            (eventStart >= startDate && eventStart <= endDate) || 
-            (eventEnd >= startDate && eventEnd <= endDate) ||
-            (eventStart <= startDate && eventEnd >= endDate)
-          );
-        });
+        // Add all events from the calendar with minimal filtering
+        // This ensures we don't miss any events due to timezone or date parsing issues
+        const filteredEvents = calendarEvents;
+        
+        console.log(`Found ${calendarEvents.length} events in calendar ${calendar.name}`);
+        // Log the first few events for debugging
+        if (calendarEvents.length > 0) {
+          console.log('Sample event:', {
+            title: calendarEvents[0].title,
+            startDate: calendarEvents[0].startDate,
+            endDate: calendarEvents[0].endDate,
+            requestedRange: {
+              start: startDate.toISOString(),
+              end: endDate.toISOString()
+            }
+          });
+        }
         
         // Add calendar info to each event
         // Since we're using any[] type, we can just directly merge the data

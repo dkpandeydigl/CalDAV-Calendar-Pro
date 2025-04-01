@@ -32,7 +32,13 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       
       // Make a single API call to get all events from all enabled calendars
       const queryString = params.toString() ? `?${params.toString()}` : '';
-      const response = await fetch(`/api/events${queryString}`, { 
+      const endpoint = `/api/events${queryString}`;
+      
+      console.log(`Fetching events with: ${endpoint}`);
+      if (startDate) console.log(`Start date: ${startDate.toISOString()}`);
+      if (endDate) console.log(`End date: ${endDate.toISOString()}`);
+      
+      const response = await fetch(endpoint, { 
         credentials: 'include'
       });
       
@@ -40,7 +46,18 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         throw new Error('Failed to fetch events');
       }
       
-      return response.json();
+      const events = await response.json();
+      console.log(`Received ${events.length} events`);
+      
+      // Log a few events for debugging
+      if (events.length > 0) {
+        console.log('First few events:');
+        events.slice(0, 3).forEach((event: any) => {
+          console.log(`- ${event.title}: ${event.startDate} to ${event.endDate}`);
+        });
+      }
+      
+      return events;
     }
   });
   

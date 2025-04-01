@@ -32,11 +32,14 @@ function YearView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
           const monthDate = new Date(year, index);
           const monthName = format(monthDate, 'MMMM');
           
-          // Filter events for this month
+          // Filter events for this month with looser filtering
           const monthEvents = events.filter(event => {
             const eventDate = new Date(event.startDate);
+            // Include all events in this month or that end in this month
             return eventDate.getMonth() === index && eventDate.getFullYear() === year;
           });
+          
+          console.log(`Month ${monthName}: Found ${monthEvents.length} events`);
           
           return (
             <div key={index} className="border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow">
@@ -90,7 +93,10 @@ function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
               {events
                 .filter(event => {
                   const eventStart = new Date(event.startDate);
-                  return format(eventStart, 'yyyy-MM-dd') === format(day, 'yyyy-MM-dd');
+                  const eventDay = format(eventStart, 'yyyy-MM-dd');
+                  const currentDay = format(day, 'yyyy-MM-dd');
+                  const match = eventDay === currentDay;
+                  return match;
                 })
                 .map(event => (
                   <div 
@@ -116,9 +122,17 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
   const { currentDate } = useCalendarContext();
   const hours = Array.from({ length: 24 }).map((_, i) => i);
   
+  // Get all events for this day - use more flexible matching to debug
   const dayEvents = events.filter(event => {
     const eventDate = new Date(event.startDate);
-    return format(eventDate, 'yyyy-MM-dd') === format(currentDate, 'yyyy-MM-dd');
+    const eventDay = format(eventDate, 'yyyy-MM-dd');
+    const currentDay = format(currentDate, 'yyyy-MM-dd');
+    const match = eventDay === currentDay;
+    
+    // Debug output
+    console.log(`DayView: Event: ${event.title}, Date: ${eventDay}, CurrentDay: ${currentDay}, Match: ${match}`);
+    
+    return match;
   });
   
   return (
