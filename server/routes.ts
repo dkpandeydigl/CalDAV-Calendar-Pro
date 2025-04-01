@@ -760,7 +760,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
-        // 4. If all discovery methods failed, use the direct approach with a default calendar
+        // 4. Try specific DAViCal approach to enumerate all user calendars
+        // This is a more direct approach that works with DAViCal's folder structure
+        if (serverCalendars.length === 0 || serverCalendars.length === 1) {
+          console.log("Trying DAViCal-specific discovery to find all user calendars");
+          
+          try {
+            // For DAViCal, the user's home collection is typically at /caldav.php/username/
+            const userHomePath = `${baseUrl}/caldav.php/${connection.username}/`;
+            console.log(`Exploring user home collection: ${userHomePath}`);
+            
+            // First, use PROPFIND with Depth: 1 to enumerate all collections under the user's home
+            const response = await fetch(userHomePath, {
+              method: 'PROPFIND',
+              headers: {
+                'Content-Type': 'application/xml',
+                'Depth': '1',  // Look for immediate children collections
+                'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+              },
+              body: '<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><prop><resourcetype/><displayname/><C:calendar-home-set/><C:calendar-user-address-set/></prop></propfind>'
+            });
+            
+            console.log(`PROPFIND status for user home: ${response.status}`);
+            
+            if (response.ok) {
+              const responseText = await response.text();
+              console.log(`Found DAViCal user home response, length: ${responseText.length} characters`);
+              
+              // Extract all hrefs (URLs) from the response that might be calendars
+              const hrefMatches = responseText.match(/<D:href>([^<]+)<\/D:href>/g) || [];
+              
+              if (hrefMatches.length > 1) { // First one is usually the parent
+                console.log(`Found ${hrefMatches.length} potential collections in DAViCal home`);
+                
+                const calendarUrls = hrefMatches
+                  .map(match => {
+                    // Extract URL from <D:href>...</D:href>
+                    const url = match.replace(/<D:href>|<\/D:href>/g, '');
+                    return url;
+                  })
+                  .filter(url => 
+                    // Filter out parent folder and non-calendar URLs
+                    url !== userHomePath && 
+                    !url.endsWith('/addressbook/') && 
+                    !url.includes('/.') // Skip hidden files/collections
+                  );
+                
+                console.log(`Filtered to ${calendarUrls.length} potential calendar URLs`);
+                
+                // For each URL, check if it's a calendar by doing another PROPFIND
+                const discoveredCalendars = [];
+                
+                for (const url of calendarUrls) {
+                  try {
+                    const calendarCheckResponse = await fetch(url, {
+                      method: 'PROPFIND',
+                      headers: {
+                        'Content-Type': 'application/xml',
+                        'Depth': '0',
+                        'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                      },
+                      body: '<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><prop><resourcetype/><displayname/></prop></propfind>'
+                    });
+                    
+                    if (calendarCheckResponse.ok) {
+                      const calendarCheckText = await calendarCheckResponse.text();
+                      
+                      // Check if this is a calendar resource
+                      if (
+                        calendarCheckText.includes('<C:calendar') || 
+                        calendarCheckText.includes('<calendar') || 
+                        calendarCheckText.includes('calendar-collection')
+                      ) {
+                        // Extract display name if available
+                        let displayName = url.split('/').filter(Boolean).pop() || 'Calendar';
+                        const displayNameMatch = calendarCheckText.match(/<D:displayname>(.*?)<\/D:displayname>/);
+                        if (displayNameMatch && displayNameMatch[1]) {
+                          displayName = displayNameMatch[1];
+                        }
+                        
+                        console.log(`Found calendar: ${displayName} at ${url}`);
+                        
+                        discoveredCalendars.push({
+                          url,
+                          displayName,
+                          syncToken: new Date().toISOString(),
+                          resourcetype: { calendar: true },
+                          components: ["VEVENT"]
+                        });
+                      }
+                    }
+                  } catch (calendarCheckError) {
+                    console.log(`Error checking calendar at ${url}:`, (calendarCheckError as Error).message);
+                  }
+                }
+                
+                if (discoveredCalendars.length > 0) {
+                  console.log(`DAViCal-specific discovery found ${discoveredCalendars.length} calendars`);
+                  serverCalendars = discoveredCalendars;
+                }
+              }
+            }
+          } catch (davicalError) {
+            console.log("DAViCal-specific discovery failed:", (davicalError as Error).message);
+          }
+        }
+        
+        // 5. Last resort: If still no calendars found, use the direct fallback approach
         if (serverCalendars.length === 0) {
           console.log("All discovery methods failed, using direct calendar URL approach");
           
