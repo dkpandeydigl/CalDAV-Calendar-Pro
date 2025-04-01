@@ -118,14 +118,18 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
     
     setIsSubmitting(true);
     
-    // Create date objects from form inputs - ensure they are in ISO string format
-    let startDateTime = allDay
-      ? new Date(`${startDate}T00:00:00Z`)
-      : new Date(`${startDate}T${startTime}:00Z`);
+    // Create date objects from form inputs that respect the user's timezone
+    // By using this format without Z, we ensure the date is treated in the user's timezone context
+    // This prevents the date from shifting when stored in UTC
+    let startDateTime = allDay 
+      ? new Date(`${startDate}T00:00:00`)
+      : new Date(`${startDate}T${startTime}:00`);
     
     let endDateTime = allDay
-      ? new Date(`${endDate}T23:59:59Z`)
-      : new Date(`${endDate}T${endTime}:00Z`);
+      ? new Date(`${endDate}T23:59:59`)
+      : new Date(`${endDate}T${endTime}:00`);
+      
+    console.log(`Creating event: Date entered: ${startDate}, Time: ${startTime}, Resulting date object: ${startDateTime.toISOString()}, Timezone: ${timezone}`);
     
     // Make sure they're valid dates
     if (isNaN(startDateTime.getTime())) {
