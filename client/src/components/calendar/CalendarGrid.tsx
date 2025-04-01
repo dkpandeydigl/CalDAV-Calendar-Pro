@@ -36,17 +36,17 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       // Use the user's selected timezone from context
       console.log(`Using selected timezone: ${selectedTimezone}`);
       
-      // We need to handle the timezone conversion properly
-      // First convert startDate to the user's selected timezone
-      // For simplicity, let's extract the date parts from the UTC date
-      // and create a new date object using these parts
-      const year = startDate.getUTCFullYear();
-      const month = startDate.getUTCMonth();
-      const day = startDate.getUTCDate();
+      // When we have events stored in UTC (like "2025-04-01T00:00:00.000Z"),
+      // we need to handle them in their original UTC form
+      // We don't want to create a new date by extracting parts as that can shift days
       
-      // Create a date object with the extracted parts
-      // This represents the date in the user's selected timezone
-      const localStartDate = new Date(Date.UTC(year, month, day, 12, 0, 0));
+      // For an event stored as 2025-04-01T00:00:00.000Z, we want it to display on April 1st
+      // in any timezone, not April 2nd in timezones ahead of UTC
+      
+      // We'll create a date that preserves the display date as the same day
+      // by using the date from the ISO string directly (keeping only YYYY-MM-DD)
+      const dateStr = startDate.toISOString().split('T')[0];
+      const localStartDate = new Date(`${dateStr}T12:00:00.000Z`);
       
       
       console.log(`Event ${event.title}: Original start - ${startDate.toISOString()}, Adjusted for display - ${localStartDate.toISOString()}`);

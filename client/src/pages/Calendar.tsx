@@ -45,11 +45,15 @@ function YearView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
               // Use the selected timezone to determine the month/year of the event
               console.log(`Year view using timezone: ${selectedTimezone}`);
               
-              // Extract the date parts from the UTC date
-              const eventYear = eventDate.getUTCFullYear();
-              const eventMonth = eventDate.getUTCMonth();
+              // When we have events stored in UTC (like "2025-04-01T00:00:00.000Z"),
+              // we need to preserve the calendar date rather than shifting it
               
-              return eventMonth === index && eventYear === year;
+              // We'll create a date that preserves the display date as the same day
+              // by using the date from the ISO string directly (keeping only YYYY-MM-DD)
+              const dateStr = eventDate.toISOString().split('T')[0];
+              const localEventDate = new Date(`${dateStr}T12:00:00.000Z`);
+              
+              return localEventDate.getMonth() === index && localEventDate.getFullYear() === year;
             } catch (error) {
               console.error(`Error filtering event for month ${monthName}:`, error);
               return false;
@@ -118,14 +122,13 @@ function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
                     // Use the user's selected timezone from context
                     console.log(`Week view using timezone: ${selectedTimezone}`);
                     
-                    // Extract the date parts from the UTC date
-                    const year = eventStart.getUTCFullYear();
-                    const month = eventStart.getUTCMonth();
-                    const dayOfMonth = eventStart.getUTCDate();
+                    // When we have events stored in UTC (like "2025-04-01T00:00:00.000Z"),
+                    // we need to preserve the calendar date rather than shifting it
                     
-                    // Create a date object with the extracted parts
-                    // This represents the date in the user's selected timezone
-                    const localStartDate = new Date(Date.UTC(year, month, dayOfMonth, 12, 0, 0));
+                    // We'll create a date that preserves the display date as the same day
+                    // by using the date from the ISO string directly (keeping only YYYY-MM-DD)
+                    const dateStr = eventStart.toISOString().split('T')[0];
+                    const localStartDate = new Date(`${dateStr}T12:00:00.000Z`);
                     
                     const eventDay = format(localStartDate, 'yyyy-MM-dd');
                     const currentDay = format(day, 'yyyy-MM-dd');
@@ -143,7 +146,8 @@ function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
                   >
                     <div className="font-medium truncate">{event.title}</div>
                     <div className="text-muted-foreground">
-                      {format(new Date(event.startDate), 'h:mm a')} - {format(new Date(event.endDate), 'h:mm a')}
+                      {format(new Date(new Date(event.startDate).toUTCString()), 'h:mm a')} - 
+                      {format(new Date(new Date(event.endDate).toUTCString()), 'h:mm a')}
                     </div>
                   </div>
                 ))}
@@ -173,14 +177,13 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
       // Use the user's selected timezone from context
       console.log(`Day view using timezone: ${selectedTimezone}`);
       
-      // Extract the date parts from the UTC date
-      const year = eventDate.getUTCFullYear();
-      const month = eventDate.getUTCMonth();
-      const dayOfMonth = eventDate.getUTCDate();
+      // When we have events stored in UTC (like "2025-04-01T00:00:00.000Z"),
+      // we need to preserve the calendar date rather than shifting it
       
-      // Create a date object with the extracted parts
-      // This represents the date in the user's selected timezone
-      const localEventDate = new Date(Date.UTC(year, month, dayOfMonth, 12, 0, 0));
+      // We'll create a date that preserves the display date as the same day
+      // by using the date from the ISO string directly (keeping only YYYY-MM-DD)
+      const dateStr = eventDate.toISOString().split('T')[0];
+      const localEventDate = new Date(`${dateStr}T12:00:00.000Z`);
       
       const eventDay = format(localEventDate, 'yyyy-MM-dd');
       const currentDay = format(currentDate, 'yyyy-MM-dd');
@@ -210,7 +213,9 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
                 return false;
               }
               
-              return eventStart.getHours() === hour;
+              // For hour filtering, we use the original UTC time as we want to preserve
+              // the actual time regardless of the day
+              return eventStart.getUTCHours() === hour;
             } catch (error) {
               console.error(`Error filtering event by hour: "${event.title}"`, error);
               return false;
@@ -229,14 +234,15 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
                     className="absolute top-0 left-0 right-0 m-1 p-1 bg-primary/10 rounded cursor-pointer hover:bg-primary/20"
                     style={{
                       height: `${event.allDay ? 100 : 50}%`,
-                      top: `${(new Date(event.startDate).getMinutes() / 60) * 100}%`,
+                      top: `${(new Date(event.startDate).getUTCMinutes() / 60) * 100}%`,
                     }}
                     onClick={() => onEventClick(event)}
                   >
                     <div className="font-medium truncate">{event.title}</div>
                     {!event.allDay && (
                       <div className="text-xs text-muted-foreground">
-                        {format(new Date(event.startDate), 'h:mm a')} - {format(new Date(event.endDate), 'h:mm a')}
+                        {format(new Date(new Date(event.startDate).toUTCString()), 'h:mm a')} - 
+                        {format(new Date(new Date(event.endDate).toUTCString()), 'h:mm a')}
                       </div>
                     )}
                   </div>
