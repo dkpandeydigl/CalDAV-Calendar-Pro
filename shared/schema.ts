@@ -33,6 +33,7 @@ export const insertCalendarSchema = createInsertSchema(calendars).pick({
   color: true,
   userId: true,
   url: true,
+  syncToken: true,
   enabled: true,
 });
 

@@ -6,6 +6,9 @@ import {
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 
+import session from "express-session";
+import createMemoryStore from "memorystore";
+
 export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
@@ -35,6 +38,9 @@ export interface IStorage {
     connection: Partial<ServerConnection>
   ): Promise<ServerConnection | undefined>;
   deleteServerConnection(id: number): Promise<boolean>;
+  
+  // Session store for authentication
+  sessionStore: session.Store;
 }
 
 export class MemStorage implements IStorage {
@@ -47,6 +53,9 @@ export class MemStorage implements IStorage {
   private calendarIdCounter: number;
   private eventIdCounter: number;
   private serverConnectionIdCounter: number;
+  
+  // Initialize memory store for sessions
+  public sessionStore: session.Store;
 
   constructor() {
     this.users = new Map();
@@ -58,6 +67,12 @@ export class MemStorage implements IStorage {
     this.calendarIdCounter = 1;
     this.eventIdCounter = 1;
     this.serverConnectionIdCounter = 1;
+    
+    // Initialize the memory store for session management
+    const MemoryStore = createMemoryStore(session);
+    this.sessionStore = new MemoryStore({
+      checkPeriod: 86400000, // 24 hours
+    });
     
     // Create sample data - we'll call this asynchronously,
     // but for a simple demo app this won't cause issues

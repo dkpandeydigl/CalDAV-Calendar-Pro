@@ -215,8 +215,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Get userId from authenticated user
       const userId = req.user!.id;
-      const calendars = await storage.getCalendars(userId);
-      res.json(calendars);
+      
+      // First check if we have a server connection
+      const connection = await storage.getServerConnection(userId);
+      
+      if (!connection) {
+        return res.status(404).json({ message: "Server connection not found" });
+      }
+      
+      // Create a CalDAV client with the stored connection data
+      const { DAVClient } = await import('tsdav');
+      const davClient = new DAVClient({
+        serverUrl: connection.url,
+        credentials: {
+          username: connection.username,
+          password: connection.password
+        },
+        authMethod: 'Basic',
+        defaultAccountType: 'caldav'
+      });
+      
+      try {
+        // Attempt to login and discover calendars
+        await davClient.login();
+        const davCalendars = await davClient.fetchCalendars();
+        
+        // Convert CalDAV calendars to our format and save them
+        const existingCalendars = await storage.getCalendars(userId);
+        const existingCalendarUrls = new Set(existingCalendars.map(cal => cal.url));
+        
+        for (const davCal of davCalendars) {
+          // Skip calendars we already have
+          if (existingCalendarUrls.has(davCal.url)) {
+            continue;
+          }
+          
+          // Create new calendar
+          await storage.createCalendar({
+            userId,
+            name: typeof davCal.displayName === 'string' ? davCal.displayName : 'Untitled Calendar',
+            color: '#4285F4', // Default color if not provided
+            url: davCal.url,
+            syncToken: davCal.syncToken ? String(davCal.syncToken) : null
+          });
+        }
+        
+        // Update connection status
+        await storage.updateServerConnection(connection.id, {
+          lastSync: new Date(),
+          status: "connected"
+        });
+        
+        // Fetch updated calendars list
+        const updatedCalendars = await storage.getCalendars(userId);
+        res.json(updatedCalendars);
+      } catch (error) {
+        console.error("CalDAV calendar fetch failed:", error);
+        
+        // Update status to reflect failure
+        await storage.updateServerConnection(connection.id, {
+          status: "error"
+        });
+        
+        // Still return local calendars if we have any
+        const localCalendars = await storage.getCalendars(userId);
+        res.json(localCalendars);
+      }
     } catch (err) {
       console.error("Error fetching calendars:", err);
       res.status(500).json({ message: "Failed to fetch calendars" });
@@ -295,11 +359,162 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Event routes
-  app.get("/api/calendars/:calendarId/events", async (req, res) => {
+  app.get("/api/calendars/:calendarId/events", isAuthenticated, async (req, res) => {
     try {
       const calendarId = parseInt(req.params.calendarId);
-      const events = await storage.getEvents(calendarId);
-      res.json(events);
+      const userId = req.user!.id;
+      
+      // Get the calendar to make sure it belongs to the user
+      const calendar = await storage.getCalendar(calendarId);
+      
+      if (!calendar || calendar.userId !== userId) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // First get the server connection
+      const connection = await storage.getServerConnection(userId);
+      
+      if (!connection) {
+        // If no server connection, just return local events
+        const events = await storage.getEvents(calendarId);
+        return res.json(events);
+      }
+      
+      // Get the CalDAV calendar URL from our calendar
+      const calendarUrl = calendar.url;
+      
+      if (!calendarUrl) {
+        // If no CalDAV URL, just return local events
+        const events = await storage.getEvents(calendarId);
+        return res.json(events);
+      }
+      
+      try {
+        // Create CalDAV client
+        const { DAVClient } = await import('tsdav');
+        const davClient = new DAVClient({
+          serverUrl: connection.url,
+          credentials: {
+            username: connection.username,
+            password: connection.password
+          },
+          authMethod: 'Basic',
+          defaultAccountType: 'caldav'
+        });
+        
+        // Login and fetch events
+        await davClient.login();
+        
+        // Fetch events from last month to next 6 months
+        const startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - 1);
+        
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 6);
+        
+        const davEvents = await davClient.fetchCalendarObjects({
+          calendar: { url: calendarUrl },
+          timeRange: {
+            start: startDate,
+            end: endDate
+          }
+        });
+        
+        // Parse and store the events
+        const existingEvents = await storage.getEvents(calendarId);
+        const existingEventUrls = new Set(existingEvents.map(event => event.url));
+        
+        for (const davEvent of davEvents) {
+          if (!davEvent.data || !davEvent.url) continue;
+          
+          // Skip events we already have
+          if (existingEventUrls.has(davEvent.url)) continue;
+          
+          try {
+            // Parse iCalendar data
+            const { parseICS } = await import('tsdav');
+            const parsed = parseICS(davEvent.data);
+            
+            if (!parsed.vevent || !parsed.vevent[0]) continue;
+            
+            const vevent = parsed.vevent[0];
+            
+            // Extract event details
+            const uid = vevent.uid || `${Date.now()}-${Math.random()}`;
+            const summary = vevent.summary || 'Untitled Event';
+            const description = vevent.description || '';
+            const location = vevent.location || '';
+            
+            // Handle date/time
+            let startDate, endDate, allDay = false;
+            
+            if (vevent.dtstart && vevent.dtend) {
+              // All-day event check
+              if (typeof vevent.dtstart.value === 'string' && vevent.dtstart.value.length === 8) {
+                allDay = true;
+                // Parse YYYYMMDD format for all-day events
+                const startYear = parseInt(vevent.dtstart.value.slice(0, 4));
+                const startMonth = parseInt(vevent.dtstart.value.slice(4, 6)) - 1;
+                const startDay = parseInt(vevent.dtstart.value.slice(6, 8));
+                startDate = new Date(startYear, startMonth, startDay);
+                
+                const endYear = parseInt(vevent.dtend.value.slice(0, 4));
+                const endMonth = parseInt(vevent.dtend.value.slice(4, 6)) - 1;
+                const endDay = parseInt(vevent.dtend.value.slice(6, 8));
+                endDate = new Date(endYear, endMonth, endDay);
+              } else {
+                // Regular event with time
+                startDate = new Date(vevent.dtstart.value as string);
+                endDate = new Date(vevent.dtend.value as string);
+              }
+            } else {
+              // Fallback if no proper dates
+              startDate = new Date();
+              endDate = new Date();
+              endDate.setHours(endDate.getHours() + 1);
+            }
+            
+            // Get timezone
+            let timezone = 'UTC';
+            if (vevent.dtstart && vevent.dtstart.tzid) {
+              timezone = vevent.dtstart.tzid;
+            }
+            
+            // Check for recurrence
+            const recurrenceRule = vevent.rrule ? vevent.rrule.toString() : null;
+            
+            // Create event in our database
+            await storage.createEvent({
+              uid,
+              calendarId,
+              title: summary,
+              description,
+              location,
+              startDate,
+              endDate,
+              allDay,
+              timezone,
+              recurrenceRule,
+              etag: davEvent.etag || null,
+              url: davEvent.url,
+              rawData: vevent
+            });
+          } catch (parseError) {
+            console.error("Error parsing event:", parseError);
+            // Skip this event if parsing fails
+            continue;
+          }
+        }
+        
+        // Return the updated list of events
+        const updatedEvents = await storage.getEvents(calendarId);
+        res.json(updatedEvents);
+      } catch (error) {
+        console.error("Error fetching events from CalDAV:", error);
+        // Fall back to local events
+        const events = await storage.getEvents(calendarId);
+        res.json(events);
+      }
     } catch (err) {
       console.error("Error fetching events:", err);
       res.status(500).json({ message: "Failed to fetch events" });
