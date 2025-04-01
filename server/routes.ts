@@ -507,10 +507,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/events", async (req, res) => {
     try {
+      // Get authenticated user ID if available
+      const userId = req.user?.id;
+      
       // Generate a unique UID for the event if not provided
       const eventData = {
         ...req.body,
-        uid: req.body.uid || `${Date.now()}-${Math.floor(Math.random() * 1000000)}`
+        uid: req.body.uid || `${Date.now()}-${Math.floor(Math.random() * 1000000)}@caldavclient`
       };
       
       // Properly handle date conversions, preserving the exact date/time
@@ -527,7 +530,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate with zod
       const validatedData = insertEventSchema.parse(eventData);
       
+      // First save to our local database
       const newEvent = await storage.createEvent(validatedData);
+      
+      // If user is authenticated, sync with CalDAV server
+      if (userId) {
+        try {
+          // Get user's CalDAV server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection && connection.status === 'connected') {
+            console.log(`Attempting to sync new event "${eventData.title}" to CalDAV server...`);
+            
+            // Get the calendar for this event
+            const calendar = await storage.getCalendar(eventData.calendarId);
+            
+            if (calendar && calendar.url) {
+              // Initialize CalDAV client
+              const { DAVClient } = await import('tsdav');
+              
+              // Create CalDAV client
+              const davClient = new DAVClient({
+                serverUrl: connection.url,
+                credentials: {
+                  username: connection.username,
+                  password: connection.password
+                },
+                authMethod: 'Basic',
+                defaultAccountType: 'caldav'
+              });
+              
+              // Prepare event for CalDAV format (iCalendar)
+              // We'll use a simple implementation for now
+              const now = new Date().toISOString().replace(/[-:.]/g, '');
+              const startDate = eventData.startDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+              const endDate = eventData.endDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+              
+              const icalEvent = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//CalDAV Client//EN',
+                'BEGIN:VEVENT',
+                `UID:${eventData.uid}`,
+                `DTSTAMP:${now}`,
+                `DTSTART:${startDate}`,
+                `DTEND:${endDate}`,
+                `SUMMARY:${eventData.title}`,
+                eventData.description ? `DESCRIPTION:${eventData.description}` : '',
+                eventData.location ? `LOCATION:${eventData.location}` : '',
+                'END:VEVENT',
+                'END:VCALENDAR'
+              ].filter(Boolean).join('\r\n');
+              
+              console.log(`Creating event on CalDAV server for calendar URL: ${calendar.url}`);
+              
+              // Create event on CalDAV server
+              // Using a manual PUT request for better compatibility across servers
+              try {
+                const eventUrl = `${calendar.url}${eventData.uid}.ics`;
+                console.log(`Creating event at URL: ${eventUrl}`);
+                
+                const response = await fetch(eventUrl, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                  },
+                  body: icalEvent
+                });
+                
+                if (!response.ok) {
+                  throw new Error(`Failed to create event: ${response.status} ${response.statusText}`);
+                }
+                
+                // Update the event URL in our database
+                await storage.updateEvent(newEvent.id, { 
+                  url: eventUrl,
+                  etag: response.headers.get('ETag') || undefined
+                });
+              } catch (putError) {
+                console.error('Error creating event with PUT:', putError);
+                throw putError;
+              }
+              
+              console.log(`Successfully synchronized event "${eventData.title}" to CalDAV server`);
+            } else {
+              console.log(`Calendar not found or missing URL for event ${eventData.title}`);
+            }
+          } else {
+            console.log(`No active CalDAV server connection for user ${userId}`);
+          }
+        } catch (syncError) {
+          console.error('Error syncing event to CalDAV server:', syncError);
+          // Continue despite sync error - at least the event is in our local database
+        }
+      }
+      
       res.status(201).json(newEvent);
     } catch (err) {
       console.error("Error creating event:", err);
@@ -538,6 +636,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/events/:id", async (req, res) => {
     try {
       const eventId = parseInt(req.params.id);
+      // Get authenticated user ID if available
+      const userId = req.user?.id;
       
       // Create a copy of the request body to make modifications
       const eventData = { ...req.body };
@@ -556,10 +656,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate with zod (partial validation for update)
       const validatedData = insertEventSchema.partial().parse(eventData);
       
+      // Get the original event to have complete data for sync
+      const originalEvent = await storage.getEvent(eventId);
+      if (!originalEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // Update event in our local database
       const updatedEvent = await storage.updateEvent(eventId, validatedData);
       
       if (!updatedEvent) {
-        return res.status(404).json({ message: "Event not found" });
+        return res.status(404).json({ message: "Event not found after update" });
+      }
+      
+      // If user is authenticated, sync changes to CalDAV server
+      if (userId && updatedEvent.url) {
+        try {
+          // Get user's CalDAV server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection && connection.status === 'connected') {
+            console.log(`Attempting to sync updated event "${updatedEvent.title}" to CalDAV server...`);
+            
+            // Get the calendar for this event
+            const calendar = await storage.getCalendar(updatedEvent.calendarId);
+            
+            if (calendar && calendar.url) {
+              // Initialize CalDAV client
+              const { DAVClient } = await import('tsdav');
+              
+              // Create CalDAV client
+              const davClient = new DAVClient({
+                serverUrl: connection.url,
+                credentials: {
+                  username: connection.username,
+                  password: connection.password
+                },
+                authMethod: 'Basic',
+                defaultAccountType: 'caldav'
+              });
+              
+              // Prepare event for CalDAV format (iCalendar)
+              const now = new Date().toISOString().replace(/[-:.]/g, '');
+              const startDate = updatedEvent.startDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+              const endDate = updatedEvent.endDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+              
+              const icalEvent = [
+                'BEGIN:VCALENDAR',
+                'VERSION:2.0',
+                'PRODID:-//CalDAV Client//EN',
+                'BEGIN:VEVENT',
+                `UID:${updatedEvent.uid}`,
+                `DTSTAMP:${now}`,
+                `DTSTART:${startDate}`,
+                `DTEND:${endDate}`,
+                `SUMMARY:${updatedEvent.title}`,
+                updatedEvent.description ? `DESCRIPTION:${updatedEvent.description}` : '',
+                updatedEvent.location ? `LOCATION:${updatedEvent.location}` : '',
+                'END:VEVENT',
+                'END:VCALENDAR'
+              ].filter(Boolean).join('\r\n');
+              
+              console.log(`Updating event on CalDAV server at URL: ${updatedEvent.url}`);
+              
+              // Update event on CalDAV server - need to delete and recreate for compatibility
+              try {
+                // First try to delete the existing event
+                await davClient.deleteCalendarObject({
+                  calendarObject: {
+                    url: updatedEvent.url,
+                    etag: updatedEvent.etag || undefined
+                  }
+                });
+                
+                // Then create a new event with the updated data
+                // Use manual PUT request instead of createCalendarObject for compatibility
+                const eventUrl = `${calendar.url}${updatedEvent.uid}.ics`;
+                console.log(`Creating new version of event at URL: ${eventUrl}`);
+                
+                const response = await fetch(eventUrl, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                  },
+                  body: icalEvent
+                });
+                
+                if (!response.ok) {
+                  throw new Error(`Failed to create updated event: ${response.status} ${response.statusText}`);
+                }
+                
+                // Update the event URL and etag in our database
+                await storage.updateEvent(updatedEvent.id, { 
+                  url: eventUrl,
+                  etag: response.headers.get('ETag') || undefined
+                });
+              } catch (updateError) {
+                console.error('Error during update (delete+create) operation:', updateError);
+                // Fallback to manual PUT request if the delete/create approach failed
+                try {
+                  await fetch(updatedEvent.url, {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'text/calendar; charset=utf-8',
+                      'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                      'If-Match': updatedEvent.etag || '*'
+                    },
+                    body: icalEvent
+                  });
+                } catch (putError) {
+                  console.error('Error during manual PUT request:', putError);
+                  throw putError;
+                }
+              }
+              
+              console.log(`Successfully synchronized updated event "${updatedEvent.title}" to CalDAV server`);
+            } else {
+              console.log(`Calendar not found or missing URL for event ${updatedEvent.title}`);
+            }
+          } else {
+            console.log(`No active CalDAV server connection for user ${userId}`);
+          }
+        } catch (syncError) {
+          console.error('Error syncing updated event to CalDAV server:', syncError);
+          // Continue despite sync error - at least the event is updated in our local database
+        }
       }
       
       res.json(updatedEvent);
@@ -572,10 +794,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/events/:id", async (req, res) => {
     try {
       const eventId = parseInt(req.params.id);
+      // Get authenticated user ID if available
+      const userId = req.user?.id;
+      
+      // Get the event before deleting it so we have its URL and other data for CalDAV sync
+      const eventToDelete = await storage.getEvent(eventId);
+      if (!eventToDelete) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // First delete from our local database
       const deleted = await storage.deleteEvent(eventId);
       
       if (!deleted) {
-        return res.status(404).json({ message: "Event not found" });
+        return res.status(404).json({ message: "Event could not be deleted" });
+      }
+      
+      // If user is authenticated and the event has a URL, sync deletion with CalDAV server
+      if (userId && eventToDelete.url) {
+        try {
+          // Get user's CalDAV server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection && connection.status === 'connected') {
+            console.log(`Attempting to delete event "${eventToDelete.title}" from CalDAV server...`);
+            
+            // Initialize CalDAV client
+            const { DAVClient } = await import('tsdav');
+            
+            // Create CalDAV client
+            const davClient = new DAVClient({
+              serverUrl: connection.url,
+              credentials: {
+                username: connection.username,
+                password: connection.password
+              },
+              authMethod: 'Basic',
+              defaultAccountType: 'caldav'
+            });
+            
+            console.log(`Deleting event from CalDAV server at URL: ${eventToDelete.url}`);
+            
+            // Delete event from CalDAV server
+            await davClient.deleteCalendarObject({
+              calendarObject: {
+                url: eventToDelete.url,
+                etag: eventToDelete.etag || undefined
+              }
+            });
+            
+            console.log(`Successfully deleted event "${eventToDelete.title}" from CalDAV server`);
+          } else {
+            console.log(`No active CalDAV server connection for user ${userId}`);
+          }
+        } catch (syncError) {
+          console.error('Error deleting event from CalDAV server:', syncError);
+          // Continue despite sync error - at least the event is deleted from our local database
+        }
       }
       
       res.status(204).send();
