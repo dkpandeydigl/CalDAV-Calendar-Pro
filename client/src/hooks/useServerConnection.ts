@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
@@ -5,26 +6,50 @@ import { useToast } from '@/hooks/use-toast';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import type { ServerConnection } from '@shared/schema';
 
+// Define the server connection without the password
+export type ServerConnectionWithoutPassword = Omit<ServerConnection, 'password'>;
+
+// Define type for new connection data input
+export type NewConnectionData = {
+  url: string;
+  username: string;
+  password: string;
+  autoSync: boolean;
+  syncInterval: number;
+};
+
+// Define type for update connection data input
+export type UpdateConnectionData = {
+  id: number;
+  data: Partial<ServerConnection>;
+};
+
 export const useServerConnection = () => {
   const { toast } = useToast();
   const { setServerStatus } = useCalendarContext();
 
-  const serverConnectionQuery = useQuery<Omit<ServerConnection, 'password'>>({
-    queryKey: ['/api/server-connection'],
-    onError: () => {
-      setServerStatus('disconnected');
-    },
-    onSuccess: (data) => {
-      if (data && data.status === 'connected') {
-        setServerStatus('connected');
-      } else {
-        setServerStatus('disconnected');
-      }
-    }
+  // Use a more basic query without custom handlers
+  const serverConnectionQuery = useQuery<ServerConnectionWithoutPassword>({
+    queryKey: ['/api/server-connection']
   });
+  
+  // Use an effect to handle the status changes
+  useEffect(() => {
+    if (serverConnectionQuery.error || !serverConnectionQuery.data) {
+      setServerStatus('disconnected');
+    } else if (serverConnectionQuery.data.status === 'connected') {
+      setServerStatus('connected');
+    } else {
+      setServerStatus('disconnected');
+    }
+  }, [serverConnectionQuery.data, serverConnectionQuery.error, setServerStatus]);
 
-  const createServerConnectionMutation = useMutation({
-    mutationFn: (connectionData: Omit<ServerConnection, 'id' | 'userId' | 'lastSync' | 'status'>) => {
+  const createServerConnectionMutation = useMutation<
+    ServerConnectionWithoutPassword, 
+    Error, 
+    NewConnectionData
+  >({
+    mutationFn: (connectionData) => {
       return apiRequest('POST', '/api/server-connection', connectionData)
         .then(res => res.json());
     },
@@ -48,8 +73,12 @@ export const useServerConnection = () => {
     }
   });
 
-  const updateServerConnectionMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number, data: Partial<ServerConnection> }) => {
+  const updateServerConnectionMutation = useMutation<
+    ServerConnectionWithoutPassword, 
+    Error, 
+    UpdateConnectionData
+  >({
+    mutationFn: ({ id, data }) => {
       return apiRequest('PUT', `/api/server-connection/${id}`, data)
         .then(res => res.json());
     },
@@ -74,8 +103,12 @@ export const useServerConnection = () => {
     }
   });
 
-  const disconnectServerMutation = useMutation({
-    mutationFn: (id: number) => {
+  const disconnectServerMutation = useMutation<
+    boolean | any, 
+    Error, 
+    number
+  >({
+    mutationFn: (id) => {
       return apiRequest('DELETE', `/api/server-connection/${id}`)
         .then(res => {
           if (res.status === 204) return true;
@@ -99,7 +132,11 @@ export const useServerConnection = () => {
     }
   });
 
-  const syncWithServerMutation = useMutation({
+  const syncWithServerMutation = useMutation<
+    any, 
+    Error, 
+    void
+  >({
     mutationFn: () => {
       return apiRequest('POST', '/api/sync')
         .then(res => res.json());
