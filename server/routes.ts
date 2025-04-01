@@ -1638,14 +1638,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Now fetch events for this calendar
           try {
+            // First, get all events from this calendar in our database
+            const localEvents = await storage.getEvents(calendarId);
+            console.log(`Found ${localEvents.length} local events in database for calendar ${displayName}`);
+            
+            // Create maps to track events
+            const localEventsByUID = new Map();
+            const localEventsToSync = new Map(); // Events that need to be created on the server
+            
+            // Track locally created events that need to be synced to the server
+            for (const localEvent of localEvents) {
+              // Add all events to map for quick lookup
+              localEventsByUID.set(localEvent.uid, localEvent);
+              
+              // If the event has no URL or etag, it's a local event that hasn't been synced yet
+              if (!localEvent.url || !localEvent.etag) {
+                localEventsToSync.set(localEvent.uid, localEvent);
+              }
+            }
+            
+            console.log(`Found ${localEventsToSync.size} local events that need to be synced to the server`);
+            
+            // Now fetch events from the server
             const calendarObjects = await davClient.fetchCalendarObjects({
               calendar: { url: serverCalendar.url }
             });
             
-            console.log(`Found ${calendarObjects.length} events in calendar ${displayName}`);
+            console.log(`Found ${calendarObjects.length} events on the server for calendar ${displayName}`);
             
-            // If no events found, create some sample events
-            if (calendarObjects.length === 0) {
+            // Create a set to track server event UIDs
+            const serverEventUIDs = new Set<string>();
+            
+            // If no events found on server but we have local events, sync them to the server
+            if (calendarObjects.length === 0 && localEvents.length > 0) {
+              console.log(`No events found on server for calendar ${displayName}. Syncing ${localEventsToSync.size} local events to server.`);
+              
+              // Sync local events to server
+              for (const [uid, event] of localEventsToSync.entries()) {
+                try {
+                  console.log(`Syncing local event "${event.title}" (${uid}) to server`);
+                  
+                  // Format to iCalendar
+                  const now = new Date().toISOString().replace(/[-:.]/g, '');
+                  const startDate = event.startDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+                  const endDate = event.endDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+                  
+                  const icalEvent = [
+                    'BEGIN:VCALENDAR',
+                    'VERSION:2.0',
+                    'PRODID:-//CalDAV Client//EN',
+                    'BEGIN:VEVENT',
+                    `UID:${event.uid}`,
+                    `DTSTAMP:${now}`,
+                    `DTSTART:${startDate}`,
+                    `DTEND:${endDate}`,
+                    `SUMMARY:${event.title}`,
+                    event.description ? `DESCRIPTION:${event.description}` : '',
+                    event.location ? `LOCATION:${event.location}` : '',
+                    'END:VEVENT',
+                    'END:VCALENDAR'
+                  ].filter(Boolean).join('\r\n');
+                  
+                  // Ensure the calendar URL ends with a trailing slash
+                  const calendarUrlWithSlash = serverCalendar.url.endsWith('/') 
+                    ? serverCalendar.url 
+                    : `${serverCalendar.url}/`;
+                  
+                  // Create event URL
+                  const eventUrl = `${calendarUrlWithSlash}${event.uid}.ics`;
+                  
+                  // Create event on server
+                  const response = await fetch(eventUrl, {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'text/calendar; charset=utf-8',
+                      'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                    },
+                    body: icalEvent
+                  });
+                  
+                  if (response.ok) {
+                    const etag = response.headers.get('ETag');
+                    console.log(`Successfully created event "${event.title}" on server with ETag: ${etag || 'Not provided'}`);
+                    
+                    // Update local event with URL and etag
+                    await storage.updateEvent(event.id, {
+                      url: eventUrl,
+                      etag: etag || undefined
+                    });
+                    
+                    // Add this event to the server UIDs set
+                    serverEventUIDs.add(uid);
+                  } else {
+                    console.error(`Failed to create event "${event.title}" on server: ${response.status} ${response.statusText}`);
+                  }
+                } catch (error) {
+                  console.error(`Error syncing event "${event.title}" to server:`, (error as Error).message);
+                }
+              }
+            } else if (calendarObjects.length === 0) {
               console.log(`No events found in calendar ${displayName}. Creating sample events.`);
               
               // Generate a unique UID for the event
@@ -1703,7 +1794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               totalEventsCount += 2;
             }
             
-            // Process each event
+            // Process each event from the server
             for (const calObject of calendarObjects) {
               if (!calObject.data) continue;
               
@@ -1737,6 +1828,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   console.warn('Skipping event with missing required properties');
                   continue;
                 }
+                
+                // Add to our set of server UIDs
+                serverEventUIDs.add(uid);
                 
                 // Parse dates with better error handling
                 // iCalendar dates are often in format like: 20200425T120000Z
@@ -1803,6 +1897,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 let existingEvent = await storage.getEventByUID(uid);
                 
                 if (existingEvent) {
+                  // Remove it from our map of events to sync to server as it already exists
+                  localEventsToSync.delete(uid);
+                  
                   // Update existing event
                   await storage.updateEvent(existingEvent.id, {
                     title: summary,
@@ -1837,6 +1934,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
               } catch (err) {
                 const error = err as Error;
                 console.error('Error processing event:', error.message);
+              }
+            }
+            
+            // Process deletions: remove events that are in our local database but not on the server
+            // Only consider events that were previously synced (have a URL) but not found on the server now
+            for (const localEvent of localEvents) {
+              if (localEvent.url && !serverEventUIDs.has(localEvent.uid)) {
+                console.log(`Event "${localEvent.title}" (${localEvent.uid}) exists locally with URL but not on server. Deleting locally.`);
+                await storage.deleteEvent(localEvent.id);
+              }
+            }
+            
+            // Try to sync any remaining local events to the server
+            if (localEventsToSync.size > 0) {
+              console.log(`Attempting to sync ${localEventsToSync.size} remaining local events to the server`);
+              
+              for (const [uid, event] of localEventsToSync.entries()) {
+                try {
+                  console.log(`Syncing local event "${event.title}" (${uid}) to server`);
+                  
+                  // Format to iCalendar
+                  const now = new Date().toISOString().replace(/[-:.]/g, '');
+                  const startDate = event.startDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+                  const endDate = event.endDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
+                  
+                  const icalEvent = [
+                    'BEGIN:VCALENDAR',
+                    'VERSION:2.0',
+                    'PRODID:-//CalDAV Client//EN',
+                    'BEGIN:VEVENT',
+                    `UID:${event.uid}`,
+                    `DTSTAMP:${now}`,
+                    `DTSTART:${startDate}`,
+                    `DTEND:${endDate}`,
+                    `SUMMARY:${event.title}`,
+                    event.description ? `DESCRIPTION:${event.description}` : '',
+                    event.location ? `LOCATION:${event.location}` : '',
+                    'END:VEVENT',
+                    'END:VCALENDAR'
+                  ].filter(Boolean).join('\r\n');
+                  
+                  // Ensure the calendar URL ends with a trailing slash
+                  const calendarUrlWithSlash = serverCalendar.url.endsWith('/') 
+                    ? serverCalendar.url 
+                    : `${serverCalendar.url}/`;
+                  
+                  // Create event URL
+                  const eventUrl = `${calendarUrlWithSlash}${event.uid}.ics`;
+                  
+                  // Create event on server
+                  const response = await fetch(eventUrl, {
+                    method: 'PUT',
+                    headers: {
+                      'Content-Type': 'text/calendar; charset=utf-8',
+                      'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                    },
+                    body: icalEvent
+                  });
+                  
+                  if (response.ok) {
+                    const etag = response.headers.get('ETag');
+                    console.log(`Successfully created event "${event.title}" on server with ETag: ${etag || 'Not provided'}`);
+                    
+                    // Update local event with URL and etag
+                    await storage.updateEvent(event.id, {
+                      url: eventUrl,
+                      etag: etag || undefined
+                    });
+                  } else {
+                    console.error(`Failed to create event "${event.title}" on server: ${response.status} ${response.statusText}`);
+                  }
+                } catch (error) {
+                  console.error(`Error syncing event "${event.title}" to server:`, (error as Error).message);
+                }
               }
             }
           } catch (err) {
