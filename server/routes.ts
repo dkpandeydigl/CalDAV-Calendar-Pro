@@ -787,24 +787,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const responseText = await response.text();
               console.log(`Found DAViCal user home response, length: ${responseText.length} characters`);
               
+              // Debug: Log a portion of the response for analysis
+              console.log("WebDAV response sample:", responseText.substring(0, 500) + "...");
+              
+              // Look for calendars in different ways - DAViCal may format responses differently
               // Extract all hrefs (URLs) from the response that might be calendars
-              const hrefMatches = responseText.match(/<D:href>([^<]+)<\/D:href>/g) || [];
+              // Try different XML namespace prefixes (D:, d:, or no prefix)
+              const hrefMatches = responseText.match(/<[Dd]?:?href>([^<]+)<\/[Dd]?:?href>/g) || [];
               
               if (hrefMatches.length > 1) { // First one is usually the parent
                 console.log(`Found ${hrefMatches.length} potential collections in DAViCal home`);
                 
                 const calendarUrls = hrefMatches
                   .map(match => {
-                    // Extract URL from <D:href>...</D:href>
-                    const url = match.replace(/<D:href>|<\/D:href>/g, '');
+                    // Extract URL from href tag with any namespace prefix
+                    const url = match.replace(/<[^>]*href>|<\/[^>]*href>/g, '');
+                    console.log(`Extracted URL: ${url}`);
                     return url;
                   })
-                  .filter(url => 
+                  .filter(url => {
                     // Filter out parent folder and non-calendar URLs
-                    url !== userHomePath && 
-                    !url.endsWith('/addressbook/') && 
-                    !url.includes('/.') // Skip hidden files/collections
-                  );
+                    const validUrl = 
+                      url !== userHomePath && 
+                      !url.endsWith('/addressbook/') && 
+                      !url.includes('/.') && // Skip hidden files/collections
+                      url.includes(connection.username); // Must contain username
+                    
+                    if (!validUrl) {
+                      console.log(`Skipping URL: ${url}`);
+                    }
+                    return validUrl;
+                  });
                 
                 console.log(`Filtered to ${calendarUrls.length} potential calendar URLs`);
                 
@@ -834,9 +847,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       ) {
                         // Extract display name if available
                         let displayName = url.split('/').filter(Boolean).pop() || 'Calendar';
-                        const displayNameMatch = calendarCheckText.match(/<D:displayname>(.*?)<\/D:displayname>/);
-                        if (displayNameMatch && displayNameMatch[1]) {
-                          displayName = displayNameMatch[1];
+                        
+                        // Try different namespace prefixes for displayname
+                        const displayNameRegexes = [
+                          /<[Dd]:displayname>(.*?)<\/[Dd]:displayname>/,
+                          /<displayname>(.*?)<\/displayname>/
+                        ];
+                        
+                        for (const regex of displayNameRegexes) {
+                          const match = calendarCheckText.match(regex);
+                          if (match && match[1]) {
+                            displayName = match[1];
+                            break;
+                          }
+                        }
+                        
+                        // If displayName is still the default, try to extract it from the URL
+                        if (displayName === 'Calendar') {
+                          // Extract from URL path segments
+                          const pathParts = url.split('/');
+                          // Get the last meaningful segment (often the calendar name)
+                          for (let i = pathParts.length - 1; i >= 0; i--) {
+                            if (pathParts[i] && pathParts[i] !== connection.username && pathParts[i] !== 'caldav.php') {
+                              displayName = decodeURIComponent(pathParts[i]);
+                              break;
+                            }
+                          }
                         }
                         
                         console.log(`Found calendar: ${displayName} at ${url}`);
