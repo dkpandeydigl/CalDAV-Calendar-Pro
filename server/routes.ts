@@ -513,13 +513,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         uid: req.body.uid || `${Date.now()}-${Math.floor(Math.random() * 1000000)}`
       };
       
-      // Convert ISO string dates to Date objects if they're strings
+      // Properly handle date conversions, preserving the exact date/time
       if (typeof eventData.startDate === 'string') {
         eventData.startDate = new Date(eventData.startDate);
+        console.log(`Event creation: ${eventData.title} - Start date string: ${req.body.startDate}, Converted: ${eventData.startDate.toISOString()}`);
       }
       
       if (typeof eventData.endDate === 'string') {
         eventData.endDate = new Date(eventData.endDate);
+        console.log(`Event creation: ${eventData.title} - End date string: ${req.body.endDate}, Converted: ${eventData.endDate.toISOString()}`);
       }
       
       // Validate with zod
@@ -540,13 +542,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create a copy of the request body to make modifications
       const eventData = { ...req.body };
       
-      // Convert ISO string dates to Date objects if they're strings
+      // Properly handle date conversions, preserving timezone info
       if (typeof eventData.startDate === 'string') {
         eventData.startDate = new Date(eventData.startDate);
+        console.log(`Event update: ${eventData.title || 'unnamed'} - Start date string: ${req.body.startDate}, Converted: ${eventData.startDate.toISOString()}`);
       }
       
       if (typeof eventData.endDate === 'string') {
         eventData.endDate = new Date(eventData.endDate);
+        console.log(`Event update: ${eventData.title || 'unnamed'} - End date string: ${req.body.endDate}, Converted: ${eventData.endDate.toISOString()}`);
       }
       
       // Validate with zod (partial validation for update)

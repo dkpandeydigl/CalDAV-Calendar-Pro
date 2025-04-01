@@ -49,11 +49,21 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       const events = await response.json();
       console.log(`Received ${events.length} events`);
       
-      // Log a few events for debugging
+      // Log events for debugging with timezone info
       if (events.length > 0) {
-        console.log('First few events:');
-        events.slice(0, 3).forEach((event: any) => {
-          console.log(`- ${event.title}: ${event.startDate} to ${event.endDate}`);
+        console.log('Events received from server:');
+        events.forEach((event: any) => {
+          const startDate = new Date(event.startDate);
+          const endDate = new Date(event.endDate);
+          
+          // Format date in a way that preserves the original date components
+          const formatDateForDisplay = (date: Date) => {
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          };
+          
+          // Get user's timezone
+          const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          console.log(`Event ${event.title}: Original date - ${startDate.toISOString()}, Display date key - ${formatDateForDisplay(startDate)}, User timezone: ${userTimezone}`);
         });
       }
       

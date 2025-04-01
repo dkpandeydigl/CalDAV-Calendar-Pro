@@ -45,18 +45,26 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       // in any timezone, not April 2nd in timezones ahead of UTC
       
       // We'll create a date that preserves the display date as the same day
-      // by using the date from the ISO string directly (keeping only YYYY-MM-DD)
-      const dateStr = startDate.toISOString().split('T')[0];
-      const localStartDate = new Date(`${dateStr}T12:00:00.000Z`);
+      // Extract just the date part without any timezone conversion
+      // For Asia/Kolkata (UTC+5:30), a date stored as 2025-04-04T17:05:00.000Z
+      // is actually April 4, 22:35 in local time, but we want to show it on April 4th
+      const eventDate = new Date(startDate.getTime());
       
+      // Get the exact date in local timezone as it would appear to the user
+      const userYear = eventDate.getFullYear();
+      const userMonth = eventDate.getMonth(); 
+      const userDay = eventDate.getDate();
       
-      console.log(`Event ${event.title}: Original start - ${startDate.toISOString()}, Adjusted for display - ${localStartDate.toISOString()}`);
+      // Create a date key in YYYY-MM-DD format that respects the user's timezone
+      const dateKey = `${userYear}-${(userMonth + 1).toString().padStart(2, '0')}-${userDay.toString().padStart(2, '0')}`;
+      
+      console.log(`Event ${event.title}: Original date - ${startDate.toISOString()}, Display date key - ${dateKey}, User timezone: ${selectedTimezone}`);
       
       // Get all days in this month
-      const daysInMonth = calendarDays.map(day => day.date.toISOString().split('T')[0]);
-      
-      // Calculate the day of month the event starts on using local date
-      const dateKey = localStartDate.toISOString().split('T')[0];
+      const daysInMonth = calendarDays.map(day => {
+        const d = day.date;
+        return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+      });
       
       // If the event day is in our current view, add it
       if (daysInMonth.includes(dateKey)) {
@@ -104,7 +112,9 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       {/* Calendar Grid */}
       <div className="grid grid-cols-7">
         {calendarDays.map((day, index) => {
-          const dateKey = day.date.toISOString().split('T')[0];
+          // Generate dateKey in the same format as we do for events
+          const d = day.date;
+          const dateKey = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
           const dayEvents = eventsByDay[dateKey] || [];
           
           return (
