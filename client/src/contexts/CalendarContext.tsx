@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, addWeeks, subWeeks, startOfWeek, endOfWeek, addDays, subDays } from 'date-fns';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest, getQueryFn } from '@/lib/queryClient';
 
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
 
@@ -14,6 +15,8 @@ interface CalendarContextType {
   goToToday: () => void;
   selectedTimezone: string;
   setSelectedTimezone: (timezone: string) => void;
+  saveTimezonePreference: (timezone: string) => Promise<void>;
+  isSavingTimezone: boolean;
   isLoading: boolean;
   error: Error | null;
   viewStartDate: Date;
@@ -42,6 +45,52 @@ export const CalendarProvider = ({ children }: CalendarProviderProps) => {
   const [selectedTimezone, setSelectedTimezone] = useState('America/New_York');
   const [serverStatus, setServerStatus] = useState<'connected' | 'disconnected'>('disconnected');
   const { toast } = useToast();
+  
+  // Fetch user profile to get their preferred timezone
+  const userQuery = useQuery({
+    queryKey: ['/api/user'],
+    queryFn: () => {
+      return fetch('/api/user')
+        .then(res => {
+          if (res.status === 401) return null;
+          if (!res.ok) throw new Error('Failed to fetch user data');
+          return res.json();
+        })
+        .catch(err => {
+          console.error('Error fetching user data:', err);
+          return null;
+        });
+    }
+  });
+  const userData = userQuery.data;
+  
+  // Set timezone when user data is loaded
+  useEffect(() => {
+    if (userData && typeof userData === 'object' && 'preferredTimezone' in userData) {
+      setSelectedTimezone(userData.preferredTimezone);
+    }
+  }, [userData]);
+  
+  // Mutation for saving timezone preference
+  const { mutateAsync: saveTimezoneAsync, isPending: isSavingTimezone } = useMutation({
+    mutationFn: async (timezone: string) => {
+      const response = await apiRequest('PUT', '/api/user/timezone', { timezone });
+      return await response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Timezone saved',
+        description: 'Your timezone preference has been updated.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error saving timezone',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
 
   // Calculate view range based on view type and current date
   const getViewDates = () => {
@@ -127,6 +176,12 @@ export const CalendarProvider = ({ children }: CalendarProviderProps) => {
     enabled: false, // We'll handle this with the effect in Calendar component
   });
 
+  // Function to save timezone preference
+  const saveTimezonePreference = async (timezone: string) => {
+    await saveTimezoneAsync(timezone);
+    setSelectedTimezone(timezone);
+  };
+
   const value = {
     currentDate,
     viewType,
@@ -136,6 +191,8 @@ export const CalendarProvider = ({ children }: CalendarProviderProps) => {
     goToToday,
     selectedTimezone,
     setSelectedTimezone,
+    saveTimezonePreference,
+    isSavingTimezone,
     isLoading,
     error,
     viewStartDate,

@@ -14,6 +14,7 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, userData: Partial<User>): Promise<User | undefined>;
   
   // Calendar methods
   getCalendars(userId: number): Promise<Calendar[]>;
@@ -184,9 +185,20 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.userIdCounter++;
-    const user: User = { ...insertUser, id };
+    // Set default preferredTimezone if not provided
+    const preferredTimezone = insertUser.preferredTimezone || "UTC";
+    const user: User = { ...insertUser, id, preferredTimezone };
     this.users.set(id, user);
     return user;
+  }
+  
+  async updateUser(id: number, userData: Partial<User>): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) return undefined;
+    
+    const updatedUser = { ...user, ...userData };
+    this.users.set(id, updatedUser);
+    return updatedUser;
   }
   
   // Calendar methods
@@ -305,8 +317,8 @@ export class MemStorage implements IStorage {
       password: insertConnection.password,
       autoSync: insertConnection.autoSync ?? true,
       syncInterval: insertConnection.syncInterval ?? 15,
-      lastSync: null,
-      status: "disconnected"
+      lastSync: insertConnection.lastSync ?? null,
+      status: insertConnection.status ?? "disconnected"
     };
     
     this.serverConnectionsMap.set(id, connection);

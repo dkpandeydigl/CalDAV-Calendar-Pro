@@ -60,8 +60,8 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
         }
         
         setCalendarId(event.calendarId.toString());
-        setTimezone(event.timezone);
-        setAllDay(event.allDay);
+        setTimezone(event.timezone || selectedTimezone);
+        setAllDay(event.allDay ?? false);
       } else {
         // Creating new event
         // Default to current date
@@ -103,8 +103,8 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
       title,
       description: description || null,
       location: location || null,
-      startDate: startDateTime.toISOString(),
-      endDate: endDateTime.toISOString(),
+      startDate: startDateTime,
+      endDate: endDateTime,
       calendarId: parseInt(calendarId),
       timezone,
       allDay
@@ -121,14 +121,18 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
       });
     } else {
       // Create new event
-      createEvent({
+      // For new events, we need to create the proper object shape with required fields
+      const newEventData = {
         ...eventData,
         uid: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         etag: null,
         url: null,
         recurrenceRule: null,
         rawData: null
-      });
+      };
+      
+      // Create the event
+      createEvent(newEventData);
     }
     
     setIsSubmitting(false);

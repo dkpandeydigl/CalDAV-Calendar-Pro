@@ -95,8 +95,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Don't return the password
-        const { password: _, ...userWithoutPassword } = user;
-        return done(null, userWithoutPassword);
+        // Since passport needs the full user object, we need to keep all properties
+        return done(null, user);
       } catch (error) {
         console.error("CalDAV authentication failed:", error);
         return done(null, false);
@@ -121,9 +121,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return done(null, false);
       }
       
-      // Don't return the password
-      const { password: _, ...userWithoutPassword } = user;
-      done(null, userWithoutPassword);
+      // Since passport needs the full user object, we need to keep all properties
+      done(null, user);
     } catch (error) {
       done(error);
     }
@@ -268,6 +267,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(401).json({ message: 'Not authenticated' });
     }
     res.json(req.user);
+  });
+  
+  // Update user timezone preference
+  app.put('/api/user/timezone', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { timezone } = req.body;
+      
+      if (!timezone) {
+        return res.status(400).json({ message: 'Timezone is required' });
+      }
+      
+      // Update the user in storage
+      const updatedUser = await storage.updateUser(userId, { preferredTimezone: timezone });
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      // Return success
+      res.json({ 
+        message: 'Timezone preference updated successfully',
+        preferredTimezone: timezone
+      });
+    } catch (err) {
+      console.error('Error updating timezone preference:', err);
+      res.status(500).json({ message: 'Failed to update timezone preference' });
+    }
   });
 
   // Calendar routes

@@ -22,7 +22,12 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
 }) => {
   const { calendars, updateCalendar } = useCalendars();
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
-  const { selectedTimezone, setSelectedTimezone } = useCalendarContext();
+  const { 
+    selectedTimezone, 
+    setSelectedTimezone, 
+    saveTimezonePreference,
+    isSavingTimezone 
+  } = useCalendarContext();
   const [showAddCalendar, setShowAddCalendar] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
   const [newCalendarColor, setNewCalendarColor] = useState('#0078d4');
@@ -54,10 +59,10 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
             <div className="flex items-center mb-2" key={calendar.id}>
               <Checkbox 
                 id={`cal-${calendar.id}`} 
-                checked={calendar.enabled}
+                checked={calendar.enabled ?? true}
                 onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean)}
                 className="h-4 w-4"
-                style={{ backgroundColor: calendar.enabled ? calendar.color : undefined }}
+                style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
               />
               <Label htmlFor={`cal-${calendar.id}`} className="ml-2 text-sm text-neutral-800">
                 {calendar.name}
@@ -133,18 +138,28 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
         
         <div className="mb-6">
           <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Timezone</h3>
-          <Select value={selectedTimezone} onValueChange={setSelectedTimezone}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select timezone" />
-            </SelectTrigger>
-            <SelectContent>
-              {timezones.map((timezone) => (
-                <SelectItem key={timezone.value} value={timezone.value}>
-                  {timezone.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-2">
+            <Select value={selectedTimezone} onValueChange={setSelectedTimezone}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select timezone" />
+              </SelectTrigger>
+              <SelectContent className="max-h-80">
+                {timezones.map((timezone) => (
+                  <SelectItem key={timezone.value} value={timezone.value}>
+                    {timezone.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button 
+              size="sm" 
+              className="w-full"
+              onClick={() => saveTimezonePreference(selectedTimezone)}
+              disabled={isSavingTimezone}
+            >
+              {isSavingTimezone ? 'Saving...' : 'Save Timezone Preference'}
+            </Button>
+          </div>
         </div>
         
         <div>
