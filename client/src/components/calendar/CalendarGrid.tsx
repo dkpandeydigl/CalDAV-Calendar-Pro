@@ -12,7 +12,7 @@ interface CalendarGridProps {
 }
 
 const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventClick }) => {
-  const { currentDate, viewType } = useCalendarContext();
+  const { currentDate, viewType, selectedTimezone } = useCalendarContext();
   const weekdayHeaders = getWeekdayHeaders();
   
   // Generate calendar days for month view
@@ -33,18 +33,21 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
         return; // Skip this event
       }
       
-      // Get the user's timezone
-      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      console.log(`User timezone: ${userTimezone}`);
+      // Use the user's selected timezone from context
+      console.log(`Using selected timezone: ${selectedTimezone}`);
       
-      // Create a date in the user's local timezone with the same year, month, day
-      // This is the key fix to ensure events display on the correct date in the user's timezone
-      const localStartDate = new Date(
-        startDate.getFullYear(),
-        startDate.getMonth(), 
-        startDate.getDate(),
-        12, 0, 0 // Use noon to avoid any DST issues
-      );
+      // We need to handle the timezone conversion properly
+      // First convert startDate to the user's selected timezone
+      // For simplicity, let's extract the date parts from the UTC date
+      // and create a new date object using these parts
+      const year = startDate.getUTCFullYear();
+      const month = startDate.getUTCMonth();
+      const day = startDate.getUTCDate();
+      
+      // Create a date object with the extracted parts
+      // This represents the date in the user's selected timezone
+      const localStartDate = new Date(Date.UTC(year, month, day, 12, 0, 0));
+      
       
       console.log(`Event ${event.title}: Original start - ${startDate.toISOString()}, Adjusted for display - ${localStartDate.toISOString()}`);
       

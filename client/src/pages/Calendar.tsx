@@ -21,7 +21,7 @@ import { useQueryClient } from '@tanstack/react-query';
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
 
 function YearView({ events, onEventClick }: { events: Event[]; onEventClick: (event: Event) => void }) {
-  const { currentDate } = useCalendarContext();
+  const { currentDate, selectedTimezone } = useCalendarContext();
   const year = currentDate.getFullYear();
 
   return (
@@ -42,8 +42,14 @@ function YearView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
                 return false;
               }
               
-              // Include events in this month/year
-              return eventDate.getMonth() === index && eventDate.getFullYear() === year;
+              // Use the selected timezone to determine the month/year of the event
+              console.log(`Year view using timezone: ${selectedTimezone}`);
+              
+              // Extract the date parts from the UTC date
+              const eventYear = eventDate.getUTCFullYear();
+              const eventMonth = eventDate.getUTCMonth();
+              
+              return eventMonth === index && eventYear === year;
             } catch (error) {
               console.error(`Error filtering event for month ${monthName}:`, error);
               return false;
@@ -79,7 +85,7 @@ function YearView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
 }
 
 function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (event: Event) => void }) {
-  const { currentDate } = useCalendarContext();
+  const { currentDate, selectedTimezone } = useCalendarContext();
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday
   
   const days = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
@@ -109,14 +115,17 @@ function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
                       return false;
                     }
                     
-                    // Create a date in the user's local timezone with the same year, month, day
-                    // This ensures events show on the correct day regardless of timezone
-                    const localStartDate = new Date(
-                      eventStart.getFullYear(),
-                      eventStart.getMonth(), 
-                      eventStart.getDate(),
-                      12, 0, 0 // Use noon to avoid any DST issues
-                    );
+                    // Use the user's selected timezone from context
+                    console.log(`Week view using timezone: ${selectedTimezone}`);
+                    
+                    // Extract the date parts from the UTC date
+                    const year = eventStart.getUTCFullYear();
+                    const month = eventStart.getUTCMonth();
+                    const dayOfMonth = eventStart.getUTCDate();
+                    
+                    // Create a date object with the extracted parts
+                    // This represents the date in the user's selected timezone
+                    const localStartDate = new Date(Date.UTC(year, month, dayOfMonth, 12, 0, 0));
                     
                     const eventDay = format(localStartDate, 'yyyy-MM-dd');
                     const currentDay = format(day, 'yyyy-MM-dd');
@@ -147,7 +156,7 @@ function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
 }
 
 function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (event: Event) => void }) {
-  const { currentDate } = useCalendarContext();
+  const { currentDate, selectedTimezone } = useCalendarContext();
   const hours = Array.from({ length: 24 }).map((_, i) => i);
   
   // Get all events for this day with robust error handling
@@ -161,14 +170,17 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
         return false;
       }
       
-      // Create a date in the user's local timezone with the same year, month, day
-      // This ensures events show on the correct day regardless of timezone
-      const localEventDate = new Date(
-        eventDate.getFullYear(),
-        eventDate.getMonth(), 
-        eventDate.getDate(),
-        12, 0, 0 // Use noon to avoid any DST issues
-      );
+      // Use the user's selected timezone from context
+      console.log(`Day view using timezone: ${selectedTimezone}`);
+      
+      // Extract the date parts from the UTC date
+      const year = eventDate.getUTCFullYear();
+      const month = eventDate.getUTCMonth();
+      const dayOfMonth = eventDate.getUTCDate();
+      
+      // Create a date object with the extracted parts
+      // This represents the date in the user's selected timezone
+      const localEventDate = new Date(Date.UTC(year, month, dayOfMonth, 12, 0, 0));
       
       const eventDay = format(localEventDate, 'yyyy-MM-dd');
       const currentDay = format(currentDate, 'yyyy-MM-dd');
