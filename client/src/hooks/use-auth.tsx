@@ -40,6 +40,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: (user: SelectUser) => {
       queryClient.setQueryData(["/api/user"], user);
+      
+      // Automatically fetch calendars and connection data after login
+      queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/server-connection"] });
+      
+      // Automatically sync with CalDAV server after login
+      apiRequest("POST", "/api/sync")
+        .then(() => {
+          // After sync, refresh calendar and event data
+          queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+        })
+        .catch(error => {
+          console.error("Failed to sync after login:", error);
+        });
+
       toast({
         title: "Login successful",
         description: `Welcome back, ${user.username}!`,
@@ -61,6 +77,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: (user: SelectUser) => {
       queryClient.setQueryData(["/api/user"], user);
+      
+      // Automatically fetch calendars and connection data after registration
+      queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/server-connection"] });
+      
+      // Automatically sync with CalDAV server after registration
+      apiRequest("POST", "/api/sync")
+        .then(() => {
+          // After sync, refresh calendar and event data
+          queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+        })
+        .catch(error => {
+          console.error("Failed to sync after registration:", error);
+        });
+      
       toast({
         title: "Registration successful",
         description: `Welcome, ${user.username}!`,
