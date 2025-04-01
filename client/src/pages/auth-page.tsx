@@ -52,11 +52,6 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 export default function AuthPage() {
   const [activeTab, setActiveTab] = useState<string>("login");
   const { user, isLoading, loginMutation, registerMutation } = useAuth();
-  
-  // Redirect to home if already logged in
-  if (user) {
-    return <Redirect to="/" />;
-  }
 
   // Set up login form
   const loginForm = useForm<LoginFormValues>({
@@ -85,6 +80,12 @@ export default function AuthPage() {
     const { confirmPassword, ...userData } = data;
     registerMutation.mutate(userData);
   };
+  
+  // Redirect to home if already logged in
+  // This must come after all hook calls to avoid the "rendered fewer hooks than expected" error
+  if (user) {
+    return <Redirect to="/" />;
+  }
 
   return (
     <div className="flex min-h-screen">

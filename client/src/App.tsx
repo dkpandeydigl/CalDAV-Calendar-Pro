@@ -13,7 +13,9 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth" component={AuthPage} />
-      <ProtectedRoute path="/" component={Calendar} />
+      <Route path="/">
+        {() => <ProtectedRoute component={Calendar} />}
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

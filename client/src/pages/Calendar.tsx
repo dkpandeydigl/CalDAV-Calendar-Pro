@@ -1,16 +1,15 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import CalendarHeader from '@/components/calendar/CalendarHeader';
 import CalendarSidebar from '@/components/calendar/CalendarSidebar';
 import CalendarGrid from '@/components/calendar/CalendarGrid';
 import EventFormModal from '@/components/modals/EventFormModal';
 import EventDetailModal from '@/components/modals/EventDetailModal';
 import ServerConnectionModal from '@/components/modals/ServerConnectionModal';
-import { CalendarProvider, useCalendarContext } from '@/contexts/CalendarContext';
+import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Event } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 
-// Wrap the actual calendar content in a separate component that uses the context
-const CalendarContent: React.FC = () => {
+function CalendarContent() {
   const { viewStartDate, viewEndDate } = useCalendarContext();
   const [showSidebar, setShowSidebar] = useState(true);
   const [eventFormOpen, setEventFormOpen] = useState(false);
@@ -20,9 +19,7 @@ const CalendarContent: React.FC = () => {
   
   const { events, isLoading } = useCalendarEvents(viewStartDate, viewEndDate);
   
-  const toggleSidebar = () => {
-    setShowSidebar(!showSidebar);
-  };
+  const toggleSidebar = () => setShowSidebar(!showSidebar);
 
   const handleCreateEvent = () => {
     setSelectedEvent(null);
@@ -41,9 +38,7 @@ const CalendarContent: React.FC = () => {
     }
   };
 
-  const handleOpenServerSettings = () => {
-    setServerSettingsOpen(true);
-  };
+  const handleOpenServerSettings = () => setServerSettingsOpen(true);
 
   return (
     <div className="flex flex-col h-screen bg-neutral-50">
@@ -91,15 +86,8 @@ const CalendarContent: React.FC = () => {
       />
     </div>
   );
-};
+}
 
-// Main calendar component that provides the calendar context
-const Calendar: React.FC = () => {
-  return (
-    <CalendarProvider>
-      <CalendarContent />
-    </CalendarProvider>
-  );
-};
-
-export default Calendar;
+export default function Calendar() {
+  return <CalendarContent />;
+}
