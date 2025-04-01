@@ -507,11 +507,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/events", async (req, res) => {
     try {
-      // Generate a unique UID for the event
+      // Generate a unique UID for the event if not provided
       const eventData = {
         ...req.body,
-        uid: `${Date.now()}-${Math.floor(Math.random() * 1000000)}`
+        uid: req.body.uid || `${Date.now()}-${Math.floor(Math.random() * 1000000)}`
       };
+      
+      // Convert ISO string dates to Date objects if they're strings
+      if (typeof eventData.startDate === 'string') {
+        eventData.startDate = new Date(eventData.startDate);
+      }
+      
+      if (typeof eventData.endDate === 'string') {
+        eventData.endDate = new Date(eventData.endDate);
+      }
       
       // Validate with zod
       const validatedData = insertEventSchema.parse(eventData);
@@ -528,8 +537,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const eventId = parseInt(req.params.id);
       
+      // Create a copy of the request body to make modifications
+      const eventData = { ...req.body };
+      
+      // Convert ISO string dates to Date objects if they're strings
+      if (typeof eventData.startDate === 'string') {
+        eventData.startDate = new Date(eventData.startDate);
+      }
+      
+      if (typeof eventData.endDate === 'string') {
+        eventData.endDate = new Date(eventData.endDate);
+      }
+      
       // Validate with zod (partial validation for update)
-      const validatedData = insertEventSchema.partial().parse(req.body);
+      const validatedData = insertEventSchema.partial().parse(eventData);
       
       const updatedEvent = await storage.updateEvent(eventId, validatedData);
       

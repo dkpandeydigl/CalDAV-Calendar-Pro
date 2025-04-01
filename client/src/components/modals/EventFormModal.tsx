@@ -118,14 +118,25 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
     
     setIsSubmitting(true);
     
-    // Create date objects from form inputs
-    const startDateTime = allDay
-      ? new Date(`${startDate}T00:00:00`)
-      : new Date(`${startDate}T${startTime}`);
+    // Create date objects from form inputs - ensure they are in ISO string format
+    let startDateTime = allDay
+      ? new Date(`${startDate}T00:00:00Z`)
+      : new Date(`${startDate}T${startTime}:00Z`);
     
-    const endDateTime = allDay
-      ? new Date(`${endDate}T23:59:59`)
-      : new Date(`${endDate}T${endTime}`);
+    let endDateTime = allDay
+      ? new Date(`${endDate}T23:59:59Z`)
+      : new Date(`${endDate}T${endTime}:00Z`);
+    
+    // Make sure they're valid dates
+    if (isNaN(startDateTime.getTime())) {
+      console.error('Invalid start date/time:', startDate, startTime);
+      startDateTime = new Date();
+    }
+    
+    if (isNaN(endDateTime.getTime())) {
+      console.error('Invalid end date/time:', endDate, endTime);
+      endDateTime = new Date(startDateTime.getTime() + 3600000); // Add 1 hour
+    }
     
     const eventData = {
       title,
