@@ -116,6 +116,56 @@ export class MemStorage implements IStorage {
         url: null,
         enabled: true
       });
+      
+      // Add sample events for testing
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const nextWeek = new Date(now);
+      nextWeek.setDate(nextWeek.getDate() + 7);
+      
+      await this.createEvent({
+        title: "Team Meeting",
+        description: "Weekly team sync",
+        location: "Conference Room A",
+        startDate: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0),
+        endDate: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 11, 0),
+        allDay: false,
+        calendarId: 1,
+        uid: "event-123",
+        url: null,
+        recurrenceRule: null,
+        timezone: "UTC"
+      });
+      
+      await this.createEvent({
+        title: "Product Launch",
+        description: "New product release",
+        location: "Main Hall",
+        startDate: tomorrow,
+        endDate: tomorrow,
+        allDay: true,
+        calendarId: 1,
+        uid: "event-124",
+        url: null,
+        recurrenceRule: null,
+        timezone: "UTC"
+      });
+      
+      await this.createEvent({
+        title: "Quarterly Review",
+        description: "Financial review meeting",
+        location: "Board Room",
+        startDate: nextWeek,
+        endDate: new Date(nextWeek.getTime() + 2 * 60 * 60 * 1000),
+        allDay: false,
+        calendarId: 2,
+        uid: "event-125",
+        url: null,
+        recurrenceRule: null,
+        timezone: "UTC"
+      });
     } catch (error) {
       console.error("Error creating sample data:", error);
     }
