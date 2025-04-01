@@ -23,6 +23,10 @@ declare global {
       id: number;
       username: string;
     }
+    
+    interface Session {
+      recentlyDeletedEvents?: number[];
+    }
   }
 }
 
@@ -929,6 +933,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get the event before deleting it so we have its URL and other data for CalDAV sync
       const eventToDelete = await storage.getEvent(eventId);
       if (!eventToDelete) {
+        // Check if there's evidence this event was already deleted
+        const recentlyDeletedEvents = req.session.recentlyDeletedEvents || [];
+        if (recentlyDeletedEvents.includes(eventId)) {
+          console.log(`Event with ID ${eventId} was already deleted earlier`);
+          // Respond with success since the event is already gone
+          return res.status(204).send();
+        }
+        
         return res.status(404).json({ message: "Event not found" });
       }
       
@@ -937,6 +949,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!deleted) {
         return res.status(404).json({ message: "Event could not be deleted" });
+      }
+      
+      // Track this event as deleted in the session
+      if (!req.session.recentlyDeletedEvents) {
+        req.session.recentlyDeletedEvents = [];
+      }
+      req.session.recentlyDeletedEvents.push(eventId);
+      
+      // Limit the size of the recently deleted events array
+      if (req.session.recentlyDeletedEvents.length > 50) {
+        req.session.recentlyDeletedEvents = req.session.recentlyDeletedEvents.slice(-50);
       }
       
       // If user is authenticated and the event has a URL, sync deletion with CalDAV server

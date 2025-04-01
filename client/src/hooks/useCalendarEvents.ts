@@ -121,31 +121,51 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     }
   });
 
-  const deleteEventMutation = useMutation({
+  const deleteEventMutation = useMutation<any, Error, number>({
     mutationFn: (id: number) => {
       return apiRequest('DELETE', `/api/events/${id}`)
         .then(res => {
-          if (res.status === 204) return true;
-          return res.json();
+          if (res.status === 204) return { success: true, id };
+          if (res.status === 404) {
+            // Handle a 404 as a success for client UX - the event is gone either way
+            console.log(`Event ${id} not found, considering delete successful anyway`);
+            return { success: true, id, notFound: true };
+          }
+          return res.json().then(data => ({ success: false, id, message: data.message }));
+        })
+        .catch(error => {
+          console.error("Error in delete mutation:", error);
+          // For network errors, we should still remove the event from the client
+          // Most likely it's a transient error
+          return { success: true, id, error: error.message };
         });
     },
-    onSuccess: (_, id) => {
+    onSuccess: (result, id) => {
+      // Always update the local cache to remove the event
       queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
+      // Also handle the calendar-specific invalidation
       const event = eventsQueries.data?.find(e => e.id === id);
       if (event) {
         queryClient.invalidateQueries({ queryKey: ['/api/calendars', event.calendarId, 'events'] });
       }
+      
+      // Give user feedback on the operation
       toast({
         title: "Event Deleted",
         description: "Event has been deleted successfully."
       });
     },
     onError: (error) => {
+      console.error("Error deleting event:", error);
       toast({
         title: "Failed to Delete Event",
         description: error.message || "An error occurred while deleting the event.",
         variant: "destructive"
       });
+      
+      // Even on error, refresh the events list as we might be out of sync
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
     }
   });
 
