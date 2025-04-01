@@ -580,8 +580,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Set up CalDAV client to connect to the server
       const { DAVClient } = await import('tsdav');
+      console.log(`Connecting to CalDAV server at ${connection.url}`);
+      console.log(`Using credentials for user: ${connection.username}`);
+      
+      // Try a more direct approach
+      const serverUrl = connection.url;
+      // Remove trailing slash if present
+      const baseUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
+      
+      // Add /caldav.php/username/calendar/ to the URL if using DAViCal
+      // This is a common path pattern for DAViCal servers
+      const principalUrl = `${baseUrl}/caldav.php/${connection.username}/`;
+      const calendarUrl = `${baseUrl}/caldav.php/${connection.username}/calendar/`;
+      
+      console.log(`Trying principal URL: ${principalUrl}`);
+      console.log(`Trying calendar URL: ${calendarUrl}`);
+      
       const davClient = new DAVClient({
-        serverUrl: connection.url,
+        serverUrl: baseUrl,
         credentials: {
           username: connection.username,
           password: connection.password
@@ -595,8 +611,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await davClient.login();
         console.log("Successfully logged in to CalDAV server");
         
-        // Discover calendars on the server
-        const serverCalendars = await davClient.fetchCalendars();
+        // Try to access calendars directly
+        let serverCalendars = [];
+        
+        try {
+          // First try standard discovery
+          serverCalendars = await davClient.fetchCalendars();
+          console.log(`Standard discovery found ${serverCalendars.length} calendars`);
+        } catch (error) {
+          const discoverError = error as Error;
+          console.log("Standard calendar discovery failed, trying direct approach:", discoverError.message);
+          
+          // If standard discovery fails, create a manual calendar object
+          // Create a manual calendar object with proper structure
+          serverCalendars = [{
+            url: calendarUrl,
+            displayName: "Default Calendar",
+            syncToken: new Date().toISOString(), // Use syncToken instead of ctag
+            resourcetype: { calendar: true },
+            components: ["VEVENT"]
+          }];
+          console.log("Using direct calendar URL approach");
+        }
+        
         console.log(`Found ${serverCalendars.length} calendars on the server`);
         
         // Track new calendars
@@ -628,7 +665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await storage.updateCalendar(calendarId, {
               name: displayName,
               color: color,
-              ctag: serverCalendar.ctag
+              syncToken: serverCalendar.syncToken as string || null
             });
           } else {
             // Create a new calendar
@@ -638,7 +675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               color: color,
               url: serverCalendar.url,
               enabled: true,
-              ctag: serverCalendar.ctag
+              syncToken: serverCalendar.syncToken as string || null
             });
             
             calendarId = newCalendar.id;
@@ -727,12 +764,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   
                   totalEventsCount++;
                 }
-              } catch (error) {
-                console.error('Error processing event:', error);
+              } catch (err) {
+                const error = err as Error;
+                console.error('Error processing event:', error.message);
               }
             }
-          } catch (error) {
-            console.error(`Error fetching events for calendar ${displayName}:`, error);
+          } catch (err) {
+            const error = err as Error;
+            console.error(`Error fetching events for calendar ${displayName}:`, error.message);
           }
         }
         
@@ -751,8 +790,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           eventsCount: totalEventsCount
         });
         
-      } catch (error) {
-        console.error("Error syncing with CalDAV server:", error);
+      } catch (err) {
+        const error = err as Error;
+        console.error("Error syncing with CalDAV server:", error.message);
         
         // Update connection to show disconnected status
         await storage.updateServerConnection(connection.id, {
@@ -764,8 +804,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: error.message 
         });
       }
-    } catch (err) {
-      console.error("Error in sync endpoint:", err);
+    } catch (e) {
+      const err = e as Error;
+      console.error("Error in sync endpoint:", err.message);
       res.status(500).json({ 
         message: "Failed to sync with CalDAV server",
         error: err.message 

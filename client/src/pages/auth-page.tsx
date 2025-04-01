@@ -31,6 +31,9 @@ import { Loader2 } from "lucide-react";
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
+  caldavUsername: z.string().min(1, "CalDAV username is required"),
+  caldavPassword: z.string().min(1, "CalDAV password is required"),
+  caldavServerUrl: z.string().url("Please enter a valid URL").default("https://zpush.ajaydata.com/davical/"),
 });
 
 // Registration schema
@@ -38,6 +41,9 @@ const registerSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string().min(6, "Confirm your password"),
+  caldavUsername: z.string().min(1, "CalDAV username is required"),
+  caldavPassword: z.string().min(1, "CalDAV password is required"),
+  caldavServerUrl: z.string().url("Please enter a valid URL").default("https://zpush.ajaydata.com/davical/"),
 }).refine(
   (data) => data.password === data.confirmPassword,
   {
@@ -59,6 +65,9 @@ export default function AuthPage() {
     defaultValues: {
       username: "",
       password: "",
+      caldavUsername: "",
+      caldavPassword: "",
+      caldavServerUrl: "https://zpush.ajaydata.com/davical/",
     },
   });
 
@@ -69,6 +78,9 @@ export default function AuthPage() {
       username: "",
       password: "",
       confirmPassword: "",
+      caldavUsername: "",
+      caldavPassword: "",
+      caldavServerUrl: "https://zpush.ajaydata.com/davical/",
     },
   });
 
@@ -146,6 +158,65 @@ export default function AuthPage() {
                               <Input
                                 type="password"
                                 placeholder="Enter your password"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <div className="mt-6 mb-3">
+                        <h3 className="text-md font-semibold mb-2">CalDAV Server Credentials</h3>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          These credentials will be used to connect to your CalDAV server
+                        </p>
+                      </div>
+
+                      <FormField
+                        control={loginForm.control}
+                        name="caldavUsername"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CalDAV Username</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Enter CalDAV username"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={loginForm.control}
+                        name="caldavPassword"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CalDAV Password</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="password"
+                                placeholder="Enter CalDAV password"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={loginForm.control}
+                        name="caldavServerUrl"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CalDAV Server URL</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="https://zpush.ajaydata.com/davical/"
                                 {...field}
                               />
                             </FormControl>
@@ -252,6 +323,65 @@ export default function AuthPage() {
                               <Input
                                 type="password"
                                 placeholder="Confirm your password"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <div className="mt-6 mb-3">
+                        <h3 className="text-md font-semibold mb-2">CalDAV Server Credentials</h3>
+                        <p className="text-sm text-muted-foreground mb-3">
+                          These credentials will be used to connect to your CalDAV server
+                        </p>
+                      </div>
+
+                      <FormField
+                        control={registerForm.control}
+                        name="caldavUsername"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CalDAV Username</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Enter CalDAV username"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={registerForm.control}
+                        name="caldavPassword"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CalDAV Password</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="password"
+                                placeholder="Enter CalDAV password"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={registerForm.control}
+                        name="caldavServerUrl"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CalDAV Server URL</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="https://zpush.ajaydata.com/davical/"
                                 {...field}
                               />
                             </FormControl>
