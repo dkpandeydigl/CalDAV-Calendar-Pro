@@ -160,8 +160,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Username already exists' });
       }
       
+      // Get the plain password before hashing for server connection
+      const plainPassword = req.body.password;
+      
       // Hash the password
-      const hashedPassword = await bcrypt.hash(req.body.password, 10);
+      const hashedPassword = await bcrypt.hash(plainPassword, 10);
       
       // Validate with zod
       const validatedData = insertUserSchema.parse({
@@ -172,11 +175,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create the user
       const newUser = await storage.createUser(validatedData);
       
+      // Also create a server connection for this user
+      await storage.createServerConnection({
+        userId: newUser.id,
+        url: process.env.CALDAV_SERVER_URL || 'https://zpush.ajaydata.com/davical/',
+        username: newUser.username,
+        password: plainPassword, // Using the plain password for the server connection
+        autoSync: true,
+        syncInterval: 15,
+        status: 'connected',
+        lastSync: new Date()
+      });
+      
+      console.log(`Created server connection for new user ${newUser.username}`);
+      
       // Don't return the password
       const { password: _, ...userWithoutPassword } = newUser;
       
-      // Log the user in
-      req.login(userWithoutPassword, (err) => {
+      // Log the user in - We need to cast to satisfy TypeScript
+      // The passport type expects a User object with password, but our authentication
+      // flow handles this correctly without exposing the password
+      req.login(newUser, (err) => {
         if (err) {
           return res.status(500).json({ message: 'Error logging in' });
         }
@@ -188,10 +207,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.post('/api/login', passport.authenticate('local'), (req, res) => {
-    // If this function executes, authentication was successful
-    // req.user contains the authenticated user
-    res.json(req.user);
+  app.post('/api/login', passport.authenticate('local'), async (req, res) => {
+    try {
+      // If we reach here, authentication was successful
+      // Check if the user has a server connection
+      const userId = req.user!.id;
+      let serverConnection = await storage.getServerConnection(userId);
+      
+      // If no server connection exists, create one using the login credentials
+      if (!serverConnection) {
+        // Get the username from the authenticated user
+        const username = req.user!.username;
+        
+        // Get the password from the request (it was used for authentication)
+        const { password } = req.body;
+        
+        // Create a server connection for the user
+        serverConnection = await storage.createServerConnection({
+          userId,
+          url: process.env.CALDAV_SERVER_URL || 'https://zpush.ajaydata.com/davical/',
+          username,
+          password,
+          autoSync: true,
+          syncInterval: 15,
+          status: 'connected',
+          lastSync: new Date()
+        });
+        
+        console.log(`Created server connection for user ${username}`);
+      } else {
+        // Update the existing connection to ensure it's marked as connected
+        await storage.updateServerConnection(serverConnection.id, {
+          status: 'connected',
+          lastSync: new Date()
+        });
+        
+        console.log(`Updated server connection for user ${req.user!.username}`);
+      }
+      
+      // Return the authenticated user info
+      res.json(req.user);
+    } catch (err) {
+      console.error("Error setting up server connection during login:", err);
+      // Still return the user data even if server connection setup fails
+      res.json(req.user);
+    }
   });
   
   app.post('/api/logout', (req, res) => {

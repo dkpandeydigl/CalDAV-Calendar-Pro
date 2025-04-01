@@ -97,6 +97,8 @@ export const insertServerConnectionSchema = createInsertSchema(serverConnections
   password: true,
   autoSync: true,
   syncInterval: true,
+  lastSync: true,
+  status: true,
 });
 
 export type InsertServerConnection = z.infer<typeof insertServerConnectionSchema>;
