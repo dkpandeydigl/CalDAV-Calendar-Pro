@@ -33,15 +33,26 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
         return; // Skip this event
       }
       
-      // Use the current view's date range to determine if this event should be shown
-      const currentMonth = currentDate.getMonth();
-      const currentYear = currentDate.getFullYear();
+      // Get the user's timezone
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      console.log(`User timezone: ${userTimezone}`);
+      
+      // Create a date in the user's local timezone with the same year, month, day
+      // This is the key fix to ensure events display on the correct date in the user's timezone
+      const localStartDate = new Date(
+        startDate.getFullYear(),
+        startDate.getMonth(), 
+        startDate.getDate(),
+        12, 0, 0 // Use noon to avoid any DST issues
+      );
+      
+      console.log(`Event ${event.title}: Original start - ${startDate.toISOString()}, Adjusted for display - ${localStartDate.toISOString()}`);
       
       // Get all days in this month
       const daysInMonth = calendarDays.map(day => day.date.toISOString().split('T')[0]);
       
-      // Calculate the day of month the event starts on
-      const dateKey = startDate.toISOString().split('T')[0];
+      // Calculate the day of month the event starts on using local date
+      const dateKey = localStartDate.toISOString().split('T')[0];
       
       // If the event day is in our current view, add it
       if (daysInMonth.includes(dateKey)) {

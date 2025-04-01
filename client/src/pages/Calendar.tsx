@@ -109,7 +109,16 @@ function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
                       return false;
                     }
                     
-                    const eventDay = format(eventStart, 'yyyy-MM-dd');
+                    // Create a date in the user's local timezone with the same year, month, day
+                    // This ensures events show on the correct day regardless of timezone
+                    const localStartDate = new Date(
+                      eventStart.getFullYear(),
+                      eventStart.getMonth(), 
+                      eventStart.getDate(),
+                      12, 0, 0 // Use noon to avoid any DST issues
+                    );
+                    
+                    const eventDay = format(localStartDate, 'yyyy-MM-dd');
                     const currentDay = format(day, 'yyyy-MM-dd');
                     return eventDay === currentDay;
                   } catch (error) {
@@ -152,7 +161,16 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
         return false;
       }
       
-      const eventDay = format(eventDate, 'yyyy-MM-dd');
+      // Create a date in the user's local timezone with the same year, month, day
+      // This ensures events show on the correct day regardless of timezone
+      const localEventDate = new Date(
+        eventDate.getFullYear(),
+        eventDate.getMonth(), 
+        eventDate.getDate(),
+        12, 0, 0 // Use noon to avoid any DST issues
+      );
+      
+      const eventDay = format(localEventDate, 'yyyy-MM-dd');
       const currentDay = format(currentDate, 'yyyy-MM-dd');
       const match = eventDay === currentDay;
       
