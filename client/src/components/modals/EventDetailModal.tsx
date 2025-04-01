@@ -34,8 +34,29 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   
   // Fallback to looking up calendar if no metadata
   const calendar = calendars.find(cal => cal.id === event.calendarId);
-  const startDate = new Date(event.startDate);
-  const endDate = new Date(event.endDate);
+  // Safely create date objects with validation
+  let startDate: Date;
+  let endDate: Date;
+  
+  try {
+    startDate = new Date(event.startDate);
+    endDate = new Date(event.endDate);
+    
+    // Validate dates
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.error(`Invalid event dates for "${event.title}"`);
+      // Fallback to current date if invalid
+      startDate = new Date();
+      endDate = new Date();
+      endDate.setHours(endDate.getHours() + 1);
+    }
+  } catch (error) {
+    console.error(`Error parsing dates for event "${event.title}":`, error);
+    // Fallback to current date if error
+    startDate = new Date();
+    endDate = new Date();
+    endDate.setHours(endDate.getHours() + 1);
+  }
   
   const handleDelete = () => {
     if (!event) return;

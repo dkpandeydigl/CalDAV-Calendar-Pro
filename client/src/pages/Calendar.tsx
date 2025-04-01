@@ -32,14 +32,23 @@ function YearView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
           const monthDate = new Date(year, index);
           const monthName = format(monthDate, 'MMMM');
           
-          // Filter events for this month with looser filtering
+          // Filter events for this month with error handling
           const monthEvents = events.filter(event => {
-            const eventDate = new Date(event.startDate);
-            // Include all events in this month or that end in this month
-            return eventDate.getMonth() === index && eventDate.getFullYear() === year;
+            try {
+              const eventDate = new Date(event.startDate);
+              
+              // Check if date is valid
+              if (isNaN(eventDate.getTime())) {
+                return false;
+              }
+              
+              // Include events in this month/year
+              return eventDate.getMonth() === index && eventDate.getFullYear() === year;
+            } catch (error) {
+              console.error(`Error filtering event for month ${monthName}:`, error);
+              return false;
+            }
           });
-          
-          console.log(`Month ${monthName}: Found ${monthEvents.length} events`);
           
           return (
             <div key={index} className="border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow">
@@ -92,11 +101,21 @@ function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
             <div className="max-h-[70vh] overflow-y-auto">
               {events
                 .filter(event => {
-                  const eventStart = new Date(event.startDate);
-                  const eventDay = format(eventStart, 'yyyy-MM-dd');
-                  const currentDay = format(day, 'yyyy-MM-dd');
-                  const match = eventDay === currentDay;
-                  return match;
+                  try {
+                    const eventStart = new Date(event.startDate);
+                    
+                    // Check if date is valid
+                    if (isNaN(eventStart.getTime())) {
+                      return false;
+                    }
+                    
+                    const eventDay = format(eventStart, 'yyyy-MM-dd');
+                    const currentDay = format(day, 'yyyy-MM-dd');
+                    return eventDay === currentDay;
+                  } catch (error) {
+                    console.error(`Error filtering event in week view:`, error);
+                    return false;
+                  }
                 })
                 .map(event => (
                   <div 
@@ -122,17 +141,29 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
   const { currentDate } = useCalendarContext();
   const hours = Array.from({ length: 24 }).map((_, i) => i);
   
-  // Get all events for this day - use more flexible matching to debug
+  // Get all events for this day with robust error handling
   const dayEvents = events.filter(event => {
-    const eventDate = new Date(event.startDate);
-    const eventDay = format(eventDate, 'yyyy-MM-dd');
-    const currentDay = format(currentDate, 'yyyy-MM-dd');
-    const match = eventDay === currentDay;
-    
-    // Debug output
-    console.log(`DayView: Event: ${event.title}, Date: ${eventDay}, CurrentDay: ${currentDay}, Match: ${match}`);
-    
-    return match;
+    try {
+      const eventDate = new Date(event.startDate);
+      
+      // Check if date is valid
+      if (isNaN(eventDate.getTime())) {
+        console.warn(`DayView: Skipping event with invalid date: "${event.title}"`);
+        return false;
+      }
+      
+      const eventDay = format(eventDate, 'yyyy-MM-dd');
+      const currentDay = format(currentDate, 'yyyy-MM-dd');
+      const match = eventDay === currentDay;
+      
+      // Debug output
+      console.log(`DayView: Event: ${event.title}, Date: ${eventDay}, CurrentDay: ${currentDay}, Match: ${match}`);
+      
+      return match;
+    } catch (error) {
+      console.error(`Error filtering event in day view: "${event.title}"`, error);
+      return false;
+    }
   });
   
   return (
@@ -141,8 +172,19 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
       <div className="flex flex-col border rounded-lg shadow-sm">
         {hours.map(hour => {
           const hourEvents = dayEvents.filter(event => {
-            const eventStart = new Date(event.startDate);
-            return eventStart.getHours() === hour;
+            try {
+              const eventStart = new Date(event.startDate);
+              
+              // Check if date is valid
+              if (isNaN(eventStart.getTime())) {
+                return false;
+              }
+              
+              return eventStart.getHours() === hour;
+            } catch (error) {
+              console.error(`Error filtering event by hour: "${event.title}"`, error);
+              return false;
+            }
           });
           
           return (

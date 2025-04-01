@@ -18,35 +18,42 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
   // Generate calendar days for month view
   const calendarDays = getCalendarDays(currentDate);
 
-  // Group events by day - handle multi-day events
+  // Group events by day - handle multi-day events and data validation
   const eventsByDay: Record<string, Event[]> = {};
   
   events.forEach(event => {
-    // Process each event and add it to all days it spans
-    const startDate = new Date(event.startDate);
-    const endDate = new Date(event.endDate);
-    
-    // Use the start date's month and year to determine if this event should be shown
-    // If it belongs to a month being displayed, we'll show it on its day(s)
-    const eventStartMonth = startDate.getMonth();
-    const eventStartYear = startDate.getFullYear();
-    const currentMonth = currentDate.getMonth();
-    const currentYear = currentDate.getFullYear();
-    
-    // Only consider events from the current month view
-    if (eventStartMonth === currentMonth && eventStartYear === currentYear) {
-      // Add to the start date
-      const dateKey = startDate.toISOString().split('T')[0];
+    try {
+      // Process each event and add it to all days it spans
+      const startDate = new Date(event.startDate);
+      const endDate = new Date(event.endDate);
       
-      if (!eventsByDay[dateKey]) {
-        eventsByDay[dateKey] = [];
+      // Check if dates are valid
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.warn(`Skipping event with invalid dates: "${event.title}"`);
+        return; // Skip this event
       }
       
-      eventsByDay[dateKey].push(event);
+      // Use the current view's date range to determine if this event should be shown
+      const currentMonth = currentDate.getMonth();
+      const currentYear = currentDate.getFullYear();
+      
+      // Get all days in this month
+      const daysInMonth = calendarDays.map(day => day.date.toISOString().split('T')[0]);
+      
+      // Calculate the day of month the event starts on
+      const dateKey = startDate.toISOString().split('T')[0];
+      
+      // If the event day is in our current view, add it
+      if (daysInMonth.includes(dateKey)) {
+        if (!eventsByDay[dateKey]) {
+          eventsByDay[dateKey] = [];
+        }
+        
+        eventsByDay[dateKey].push(event);
+      }
+    } catch (error) {
+      console.error(`Error processing event "${event.title}":`, error);
     }
-    
-    // For debugging
-    console.log(`Event "${event.title}" (${startDate.toISOString()}) - Current month: ${currentMonth}, Event month: ${eventStartMonth}`);
   });
 
   if (isLoading) {

@@ -45,15 +45,43 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
         setDescription(event.description || '');
         setLocation(event.location || '');
         
-        const start = new Date(event.startDate);
-        const end = new Date(event.endDate);
+        // Safely create date objects with validation
+        let start: Date;
+        let end: Date;
         
+        try {
+          start = new Date(event.startDate);
+          end = new Date(event.endDate);
+          
+          // Validate dates
+          if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            console.error(`Invalid event dates for "${event.title}"`);
+            // Fallback to current date if invalid
+            start = new Date();
+            end = new Date();
+            end.setHours(end.getHours() + 1);
+          }
+        } catch (error) {
+          console.error(`Error parsing dates for event "${event.title}":`, error);
+          // Fallback to current date if error
+          start = new Date();
+          end = new Date();
+          end.setHours(end.getHours() + 1);
+        }
+        
+        // Format dates for form
         setStartDate(start.toISOString().split('T')[0]);
         setEndDate(end.toISOString().split('T')[0]);
         
         if (!event.allDay) {
-          setStartTime(start.toTimeString().slice(0, 5));
-          setEndTime(end.toTimeString().slice(0, 5));
+          try {
+            setStartTime(start.toTimeString().slice(0, 5));
+            setEndTime(end.toTimeString().slice(0, 5));
+          } catch (error) {
+            console.error("Error formatting time:", error);
+            setStartTime('09:00');
+            setEndTime('10:00');
+          }
         } else {
           setStartTime('00:00');
           setEndTime('23:59');
