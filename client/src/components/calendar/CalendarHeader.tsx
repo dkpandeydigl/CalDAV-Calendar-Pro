@@ -1,9 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { formatMonthYear } from '@/lib/date-utils';
 import { useAuth } from '@/hooks/use-auth';
-import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, LogOut, User } from 'lucide-react';
 
 interface CalendarHeaderProps {
   onToggleSidebar: () => void;
@@ -26,7 +32,11 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
     serverStatus
   } = useCalendarContext();
   
-  const { user } = useAuth();
+  const { user, logoutMutation } = useAuth();
+  
+  const handleLogout = () => {
+    logoutMutation.mutate();
+  };
 
   return (
     <header className="bg-white shadow-sm">
@@ -46,19 +56,30 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
           <h1 className="ml-2 text-xl font-semibold text-neutral-900">CalDAV Calendar</h1>
         </div>
         <div className="flex items-center">
-          <div className="mr-4 relative">
+          {/* Status indicator - dot only */}
+          <div className="mr-3 relative flex items-center">
             <span className="flex h-3 w-3">
               <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${serverStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'} opacity-75`}></span>
               <span className={`relative inline-flex rounded-full h-3 w-3 ${serverStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
             </span>
-            <span className={`ml-1 text-sm ${serverStatus === 'connected' ? 'text-emerald-500' : 'text-red-500'} hidden md:inline`}>
-              {serverStatus === 'connected' ? 'Connected' : 'Disconnected'}
-            </span>
           </div>
+          
+          {/* User dropdown with logout */}
           {user && (
-            <div className="relative">
-              <span className="text-sm font-medium">{user.username}</span>
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="flex items-center p-1 h-auto rounded-md hover:bg-neutral-100">
+                  <User className="h-4 w-4 mr-1" />
+                  <span className="text-sm font-medium">{user.username}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleLogout} className="text-red-500 cursor-pointer">
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>

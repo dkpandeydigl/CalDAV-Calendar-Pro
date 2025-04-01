@@ -166,10 +166,13 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
           <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">CalDAV Server</h3>
           <div className="bg-neutral-100 rounded-md p-3">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium">Status</span>
-              <span className={`text-sm ${serverConnection?.status === 'connected' ? 'text-emerald-600' : 'text-red-500'}`}>
-                {serverConnection?.status === 'connected' ? 'Connected' : 'Disconnected'}
-              </span>
+              <span className="text-sm font-medium">Connection Status</span>
+              <div className="flex items-center">
+                <span className="flex h-3 w-3 mr-1">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${serverConnection?.status === 'connected' ? 'bg-emerald-500' : 'bg-red-500'} opacity-75`}></span>
+                  <span className={`relative inline-flex rounded-full h-3 w-3 ${serverConnection?.status === 'connected' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                </span>
+              </div>
             </div>
             {serverConnection && (
               <>
