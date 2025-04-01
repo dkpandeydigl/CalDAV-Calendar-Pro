@@ -56,12 +56,9 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
           <h1 className="ml-2 text-xl font-semibold text-neutral-900">CalDAV Calendar</h1>
         </div>
         <div className="flex items-center">
-          {/* Status indicator - dot only */}
+          {/* Status indicator - dot only without animation */}
           <div className="mr-3 relative flex items-center">
-            <span className="flex h-3 w-3">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${serverStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'} opacity-75`}></span>
-              <span className={`relative inline-flex rounded-full h-3 w-3 ${serverStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-            </span>
+            <span className={`inline-flex rounded-full h-3 w-3 ${serverStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
           </div>
           
           {/* User dropdown with logout */}
