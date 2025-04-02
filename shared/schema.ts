@@ -24,10 +24,13 @@ export const calendars = pgTable("calendars", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   color: text("color").notNull(),
-  userId: integer("user_id").notNull(),
+  userId: integer("user_id").notNull(), // Owner of the calendar
   url: text("caldav_url"),
   syncToken: text("sync_token"),
   enabled: boolean("enabled").default(true),
+  isPrimary: boolean("is_primary").default(false), // Is this a primary calendar (can't be deleted)
+  isLocal: boolean("is_local").default(false), // Calendar created locally (not from CalDAV)
+  description: text("description"),
 });
 
 export const insertCalendarSchema = createInsertSchema(calendars).pick({
@@ -37,10 +40,40 @@ export const insertCalendarSchema = createInsertSchema(calendars).pick({
   url: true,
   syncToken: true,
   enabled: true,
+  isPrimary: true,
+  isLocal: true,
+  description: true,
 });
+
+// Create a validation schema for calendar names
+export const calendarNameSchema = z.string()
+  .min(1, "Calendar name is required")
+  .max(50, "Calendar name is too long")
+  .regex(/^[A-Za-z0-9_\-\.]+$/, "Only letters, digits, underscores, hyphens, and periods are allowed");
 
 export type InsertCalendar = z.infer<typeof insertCalendarSchema>;
 export type Calendar = typeof calendars.$inferSelect;
+
+// Calendar sharing permissions
+export const calendarSharing = pgTable("calendar_sharing", {
+  id: serial("id").primaryKey(),
+  calendarId: integer("calendar_id").notNull(),
+  sharedWithEmail: text("shared_with_email").notNull(), // Email of the user the calendar is shared with
+  sharedWithUserId: integer("shared_with_user_id"), // User ID if the email corresponds to a registered user
+  permissionLevel: text("permission_level").notNull(), // 'view' or 'edit'
+  createdAt: timestamp("created_at").defaultNow(),
+  lastModified: timestamp("last_modified").defaultNow(),
+});
+
+export const insertCalendarSharingSchema = createInsertSchema(calendarSharing).pick({
+  calendarId: true,
+  sharedWithEmail: true,
+  sharedWithUserId: true,
+  permissionLevel: true,
+});
+
+export type InsertCalendarSharing = z.infer<typeof insertCalendarSharingSchema>;
+export type CalendarSharing = typeof calendarSharing.$inferSelect;
 
 // Event schema
 export const events = pgTable("events", {

@@ -2,7 +2,8 @@ import {
   users, type User, type InsertUser,
   calendars, type Calendar, type InsertCalendar,
   events, type Event, type InsertEvent,
-  serverConnections, type ServerConnection, type InsertServerConnection
+  serverConnections, type ServerConnection, type InsertServerConnection,
+  calendarSharing, type CalendarSharing, type InsertCalendarSharing
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 
@@ -26,6 +27,13 @@ export interface IStorage {
   updateCalendar(id: number, calendar: Partial<Calendar>): Promise<Calendar | undefined>;
   deleteCalendar(id: number): Promise<boolean>;
   
+  // Calendar sharing methods
+  getCalendarSharing(calendarId: number): Promise<CalendarSharing[]>;
+  getSharedCalendars(userId: number): Promise<Calendar[]>; // Calendars shared with this user
+  shareCalendar(sharing: InsertCalendarSharing): Promise<CalendarSharing>;
+  updateCalendarSharing(id: number, sharing: Partial<CalendarSharing>): Promise<CalendarSharing | undefined>;
+  removeCalendarSharing(id: number): Promise<boolean>;
+  
   // Event methods
   getEvents(calendarId: number): Promise<Event[]>;
   getEvent(id: number): Promise<Event | undefined>;
@@ -33,6 +41,7 @@ export interface IStorage {
   createEvent(event: InsertEvent): Promise<Event>;
   updateEvent(id: number, event: Partial<Event>): Promise<Event | undefined>;
   deleteEvent(id: number): Promise<boolean>;
+  deleteEventsByCalendarId(calendarId: number): Promise<boolean>; // Delete all events in a calendar
   
   // Server connection methods
   getServerConnection(userId: number): Promise<ServerConnection | undefined>;
@@ -52,11 +61,13 @@ export class MemStorage implements IStorage {
   private calendarsMap: Map<number, Calendar>;
   private eventsMap: Map<number, Event>;
   private serverConnectionsMap: Map<number, ServerConnection>;
+  private calendarSharingMap: Map<number, CalendarSharing>;
   
   private userIdCounter: number;
   private calendarIdCounter: number;
   private eventIdCounter: number;
   private serverConnectionIdCounter: number;
+  private calendarSharingIdCounter: number;
   
   // Initialize memory store for sessions
   public sessionStore: session.Store;
@@ -71,11 +82,13 @@ export class MemStorage implements IStorage {
     this.calendarsMap = new Map();
     this.eventsMap = new Map();
     this.serverConnectionsMap = new Map();
+    this.calendarSharingMap = new Map();
     
     this.userIdCounter = 1;
     this.calendarIdCounter = 1;
     this.eventIdCounter = 1;
     this.serverConnectionIdCounter = 1;
+    this.calendarSharingIdCounter = 1;
     
     // Initialize the memory store for session management
     const MemoryStore = createMemoryStore(session);
@@ -230,8 +243,11 @@ export class MemStorage implements IStorage {
       color: insertCalendar.color,
       userId: insertCalendar.userId,
       url: insertCalendar.url ?? null,
-      syncToken: null,
-      enabled: insertCalendar.enabled ?? true
+      syncToken: insertCalendar.syncToken ?? null,
+      enabled: insertCalendar.enabled ?? true,
+      isPrimary: insertCalendar.isPrimary ?? false,
+      isLocal: insertCalendar.isLocal ?? true,
+      description: insertCalendar.description ?? null
     };
     
     this.calendarsMap.set(id, calendar);
@@ -248,7 +264,97 @@ export class MemStorage implements IStorage {
   }
   
   async deleteCalendar(id: number): Promise<boolean> {
+    // Delete all events in this calendar first
+    await this.deleteEventsByCalendarId(id);
+    
+    // Delete all sharing records for this calendar
+    const sharingRecords = await this.getCalendarSharing(id);
+    for (const record of sharingRecords) {
+      await this.removeCalendarSharing(record.id);
+    }
+    
     return this.calendarsMap.delete(id);
+  }
+  
+  // Calendar sharing methods
+  async getCalendarSharing(calendarId: number): Promise<CalendarSharing[]> {
+    return Array.from(this.calendarSharingMap.values()).filter(
+      (sharing) => sharing.calendarId === calendarId
+    );
+  }
+  
+  async getSharedCalendars(userId: number): Promise<Calendar[]> {
+    // Get the username for this user to match against sharedWithEmail
+    const user = await this.getUser(userId);
+    if (!user) return [];
+    
+    // Find all sharing records that match this user
+    const userSharings = Array.from(this.calendarSharingMap.values()).filter(
+      (sharing) => sharing.sharedWithUserId === userId || sharing.sharedWithEmail === user.username
+    );
+    
+    // Fetch all the calendars that are shared with this user
+    const calendars: Calendar[] = [];
+    for (const sharing of userSharings) {
+      const calendar = await this.getCalendar(sharing.calendarId);
+      if (calendar) {
+        calendars.push(calendar);
+      }
+    }
+    
+    return calendars;
+  }
+  
+  async shareCalendar(insertSharing: InsertCalendarSharing): Promise<CalendarSharing> {
+    const id = this.calendarSharingIdCounter++;
+    
+    // Try to find a user ID for the email if available
+    let sharedWithUserId = insertSharing.sharedWithUserId;
+    if (!sharedWithUserId) {
+      const user = Array.from(this.users.values()).find(
+        (u) => u.username === insertSharing.sharedWithEmail
+      );
+      if (user) {
+        sharedWithUserId = user.id;
+      }
+    }
+    
+    // Create the calendar sharing record
+    const now = new Date();
+    const sharing: CalendarSharing = {
+      id,
+      calendarId: insertSharing.calendarId,
+      sharedWithEmail: insertSharing.sharedWithEmail,
+      sharedWithUserId: sharedWithUserId ?? null,
+      permissionLevel: insertSharing.permissionLevel,
+      createdAt: now,
+      lastModified: now
+    };
+    
+    this.calendarSharingMap.set(id, sharing);
+    return sharing;
+  }
+  
+  async updateCalendarSharing(
+    id: number, 
+    sharingUpdate: Partial<CalendarSharing>
+  ): Promise<CalendarSharing | undefined> {
+    const sharing = this.calendarSharingMap.get(id);
+    if (!sharing) return undefined;
+    
+    const now = new Date();
+    const updatedSharing = { 
+      ...sharing, 
+      ...sharingUpdate,
+      lastModified: now
+    };
+    
+    this.calendarSharingMap.set(id, updatedSharing);
+    return updatedSharing;
+  }
+  
+  async removeCalendarSharing(id: number): Promise<boolean> {
+    return this.calendarSharingMap.delete(id);
   }
   
   // Event methods
@@ -286,7 +392,10 @@ export class MemStorage implements IStorage {
       recurrenceRule: insertEvent.recurrenceRule ?? null,
       etag: insertEvent.etag ?? null,
       url: insertEvent.url ?? null,
-      rawData: insertEvent.rawData ?? null
+      rawData: insertEvent.rawData ?? null,
+      syncStatus: insertEvent.syncStatus ?? 'local',
+      syncError: insertEvent.syncError ?? null,
+      lastSyncAttempt: insertEvent.lastSyncAttempt ?? null
     };
     
     this.eventsMap.set(id, event);
@@ -304,6 +413,16 @@ export class MemStorage implements IStorage {
   
   async deleteEvent(id: number): Promise<boolean> {
     return this.eventsMap.delete(id);
+  }
+  
+  async deleteEventsByCalendarId(calendarId: number): Promise<boolean> {
+    const events = await this.getEvents(calendarId);
+    
+    for (const event of events) {
+      await this.deleteEvent(event.id);
+    }
+    
+    return true;
   }
   
   // Server connection methods
