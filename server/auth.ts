@@ -32,23 +32,61 @@ async function comparePasswords(supplied: string, stored: string) {
 // Function to verify credentials with the CalDAV server
 async function verifyCalDAVCredentials(serverUrl: string, username: string, password: string): Promise<boolean> {
   try {
-    const davClient = new DAVClient({
-      serverUrl,
-      credentials: {
-        username,
-        password
-      },
-      authMethod: 'Basic',
-      defaultAccountType: 'caldav'
-    });
+    console.log(`Verifying CalDAV credentials for ${username} at ${serverUrl}`);
     
-    // Try to login and fetch calendars
-    await davClient.login();
-    await davClient.fetchCalendars();
-    
-    return true;
+    // First try using tsdav library
+    try {
+      const davClient = new DAVClient({
+        serverUrl,
+        credentials: {
+          username,
+          password
+        },
+        authMethod: 'Basic',
+        defaultAccountType: 'caldav'
+      });
+      
+      // Try to login
+      await davClient.login();
+      console.log("CalDAV login successful with tsdav");
+      
+      // Try fetching calendars (but don't fail auth if this fails)
+      try {
+        await davClient.fetchCalendars();
+        console.log("CalDAV fetchCalendars successful");
+      } catch (fetchError) {
+        console.log("CalDAV fetchCalendars failed, but login was successful:", fetchError);
+        // Even if fetching calendars fails, consider auth successful if login worked
+      }
+      
+      return true;
+    } catch (tsdavError) {
+      console.log("tsdav client failed, trying fallback method:", tsdavError);
+      
+      // Fallback to a direct PROPFIND request to verify auth
+      const normalizedUrl = serverUrl.endsWith('/') ? serverUrl : serverUrl + '/';
+      const response = await fetch(`${normalizedUrl}`, {
+        method: 'PROPFIND',
+        headers: {
+          'Depth': '0',
+          'Content-Type': 'application/xml',
+          'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+        },
+        body: '<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+      });
+      
+      console.log(`PROPFIND auth check status: ${response.status}`);
+      
+      if (response.ok || response.status === 207) {
+        console.log("CalDAV auth successful with direct PROPFIND");
+        return true;
+      } else {
+        console.log("Direct PROPFIND auth failed with status:", response.status);
+        return false;
+      }
+    }
   } catch (error) {
-    console.error("CalDAV auth failed:", error);
+    console.error("CalDAV auth failed with all methods:", error);
     return false;
   }
 }

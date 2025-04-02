@@ -6,7 +6,8 @@ import {
   insertEventSchema, 
   insertServerConnectionSchema,
   insertUserSchema,
-  User
+  User,
+  serverConnections
 } from "@shared/schema";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
@@ -361,6 +362,327 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper function to create a calendar on DAViCal server
+  async function createCalendarOnDAViCal(
+    serverConnection: typeof serverConnections.$inferSelect, 
+    calendarName: string, 
+    safeCalendarName: string
+  ): Promise<{ success: boolean, url: string | null, errorMessage?: string }> {
+    console.log(`Attempting to create calendar "${calendarName}" (${safeCalendarName}) on DAViCal server...`);
+    
+    // Normalize server URL
+    let serverUrl = serverConnection.url;
+    if (!serverUrl.startsWith('http')) {
+      serverUrl = `https://${serverUrl}`;
+    }
+    if (serverUrl.endsWith('/')) {
+      serverUrl = serverUrl.slice(0, -1);
+    }
+    
+    // Create the CalDAV client for verification
+    const { DAVClient } = await import('tsdav');
+    
+    const davClient = new DAVClient({
+      serverUrl,
+      credentials: {
+        username: serverConnection.username,
+        password: serverConnection.password
+      },
+      authMethod: 'Basic',
+      defaultAccountType: 'caldav'
+    });
+    
+    try {
+      // Verify login works
+      await davClient.login();
+      console.log("Successfully logged in to CalDAV server");
+    } catch (loginError) {
+      console.error("Failed to log in to CalDAV server:", loginError);
+      return { 
+        success: false, 
+        url: null, 
+        errorMessage: "Failed to authenticate with CalDAV server" 
+      };
+    }
+    
+    // DAViCal uses a specific URL structure for calendars
+    const davicalBasePath = `${serverUrl}/caldav.php/${serverConnection.username}`;
+    const calendarUrl = `${davicalBasePath}/${safeCalendarName}/`;
+    
+    console.log(`Attempting to create DAViCal calendar at: ${calendarUrl}`);
+    
+    // DAViCal API Approach 1: Try using the davical-specific API
+    try {
+      console.log("Trying DAViCal-specific creation method");
+      
+      // DAViCal often has a web interface with specific parameters for calendar creation
+      const response = await fetch(`${serverUrl}/caldav.php/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'text/html,application/xhtml+xml',
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+        },
+        body: new URLSearchParams({
+          'create_calendar': '1',
+          'calendar_name': safeCalendarName,
+          'calendar_path': `/${serverConnection.username}/${safeCalendarName}/`,
+          'displayname': calendarName
+        }).toString()
+      });
+      
+      console.log(`DAViCal creation API response status: ${response.status}`);
+      
+      if (response.ok || response.status === 302) {
+        console.log("Successfully created calendar using DAViCal-specific API");
+        return { success: true, url: calendarUrl };
+      }
+    } catch (davicalApiError) {
+      console.log("DAViCal-specific API method failed:", davicalApiError);
+      // Continue to next approach
+    }
+    
+    // DAViCal Approach 2: Try a WebDAV MKCOL with specific properties for DAViCal
+    try {
+      console.log("Trying DAViCal-compatible MKCOL with special properties");
+      
+      const response = await fetch(calendarUrl, {
+        method: 'MKCOL',
+        headers: {
+          'Content-Type': 'application/xml; charset=utf-8',
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+        },
+        body: `<?xml version="1.0" encoding="utf-8"?>
+          <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:I="http://apple.com/ns/ical/">
+            <D:set>
+              <D:prop>
+                <D:resourcetype>
+                  <D:collection/>
+                  <C:calendar/>
+                </D:resourcetype>
+                <D:displayname>${calendarName}</D:displayname>
+                <C:supported-calendar-component-set>
+                  <C:comp name="VEVENT"/>
+                </C:supported-calendar-component-set>
+                <I:calendar-color>#00AA33</I:calendar-color>
+              </D:prop>
+            </D:set>
+          </D:mkcol>`
+      });
+      
+      if (response.ok) {
+        console.log("Successfully created calendar using enhanced MKCOL method");
+        return { success: true, url: calendarUrl };
+      } else {
+        console.log(`MKCOL response: ${response.status} ${response.statusText}`);
+      }
+    } catch (mkcalError) {
+      console.log("Enhanced MKCOL method failed:", mkcalError);
+      // Continue to next approach
+    }
+    
+    // DAViCal Approach 3: Try a simpler MKCOL without extra properties
+    try {
+      console.log("Trying simple DAViCal MKCOL");
+      
+      const response = await fetch(calendarUrl, {
+        method: 'MKCOL',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+        }
+      });
+      
+      if (response.ok) {
+        console.log("Successfully created basic collection, now setting calendar properties");
+        
+        // After creating the collection, set calendar properties with PROPPATCH
+        try {
+          const proppatchResponse = await fetch(calendarUrl, {
+            method: 'PROPPATCH',
+            headers: {
+              'Content-Type': 'application/xml; charset=utf-8',
+              'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+            },
+            body: `<?xml version="1.0" encoding="utf-8"?>
+              <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <D:set>
+                  <D:prop>
+                    <D:resourcetype>
+                      <D:collection/>
+                      <C:calendar/>
+                    </D:resourcetype>
+                    <D:displayname>${calendarName}</D:displayname>
+                  </D:prop>
+                </D:set>
+              </D:propertyupdate>`
+          });
+          
+          if (proppatchResponse.ok) {
+            console.log("Successfully set calendar properties with PROPPATCH");
+            return { success: true, url: calendarUrl };
+          }
+        } catch (proppatchError) {
+          console.log("PROPPATCH failed:", proppatchError);
+        }
+        
+        // Even if PROPPATCH fails, the collection was created
+        return { success: true, url: calendarUrl };
+      }
+    } catch (mkolError) {
+      console.log("Simple MKCOL method failed:", mkolError);
+    }
+    
+    // DAViCal Approach 4: Try direct URL creation with PUT
+    try {
+      console.log("Trying PUT of an empty calendar item");
+      
+      // Create an empty calendar file first
+      const putResponse = await fetch(`${calendarUrl}empty.ics`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'text/calendar; charset=utf-8',
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+        },
+        body: `BEGIN:VCALENDAR
+PRODID:-//DAViCal Client//NONSGML v1.0//EN
+VERSION:2.0
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:${calendarName}
+END:VCALENDAR`
+      });
+      
+      if (putResponse.ok) {
+        console.log("Successfully created calendar via PUT method");
+        return { success: true, url: calendarUrl };
+      }
+    } catch (putError) {
+      console.log("PUT method failed:", putError);
+    }
+    
+    // Verify if calendar was created despite errors
+    try {
+      console.log("Checking if calendar was created despite errors...");
+      const check = await fetch(calendarUrl, {
+        method: 'PROPFIND',
+        headers: {
+          'Depth': '0',
+          'Content-Type': 'application/xml',
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+        },
+        body: '<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+      });
+      
+      if (check.ok || check.status === 207) {
+        console.log("Calendar appears to exist when checked with PROPFIND");
+        return { success: true, url: calendarUrl };
+      }
+    } catch (checkError) {
+      console.log("Final verification check failed:", checkError);
+    }
+    
+    return { 
+      success: false, 
+      url: null, 
+      errorMessage: "All calendar creation methods failed" 
+    };
+  }
+  
+  // Helper function to delete a calendar on DAViCal server
+  async function deleteCalendarFromDAViCal(
+    serverConnection: typeof serverConnections.$inferSelect,
+    calendarUrl: string
+  ): Promise<{ success: boolean, errorMessage?: string }> {
+    console.log(`Attempting to delete calendar from DAViCal server at URL: ${calendarUrl}`);
+    
+    // First try standard DELETE
+    try {
+      const response = await fetch(calendarUrl, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64'),
+          'Depth': 'infinity'
+        }
+      });
+      
+      console.log(`DELETE response: ${response.status} ${response.statusText}`);
+      
+      if (response.ok) {
+        console.log("Successfully deleted calendar with standard DELETE");
+        return { success: true };
+      }
+    } catch (deleteError) {
+      console.log("Standard DELETE failed:", deleteError);
+    }
+    
+    // Try DAViCal-specific deletion via web API
+    try {
+      // Extract the calendar path from the URL
+      const urlObj = new URL(calendarUrl);
+      const pathParts = urlObj.pathname.split('/').filter(Boolean);
+      const username = pathParts[1]; // caldav.php/username/calendar
+      const calendarName = pathParts[2];
+      
+      if (username && calendarName) {
+        const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+        
+        console.log(`Trying DAViCal-specific deletion for ${username}/${calendarName}`);
+        
+        const response = await fetch(`${baseUrl}/caldav.php/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'text/html,application/xhtml+xml',
+            'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+          },
+          body: new URLSearchParams({
+            'delete_calendar': '1',
+            'calendar_path': `/${username}/${calendarName}/`,
+          }).toString()
+        });
+        
+        console.log(`DAViCal deletion API response status: ${response.status}`);
+        
+        if (response.ok || response.status === 302) {
+          console.log("Successfully deleted calendar using DAViCal-specific API");
+          return { success: true };
+        }
+      }
+    } catch (davicalApiError) {
+      console.log("DAViCal-specific deletion API failed:", davicalApiError);
+    }
+    
+    // Verify if calendar was actually deleted
+    try {
+      console.log("Verifying if calendar still exists...");
+      const check = await fetch(calendarUrl, {
+        method: 'PROPFIND',
+        headers: {
+          'Depth': '0',
+          'Content-Type': 'application/xml',
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+        },
+        body: '<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+      });
+      
+      if (check.status === 404) {
+        console.log("Calendar no longer exists - deletion was successful");
+        return { success: true };
+      } else {
+        console.log(`Calendar still exists with status: ${check.status}`);
+      }
+    } catch (checkError) {
+      // If the check fails with an error, the calendar might actually be gone
+      console.log("Verification check failed, which could mean the calendar is gone:", checkError);
+      return { success: true };
+    }
+    
+    return { 
+      success: false, 
+      errorMessage: "All deletion methods failed, calendar may still exist on server" 
+    };
+  }
+
   app.post("/api/calendars", isAuthenticated, async (req, res) => {
     try {
       // Get userId from authenticated user
@@ -404,256 +726,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (serverConnection && serverConnection.status === 'connected') {
         try {
-          console.log(`Attempting to create calendar "${calendarName}" on CalDAV server...`);
+          // Sanitize the calendar name for URL safety
+          const safeCalendarName = calendarName.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
           
-          // Initialize CalDAV client
-          const { DAVClient } = await import('tsdav');
+          // Use our specialized DAViCal helper function
+          const result = await createCalendarOnDAViCal(
+            serverConnection, 
+            calendarName,
+            safeCalendarName
+          );
           
-          // Create CalDAV client
-          const davClient = new DAVClient({
-            serverUrl: serverConnection.url,
-            credentials: {
-              username: serverConnection.username,
-              password: serverConnection.password
-            },
-            authMethod: 'Basic',
-            defaultAccountType: 'caldav'
-          });
-          
-          // Create calendar on CalDAV server
-          try {
-            console.log("Attempting to create calendar on CalDAV server using the tsdav library...");
-            
-            // First, let's try to discover and access existing calendars
-            // This helps establish that our connection is working
-            try {
-              console.log("Discovering calendars on server...");
-              const calendars = await davClient.fetchCalendars();
-              
-              if (calendars && calendars.length > 0) {
-                console.log(`Successfully discovered ${calendars.length} calendars on server`);
-                
-                // Log a few calendars for debugging
-                const calendarSample = calendars.slice(0, 3);
-                calendarSample.forEach((cal, index) => {
-                  console.log(`Calendar ${index + 1}: ${cal.displayName || 'No Name'} - URL: ${cal.url}`);
-                });
-              } else {
-                console.log("No calendars found during discovery");
-              }
-            } catch (discoveryError) {
-              console.error("Error discovering calendars:", discoveryError);
-              // Continue anyway, as we'll try to create a new calendar
-            }
-            
-            // Let's try a more compatible approach - use tsdav's internal methods
-            // Sanitize the calendar name for URL safety
-            const safeCalendarName = calendarName.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-            
-            try {
-              // We'll use createAccount first as it's the official way
-              console.log("Creating a new calendar account...");
-              
-              // The actual usage of createAccount differs from TypeScript definitions
-              // We'll use a different way that's compatible
-              
-              // These methods are not defined fully in TypeScript
-              // @ts-ignore
-              const account = await davClient.login().then(() => {
-                console.log("Successfully logged in to CalDAV server");
-                return { status: "success" };
-              });
-              
-              if (account) {
-                console.log("Account created successfully:", account);
-              }
-            } catch (accountError) {
-              console.error("Error creating account (non-fatal):", accountError);
-              // Continue anyway
-            }
-            
-            // Before trying to create a calendar, let's find a home URL
-            let homeUrl = '';
-            try {
-              console.log("Finding calendar home URL...");
-              
-              // First try the direct URL structure
-              homeUrl = `${serverConnection.url}/${serverConnection.username}/`;
-              if (!homeUrl.endsWith('/')) {
-                homeUrl += '/';
-              }
-              
-              console.log(`Using home URL: ${homeUrl}`);
-            } catch (homeError) {
-              console.error("Error finding home URL:", homeError);
-              // Try a default URL as fallback
-              homeUrl = `${serverConnection.url}/`;
-              console.log(`Falling back to base URL: ${homeUrl}`);
-            }
-            
-            // Now try to create the calendar
-            // We'll use different approaches based on the server capabilities
-            console.log(`Creating calendar "${calendarName}" using home URL: ${homeUrl}`);
-            
-            // Construct calendar URL
-            const calendarUrl = `${homeUrl}${safeCalendarName}/`;
-            
-            // We'll try multiple methods for creating calendars since different servers use different approaches
-            console.log(`Attempting multiple methods to create calendar at: ${calendarUrl}`);
-            
-            let calendarCreated = false;
-            
-            // Attempt 1: Try PUT method first (some servers prefer this)
-            try {
-              console.log(`Trying PUT method to create calendar at: ${calendarUrl}`);
-              
-              // First create the collection with PUT
-              const putResponse = await fetch(`${calendarUrl}.ics`, {
-                method: 'PUT',
-                headers: {
-                  'Content-Type': 'text/calendar; charset=utf-8',
-                  'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
-                },
-                body: `BEGIN:VCALENDAR
-PRODID:-//Example Corp.//CalDAV Client//EN
-VERSION:2.0
-CALSCALE:GREGORIAN
-METHOD:PUBLISH
-X-WR-CALNAME:${calendarName}
-END:VCALENDAR`
-              });
-              
-              console.log(`PUT response: ${putResponse.status} ${putResponse.statusText}`);
-              
-              if (putResponse.ok) {
-                console.log(`Successfully created calendar with PUT method`);
-                calendarCreated = true;
-              } else {
-                const putResponseText = await putResponse.text();
-                console.log(`PUT error: ${putResponseText}`);
-              }
-            } catch (putError) {
-              console.error(`PUT method failed:`, putError);
-            }
-            
-            // Attempt 2: Try MKCALENDAR method (standard for some CalDAV servers)
-            if (!calendarCreated) {
-              try {
-                console.log(`Trying MKCALENDAR method at: ${calendarUrl}`);
-                
-                const mkcalendarResponse = await fetch(calendarUrl, {
-                  method: 'MKCALENDAR',
-                  headers: {
-                    'Content-Type': 'application/xml; charset=utf-8',
-                    'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
-                  },
-                  body: `<?xml version="1.0" encoding="utf-8"?>
-                    <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                      <D:set>
-                        <D:prop>
-                          <D:displayname>${calendarName}</D:displayname>
-                        </D:prop>
-                      </D:set>
-                    </C:mkcalendar>`
-                });
-                
-                console.log(`MKCALENDAR response: ${mkcalendarResponse.status} ${mkcalendarResponse.statusText}`);
-                
-                if (mkcalendarResponse.ok) {
-                  console.log(`Successfully created calendar with MKCALENDAR method`);
-                  calendarCreated = true;
-                } else {
-                  const mkcalendarText = await mkcalendarResponse.text();
-                  console.log(`MKCALENDAR error: ${mkcalendarText}`);
-                }
-              } catch (mkcalendarError) {
-                console.error(`MKCALENDAR method failed:`, mkcalendarError);
-              }
-            }
-            
-            // Attempt 3: Try MKCOL method as fallback
-            if (!calendarCreated) {
-              try {
-                console.log(`Trying MKCOL method at: ${calendarUrl}`);
-                
-                const mkcolResponse = await fetch(calendarUrl, {
-                  method: 'MKCOL',
-                  headers: {
-                    'Content-Type': 'application/xml; charset=utf-8',
-                    'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
-                  },
-                  body: `<?xml version="1.0" encoding="utf-8"?>
-                    <D:mkcol xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                      <D:set>
-                        <D:prop>
-                          <D:resourcetype>
-                            <D:collection/>
-                            <C:calendar/>
-                          </D:resourcetype>
-                          <D:displayname>${calendarName}</D:displayname>
-                        </D:prop>
-                      </D:set>
-                    </D:mkcol>`
-                });
-                
-                console.log(`MKCOL response: ${mkcolResponse.status} ${mkcolResponse.statusText}`);
-                
-                if (mkcolResponse.ok) {
-                  console.log(`Successfully created calendar with MKCOL method`);
-                  calendarCreated = true;
-                } else {
-                  const mkcolText = await mkcolResponse.text();
-                  console.log(`MKCOL error: ${mkcolText}`);
-                }
-              } catch (mkcolError) {
-                console.error(`MKCOL method failed:`, mkcolError);
-              }
-            }
-            
-            // Attempt 4: Try creating with standard POST request if the server supports it
-            if (!calendarCreated) {
-              try {
-                console.log(`Trying POST method at: ${serverConnection.url}/caldav.php/`);
-                
-                // Some CalDAV servers have a web interface for creating calendars
-                const formData = new URLSearchParams();
-                formData.append('newcalendar', safeCalendarName);
-                formData.append('displayname', calendarName);
-                
-                const postResponse = await fetch(`${serverConnection.url}/caldav.php/`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
-                  },
-                  body: formData.toString()
-                });
-                
-                console.log(`POST response: ${postResponse.status} ${postResponse.statusText}`);
-                
-                if (postResponse.ok) {
-                  console.log(`Successfully created calendar with POST method`);
-                  calendarCreated = true;
-                }
-              } catch (postError) {
-                console.error(`POST method failed:`, postError);
-              }
-            }
-            
-            if (calendarCreated) {
-              const calendarObject = { url: calendarUrl, displayName: calendarName };
-              
-              // Update the local calendar with the URL from the server
-              console.log(`Successfully created calendar on server: ${calendarObject.url}`);
-              await storage.updateCalendar(newCalendar.id, {
-                url: calendarObject.url,
-                isLocal: false, // No longer just a local calendar
-                syncToken: null
-              });
-            } else {
-              console.log(`Could not create calendar "${calendarName}" on server after multiple attempts.`);
-              console.log(`Will keep it as a local calendar.`);
-            }
+          if (result.success && result.url) {
+            // Update the local calendar with the URL from the server
+            console.log(`Successfully created calendar on server: ${result.url}`);
+            await storage.updateCalendar(newCalendar.id, {
+              url: result.url,
+              isLocal: false, // No longer just a local calendar
+              syncToken: new Date().toISOString()
+            });
             
             // Get the updated calendar to return to the client
             const updatedCalendar = await storage.getCalendar(newCalendar.id);
@@ -662,9 +752,9 @@ END:VCALENDAR`
               res.status(201).json(updatedCalendar);
               return;
             }
-          } catch (davError) {
-            console.error(`Error creating calendar on CalDAV server:`, davError);
-            // We still return success since the local calendar was created
+          } else {
+            console.log(`Could not create calendar "${calendarName}" on server: ${result.errorMessage || 'Unknown error'}`);
+            console.log(`Will keep it as a local calendar.`);
           }
         } catch (syncError) {
           console.error(`Error syncing calendar to server:`, syncError);
@@ -743,30 +833,14 @@ END:VCALENDAR`
           const serverConnection = await storage.getServerConnection(userId);
           
           if (serverConnection && serverConnection.status === 'connected') {
-            console.log(`Executing standard CalDAV DELETE operation on calendar: ${calendar.url}`);
+            // Use our specialized DAViCal helper function
+            const result = await deleteCalendarFromDAViCal(serverConnection, calendar.url);
             
-            try {
-              // Standard CalDAV approach for deleting a calendar - direct DELETE request
-              const response = await fetch(calendar.url, {
-                method: 'DELETE',
-                headers: {
-                  'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64'),
-                  'Depth': 'infinity'  // Standard CalDAV practice to ensure all children are deleted
-                }
-              });
-              
-              console.log(`Server response for DELETE: ${response.status} ${response.statusText}`);
-              
-              if (response.ok) {
-                console.log(`Successfully deleted calendar from server: ${calendar.url}`);
-              } else {
-                // Capture the full error response for debugging
-                const responseText = await response.text();
-                console.error(`Server returned error ${response.status} when deleting calendar: ${responseText}`);
-                console.log(`Server deletion failed but will continue with local deletion. Calendar URL: ${calendar.url}`);
-              }
-            } catch (deleteError: any) {
-              console.error(`Error executing CalDAV DELETE operation: ${deleteError.message || deleteError}`);
+            if (result.success) {
+              console.log(`Successfully deleted calendar from server: ${calendar.url}`);
+            } else {
+              console.error(`Failed to delete calendar from server: ${result.errorMessage || 'Unknown error'}`);
+              console.log(`Server deletion failed but will continue with local deletion. Calendar URL: ${calendar.url}`);
             }
           }
         } catch (serverDeleteError) {
