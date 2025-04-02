@@ -18,12 +18,63 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
   // If no metadata was found in rawData, find it from calendars
   const calendar = calendars.find(cal => cal.id === event.calendarId);
   
+  // Check if this is a multi-day event (from the metadata we added)
+  const isMultiDay = calendarMetadata?.isMultiDay;
+  const isFirstDay = calendarMetadata?.isFirstDay;
+  const isLastDay = calendarMetadata?.isLastDay;
+  const totalDays = calendarMetadata?.totalDays || 1;
+  
   // Format event time
   const startTime = formatTime(new Date(event.startDate));
-  const eventDisplay = event.allDay ? event.title : `${startTime} - ${event.title}`;
   
-  // Determine border color based on calendar
-  const borderColor = calendarColor || calendar?.color || '#0078d4';
+  // Determine what to display based on multi-day status
+  let eventDisplay;
+  if (isMultiDay) {
+    if (isFirstDay) {
+      eventDisplay = event.allDay ? `${event.title} (Day 1 of ${totalDays})` : `${startTime} - ${event.title} (Start)`;
+    } else if (isLastDay) {
+      eventDisplay = `${event.title} (End)`;
+    } else {
+      eventDisplay = `${event.title} (Continued)`;
+    }
+  } else {
+    eventDisplay = event.allDay ? event.title : `${startTime} - ${event.title}`;
+  }
+  
+  // Determine background and border styling based on multi-day status
+  let bgColor = 'bg-white';
+  // Initialize with any so TypeScript accepts custom CSS properties
+  let borderStyle: any = { borderLeft: `3px solid ${calendarColor || calendar?.color || '#0078d4'}` };
+  let additionalClasses = '';
+  
+  if (isMultiDay) {
+    // Multi-day events have a distinct style
+    bgColor = 'bg-primary/10';
+    additionalClasses = 'border border-primary/30';
+    
+    // Different styles for first/middle/last day
+    if (isFirstDay) {
+      // For the first day of a multi-day event
+      borderStyle = { 
+        borderLeft: `3px solid ${calendarColor || calendar?.color || '#0078d4'}`,
+        borderTop: '1px solid rgba(0,120,212,0.5)',
+        borderBottom: '1px solid rgba(0,120,212,0.5)'
+      };
+    } else if (isLastDay) {
+      // For the last day of a multi-day event
+      borderStyle = { 
+        borderRight: `3px solid ${calendarColor || calendar?.color || '#0078d4'}`,
+        borderTop: '1px solid rgba(0,120,212,0.5)',
+        borderBottom: '1px solid rgba(0,120,212,0.5)'
+      };
+    } else {
+      // For middle days of a multi-day event
+      borderStyle = {
+        borderTop: '1px solid rgba(0,120,212,0.5)',
+        borderBottom: '1px solid rgba(0,120,212,0.5)'
+      };
+    }
+  }
   
   // Determine if we need to show sync status indicators
   const needsSyncing = event.syncStatus && event.syncStatus !== 'synced';
@@ -31,12 +82,12 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
   
   return (
     <div
-      className={`text-xs bg-white p-1 mb-1 rounded shadow-sm truncate cursor-pointer hover:bg-neutral-50 ${
+      className={`text-xs ${bgColor} p-1 mb-1 rounded shadow-sm truncate cursor-pointer hover:bg-primary/20 ${additionalClasses} ${
         needsSyncing ? 'border border-yellow-300' : ''
       } ${
         syncFailed ? 'border border-red-300' : ''
       }`}
-      style={{ borderLeft: `3px solid ${borderColor}` }}
+      style={borderStyle}
       onClick={onClick}
     >
       <div className="flex justify-between items-start">
