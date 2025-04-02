@@ -176,10 +176,21 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
         const now = selectedDate || new Date();
         const nowPlus1Hour = new Date(now.getTime() + 60 * 60 * 1000);
         
-        // Format the date properly in the local timezone of the user
-        const dateStr = now.toISOString().split('T')[0];
-        const timeStr = now.toTimeString().slice(0, 5);
-        const endTimeStr = nowPlus1Hour.toTimeString().slice(0, 5);
+        // Format the date properly preserving the local date
+        // Format YYYY-MM-DD with padding to ensure consistent format
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+        
+        // Get current time (not midnight) for better usability
+        const hours = String(new Date().getHours()).padStart(2, '0');
+        const minutes = String(new Date().getMinutes()).padStart(2, '0');
+        const timeStr = `${hours}:${minutes}`;
+        
+        // End time is 1 hour after current time
+        const endHours = String((new Date().getHours() + 1) % 24).padStart(2, '0');
+        const endTimeStr = `${endHours}:${minutes}`;
         
         console.log(`Creating new event with date: ${dateStr}, time: ${timeStr}`);
         
