@@ -251,9 +251,28 @@ export default function Login() {
 
         <CardFooter className="flex flex-col gap-4 pt-2">
           <Separator />
-          <p className="text-sm text-muted-foreground text-center px-6">
-            Use your existing credentials from your CalDAV server (https://zpush.ajaydata.com/davical/). Your calendars and events will be synced between this app and your server.
-          </p>
+          <div className="text-sm text-muted-foreground text-center px-6 space-y-2">
+            <p>
+              Use your existing credentials from your CalDAV server (https://zpush.ajaydata.com/davical/). Your calendars and events will be synced between this app and your server.
+            </p>
+            <div className="bg-muted p-3 rounded-md mt-2">
+              <p className="font-semibold">Demo Account</p>
+              <p>Username: demo</p>
+              <p>Password: password</p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-2"
+                onClick={() => {
+                  loginForm.setValue('username', 'demo');
+                  loginForm.setValue('password', 'password');
+                  setActiveTab('login');
+                }}
+              >
+                Use Demo Account
+              </Button>
+            </div>
+          </div>
         </CardFooter>
       </Card>
     </div>

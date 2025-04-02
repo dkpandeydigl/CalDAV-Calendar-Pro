@@ -52,36 +52,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(passport.initialize());
   app.use(passport.session());
   
-  // Set up Passport authentication using CalDAV server
+  // Create a demo user if one doesn't exist
+  try {
+    const existingUser = await storage.getUserByUsername('demo');
+    
+    if (!existingUser) {
+      console.log('Creating demo user...');
+      const hashedPassword = await bcrypt.hash('password', 10);
+      
+      const demoUser = await storage.createUser({
+        username: 'demo',
+        password: hashedPassword,
+        preferredTimezone: 'UTC'
+      });
+      
+      // Create some sample calendars
+      await storage.createCalendar({
+        name: "Work",
+        color: "#0078d4",
+        userId: demoUser.id,
+        url: null,
+        enabled: true
+      });
+      
+      await storage.createCalendar({
+        name: "Personal",
+        color: "#107c10",
+        userId: demoUser.id,
+        url: null,
+        enabled: true
+      });
+      
+      console.log('Demo user created successfully with two calendars');
+    }
+  } catch (error) {
+    console.error('Error creating demo user:', error);
+  }
+  
+  // Set up authentication with local and CalDAV options
   passport.use(new LocalStrategy(async (username, password, done) => {
     try {
       // First check if user exists in local storage
       let user = await storage.getUserByUsername(username);
       
-      // Try to authenticate against CalDAV server
-      const { DAVClient } = await import('tsdav');
-      const davClient = new DAVClient({
-        serverUrl: process.env.CALDAV_SERVER_URL || 'https://zpush.ajaydata.com/davical/', // Default server, can be changed
-        credentials: {
-          username,
-          password
-        },
-        authMethod: 'Basic',
-        defaultAccountType: 'caldav'
-      });
+      // If user exists, verify password
+      if (user) {
+        try {
+          const isMatch = await bcrypt.compare(password, user.password);
+          if (isMatch) {
+            return done(null, user);
+          }
+        } catch (err) {
+          console.error("Error comparing passwords:", err);
+        }
+      }
       
+      // If local auth failed, try CalDAV auth
       try {
+        const { DAVClient } = await import('tsdav');
+        const davClient = new DAVClient({
+          serverUrl: 'https://zpush.ajaydata.com/davical/',
+          credentials: {
+            username,
+            password
+          },
+          authMethod: 'Basic',
+          defaultAccountType: 'caldav'
+        });
+        
         // Try to connect to verify credentials
         await davClient.login();
         
         // If we reach here, credentials are valid
         if (!user) {
           // Create user if they don't exist in our local storage
-          // Password is stored hashed even though we validate against CalDAV
+          // Password is stored hashed for local authentication backup
           const hashedPassword = await bcrypt.hash(password, 10);
           user = await storage.createUser({
             username,
-            password: hashedPassword
+            password: hashedPassword,
+            preferredTimezone: 'UTC'
           });
         }
         
@@ -90,11 +140,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!serverConnection) {
           serverConnection = await storage.createServerConnection({
             userId: user.id,
-            url: process.env.CALDAV_SERVER_URL || 'https://zpush.ajaydata.com/davical/', // Default server, can be changed
+            url: 'https://zpush.ajaydata.com/davical/',
             username,
-            password, // Note: In production, you might want to encrypt this
+            password,
             autoSync: true,
-            syncInterval: 15
+            syncInterval: 15,
+            status: 'connected'
           });
         }
         
