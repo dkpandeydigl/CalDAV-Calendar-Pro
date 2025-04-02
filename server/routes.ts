@@ -52,63 +52,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(passport.initialize());
   app.use(passport.session());
   
-  // Create a demo user if one doesn't exist
-  try {
-    const existingUser = await storage.getUserByUsername('demo');
-    
-    if (!existingUser) {
-      console.log('Creating demo user...');
-      const hashedPassword = await bcrypt.hash('password', 10);
-      
-      const demoUser = await storage.createUser({
-        username: 'demo',
-        password: hashedPassword,
-        preferredTimezone: 'UTC'
-      });
-      
-      // Create some sample calendars
-      await storage.createCalendar({
-        name: "Work",
-        color: "#0078d4",
-        userId: demoUser.id,
-        url: null,
-        enabled: true
-      });
-      
-      await storage.createCalendar({
-        name: "Personal",
-        color: "#107c10",
-        userId: demoUser.id,
-        url: null,
-        enabled: true
-      });
-      
-      console.log('Demo user created successfully with two calendars');
-    }
-  } catch (error) {
-    console.error('Error creating demo user:', error);
-  }
-  
-  // Set up authentication with local and CalDAV options
+  // Set up authentication using only CalDAV server
   passport.use(new LocalStrategy(async (username, password, done) => {
     try {
       // First check if user exists in local storage
       let user = await storage.getUserByUsername(username);
       
-      // If user exists, verify password
-      if (user) {
-        try {
-          const isMatch = await bcrypt.compare(password, user.password);
-          if (isMatch) {
-            return done(null, user);
-          }
-        } catch (err) {
-          console.error("Error comparing passwords:", err);
-        }
-      }
-      
-      // If local auth failed, try CalDAV auth
+      // Always validate with CalDAV server
       try {
+        console.log(`Authenticating user ${username} with CalDAV server...`);
         const { DAVClient } = await import('tsdav');
         const davClient = new DAVClient({
           serverUrl: 'https://zpush.ajaydata.com/davical/',
@@ -122,17 +74,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Try to connect to verify credentials
         await davClient.login();
+        console.log(`Successfully authenticated ${username} with CalDAV server`);
         
         // If we reach here, credentials are valid
         if (!user) {
           // Create user if they don't exist in our local storage
-          // Password is stored hashed for local authentication backup
+          console.log(`Creating new user account for ${username}`);
           const hashedPassword = await bcrypt.hash(password, 10);
           user = await storage.createUser({
             username,
             password: hashedPassword,
             preferredTimezone: 'UTC'
           });
+          console.log(`Created user ${username} with ID ${user.id}`);
         }
         
         // Store/update the server connection
@@ -147,6 +101,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             syncInterval: 15,
             status: 'connected'
           });
+          console.log(`Created server connection for user ${username}`);
+        } else {
+          // Update the connection with the latest credentials
+          await storage.updateServerConnection(serverConnection.id, {
+            username,
+            password,
+            status: 'connected',
+            lastSync: new Date()
+          });
+          console.log(`Updated server connection for user ${username}`);
         }
         
         // Don't return the password

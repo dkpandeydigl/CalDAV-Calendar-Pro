@@ -256,21 +256,9 @@ export default function Login() {
               Use your existing credentials from your CalDAV server (https://zpush.ajaydata.com/davical/). Your calendars and events will be synced between this app and your server.
             </p>
             <div className="bg-muted p-3 rounded-md mt-2">
-              <p className="font-semibold">Demo Account</p>
-              <p>Username: demo</p>
-              <p>Password: password</p>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="mt-2"
-                onClick={() => {
-                  loginForm.setValue('username', 'demo');
-                  loginForm.setValue('password', 'password');
-                  setActiveTab('login');
-                }}
-              >
-                Use Demo Account
-              </Button>
+              <p className="font-semibold">Important</p>
+              <p>Please use your credentials from the CalDAV server at https://zpush.ajaydata.com/davical/</p>
+              <p>You'll need to authenticate with valid CalDAV credentials.</p>
             </div>
           </div>
         </CardFooter>
