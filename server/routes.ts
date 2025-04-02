@@ -1923,79 +1923,151 @@ END:VCALENDAR`
             
             console.log(`Attempting to delete event with multiple approaches`);
             
+            // Track if any deletion approach succeeded
+            let deleteSucceeded = false;
+            
             // Approach 1: Try using DAV client's deleteCalendarObject method
-            try {
-              console.log(`First approach: Using DAV client deleteCalendarObject for URL: ${eventToDelete.url}`);
-              await davClient.deleteCalendarObject({
-                calendarObject: {
-                  url: eventToDelete.url,
-                  etag: eventToDelete.etag || undefined
-                }
-              });
-              console.log(`DAV client delete succeeded`);
-              return; // Exit early if successful
-            } catch (davClientError) {
-              console.error(`Error during DAV client delete: ${(davClientError as Error).message}`);
-              // Continue to next approach
+            if (!deleteSucceeded) {
+              try {
+                console.log(`First approach: Using DAV client deleteCalendarObject for URL: ${eventToDelete.url}`);
+                await davClient.deleteCalendarObject({
+                  calendarObject: {
+                    url: eventToDelete.url,
+                    etag: eventToDelete.etag || undefined
+                  }
+                });
+                console.log(`DAV client delete succeeded`);
+                deleteSucceeded = true;
+              } catch (davClientError) {
+                console.error(`Error during DAV client delete: ${(davClientError as Error).message}`);
+                // Continue to next approach
+              }
             }
             
             // Approach 2: Try direct DELETE request
-            try {
-              console.log(`Second approach: Direct DELETE request to URL: ${eventToDelete.url}`);
-              const deleteResponse = await fetch(eventToDelete.url, {
-                method: 'DELETE',
-                headers: {
-                  'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
-                  'If-Match': eventToDelete.etag || '*'
+            if (!deleteSucceeded) {
+              try {
+                console.log(`Second approach: Direct DELETE request to URL: ${eventToDelete.url}`);
+                const deleteResponse = await fetch(eventToDelete.url, {
+                  method: 'DELETE',
+                  headers: {
+                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                    'If-Match': eventToDelete.etag || '*'
+                  }
+                });
+                
+                console.log(`DELETE response status: ${deleteResponse.status} ${deleteResponse.statusText}`);
+                
+                if (deleteResponse.ok) {
+                  console.log(`Direct DELETE succeeded`);
+                  deleteSucceeded = true;
                 }
-              });
-              
-              console.log(`DELETE response status: ${deleteResponse.status} ${deleteResponse.statusText}`);
-              
-              if (deleteResponse.ok) {
-                console.log(`Direct DELETE succeeded`);
-                return; // Exit early if successful
+              } catch (deleteError) {
+                console.error(`Error during direct DELETE: ${(deleteError as Error).message}`);
+                // Continue to last approach
               }
-            } catch (deleteError) {
-              console.error(`Error during direct DELETE: ${(deleteError as Error).message}`);
-              // Continue to last approach
             }
             
             // Approach 3: Try to PUT an empty/tombstone event
-            try {
-              console.log(`Third approach: PUT empty tombstone event to URL: ${eventToDelete.url}`);
-              
-              // Create a Thunderbird-compatible tombstone event with CANCELLED status
-              console.log("Using Thunderbird-compatible iCalendar format for deletion (tombstone)");
-              const tombstoneEvent = generateThunderbirdCompatibleICS({
-                uid: eventToDelete.uid,
-                title: 'CANCELLED: ' + eventToDelete.title,
-                startDate: eventToDelete.startDate,
-                endDate: eventToDelete.endDate,
-                description: 'This event has been cancelled.',
-                location: eventToDelete.location
-              }).replace('STATUS:CONFIRMED', 'STATUS:CANCELLED');
-              
-              const putResponse = await fetch(eventToDelete.url, {
-                method: 'PUT',
-                headers: {
-                  'Content-Type': 'text/calendar; charset=utf-8',
-                  'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
-                  'If-Match': eventToDelete.etag || '*'
-                },
-                body: tombstoneEvent
-              });
-              
-              console.log(`Tombstone PUT response status: ${putResponse.status} ${putResponse.statusText}`);
-              
-              if (putResponse.ok) {
-                console.log(`Tombstone approach succeeded`);
-                return; // Exit if successful
+            if (!deleteSucceeded) {
+              try {
+                console.log(`Third approach: PUT empty tombstone event to URL: ${eventToDelete.url}`);
+                
+                // Create a Thunderbird-compatible tombstone event with CANCELLED status
+                console.log("Using Thunderbird-compatible iCalendar format for deletion (tombstone)");
+                // Get current sequence number
+                let currentSequence = 0;
+                if (eventToDelete.rawData && typeof eventToDelete.rawData === 'string') {
+                  const match = eventToDelete.rawData.match(/SEQUENCE:(\d+)/);
+                  if (match && match[1]) {
+                    currentSequence = parseInt(match[1]);
+                  }
+                }
+                
+                const tombstoneEvent = generateThunderbirdCompatibleICS({
+                  uid: eventToDelete.uid,
+                  title: 'CANCELLED: ' + eventToDelete.title,
+                  startDate: eventToDelete.startDate,
+                  endDate: eventToDelete.endDate,
+                  description: 'This event has been cancelled.',
+                  location: eventToDelete.location
+                }).replace('STATUS:CONFIRMED', 'STATUS:CANCELLED')
+                  .replace('TRANSP:OPAQUE', 'TRANSP:TRANSPARENT')
+                  .replace('SEQUENCE:0', `SEQUENCE:${currentSequence + 1}`);
+                
+                const putResponse = await fetch(eventToDelete.url, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                    'If-Match': eventToDelete.etag || '*'
+                  },
+                  body: tombstoneEvent
+                });
+                
+                console.log(`Tombstone PUT response status: ${putResponse.status} ${putResponse.statusText}`);
+                
+                if (putResponse.ok) {
+                  console.log(`Tombstone approach succeeded`);
+                  deleteSucceeded = true;
+                }
+              } catch (tombstoneError) {
+                console.error(`Error during tombstone approach: ${(tombstoneError as Error).message}`);
               }
-            } catch (tombstoneError) {
-              console.error(`Error during tombstone approach: ${(tombstoneError as Error).message}`);
-              // If all approaches failed, throw an error that will be caught by the parent try/catch
-              throw new Error('All delete approaches failed');
+            }
+            
+            // Approach 4: If previous approaches failed, use a special empty event with STATUS:CANCELLED
+            if (!deleteSucceeded) {
+              try {
+                console.log(`Fourth approach: Creating empty event with STATUS:CANCELLED`);
+                
+                // Create a minimal cancellation event - just the essentials required by RFC
+                // Get current sequence number for minimal event
+                let minimalSequence = 0;
+                if (eventToDelete.rawData && typeof eventToDelete.rawData === 'string') {
+                  const match = eventToDelete.rawData.match(/SEQUENCE:(\d+)/);
+                  if (match && match[1]) {
+                    minimalSequence = parseInt(match[1]);
+                  }
+                }
+                
+                const minimalCancellationEvent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//CalDAV Client//NONSGML v1.0//EN
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:${eventToDelete.uid}
+DTSTAMP:${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z
+DTSTART:${eventToDelete.startDate.toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z
+STATUS:CANCELLED
+SEQUENCE:${minimalSequence + 1}
+END:VEVENT
+END:VCALENDAR`;
+                
+                const putResponse = await fetch(eventToDelete.url, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                    'If-None-Match': '*'  // Only create if it doesn't exist
+                  },
+                  body: minimalCancellationEvent
+                });
+                
+                console.log(`Minimal CANCEL event PUT response status: ${putResponse.status} ${putResponse.statusText}`);
+                
+                if (putResponse.ok) {
+                  console.log(`Minimal cancellation approach succeeded`);
+                  deleteSucceeded = true;
+                }
+              } catch (minimalCancelError) {
+                console.error(`Error during minimal cancellation approach: ${(minimalCancelError as Error).message}`);
+              }
+            }
+            
+            // Final check to see if any approach succeeded
+            if (!deleteSucceeded) {
+              throw new Error('All event deletion approaches failed');
             }
             
             console.log(`Successfully deleted event "${eventToDelete.title}" from CalDAV server`);
@@ -2004,14 +2076,33 @@ END:VCALENDAR`
           }
         } catch (syncError) {
           console.error('Error deleting event from CalDAV server:', syncError);
-          // Continue despite sync error - at least the event is deleted from our local database
+          // Add the error details to be logged for debugging
+          await storage.updateEvent(eventId, {
+            syncStatus: 'error',
+            syncError: `Failed to delete from server: ${(syncError as Error).message}`,
+            lastSyncAttempt: new Date()
+          });
+          
+          // We'll still return success since the local deletion worked
+          // But we log the failure for potential retry later
+          console.warn(`Event with ID ${eventId} was deleted locally but not on the CalDAV server`);
         }
+      }
+      
+      // Verify the event is truly gone from our database
+      const eventStillExists = await storage.getEvent(eventId);
+      if (eventStillExists) {
+        console.error(`Event with ID ${eventId} still exists in database after deletion`);
+        return res.status(500).json({ message: "Failed to delete event from database" });
       }
       
       res.status(204).send();
     } catch (err) {
       console.error("Error deleting event:", err);
-      res.status(500).json({ message: "Failed to delete event" });
+      res.status(500).json({ 
+        message: "Failed to delete event", 
+        details: (err as Error).message
+      });
     }
   });
 
