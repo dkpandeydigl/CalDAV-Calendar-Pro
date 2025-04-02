@@ -150,9 +150,25 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
           resetRecurrenceState();
         }
         
-        // Parse attendees and resources from description if needed
-        // This is a simple implementation - a real CalDAV client would use proper ATTENDEE properties
-        parseAttendeesAndResources(event.description || '');
+        // Set attendees and resources using the database fields
+        if (event.attendees && Array.isArray(event.attendees)) {
+          setAttendees(event.attendees as string[]);
+        } else {
+          setAttendees([]);
+        }
+        
+        if (event.resources && Array.isArray(event.resources)) {
+          setResources(event.resources as string[]);
+        } else {
+          setResources([]);
+        }
+        
+        // Set busy status
+        if (event.busyStatus) {
+          setBusyStatus(event.busyStatus as string);
+        } else {
+          setBusyStatus('busy');
+        }
       } else {
         // Creating new event
         // Default to current date
@@ -170,12 +186,12 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
         setTimezone(selectedTimezone);
         setAllDay(false);
         resetRecurrenceState();
-        setAttendees(user ? [user.username] : []);
+        setAttendees([]);  // Don't add current user by default
         setResources([]);
         setBusyStatus('busy');
       }
     }
-  }, [open, event, calendars, selectedTimezone, user]);
+  }, [open, event, calendars, selectedTimezone]);
   
   // Helper function to parse recurrence rule
   const parseRecurrenceRule = (rule: string) => {
@@ -253,23 +269,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
     setRecurrenceCollapsed(true);
   };
   
-  // Parse attendees and resources from description (simplified approach)
-  const parseAttendeesAndResources = (desc: string) => {
-    const attendeesMatch = desc.match(/Attendees:(.*?)(?=\n|$)/);
-    const resourcesMatch = desc.match(/Resources:(.*?)(?=\n|$)/);
-    
-    if (attendeesMatch && attendeesMatch[1]) {
-      setAttendees(attendeesMatch[1].split(',').map(a => a.trim()).filter(Boolean));
-    } else {
-      setAttendees(user ? [user.username] : []);
-    }
-    
-    if (resourcesMatch && resourcesMatch[1]) {
-      setResources(resourcesMatch[1].split(',').map(r => r.trim()).filter(Boolean));
-    } else {
-      setResources([]);
-    }
-  };
+  // Function removed as we now use dedicated fields for attendees and resources
   
   // Generate recurrence rule in iCalendar RRULE format
   const generateRecurrenceRule = (): string | null => {
