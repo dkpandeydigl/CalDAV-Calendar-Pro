@@ -409,40 +409,32 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
 
   const deleteEventMutation = useMutation<{success: boolean, id: number, message?: string}, Error, number, DeleteMutationContext>({
     mutationFn: async (id: number) => {
-      // Add a short delay to ensure UI updates finish before server request starts
-      await new Promise(resolve => setTimeout(resolve, 10));
-      
       console.log(`Deleting event with ID ${id}`);
       try {
         const res = await apiRequest('DELETE', `/api/events/${id}`);
         
-        if (res.status === 204) {
-          console.log(`Successfully deleted event with ID ${id}`);
+        // Consider both 204 and 404 as success cases for deletion
+        // - 204: Standard success for deletion
+        // - 404: Event already gone, which achieves the same end goal
+        if (res.status === 204 || res.status === 404) {
+          console.log(`Successfully deleted event with ID ${id} (status: ${res.status})`);
           return { success: true, id };
         }
         
-        if (res.status === 404) {
-          // Handle a 404 as a success for client UX - the event is gone either way
-          console.log(`Event ${id} not found, considering delete successful anyway`);
-          return { success: true, id, message: "Event was already deleted" };
-        }
-        
-        // For other status codes, try to get the error message from the response
+        // For other status codes, try to get the error message
+        let errorMessage = `Server returned unexpected status: ${res.status}`;
         try {
           const data = await res.json();
-          return { 
-            success: false, 
-            id, 
-            message: data.message || `Server returned ${res.status}` 
-          };
+          if (data && data.message) {
+            errorMessage = data.message;
+          }
         } catch (e) {
-          // If we can't parse the JSON, return the status code
-          return { 
-            success: false, 
-            id, 
-            message: `Server returned ${res.status}` 
-          };
+          // If we can't parse JSON, use the default error message
+          console.warn("Could not parse error response as JSON");
         }
+        
+        // Throw an error with the message so it's caught by the onError handler
+        throw new Error(errorMessage);
       } catch (error) {
         console.error("Error in delete mutation:", error);
         // Re-throw for the onError handler
@@ -496,12 +488,24 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
       
-      // Force the event to be immediately removed from the main events cache
+      // Force a strong update of all event-related caches
+      // 1. Immediately remove from main events cache
       queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
         return oldEvents.filter((e: Event) => e.id !== id);
       });
       
-      // If we know which calendar it belongs to, update that cache too
+      // 2. Remove from date-range filtered caches
+      if (context?.allQueryKeys) {
+        context.allQueryKeys.forEach((key: QueryKey) => {
+          if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
+            queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
+              return oldEvents.filter((e: Event) => e.id !== id);
+            });
+          }
+        });
+      }
+      
+      // 3. Update calendar-specific cache
       if (context?.eventToDelete?.calendarId) {
         queryClient.setQueryData<Event[]>(
           ['/api/calendars', context.eventToDelete.calendarId, 'events'], 
@@ -517,22 +521,25 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         description: "Event has been deleted successfully."
       });
       
-      // Only do the background refetch after a longer delay
-      // This ensures the user sees their delete reflected immediately
+      // Force an immediate invalidation to trigger a fresh fetch from the server
+      // This ensures the UI is in sync with the server
+      console.log("Forcing immediate data refresh after delete");
+      
+      // A short timeout to allow the UI to update first
       setTimeout(() => {
-        console.log("Performing background data refresh after delete");
-        // Just mark the data as stale, but don't trigger an immediate refetch
+        // Invalidate everything related to events
         queryClient.invalidateQueries({ 
-          queryKey: ['/api/events']
+          queryKey: ['/api/events'],
+          refetchType: 'all' // Force an immediate refetch
         });
         
-        // Also invalidate the specific calendar's events if we have that info
         if (context?.eventToDelete) {
           queryClient.invalidateQueries({ 
-            queryKey: ['/api/calendars', context.eventToDelete.calendarId, 'events']
+            queryKey: ['/api/calendars', context.eventToDelete.calendarId, 'events'],
+            refetchType: 'all' // Force an immediate refetch
           });
         }
-      }, 1000); // Full second delay for background refresh
+      }, 50); // Very short delay to allow UI updates
     },
     // This happens if the server request fails
     onError: (error, id, context) => {

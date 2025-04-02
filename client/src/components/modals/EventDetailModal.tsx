@@ -6,6 +6,7 @@ import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { formatDayOfWeekDate, formatTime, formatEventTimeRange } from '@/lib/date-utils';
 import type { Event } from '@shared/schema';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface EventDetailModalProps {
   open: boolean;
@@ -22,6 +23,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
 }) => {
   const { calendars } = useCalendars();
   const { deleteEvent } = useCalendarEvents();
+  const queryClient = useQueryClient();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   
@@ -65,17 +67,27 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       console.log(`Attempting to delete event with ID: ${event.id}`);
       setIsDeleting(true);
       
-      // Simple mutation call without callbacks
+      // Delete the event first
       deleteEvent(event.id);
       
-      // Use a timeout to allow time for the UI to update 
-      // and for the delete request to be sent
-      setTimeout(() => {
-        // Close modals after a short delay
-        setIsDeleting(false);
-        setDeleteDialogOpen(false);
-        onClose();
-      }, 500);
+      // Force immediate invalidation of all event queries to refresh the UI
+      queryClient.invalidateQueries({
+        queryKey: ['/api/events'],
+        refetchType: 'all' // Force immediate refetch
+      });
+      
+      // Force invalidation of calendar-specific events if we know which calendar
+      if (event.calendarId) {
+        queryClient.invalidateQueries({
+          queryKey: ['/api/calendars', event.calendarId, 'events'],
+          refetchType: 'all'
+        });
+      }
+      
+      // Close modals immediately to show the updated UI
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+      onClose();
     } catch (error) {
       console.error(`Unexpected error during delete: ${(error as Error).message}`);
       // Still close dialogs on error
