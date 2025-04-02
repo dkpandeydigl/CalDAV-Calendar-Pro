@@ -615,320 +615,264 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
               </div>
               
               {/* Repeat event section */}
-              <Collapsible 
-                open={!recurrenceCollapsed} 
-                onOpenChange={setRecurrenceCollapsed}
-                className="border rounded-md"
-              >
-                <CollapsibleTrigger asChild>
-                  <div className="flex justify-between items-center p-3 cursor-pointer hover:bg-muted/50">
-                    <h3 className="text-sm font-medium">Repeat event</h3>
-                    <Button variant="ghost" size="sm">
-                      {recurrenceCollapsed ? '+' : '–'}
-                    </Button>
-                  </div>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="p-3 pt-0 border-t">
-                  <div className="space-y-4">
-                    {/* Recurrence options */}
-                    <RadioGroup 
-                      value={recurrenceType} 
-                      onValueChange={(value) => setRecurrenceType(value as RecurrenceType)}
-                      className="space-y-2"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="none" id="none" />
-                        <Label htmlFor="none">No end date</Label>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="daily" id="daily" />
-                        <Label htmlFor="daily">Daily</Label>
-                        {recurrenceType === 'daily' && (
-                          <div className="flex items-center ml-2">
-                            <Label htmlFor="daily-interval" className="mr-2">Repeat every</Label>
-                            <Input
-                              id="daily-interval"
-                              type="number"
-                              min="1"
-                              value={dailyInterval}
-                              onChange={e => setDailyInterval(parseInt(e.target.value) || 1)}
-                              className="w-16 h-8"
-                            />
-                            <span className="ml-2">day(s)</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="weekly" id="weekly" />
-                        <Label htmlFor="weekly">Weekly</Label>
-                        {recurrenceType === 'weekly' && (
-                          <div className="flex items-center ml-2">
-                            <Label htmlFor="weekly-interval" className="mr-2">Repeat every</Label>
-                            <Input
-                              id="weekly-interval"
-                              type="number"
-                              min="1"
-                              value={weeklyInterval}
-                              onChange={e => setWeeklyInterval(parseInt(e.target.value) || 1)}
-                              className="w-16 h-8"
-                            />
-                            <span className="ml-2">week(s)</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="monthly" id="monthly" />
-                        <Label htmlFor="monthly">Monthly</Label>
-                      </div>
-                      
-                      {recurrenceType === 'monthly' && (
-                        <div className="ml-6 space-y-2">
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem 
-                              value="on" 
-                              id="on" 
-                              name="monthly-type"
-                              checked={monthlyRecurrenceType === 'on'}
-                              onClick={() => setMonthlyRecurrenceType('on')}
-                            />
-                            <div className="flex items-center">
-                              <span className="mr-2">On</span>
-                              <Input
-                                type="number"
-                                min="1"
-                                max="31"
-                                value={monthlyDay}
-                                onChange={e => setMonthlyDay(parseInt(e.target.value) || 1)}
-                                className="w-16 h-8 mr-2"
-                                disabled={monthlyRecurrenceType !== 'on'}
-                              />
-                              <span className="mr-2">every</span>
-                              <Input
-                                type="number"
-                                min="1"
-                                value={monthlyInterval}
-                                onChange={e => setMonthlyInterval(parseInt(e.target.value) || 1)}
-                                className="w-16 h-8 mr-2"
-                                disabled={monthlyRecurrenceType !== 'on'}
-                              />
-                              <span>month(s)</span>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem 
-                              value="day" 
-                              id="day" 
-                              name="monthly-type"
-                              checked={monthlyRecurrenceType === 'day'}
-                              onClick={() => setMonthlyRecurrenceType('day')}
-                            />
-                            <div className="flex items-center">
-                              <span className="mr-2">Every</span>
-                              <Select 
-                                value={monthlyDayOfWeek} 
-                                onValueChange={setMonthlyDayOfWeek}
-                                disabled={monthlyRecurrenceType !== 'day'}
-                              >
-                                <SelectTrigger className="w-28 h-8">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {weekdays.map(day => (
-                                    <SelectItem key={day} value={day}>{day}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <span className="mx-2">every</span>
-                              <Input
-                                type="number"
-                                min="1"
-                                value={monthlyInterval}
-                                onChange={e => setMonthlyInterval(parseInt(e.target.value) || 1)}
-                                className="w-16 h-8 mr-2"
-                                disabled={monthlyRecurrenceType !== 'day'}
-                              />
-                              <span>month(s)</span>
-                            </div>
-                          </div>
+              <div className="border rounded-md p-3">
+                <h3 className="text-sm font-medium mb-2">Repeat event</h3>
+                <div className="space-y-4">
+                  {/* Recurrence options */}
+                  <RadioGroup 
+                    value={recurrenceType} 
+                    onValueChange={(value) => setRecurrenceType(value as RecurrenceType)}
+                    className="space-y-2"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="none" id="none" />
+                      <Label htmlFor="none">No end date</Label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="daily" id="daily" />
+                      <Label htmlFor="daily">Daily</Label>
+                      {recurrenceType === 'daily' && (
+                        <div className="flex items-center ml-2">
+                          <Label htmlFor="daily-interval" className="mr-2">Repeat every</Label>
+                          <Input
+                            id="daily-interval"
+                            type="number"
+                            min="1"
+                            value={dailyInterval}
+                            onChange={e => setDailyInterval(parseInt(e.target.value) || 1)}
+                            className="w-16 h-8"
+                          />
+                          <span className="ml-2">day(s)</span>
                         </div>
                       )}
-                      
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="yearly" id="yearly" />
-                        <Label htmlFor="yearly">Yearly</Label>
-                        {recurrenceType === 'yearly' && (
-                          <div className="flex items-center ml-2">
-                            <Label htmlFor="yearly-interval" className="mr-2">Repeat every</Label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="weekly" id="weekly" />
+                      <Label htmlFor="weekly">Weekly</Label>
+                      {recurrenceType === 'weekly' && (
+                        <div className="flex items-center ml-2">
+                          <Label htmlFor="weekly-interval" className="mr-2">Repeat every</Label>
+                          <Input
+                            id="weekly-interval"
+                            type="number"
+                            min="1"
+                            value={weeklyInterval}
+                            onChange={e => setWeeklyInterval(parseInt(e.target.value) || 1)}
+                            className="w-16 h-8"
+                          />
+                          <span className="ml-2">week(s)</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="monthly" id="monthly" />
+                      <Label htmlFor="monthly">Monthly</Label>
+                    </div>
+                    
+                    {recurrenceType === 'monthly' && (
+                      <div className="ml-6 space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem 
+                            value="on" 
+                            id="on"
+                            checked={monthlyRecurrenceType === 'on'}
+                            onClick={() => setMonthlyRecurrenceType('on')}
+                          />
+                          <div className="flex items-center">
+                            <span className="mr-2">On</span>
                             <Input
-                              id="yearly-interval"
                               type="number"
                               min="1"
-                              value={yearlyInterval}
-                              onChange={e => setYearlyInterval(parseInt(e.target.value) || 1)}
-                              className="w-16 h-8"
+                              max="31"
+                              value={monthlyDay}
+                              onChange={e => setMonthlyDay(parseInt(e.target.value) || 1)}
+                              className="w-16 h-8 mr-2"
+                              disabled={monthlyRecurrenceType !== 'on'}
                             />
-                            <span className="ml-2">year(s)</span>
+                            <span className="mr-2">every</span>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={monthlyInterval}
+                              onChange={e => setMonthlyInterval(parseInt(e.target.value) || 1)}
+                              className="w-16 h-8 mr-2"
+                              disabled={monthlyRecurrenceType !== 'on'}
+                            />
+                            <span>month(s)</span>
                           </div>
-                        )}
-                      </div>
-                    </RadioGroup>
-                    
-                    {/* End recurrence options */}
-                    {recurrenceType !== 'none' && (
-                      <div className="mt-4 border-t pt-4">
-                        <h4 className="text-sm font-medium mb-2">End Repeat</h4>
-                        <RadioGroup 
-                          value={recurrenceEndType} 
-                          onValueChange={(value) => setRecurrenceEndType(value as RecurrenceEndType)}
-                          className="space-y-2"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="never" id="end-never" />
-                            <Label htmlFor="end-never">Never</Label>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem 
+                            value="day" 
+                            id="day"
+                            checked={monthlyRecurrenceType === 'day'}
+                            onClick={() => setMonthlyRecurrenceType('day')}
+                          />
+                          <div className="flex items-center">
+                            <span className="mr-2">Every</span>
+                            <Select 
+                              value={monthlyDayOfWeek} 
+                              onValueChange={setMonthlyDayOfWeek}
+                              disabled={monthlyRecurrenceType !== 'day'}
+                            >
+                              <SelectTrigger className="w-28 h-8">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {weekdays.map(day => (
+                                  <SelectItem key={day} value={day}>{day}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <span className="mx-2">every</span>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={monthlyInterval}
+                              onChange={e => setMonthlyInterval(parseInt(e.target.value) || 1)}
+                              className="w-16 h-8 mr-2"
+                              disabled={monthlyRecurrenceType !== 'day'}
+                            />
+                            <span>month(s)</span>
                           </div>
-                          
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="after" id="end-after" />
-                            <div className="flex items-center">
-                              <Label htmlFor="end-after-occurrences" className="mr-2">After</Label>
-                              <Input
-                                id="end-after-occurrences"
-                                type="number"
-                                min="1"
-                                value={recurrenceEndAfter}
-                                onChange={e => setRecurrenceEndAfter(parseInt(e.target.value) || 1)}
-                                className="w-16 h-8"
-                                disabled={recurrenceEndType !== 'after'}
-                              />
-                              <span className="ml-2">occurrences</span>
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="on" id="end-on" />
-                            <div className="flex items-center">
-                              <Label htmlFor="end-date" className="mr-2">End by</Label>
-                              <Input
-                                id="end-date"
-                                type="date"
-                                value={recurrenceEndDate}
-                                onChange={e => setRecurrenceEndDate(e.target.value)}
-                                className="w-40 h-8"
-                                disabled={recurrenceEndType !== 'on'}
-                              />
-                            </div>
-                          </div>
-                        </RadioGroup>
+                        </div>
                       </div>
                     )}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
+                    
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="yearly" id="yearly" />
+                      <Label htmlFor="yearly">Yearly</Label>
+                      {recurrenceType === 'yearly' && (
+                        <div className="flex items-center ml-2">
+                          <Label htmlFor="yearly-interval" className="mr-2">Repeat every</Label>
+                          <Input
+                            id="yearly-interval"
+                            type="number"
+                            min="1"
+                            value={yearlyInterval}
+                            onChange={e => setYearlyInterval(parseInt(e.target.value) || 1)}
+                            className="w-16 h-8"
+                          />
+                          <span className="ml-2">year(s)</span>
+                        </div>
+                      )}
+                    </div>
+                  </RadioGroup>
+                  
+                  {/* End recurrence options */}
+                  {recurrenceType !== 'none' && (
+                    <div className="mt-4 border-t pt-4">
+                      <h4 className="text-sm font-medium mb-2">End Repeat</h4>
+                      <RadioGroup 
+                        value={recurrenceEndType} 
+                        onValueChange={(value) => setRecurrenceEndType(value as RecurrenceEndType)}
+                        className="space-y-2"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="never" id="end-never" />
+                          <Label htmlFor="end-never">Never</Label>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="after" id="end-after" />
+                          <div className="flex items-center">
+                            <Label htmlFor="end-after-occurrences" className="mr-2">After</Label>
+                            <Input
+                              id="end-after-occurrences"
+                              type="number"
+                              min="1"
+                              value={recurrenceEndAfter}
+                              onChange={e => setRecurrenceEndAfter(parseInt(e.target.value) || 1)}
+                              className="w-16 h-8"
+                              disabled={recurrenceEndType !== 'after'}
+                            />
+                            <span className="ml-2">occurrences</span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="on" id="end-on" />
+                          <div className="flex items-center">
+                            <Label htmlFor="end-date" className="mr-2">End by</Label>
+                            <Input
+                              id="end-date"
+                              type="date"
+                              value={recurrenceEndDate}
+                              onChange={e => setRecurrenceEndDate(e.target.value)}
+                              className="w-40 h-8"
+                              disabled={recurrenceEndType !== 'on'}
+                            />
+                          </div>
+                        </div>
+                      </RadioGroup>
+                    </div>
+                  )}
+                </div>
+              </div>
               
               {/* Meeting Time section */}
               <div className="border rounded-md p-3">
                 <h3 className="text-sm font-medium mb-2">Meeting Time</h3>
                 
-                <div className="grid grid-cols-5 gap-4 mb-4">
-                  <div className="col-span-2">
-                    <Select value={startTime} onValueChange={setStartTime}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Start time" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: 24 }).map((_, i) => {
-                          const hour = String(i).padStart(2, '0');
-                          const time = `${hour}:00`;
-                          return (
-                            <SelectItem key={time} value={time}>
-                              {hour === '00' ? '12:00 AM' : 
-                                i < 12 ? `${i}:00 AM` : 
-                                i === 12 ? '12:00 PM' : 
-                                `${i - 12}:00 PM`}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <Label htmlFor="start-date">Start Date</Label>
+                    <div className="flex mt-1">
+                      <Input
+                        id="start-date"
+                        type="date"
+                        value={startDate}
+                        onChange={e => setStartDate(e.target.value)}
+                        className="mr-2"
+                      />
+                      <Input
+                        id="start-time"
+                        type="time"
+                        value={startTime}
+                        onChange={e => setStartTime(e.target.value)}
+                      />
+                    </div>
                   </div>
                   
-                  <div className="col-span-1 flex items-center justify-center">
-                    <span>—</span>
-                  </div>
-                  
-                  <div className="col-span-2">
-                    <Select value={endTime} onValueChange={setEndTime}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="End time" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: 24 }).map((_, i) => {
-                          const hour = String(i).padStart(2, '0');
-                          const time = `${hour}:00`;
-                          return (
-                            <SelectItem key={time} value={time}>
-                              {hour === '00' ? '12:00 AM' : 
-                                i < 12 ? `${i}:00 AM` : 
-                                i === 12 ? '12:00 PM' : 
-                                `${i - 12}:00 PM`}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
+                  <div>
+                    <Label htmlFor="end-date">End Date</Label>
+                    <div className="flex mt-1">
+                      <Input
+                        id="end-date"
+                        type="date"
+                        value={endDate}
+                        onChange={e => setEndDate(e.target.value)}
+                        className="mr-2"
+                      />
+                      <Input
+                        id="end-time"
+                        type="time"
+                        value={endTime}
+                        onChange={e => setEndTime(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="start-date">Date</Label>
-                    <Input
-                      id="start-date"
-                      type="date"
-                      value={startDate}
-                      onChange={e => setStartDate(e.target.value)}
-                      className="mt-1"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <Select value={timezone} onValueChange={setTimezone}>
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Select timezone" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {getTimezones().map(tz => (
-                          <SelectItem key={tz.value} value={tz.value}>
-                            {tz.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div>
+                  <Label htmlFor="timezone">Timezone</Label>
+                  <Select value={timezone} onValueChange={setTimezone}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select timezone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getTimezones().map(tz => (
+                        <SelectItem key={tz.value} value={tz.value}>
+                          {tz.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
-              
-              {/* Reminder section */}
-              <div className="border rounded-md p-3">
-                <h3 className="text-sm font-medium mb-2">Reminder</h3>
-                <Select defaultValue="15min">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="5min">5 minutes before</SelectItem>
-                    <SelectItem value="15min">15 minutes before</SelectItem>
-                    <SelectItem value="30min">30 minutes before</SelectItem>
-                    <SelectItem value="1hour">1 hour before</SelectItem>
-                    <SelectItem value="1day">1 day before</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               
               {/* Location section */}
