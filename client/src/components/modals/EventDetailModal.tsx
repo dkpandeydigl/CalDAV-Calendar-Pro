@@ -124,7 +124,32 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           
           <div className="space-y-4">
             <div>
-              <h1 className="text-xl font-semibold">{event.title}</h1>
+              <div className="flex items-center justify-between">
+                <h1 className="text-xl font-semibold">{event.title}</h1>
+                
+                {/* Sync status indicator */}
+                {event.syncStatus && (
+                  <div 
+                    className={`text-xs px-2 py-1 rounded-full ${
+                      event.syncStatus === 'synced' 
+                        ? 'bg-green-100 text-green-800' 
+                        : event.syncStatus === 'syncing' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : event.syncStatus === 'sync_failed' 
+                            ? 'bg-red-100 text-red-800' 
+                            : 'bg-yellow-100 text-yellow-800'
+                    }`}
+                  >
+                    {event.syncStatus === 'synced' 
+                      ? 'Synced' 
+                      : event.syncStatus === 'syncing' 
+                        ? 'Syncing...' 
+                        : event.syncStatus === 'sync_failed' 
+                          ? 'Sync Failed' 
+                          : 'Local'}
+                  </div>
+                )}
+              </div>
               
               {/* Show calendar info from rawData metadata if available */}
               {(calendarName && calendarColor) ? (

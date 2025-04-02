@@ -58,6 +58,9 @@ export const events = pgTable("events", {
   etag: text("etag"), // CalDAV ETag for sync
   url: text("url"), // CalDAV event URL
   rawData: json("raw_data"), // Store the raw CalDAV data
+  syncStatus: text("sync_status").default("local").notNull(), // Values: 'local', 'synced', 'sync_failed', 'syncing'
+  syncError: text("sync_error"), // Error message if sync failed
+  lastSyncAttempt: timestamp("last_sync_attempt"), // When we last tried to sync
 });
 
 export const insertEventSchema = createInsertSchema(events).pick({
@@ -74,6 +77,9 @@ export const insertEventSchema = createInsertSchema(events).pick({
   etag: true,
   url: true,
   rawData: true,
+  syncStatus: true,
+  syncError: true,
+  lastSyncAttempt: true,
 });
 
 export type InsertEvent = z.infer<typeof insertEventSchema>;

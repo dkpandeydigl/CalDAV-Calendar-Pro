@@ -168,7 +168,11 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
           // Preserve these fields from the original event
           etag: event.etag,
           url: event.url,
-          recurrenceRule: event.recurrenceRule
+          recurrenceRule: event.recurrenceRule,
+          // Set sync status to indicate the event needs syncing
+          syncStatus: 'local',
+          syncError: null,
+          lastSyncAttempt: null
         };
         
         // Skip direct updates on temporary IDs (negative numbers)
@@ -186,7 +190,10 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
             etag: null,
             url: null,
             recurrenceRule: null,
-            rawData: null
+            rawData: null,
+            syncStatus: 'local',
+            syncError: null,
+            lastSyncAttempt: null
           };
           createEvent(newEventData);
           
@@ -213,7 +220,10 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
           etag: null,
           url: null,
           recurrenceRule: null,
-          rawData: null
+          rawData: null,
+          syncStatus: 'local',
+          syncError: null,
+          lastSyncAttempt: null
         };
         
         createEvent(newEventData);

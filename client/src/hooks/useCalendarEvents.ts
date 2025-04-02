@@ -305,7 +305,12 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         }
       }
       
-      // At this point eventToUpdate is guaranteed to exist due to the check above
+      // Make sure eventToUpdate is not undefined
+      if (!eventToUpdate) {
+        console.error(`Event with id ${id} still not found after fetching. Cannot update.`);
+        return { previousEvents, allQueryKeys };
+      }
+
       // Create an updated version of the event with proper typing
       const updatedEvent: Event = { 
         // First spread the original event to get all fields
@@ -319,8 +324,10 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         title: data.title || eventToUpdate.title,
         startDate: data.startDate || eventToUpdate.startDate,
         endDate: data.endDate || eventToUpdate.endDate,
-        // Add the updatedAt timestamp
-        updatedAt: new Date()
+        // Set sync status if not explicitly provided in data
+        syncStatus: data.syncStatus || 'local',
+        syncError: data.syncError || null,
+        lastSyncAttempt: data.lastSyncAttempt || null
       };
       
       console.log(`Optimistically updating event ${id} in UI`, updatedEvent);

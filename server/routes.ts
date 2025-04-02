@@ -536,8 +536,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate with zod
       const validatedData = insertEventSchema.parse(eventData);
       
-      // First save to our local database
-      const newEvent = await storage.createEvent(validatedData);
+      // First save to our local database with initial sync status
+      const eventWithSyncStatus = {
+        ...validatedData,
+        syncStatus: 'local', // Mark as local initially
+        syncError: null,
+        lastSyncAttempt: null
+      };
+      
+      const newEvent = await storage.createEvent(eventWithSyncStatus);
       
       // If user is authenticated, sync with CalDAV server
       if (userId) {
@@ -621,11 +628,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   
                   console.log(`Successfully created event using DAV client: ${calendarObject.url}`);
                   
-                  // Update the event URL in our database
+                  // Update the event URL and sync status in our database
                   await storage.updateEvent(newEvent.id, { 
                     url: calendarObject.url,
                     etag: calendarObject.etag || undefined,
-                    rawData: icalEvent // Store the raw iCalendar data for future reference
+                    rawData: icalEvent, // Store the raw iCalendar data for future reference
+                    syncStatus: 'synced',
+                    lastSyncAttempt: new Date()
                   });
                   
                   // Success
@@ -656,7 +665,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   await storage.updateEvent(newEvent.id, { 
                     url: eventUrl,
                     etag: etag || undefined,
-                    rawData: icalEvent // Store the raw iCalendar data for future reference
+                    rawData: icalEvent, // Store the raw iCalendar data for future reference
+                    syncStatus: 'synced',
+                    lastSyncAttempt: new Date()
                   });
                 } else {
                   throw new Error(`Failed to create event: ${response.status} ${response.statusText}`);
@@ -677,6 +688,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         } catch (syncError) {
           console.error('Error syncing event to CalDAV server:', syncError);
+          // Update the sync status to show it failed
+          await storage.updateEvent(newEvent.id, { 
+            syncStatus: 'sync_failed',
+            syncError: (syncError as Error).message,
+            lastSyncAttempt: new Date()
+          });
           // Continue despite sync error - at least the event is in our local database
         }
       }
@@ -807,9 +824,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   
                   if (directPutResponse.ok) {
                     console.log('Direct PUT succeeded');
-                    // Update etag in our database
+                    // Update etag and sync status in our database
                     await storage.updateEvent(updatedEvent.id, { 
-                      etag: directPutResponse.headers.get('ETag') || undefined
+                      etag: directPutResponse.headers.get('ETag') || undefined,
+                      syncStatus: 'synced',
+                      lastSyncAttempt: new Date(),
+                      syncError: null
                     });
                     return; // Exit early if successful
                   }
@@ -847,9 +867,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   
                   if (response.ok) {
                     console.log('Delete and recreate succeeded');
-                    // Update etag in our database
+                    // Update etag and sync status in our database
                     await storage.updateEvent(updatedEvent.id, { 
-                      etag: response.headers.get('ETag') || undefined
+                      etag: response.headers.get('ETag') || undefined,
+                      syncStatus: 'synced',
+                      lastSyncAttempt: new Date(),
+                      syncError: null
                     });
                     return; // Exit early if successful
                   }
@@ -881,10 +904,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   
                   if (newUrlResponse.ok) {
                     console.log('New URL approach succeeded');
-                    // Update the event URL and etag in our database
+                    // Update the event URL, etag, and sync status in our database
                     await storage.updateEvent(updatedEvent.id, { 
                       url: newEventUrl,
-                      etag: newUrlResponse.headers.get('ETag') || undefined
+                      etag: newUrlResponse.headers.get('ETag') || undefined,
+                      syncStatus: 'synced',
+                      lastSyncAttempt: new Date(),
+                      syncError: null
                     });
                     return; // Exit early if successful
                   }
@@ -906,11 +932,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   });
                   
                   console.log('DAV client update succeeded');
-                  // Update the event URL and etag in our database
+                  // Update the event URL, etag and sync status in our database
                   if (updatedEvent) {
                     await storage.updateEvent(updatedEvent.id, { 
                       url: calendarObject.url,
-                      etag: calendarObject.etag || undefined
+                      etag: calendarObject.etag || undefined,
+                      syncStatus: 'synced',
+                      lastSyncAttempt: new Date(),
+                      syncError: null
                     });
                   }
                   return; // Exit early if successful
@@ -935,6 +964,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         } catch (syncError) {
           console.error('Error syncing updated event to CalDAV server:', syncError);
+          // Update sync status to reflect the failure
+          await storage.updateEvent(eventId, { 
+            syncStatus: 'sync_failed',
+            syncError: (syncError as Error).message,
+            lastSyncAttempt: new Date()
+          });
           // Continue despite sync error - at least the event is updated in our local database
         }
       }
