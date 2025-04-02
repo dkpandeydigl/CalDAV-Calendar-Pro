@@ -372,38 +372,24 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
       endDateTime = new Date(startDateTime.getTime() + 3600000); // Add 1 hour
     }
     
-    // Generate enhanced description with attendees and resources
-    let enhancedDescription = description || '';
-    
-    if (attendees.length > 0) {
-      if (enhancedDescription) enhancedDescription += '\n\n';
-      enhancedDescription += `Attendees: ${attendees.join(', ')}`;
-    }
-    
-    if (resources.length > 0) {
-      if (enhancedDescription) enhancedDescription += '\n\n';
-      enhancedDescription += `Resources: ${resources.join(', ')}`;
-    }
-    
-    // Add busy status to description
-    if (busyStatus) {
-      if (enhancedDescription) enhancedDescription += '\n\n';
-      enhancedDescription += `Status: ${busyStatus.charAt(0).toUpperCase() + busyStatus.slice(1)}`;
-    }
-    
+    // Keep description as is, without adding attendees and resources to it
     // Generate recurrence rule
     const recurrenceRule = generateRecurrenceRule();
     
     const eventData = {
       title,
-      description: enhancedDescription || null,
+      description: description || null,
       location: location || null,
       startDate: startDateTime,
       endDate: endDateTime,
       calendarId: parseInt(calendarId),
       timezone,
       allDay,
-      recurrenceRule
+      recurrenceRule,
+      // Add attendees, resources, and status as separate properties
+      attendees: attendees,
+      resources: resources,
+      busyStatus: busyStatus
     };
     
     if (event) {

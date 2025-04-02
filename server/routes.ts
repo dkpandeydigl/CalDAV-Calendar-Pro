@@ -173,6 +173,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       endDate: Date;
       description?: string;
       location?: string;
+      attendees?: string[];
+      resources?: string[];
+      busyStatus?: string;
+      recurrenceRule?: string;
+      allDay?: boolean;
     }
   ): string {
     // Create a formatted UID that's compatible with Thunderbird
@@ -184,9 +189,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const startDate = formatICALDate(event.startDate);
     const endDate = formatICALDate(event.endDate);
     
-    // Build a Thunderbird-compatible iCalendar string
-    // Including necessary X- properties that Thunderbird expects
-    return [
+    // Determine transparency based on busy status
+    const transp = event.busyStatus === 'free' ? 'TRANSPARENT' : 'OPAQUE';
+    
+    // Determine status based on busyStatus
+    let eventStatus = 'CONFIRMED';
+    if (event.busyStatus === 'tentative') {
+      eventStatus = 'TENTATIVE';
+    } else if (event.busyStatus === 'cancelled') {
+      eventStatus = 'CANCELLED';
+    }
+    
+    // Prepare base event components
+    const eventComponents = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
       'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
@@ -195,22 +210,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       'BEGIN:VEVENT',
       `UID:${safeUid}`,
       `DTSTAMP:${now}`,
-      `DTSTART:${startDate}`,
-      `DTEND:${endDate}`,
+      `DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`,
+      `DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`,
       `SUMMARY:${event.title}`,
       event.description ? `DESCRIPTION:${event.description}` : '',
       event.location ? `LOCATION:${event.location}` : '',
-      'TRANSP:OPAQUE',
+      `TRANSP:${transp}`,
       'SEQUENCE:0',
       `CREATED:${now}`,
       `LAST-MODIFIED:${now}`,
-      'STATUS:CONFIRMED',
+      `STATUS:${eventStatus}`,
+    ];
+    
+    // Add recurrence rule if provided
+    if (event.recurrenceRule) {
+      eventComponents.push(event.recurrenceRule);
+    }
+    
+    // Add attendees if provided
+    if (event.attendees && event.attendees.length > 0) {
+      event.attendees.forEach(attendee => {
+        // Format email correctly for iCalendar
+        let formattedAttendee = attendee;
+        if (attendee.includes('@')) {
+          formattedAttendee = `mailto:${attendee}`;
+        }
+        eventComponents.push(`ATTENDEE;CN=${attendee};ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
+      });
+    }
+    
+    // Add resources if provided
+    if (event.resources && event.resources.length > 0) {
+      event.resources.forEach(resource => {
+        eventComponents.push(`RESOURCES:${resource}`);
+      });
+    }
+    
+    // Add standard properties
+    eventComponents.push(
       'X-MOZ-GENERATION:1',
-      'X-MICROSOFT-CDO-ALLDAYEVENT:FALSE',
+      `X-MICROSOFT-CDO-ALLDAYEVENT:${event.allDay ? 'TRUE' : 'FALSE'}`,
       'X-MICROSOFT-CDO-IMPORTANCE:1',
       'END:VEVENT',
       'END:VCALENDAR'
-    ].filter(Boolean).join('\r\n');
+    );
+    
+    return eventComponents.filter(Boolean).join('\r\n');
   }
   
   // Error handling middleware for Zod validation errors
@@ -1378,7 +1423,13 @@ END:VCALENDAR`
                 startDate: eventData.startDate,
                 endDate: eventData.endDate,
                 description: eventData.description,
-                location: eventData.location
+                location: eventData.location,
+                // Include the new fields if they exist
+                attendees: eventData.attendees,
+                resources: eventData.resources,
+                busyStatus: eventData.busyStatus,
+                recurrenceRule: eventData.recurrenceRule,
+                allDay: eventData.allDay
               });
               
               console.log(`Creating event on CalDAV server for calendar URL: ${targetCalendarUrl}`);
@@ -1422,6 +1473,39 @@ END:VCALENDAR`
                     syncStatus: 'synced',
                     lastSyncAttempt: new Date()
                   });
+                  
+                  // Force immediate refresh to ensure the event is visible to other clients
+                  try {
+                    console.log("Forcing immediate server refresh...");
+                    await davClient.refreshCalendars();
+                    console.log("Server calendars refreshed successfully");
+                    
+                    // Send a REPORT request to make the changes visible to other clients
+                    const reportResponse = await fetch(calendarUrlWithSlash, {
+                      method: 'REPORT',
+                      headers: {
+                        'Content-Type': 'application/xml; charset=utf-8',
+                        'Depth': '1',
+                        'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                      },
+                      body: `<?xml version="1.0" encoding="utf-8" ?>
+                        <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                          <D:prop>
+                            <D:getetag/>
+                            <C:calendar-data/>
+                          </D:prop>
+                          <C:filter>
+                            <C:comp-filter name="VCALENDAR">
+                              <C:comp-filter name="VEVENT"/>
+                            </C:comp-filter>
+                          </C:filter>
+                        </C:calendar-query>`
+                    });
+                    console.log(`REPORT response status: ${reportResponse.status}`);
+                  } catch (refreshError) {
+                    console.error("Error during server refresh:", refreshError);
+                    // Non-fatal, continue
+                  }
                   
                   // Success
                   return;
@@ -1664,7 +1748,13 @@ END:VCALENDAR`
                 startDate: updatedEvent.startDate,
                 endDate: updatedEvent.endDate,
                 description: updatedEvent.description,
-                location: updatedEvent.location
+                location: updatedEvent.location,
+                // Include the new fields if they exist
+                attendees: updatedEvent.attendees,
+                resources: updatedEvent.resources,
+                busyStatus: updatedEvent.busyStatus,
+                recurrenceRule: updatedEvent.recurrenceRule,
+                allDay: updatedEvent.allDay
               });
               
               console.log(`Updating event on CalDAV server at URL: ${updatedEvent.url}`);
@@ -1707,6 +1797,40 @@ END:VCALENDAR`
                       lastSyncAttempt: new Date(),
                       syncError: null
                     });
+                    
+                    // Force immediate refresh to ensure the event is visible to other clients
+                    try {
+                      console.log("Forcing immediate server refresh after direct PUT...");
+                      await davClient.refreshCalendars();
+                      console.log("Server calendars refreshed successfully");
+                      
+                      // Send a REPORT request to make the changes visible to other clients
+                      const reportResponse = await fetch(calendarUrlWithSlash, {
+                        method: 'REPORT',
+                        headers: {
+                          'Content-Type': 'application/xml; charset=utf-8',
+                          'Depth': '1',
+                          'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                        },
+                        body: `<?xml version="1.0" encoding="utf-8" ?>
+                          <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                            <D:prop>
+                              <D:getetag/>
+                              <C:calendar-data/>
+                            </D:prop>
+                            <C:filter>
+                              <C:comp-filter name="VCALENDAR">
+                                <C:comp-filter name="VEVENT"/>
+                              </C:comp-filter>
+                            </C:filter>
+                          </C:calendar-query>`
+                      });
+                      console.log(`REPORT response status: ${reportResponse.status}`);
+                    } catch (refreshError) {
+                      console.error("Error during server refresh:", refreshError);
+                      // Non-fatal, continue
+                    }
+                    
                     return; // Exit early if successful
                   }
                 } catch (error) {
@@ -2031,10 +2155,14 @@ END:VCALENDAR`
                   startDate: eventToDelete.startDate,
                   endDate: eventToDelete.endDate,
                   description: 'This event has been cancelled.',
-                  location: eventToDelete.location
-                }).replace('STATUS:CONFIRMED', 'STATUS:CANCELLED')
-                  .replace('TRANSP:OPAQUE', 'TRANSP:TRANSPARENT')
-                  .replace('SEQUENCE:0', `SEQUENCE:${currentSequence + 1}`);
+                  location: eventToDelete.location,
+                  // Include same attendees and resources but with cancelled status
+                  attendees: eventToDelete.attendees,
+                  resources: eventToDelete.resources,
+                  busyStatus: 'cancelled', // This will already set STATUS:CANCELLED
+                  recurrenceRule: eventToDelete.recurrenceRule,
+                  allDay: eventToDelete.allDay
+                }).replace('SEQUENCE:0', `SEQUENCE:${currentSequence + 1}`);
                 
                 const putResponse = await fetch(eventToDelete.url, {
                   method: 'PUT',

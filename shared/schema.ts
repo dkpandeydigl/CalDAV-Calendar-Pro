@@ -88,6 +88,9 @@ export const events = pgTable("events", {
   allDay: boolean("all_day").default(false),
   timezone: text("timezone").default("UTC"),
   recurrenceRule: text("recurrence_rule"),
+  attendees: json("attendees"), // JSON array of attendees with email, name, role, status
+  resources: json("resources"), // JSON array of resource names/emails
+  busyStatus: text("busy_status").default("busy"), // busy, free, tentative, or cancelled
   etag: text("etag"), // CalDAV ETag for sync
   url: text("url"), // CalDAV event URL
   rawData: json("raw_data"), // Store the raw CalDAV data
@@ -107,6 +110,9 @@ export const insertEventSchema = createInsertSchema(events).pick({
   allDay: true,
   timezone: true,
   recurrenceRule: true,
+  attendees: true,
+  resources: true,
+  busyStatus: true,
   etag: true,
   url: true,
   rawData: true,
