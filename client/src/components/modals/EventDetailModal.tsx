@@ -65,23 +65,20 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       console.log(`Attempting to delete event with ID: ${event.id}`);
       setIsDeleting(true);
       
-      // Use a Promise to properly wait for the deleteEvent operation
-      await new Promise<void>((resolve) => {
-        deleteEvent(event.id, {
-          onSuccess: () => {
-            console.log(`Successfully deleted event with ID: ${event.id}`);
-            resolve();
-          },
-          onError: (error) => {
-            console.error(`Error deleting event: ${error.message}`);
-            resolve(); // Resolve anyway to continue
-          }
-        });
-      });
+      // Simple mutation call without callbacks
+      deleteEvent(event.id);
+      
+      // Use a timeout to allow time for the UI to update 
+      // and for the delete request to be sent
+      setTimeout(() => {
+        // Close modals after a short delay
+        setIsDeleting(false);
+        setDeleteDialogOpen(false);
+        onClose();
+      }, 500);
     } catch (error) {
       console.error(`Unexpected error during delete: ${(error as Error).message}`);
-    } finally {
-      // Always cleanup UI state
+      // Still close dialogs on error
       setIsDeleting(false);
       setDeleteDialogOpen(false);
       onClose();

@@ -79,20 +79,62 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       return apiRequest('POST', '/api/events', newEvent)
         .then(res => res.json());
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/calendars', variables.calendarId, 'events'] });
+    onMutate: async (newEvent) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['/api/events'] });
+      
+      // Create a temporary ID for optimistic UI
+      const tempEvent = {
+        ...newEvent,
+        id: -Math.floor(Math.random() * 1000000), // Temporary negative ID to avoid conflicts
+        uid: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}@optimistic`
+      } as Event;
+      
+      // Optimistically update the events cache with the new event
+      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents) => {
+        return oldEvents ? [...oldEvents, tempEvent] : [tempEvent];
+      });
+      
+      return { tempEvent };
+    },
+    onSuccess: (newEvent, variables, context) => {
+      // Show success toast
       toast({
         title: "Event Created",
         description: "New event has been created successfully."
       });
+      
+      // Update the cache with the actual event from the server
+      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents) => {
+        if (!oldEvents) return [newEvent];
+        
+        // Replace the temporary event with the real one
+        return oldEvents.map(event => 
+          (context?.tempEvent && event.id === context.tempEvent.id) ? newEvent : event
+        );
+      });
+      
+      // Refetch to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendars', variables.calendarId, 'events'] });
     },
-    onError: (error) => {
+    onError: (error, variables, context) => {
+      // Remove the optimistic event on error
+      if (context?.tempEvent) {
+        queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents) => {
+          return oldEvents ? oldEvents.filter(e => e.id !== context.tempEvent.id) : [];
+        });
+      }
+      
+      // Show error toast
       toast({
         title: "Failed to Create Event",
         description: error.message || "An error occurred while creating the event.",
         variant: "destructive"
       });
+      
+      // Refetch to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
     }
   });
 
@@ -101,23 +143,60 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       return apiRequest('PUT', `/api/events/${id}`, data)
         .then(res => res.json());
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      const event = eventsQueries.data?.find(e => e.id === variables.id);
-      if (event) {
-        queryClient.invalidateQueries({ queryKey: ['/api/calendars', event.calendarId, 'events'] });
-      }
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['/api/events'] });
+      
+      // Get the current events from the cache
+      const previousEvents = queryClient.getQueryData<Event[]>(['/api/events']);
+      
+      // Find the event in the cache
+      const eventToUpdate = previousEvents?.find(e => e.id === id);
+      if (!eventToUpdate) return { previousEvents };
+      
+      // Make a copy of the event with the updated data
+      const updatedEvent = { ...eventToUpdate, ...data };
+      
+      // Optimistically update the cache with the updated event
+      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents) => {
+        if (!oldEvents) return [];
+        return oldEvents.map(e => e.id === id ? updatedEvent : e);
+      });
+      
+      return { previousEvents, eventToUpdate };
+    },
+    onSuccess: (updatedEvent, variables) => {
+      // Show success toast
       toast({
         title: "Event Updated",
         description: "Event has been updated successfully."
       });
+      
+      // Ensure the cache has the latest data from the server
+      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents) => {
+        if (!oldEvents) return [updatedEvent];
+        return oldEvents.map(e => e.id === variables.id ? updatedEvent : e);
+      });
+      
+      // Refetch to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendars', updatedEvent.calendarId, 'events'] });
     },
-    onError: (error) => {
+    onError: (error, variables, context) => {
+      // Roll back to the previous state if we have it
+      if (context?.previousEvents) {
+        queryClient.setQueryData<Event[]>(['/api/events'], context.previousEvents);
+      }
+      
+      // Show error toast
       toast({
         title: "Failed to Update Event",
         description: error.message || "An error occurred while updating the event.",
         variant: "destructive"
       });
+      
+      // Refetch to ensure data consistency
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
     }
   });
 
@@ -160,33 +239,56 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         throw error;
       }
     },
-    onSuccess: (result, id) => {
-      // Always update the local cache to remove the event
-      console.log(`Delete mutation succeeded with result:`, result);
+    // Use onMutate for optimistic updates - happens immediately before the mutation
+    onMutate: async (id) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['/api/events'] });
       
-      // Immediately remove the event from the cache
-      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents) => {
-        if (!oldEvents) return [];
-        return oldEvents.filter(e => e.id !== id);
-      });
+      // Get the current events from the cache
+      const previousEvents = queryClient.getQueryData<Event[]>(['/api/events']);
       
-      // Then invalidate the queries to refetch fresh data
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      // Find the event to be deleted (for calendar ID and reversion)
+      const eventToDelete = previousEvents?.find(e => e.id === id);
       
-      // Find the calendar ID to invalidate calendar-specific data
-      const event = eventsQueries.data?.find(e => e.id === id);
-      if (event) {
-        queryClient.invalidateQueries({ queryKey: ['/api/calendars', event.calendarId, 'events'] });
+      if (eventToDelete) {
+        // Optimistically remove the event from the cache
+        queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents) => {
+          if (!oldEvents) return [];
+          return oldEvents.filter(e => e.id !== id);
+        });
       }
+      
+      // Return context with previous state to revert if needed
+      return { previousEvents, eventToDelete };
+    },
+    // This happens after successful mutation
+    onSuccess: (result, id, context) => {
+      console.log(`Delete mutation succeeded with result:`, result);
       
       // Show success toast
       toast({
         title: "Event Deleted",
         description: "Event has been deleted successfully."
       });
+      
+      // Refetch data to ensure our cache is up to date
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
+      // Also invalidate the specific calendar's events if we have that info
+      if (context?.eventToDelete) {
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/calendars', context.eventToDelete.calendarId, 'events'] 
+        });
+      }
     },
-    onError: (error, id) => {
+    // This happens if the mutation fails
+    onError: (error, id, context) => {
       console.error(`Error deleting event with ID ${id}:`, error);
+      
+      // Revert to the previous state
+      if (context?.previousEvents) {
+        queryClient.setQueryData<Event[]>(['/api/events'], context.previousEvents);
+      }
       
       // Show error toast
       toast({
@@ -195,7 +297,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         variant: "destructive"
       });
       
-      // Even on error, refresh the events list as we might be out of sync
+      // Refetch to ensure data consistency
       queryClient.invalidateQueries({ queryKey: ['/api/events'] });
     }
   });
