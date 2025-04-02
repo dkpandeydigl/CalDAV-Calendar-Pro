@@ -315,9 +315,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       
       // Give a bit of delay to make sure users see their changes before any refetch
       setTimeout(() => {
+        // Extract the ID that was used in the update request
+        const requestId = variables.id;
+        
         // Make sure all caches have the latest server data
         queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
-          return oldEvents.map(e => e.id === variables.id ? serverEvent : e);
+          return oldEvents.map(e => {
+            // Match by the ID we sent in the request
+            if (e.id === requestId) {
+              console.log(`Replacing event with ID ${e.id} with server event ID ${serverEvent.id}`);
+              return serverEvent;
+            }
+            return e;
+          });
         });
         
         // Update any date-filtered caches
@@ -325,7 +335,13 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           context.allQueryKeys.forEach((key: QueryKey) => {
             if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
               queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
-                return oldEvents.map(e => e.id === variables.id ? serverEvent : e);
+                return oldEvents.map(e => {
+                  // Match by the ID we sent in the request
+                  if (e.id === requestId) {
+                    return serverEvent;
+                  }
+                  return e;
+                });
               });
             }
           });

@@ -155,13 +155,29 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
     
     if (event) {
       // Update existing event
-      updateEvent({
-        id: event.id,
-        data: {
+      // Skip temporary IDs (negative numbers from optimistic updates)
+      if (event.id > 0) {
+        console.log(`Updating existing event with server ID: ${event.id}`);
+        updateEvent({
+          id: event.id,
+          data: {
+            ...eventData,
+            uid: event.uid
+          }
+        });
+      } else {
+        console.log(`Attempted to update event with temporary ID: ${event.id}, creating new event instead`);
+        // If it's a temporary ID, create a new event instead
+        const newEventData = {
           ...eventData,
-          uid: event.uid
-        }
-      });
+          uid: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          etag: null,
+          url: null,
+          recurrenceRule: null,
+          rawData: null
+        };
+        createEvent(newEventData);
+      }
     } else {
       // Create new event
       // For new events, we need to create the proper object shape with required fields
