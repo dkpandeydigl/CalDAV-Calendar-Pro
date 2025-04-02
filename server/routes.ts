@@ -1499,9 +1499,28 @@ END:VCALENDAR`
                       console.error("Error during PROPFIND refresh:", propfindError);
                     }
                     
-                    // Backup approach: Fetch all calendars if needed
-                    await davClient.fetchCalendars();
-                    console.log("Server calendars refreshed successfully");
+                    // Backup approach: Create a new DAV client with proper login for calendar fetch
+                    try {
+                      const { DAVClient } = await import('tsdav');
+                      const refreshClient = new DAVClient({
+                        serverUrl: connection.url,
+                        credentials: {
+                          username: connection.username,
+                          password: connection.password
+                        },
+                        authMethod: 'Basic',
+                        defaultAccountType: 'caldav'
+                      });
+                      
+                      // Login first to establish account
+                      await refreshClient.login();
+                      
+                      // Now fetch calendars should work
+                      await refreshClient.fetchCalendars();
+                      console.log("Server calendars refreshed successfully");
+                    } catch (fetchError) {
+                      console.error("Error with fetchCalendars refresh:", fetchError);
+                    }
                     
                     // Send a REPORT request to make the changes visible to other clients
                     const reportResponse = await fetch(calendarUrlWithSlash, {
@@ -1846,9 +1865,28 @@ END:VCALENDAR`
                         console.error("Error during PROPFIND refresh:", propfindError);
                       }
                       
-                      // Backup approach: Fetch all calendars if needed
-                      await davClient.fetchCalendars();
-                      console.log("Server calendars refreshed successfully");
+                      // Backup approach: Create a new DAV client with proper login for calendar fetch
+                      try {
+                        const { DAVClient } = await import('tsdav');
+                        const refreshClient = new DAVClient({
+                          serverUrl: connection.url,
+                          credentials: {
+                            username: connection.username,
+                            password: connection.password
+                          },
+                          authMethod: 'Basic',
+                          defaultAccountType: 'caldav'
+                        });
+                        
+                        // Login first to establish account
+                        await refreshClient.login();
+                        
+                        // Now fetch calendars should work
+                        await refreshClient.fetchCalendars();
+                        console.log("Server calendars refreshed successfully");
+                      } catch (fetchError) {
+                        console.error("Error with fetchCalendars refresh:", fetchError);
+                      }
                       
                       // Send a REPORT request to make the changes visible to other clients
                       const reportResponse = await fetch(calendarUrlWithSlash, {
