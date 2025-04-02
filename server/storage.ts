@@ -472,17 +472,47 @@ export class MemStorage implements IStorage {
 // Use PostgreSQL storage if DATABASE_URL is available, otherwise fall back to in-memory
 let storage: IStorage;
 
-if (process.env.DATABASE_URL) {
-  console.log("Using PostgreSQL database storage");
-  storage = new DatabaseStorage();
-  
-  // Initialize the database
-  storage.initializeDatabase()
-    .then(() => console.log("Database initialized successfully"))
-    .catch(err => console.error("Error initializing database:", err));
-} else {
-  console.log("No DATABASE_URL found, using in-memory storage");
-  storage = new MemStorage();
+// Create a function to initialize storage with fallback
+async function initStorage() {
+  if (process.env.DATABASE_URL) {
+    try {
+      console.log("Attempting to use PostgreSQL database storage");
+      
+      // Try with PostgreSQL first
+      const dbStorage = new DatabaseStorage();
+      
+      // Test if the database is accessible (will throw if there's a connection issue)
+      await dbStorage.initializeDatabase();
+      
+      console.log("Database initialized successfully");
+      return dbStorage;
+    } catch (err) {
+      console.error("Failed to initialize database storage, falling back to in-memory:", err);
+      
+      // If database fails, fall back to in-memory
+      const memStorage = new MemStorage();
+      await memStorage.initializeDatabase();
+      console.log("Using in-memory storage due to database connection failure");
+      return memStorage;
+    }
+  } else {
+    console.log("No DATABASE_URL found, using in-memory storage");
+    const memStorage = new MemStorage();
+    await memStorage.initializeDatabase();
+    return memStorage;
+  }
 }
+
+// Start with memory storage as default
+storage = new MemStorage();
+
+// Initialize storage asynchronously and update the reference when ready
+initStorage()
+  .then(initedStorage => {
+    storage = initedStorage;
+  })
+  .catch(err => {
+    console.error("Error during storage initialization:", err);
+  });
 
 export { storage };
