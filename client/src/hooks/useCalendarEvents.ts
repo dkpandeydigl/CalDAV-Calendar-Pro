@@ -248,7 +248,12 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     allQueryKeys?: QueryKey[];
   };
 
-  const updateEventMutation = useMutation<Event, Error, { id: number, data: Partial<Event> }, UpdateMutationContext>({
+  const updateEventMutation = useMutation<
+    Event, 
+    Error, 
+    { id: number, data: Partial<Event> }, 
+    UpdateMutationContext
+  >({
     mutationFn: async ({ id, data }) => {
       // Short delay to ensure UI updates finish before server request
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -313,50 +318,57 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         description: "Event has been updated successfully."
       });
       
-      // Give a bit of delay to make sure users see their changes before any refetch
-      setTimeout(() => {
-        // Extract the ID that was used in the update request
-        const requestId = variables.id;
+      // Extract the ID that was used in the update request
+      const requestId = variables.id;
+      
+      // Immediately update caches with the server response
+      // This is critical to prevent duplicate events from appearing
+      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
+        if (!oldEvents) return [serverEvent];
         
-        // Make sure all caches have the latest server data
-        queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
-          return oldEvents.map(e => {
-            // Match by the ID we sent in the request
-            if (e.id === requestId) {
-              console.log(`Replacing event with ID ${e.id} with server event ID ${serverEvent.id}`);
-              return serverEvent;
-            }
-            return e;
-          });
+        // First remove any potential duplicates (same UID but different ID)
+        const filteredEvents = oldEvents.filter(e => 
+          e.id === requestId || (e.uid !== serverEvent.uid || e.id === serverEvent.id)
+        );
+        
+        // Then update the event that matches our request ID
+        return filteredEvents.map(e => e.id === requestId ? serverEvent : e);
+      });
+      
+      // Update any date-filtered caches
+      if (context?.allQueryKeys) {
+        context.allQueryKeys.forEach((key: QueryKey) => {
+          if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
+            queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
+              if (!oldEvents) return [serverEvent];
+              
+              // First remove any potential duplicates
+              const filteredEvents = oldEvents.filter(e => 
+                e.id === requestId || (e.uid !== serverEvent.uid || e.id === serverEvent.id)
+              );
+              
+              // Then update the matching event
+              return filteredEvents.map(e => e.id === requestId ? serverEvent : e);
+            });
+          }
         });
-        
-        // Update any date-filtered caches
-        if (context?.allQueryKeys) {
-          context.allQueryKeys.forEach((key: QueryKey) => {
-            if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
-              queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
-                return oldEvents.map(e => {
-                  // Match by the ID we sent in the request
-                  if (e.id === requestId) {
-                    return serverEvent;
-                  }
-                  return e;
-                });
-              });
-            }
-          });
-        }
-        
-        // Delayed refetch to ensure data consistency after user has seen their changes
-        setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-          queryClient.invalidateQueries({ 
-            queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
-          });
-        }, 500); // Half-second delay before refetching
-      }, 100);
+      }
+      
+      // If the event has a temporary ID (negative), we need to invalidate the queries to refresh
+      if (requestId < 0) {
+        console.log(`Invalidating queries due to temporary ID conversion: ${requestId} -> ${serverEvent.id}`);
+        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      }
+      
+      // Final refresh after a short delay
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
+        });
+      }, 500);
     },
-    onError: (error, variables, context) => {
+    onError: (error: Error, variables: { id: number, data: Partial<Event> }, context: UpdateMutationContext | undefined) => {
       console.error(`Error updating event ${variables.id}:`, error);
       
       // Roll back to the previous state if we have it
@@ -376,7 +388,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         // Restore the calendar-specific cache if we know which calendar
         if (context.eventToUpdate) {
           const calendarEvents = context.previousEvents?.filter(
-            e => e.calendarId === context.eventToUpdate?.calendarId
+            (e: Event) => e.calendarId === context.eventToUpdate?.calendarId
           );
           if (calendarEvents) {
             queryClient.setQueryData(
@@ -394,10 +406,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         variant: "destructive"
       });
       
-      // Refetch after a delay to ensure data consistency
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      }, 1000);
+      // Forcefully refetch immediately to ensure data consistency and fix any duplicates
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/events'],
+        refetchType: 'all' // Force immediate refetch
+      });
+      
+      // Also invalidate calendar-specific cache if we know which calendar
+      if (context?.eventToUpdate) {
+        queryClient.invalidateQueries({
+          queryKey: ['/api/calendars', context.eventToUpdate.calendarId, 'events'],
+          refetchType: 'all'
+        });
+      }
     }
   });
 
@@ -542,7 +563,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       }, 50); // Very short delay to allow UI updates
     },
     // This happens if the server request fails
-    onError: (error, id, context) => {
+    onError: (error: Error, id: number, context: DeleteMutationContext | undefined) => {
       console.error(`Error deleting event with ID ${id}:`, error);
       
       // Revert the UI to the previous state
@@ -561,7 +582,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         // Revert the calendar-specific cache
         if (context.eventToDelete) {
           const calendarEvents = context.previousEvents?.filter(
-            e => e.calendarId === context.eventToDelete?.calendarId
+            (e: Event) => e.calendarId === context.eventToDelete?.calendarId
           );
           if (calendarEvents) {
             queryClient.setQueryData(
@@ -579,10 +600,11 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         variant: "destructive"
       });
       
-      // Refetch after a delay to ensure data consistency
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      }, 1000);
+      // Force immediate refetch to ensure consistency
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/events'],
+        refetchType: 'all'
+      });
     }
   });
 
