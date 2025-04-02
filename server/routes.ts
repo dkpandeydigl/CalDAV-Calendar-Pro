@@ -1926,6 +1926,27 @@ END:VCALENDAR`
             // Track if any deletion approach succeeded
             let deleteSucceeded = false;
             
+            console.log(`Attempting to delete event "${eventToDelete.title}" with UID ${eventToDelete.uid}`);
+            // First verify if the event still exists on the server
+            try {
+              console.log(`Checking if event still exists on server at URL: ${eventToDelete.url}`);
+              const checkResponse = await fetch(eventToDelete.url, {
+                method: 'HEAD',
+                headers: {
+                  'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                }
+              });
+              
+              // If event doesn't exist on server (404), we can consider it already deleted
+              if (checkResponse.status === 404) {
+                console.log(`Event doesn't exist on server (404 Not Found), considering it already deleted`);
+                deleteSucceeded = true;
+              }
+            } catch (checkError) {
+              console.warn(`Error checking event existence: ${(checkError as Error).message}`);
+              // Continue with deletion attempts even if check fails
+            }
+            
             // Approach 1: Try using DAV client's deleteCalendarObject method
             if (!deleteSucceeded) {
               try {
@@ -1933,11 +1954,31 @@ END:VCALENDAR`
                 await davClient.deleteCalendarObject({
                   calendarObject: {
                     url: eventToDelete.url,
-                    etag: eventToDelete.etag || undefined
+                    etag: eventToDelete.etag || '*'
                   }
                 });
                 console.log(`DAV client delete succeeded`);
                 deleteSucceeded = true;
+                
+                // Double-check that it's really gone
+                try {
+                  const verifyResponse = await fetch(eventToDelete.url, {
+                    method: 'HEAD',
+                    headers: {
+                      'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                    }
+                  });
+                  
+                  if (verifyResponse.status === 404) {
+                    console.log(`Verified event is gone from server`);
+                  } else {
+                    console.warn(`Event still exists on server with status ${verifyResponse.status} after deletion`);
+                    deleteSucceeded = false; // Reset to false to try other methods
+                  }
+                } catch (verifyError) {
+                  console.warn(`Error verifying deletion: ${(verifyError as Error).message}`);
+                  // Continue with other deletion approaches
+                }
               } catch (davClientError) {
                 console.error(`Error during DAV client delete: ${(davClientError as Error).message}`);
                 // Continue to next approach
@@ -3011,11 +3052,29 @@ END:VCALENDAR`;
             
             // Process deletions: remove events that are in our local database but not on the server
             // Only consider events that were previously synced (have a URL) but not found on the server now
+            console.log(`Checking ${localEvents.length} local events against ${serverEventUIDs.size} server event UIDs`);
+            console.log(`Server event UIDs: ${[...serverEventUIDs].join(', ')}`);
+            
+            // Find events to delete
+            const eventsToDelete = [];
             for (const localEvent of localEvents) {
+              // Check if this event has a URL (meaning it was already synced with the server)
+              // but is now missing from the server's event list (not in serverEventUIDs)
               if (localEvent.url && !serverEventUIDs.has(localEvent.uid)) {
-                console.log(`Event "${localEvent.title}" (${localEvent.uid}) exists locally with URL but not on server. Deleting locally.`);
-                await storage.deleteEvent(localEvent.id);
+                console.log(`Event "${localEvent.title}" (${localEvent.uid}) exists locally with URL but not on server. Marking for deletion.`);
+                eventsToDelete.push(localEvent);
               }
+            }
+            
+            // Now delete the events we identified (in a separate loop to avoid modifying array during iteration)
+            if (eventsToDelete.length > 0) {
+              console.log(`Deleting ${eventsToDelete.length} events that were removed from the server`);
+              for (const eventToDelete of eventsToDelete) {
+                console.log(`Deleting local event "${eventToDelete.title}" (${eventToDelete.uid})`);
+                await storage.deleteEvent(eventToDelete.id);
+              }
+            } else {
+              console.log('No events to delete during sync');
             }
             
             // Try to sync any remaining local events to the server
