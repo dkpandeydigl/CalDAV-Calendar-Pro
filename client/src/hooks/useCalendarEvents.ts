@@ -115,7 +115,10 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         rawData: null,
         url: null,
         etag: null,
-        recurrenceRule: null
+        recurrenceRule: null,
+        syncStatus: 'syncing', // Show as syncing initially
+        syncError: null,
+        lastSyncAttempt: now
       };
       
       console.log(`Creating optimistic event with temp ID: ${tempId}`, tempEvent);
@@ -194,6 +197,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           queryClient.invalidateQueries({ 
             queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
           });
+          
+          // Trigger a manual sync with the server to ensure the event is pushed to the CalDAV server
+          fetch('/api/sync', { method: 'POST', credentials: 'include' })
+            .then(response => {
+              if (response.ok) {
+                console.log('Manual sync triggered successfully after event creation');
+              } else {
+                console.warn('Failed to trigger manual sync after event creation');
+              }
+            })
+            .catch(error => {
+              console.error('Error triggering manual sync:', error);
+            });
         }, 500);
       }, 10); // tiny delay to ensure UI stays smooth
     },
@@ -324,10 +340,10 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         title: data.title || eventToUpdate.title,
         startDate: data.startDate || eventToUpdate.startDate,
         endDate: data.endDate || eventToUpdate.endDate,
-        // Set sync status if not explicitly provided in data
-        syncStatus: data.syncStatus || 'local',
+        // Set sync status to 'syncing' when updating to show immediate feedback
+        syncStatus: data.syncStatus || 'syncing',
         syncError: data.syncError || null,
-        lastSyncAttempt: data.lastSyncAttempt || null
+        lastSyncAttempt: data.lastSyncAttempt || new Date()
       };
       
       console.log(`Optimistically updating event ${id} in UI`, updatedEvent);
@@ -429,6 +445,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         queryClient.invalidateQueries({ 
           queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
         });
+        
+        // Trigger a manual sync with the server to ensure updates are pushed to CalDAV
+        fetch('/api/sync', { method: 'POST', credentials: 'include' })
+          .then(response => {
+            if (response.ok) {
+              console.log('Manual sync triggered successfully after event update');
+            } else {
+              console.warn('Failed to trigger manual sync after event update');
+            }
+          })
+          .catch(error => {
+            console.error('Error triggering manual sync:', error);
+          });
       }, 500);
     },
     onError: (error: Error, variables: { id: number, data: Partial<Event> }, context: UpdateMutationContext | undefined) => {
@@ -623,6 +652,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             refetchType: 'all' // Force an immediate refetch
           });
         }
+        
+        // Trigger a manual sync with CalDAV server to ensure deletion is propagated
+        fetch('/api/sync', { method: 'POST', credentials: 'include' })
+          .then(response => {
+            if (response.ok) {
+              console.log('Manual sync triggered successfully after event deletion');
+            } else {
+              console.warn('Failed to trigger manual sync after event deletion');
+            }
+          })
+          .catch(error => {
+            console.error('Error triggering manual sync:', error);
+          });
       }, 50); // Very short delay to allow UI updates
     },
     // This happens if the server request fails
