@@ -9,7 +9,7 @@ interface CalendarGridProps {
   events: Event[];
   isLoading: boolean;
   onEventClick: (event: Event) => void;
-  onDayDoubleClick?: (date: Date) => void;
+  onDayDoubleClick?: () => void;
 }
 
 const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventClick, onDayDoubleClick }) => {
