@@ -483,125 +483,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Construct calendar URL
             const calendarUrl = `${homeUrl}${safeCalendarName}/`;
             
-            // Try multiple approaches in sequence to maximize compatibility
-            let calendarCreated = false;
+            // Using standard CalDAV MKCOL method to create a calendar
+            console.log(`Creating calendar with standard CalDAV MKCOL method at: ${calendarUrl}`);
             
-            // Approach 1: Use makeCollection method which works with most servers
-            if (!calendarCreated) {
-              try {
-                console.log(`Attempting to create calendar with makeCollection at: ${calendarUrl}`);
-                // @ts-ignore - This method exists but TypeScript doesn't know about it
-                await davClient.makeCollection({
-                  url: calendarUrl,
-                  props: {
-                    resourcetype: ['{DAV:}collection', '{urn:ietf:params:xml:ns:caldav}calendar'],
-                    displayname: calendarName
-                  }
-                });
-                console.log(`Successfully created calendar collection with makeCollection`);
-                calendarCreated = true;
-              } catch (error) {
-                // Convert unknown error to any to access message property
-                const makeCollectionError = error as any;
-                console.log(`makeCollection failed: ${makeCollectionError.message || 'Unknown error'}`);
+            try {
+              // Standard CalDAV approach - MKCOL request with correct XML body
+              const response = await fetch(calendarUrl, {
+                method: 'MKCOL',
+                headers: {
+                  'Content-Type': 'application/xml; charset=utf-8',
+                  'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+                },
+                body: `<?xml version="1.0" encoding="utf-8"?>
+                  <D:mkcol xmlns:D="DAV:"
+                           xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    <D:set>
+                      <D:prop>
+                        <D:resourcetype>
+                          <D:collection/>
+                          <C:calendar/>
+                        </D:resourcetype>
+                        <D:displayname>${calendarName}</D:displayname>
+                        <C:supported-calendar-component-set>
+                          <C:comp name="VEVENT"/>
+                          <C:comp name="VTODO"/>
+                        </C:supported-calendar-component-set>
+                      </D:prop>
+                    </D:set>
+                  </D:mkcol>`
+              });
+              
+              console.log(`Server response for MKCOL: ${response.status} ${response.statusText}`);
+              
+              // Check if the request was successful
+              if (response.ok) {
+                console.log(`Successfully created calendar with MKCOL`);
+              } else {
+                // Log the full error response for debugging
+                const responseText = await response.text();
+                console.log(`Server error details: ${responseText}`);
+                console.log(`Failed to create calendar with MKCOL. Status: ${response.status}`);
               }
-            }
-            
-            // Approach 2: Try using direct MKCOL request with fetch
-            if (!calendarCreated) {
-              try {
-                console.log(`Attempting MKCOL approach with fetch API`);
-                
-                const response = await fetch(calendarUrl, {
-                  method: 'MKCOL',
-                  headers: {
-                    'Content-Type': 'application/xml; charset=utf-8',
-                    'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
-                  },
-                  body: `<?xml version="1.0" encoding="utf-8"?>
-                    <D:mkcol xmlns:D="DAV:"
-                             xmlns:C="urn:ietf:params:xml:ns:caldav">
-                      <D:set>
-                        <D:prop>
-                          <D:resourcetype>
-                            <D:collection/>
-                            <C:calendar/>
-                          </D:resourcetype>
-                          <D:displayname>${calendarName}</D:displayname>
-                        </D:prop>
-                      </D:set>
-                    </D:mkcol>`
-                });
-                
-                console.log(`Server response for MKCOL: ${response.status} ${response.statusText}`);
-                
-                if (response.ok) {
-                  console.log(`Successfully created calendar with MKCOL`);
-                  calendarCreated = true;
-                } else {
-                  console.log(`MKCOL request failed with status: ${response.status}`);
-                }
-              } catch (error) {
-                // Convert unknown error to any to access message property
-                const fetchError = error as any;
-                console.log(`Fetch MKCOL approach failed: ${fetchError.message || 'Unknown error'}`);
-              }
-            }
-            
-            // Approach 3: Try creating with a simple PUT request to establish collection
-            if (!calendarCreated) {
-              try {
-                console.log(`Attempting PUT approach to create calendar collection`);
-                
-                // First create the collection with a PUT request
-                const putResponse = await fetch(calendarUrl, {
-                  method: 'PUT',
-                  headers: {
-                    'Content-Type': 'text/calendar; charset=utf-8',
-                    'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
-                  }
-                });
-                
-                console.log(`Server response for PUT: ${putResponse.status} ${putResponse.statusText}`);
-                
-                if (putResponse.ok || putResponse.status === 201 || putResponse.status === 204) {
-                  console.log(`Successfully created calendar collection with PUT`);
-                  
-                  // Then try to set the resource type to calendar with a PROPPATCH
-                  try {
-                    const proppatchResponse = await fetch(calendarUrl, {
-                      method: 'PROPPATCH',
-                      headers: {
-                        'Content-Type': 'application/xml; charset=utf-8',
-                        'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
-                      },
-                      body: `<?xml version="1.0" encoding="utf-8"?>
-                        <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                          <D:set>
-                            <D:prop>
-                              <D:resourcetype>
-                                <D:collection/>
-                                <C:calendar/>
-                              </D:resourcetype>
-                              <D:displayname>${calendarName}</D:displayname>
-                            </D:prop>
-                          </D:set>
-                        </D:propertyupdate>`
-                    });
-                    
-                    console.log(`PROPPATCH response: ${proppatchResponse.status} ${proppatchResponse.statusText}`);
-                    
-                    if (proppatchResponse.ok) {
-                      console.log(`Successfully set calendar properties with PROPPATCH`);
-                      calendarCreated = true;
-                    }
-                  } catch (proppatchError: any) {
-                    console.log(`PROPPATCH failed: ${proppatchError.message || 'Unknown error'}`);
-                  }
-                }
-              } catch (putError: any) {
-                console.log(`PUT approach failed: ${putError.message || 'Unknown error'}`);
-              }
+            } catch (error) {
+              // Convert unknown error to any to access message property
+              const mkolError = error as any;
+              console.log(`CalDAV MKCOL approach failed: ${mkolError.message || 'Unknown error'}`);
             }
             
             // Regardless of success/failure, we'll proceed with local calendar
@@ -706,37 +632,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const serverConnection = await storage.getServerConnection(userId);
           
           if (serverConnection && serverConnection.status === 'connected') {
-            // Initialize CalDAV client
-            const { DAVClient } = await import('tsdav');
-            
-            // Create CalDAV client
-            const davClient = new DAVClient({
-              serverUrl: serverConnection.url,
-              credentials: {
-                username: serverConnection.username,
-                password: serverConnection.password
-              },
-              authMethod: 'Basic',
-              defaultAccountType: 'caldav'
-            });
-            
-            // Login first
-            try {
-              // @ts-ignore
-              await davClient.login();
-              console.log("Successfully logged in to CalDAV server for calendar deletion");
-            } catch (loginError) {
-              console.error("Error logging in to CalDAV server (non-fatal):", loginError);
-              // Continue anyway
-            }
+            console.log(`Executing standard CalDAV DELETE operation on calendar: ${calendar.url}`);
             
             try {
-              // Try to delete using the DELETE method directly
-              console.log(`Sending DELETE request to: ${calendar.url}`);
+              // Standard CalDAV approach for deleting a calendar - direct DELETE request
               const response = await fetch(calendar.url, {
                 method: 'DELETE',
                 headers: {
-                  'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+                  'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64'),
+                  'Depth': 'infinity'  // Standard CalDAV practice to ensure all children are deleted
                 }
               });
               
@@ -745,11 +649,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (response.ok) {
                 console.log(`Successfully deleted calendar from server: ${calendar.url}`);
               } else {
-                // If server returned an error, we'll still delete locally but log the error
-                console.error(`Server returned error ${response.status} when deleting calendar: ${await response.text()}`);
+                // Capture the full error response for debugging
+                const responseText = await response.text();
+                console.error(`Server returned error ${response.status} when deleting calendar: ${responseText}`);
+                console.log(`Server deletion failed but will continue with local deletion. Calendar URL: ${calendar.url}`);
               }
             } catch (deleteError: any) {
-              console.error(`Error deleting calendar from server: ${deleteError.message || deleteError}`);
+              console.error(`Error executing CalDAV DELETE operation: ${deleteError.message || deleteError}`);
             }
           }
         } catch (serverDeleteError) {
