@@ -308,10 +308,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       
       // Fetch calendars from local storage instead of trying CalDAV server
-      const calendars = await storage.getCalendars(userId);
+      const allCalendars = await storage.getCalendars(userId);
       
-      // Return the calendars to the client
-      return res.json(calendars);
+      // Filter out proxy calendars and address books to match Thunderbird's behavior
+      // This ensures we only show primary calendars that all CalDAV clients can see
+      const filteredCalendars = allCalendars.filter(cal => 
+        // Explicitly exclude proxy calendars and address books
+        (cal.url && !cal.url.includes("/calendar-proxy-") && !cal.url.includes("/addresses/"))
+      );
+      
+      console.log(`Filtered ${allCalendars.length} calendars to ${filteredCalendars.length} primary calendars`);
+      
+      // Return the filtered calendars to the client
+      return res.json(filteredCalendars);
     } catch (err) {
       console.error("Error fetching calendars:", err);
       res.status(500).json({ message: "Failed to fetch calendars" });
@@ -428,9 +437,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const endDate = endDateParam ? new Date(endDateParam) : 
         new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59);
       
-      // Get all enabled calendars for the user
-      const calendars = await storage.getCalendars(userId);
-      const enabledCalendars = calendars.filter(cal => cal.enabled);
+      // Get all calendars for the user
+      const allCalendars = await storage.getCalendars(userId);
+      
+      // Filter out proxy calendars and address books, then filter for enabled ones
+      const filteredCalendars = allCalendars.filter(cal => 
+        cal.url && !cal.url.includes("/calendar-proxy-") && !cal.url.includes("/addresses/")
+      );
+      
+      console.log(`Filtered ${allCalendars.length} calendars to ${filteredCalendars.length} primary calendars`);
+      
+      // Then filter for enabled calendars
+      const enabledCalendars = filteredCalendars.filter(cal => cal.enabled);
       
       if (enabledCalendars.length === 0) {
         return res.json([]);
@@ -558,7 +576,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Get the calendar for this event
             const calendar = await storage.getCalendar(eventData.calendarId);
             
-            if (calendar && calendar.url) {
+            // Force using the primary calendar regardless of the selected calendar
+            // This ensures events are always created in the main calendar that Thunderbird can see
+            const forcePrimaryCalendar = true;
+            let targetCalendarUrl = calendar?.url;
+            let targetCalendar = calendar;
+            
+            if (forcePrimaryCalendar) {
+              // Get all calendars
+              const allCalendars = await storage.getCalendars(userId);
+              
+              // Look for a primary calendar - likely named something like "Calendar" or username's calendar
+              // Specifically avoid proxy calendars and address books
+              const primaryCalendar = allCalendars.find(cal => 
+                (cal.name.includes("D K Pandey calendar") || 
+                 cal.name === "Calendar" || 
+                 cal.name === "default" || 
+                 cal.name.includes("primary")) &&
+                !cal.url.includes("/calendar-proxy-") &&
+                !cal.url.includes("/addresses/")
+              );
+              
+              if (primaryCalendar) {
+                console.log(`Found primary calendar: "${primaryCalendar.name}" (${primaryCalendar.url})`);
+                targetCalendarUrl = primaryCalendar.url;
+                targetCalendar = primaryCalendar;
+              } else {
+                console.log(`Could not find primary calendar, using originally selected calendar`);
+              }
+            }
+            
+            if (targetCalendar && targetCalendarUrl) {
               // Initialize CalDAV client
               const { DAVClient } = await import('tsdav');
               
@@ -595,16 +643,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 'END:VCALENDAR'
               ].filter(Boolean).join('\r\n');
               
-              console.log(`Creating event on CalDAV server for calendar URL: ${calendar.url}`);
+              console.log(`Creating event on CalDAV server for calendar URL: ${targetCalendarUrl}`);
               
               // Create event on CalDAV server
               // Using a manual PUT request for better compatibility across servers
               try {
                 // Construct a more compatible calendar URL
                 // Ensure the calendar URL ends with a trailing slash
-                const calendarUrlWithSlash = calendar.url.endsWith('/') 
-                  ? calendar.url 
-                  : `${calendar.url}/`;
+                const calendarUrlWithSlash = targetCalendarUrl.endsWith('/') 
+                  ? targetCalendarUrl 
+                  : `${targetCalendarUrl}/`;
                 
                 // Sanitize the UID to make it URL-safe
                 const safeUid = eventData.uid.replace(/[^a-zA-Z0-9-_]/g, '');
@@ -755,7 +803,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Get the calendar for this event
             const calendar = await storage.getCalendar(updatedEvent.calendarId);
             
-            if (calendar && calendar.url) {
+            // Force using the primary calendar regardless of the calendar in the database
+            // This ensures updates go to the same calendar that Thunderbird can see
+            const forcePrimaryCalendar = true;
+            let targetCalendarUrl = calendar?.url;
+            let targetCalendar = calendar;
+            
+            if (forcePrimaryCalendar) {
+              // Get all calendars
+              const allCalendars = await storage.getCalendars(userId);
+              
+              // Look for a primary calendar - likely named something like "Calendar" or username's calendar
+              // Specifically avoid proxy calendars and address books
+              const primaryCalendar = allCalendars.find(cal => 
+                (cal.name.includes("D K Pandey calendar") || 
+                 cal.name === "Calendar" || 
+                 cal.name === "default" || 
+                 cal.name.includes("primary")) &&
+                !cal.url.includes("/calendar-proxy-") &&
+                !cal.url.includes("/addresses/")
+              );
+              
+              if (primaryCalendar) {
+                console.log(`Found primary calendar: "${primaryCalendar.name}" (${primaryCalendar.url})`);
+                targetCalendarUrl = primaryCalendar.url;
+                targetCalendar = primaryCalendar;
+              } else {
+                console.log(`Could not find primary calendar, using originally selected calendar`);
+              }
+            }
+            
+            // Get the base URL from the event URL for updating operations
+            // This assumes the event URL format is: calendarUrl/eventUID.ics
+            let eventBaseUrl = updatedEvent.url;
+            if (updatedEvent.url && updatedEvent.url.includes('.ics')) {
+              // Extract the base URL by removing the filename part
+              const lastSlashIndex = updatedEvent.url.lastIndexOf('/');
+              if (lastSlashIndex !== -1) {
+                eventBaseUrl = updatedEvent.url.substring(0, lastSlashIndex + 1);
+                console.log(`Extracted base URL for event: ${eventBaseUrl}`);
+              }
+            }
+            
+            if (targetCalendar && targetCalendarUrl) {
               // Initialize CalDAV client
               const { DAVClient } = await import('tsdav');
               
@@ -803,9 +893,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log(`iCalendar data: ${icalEvent}`);
                 
                 // Ensure the calendar URL ends with a trailing slash
-                const calendarUrlWithSlash = calendar.url.endsWith('/') 
-                  ? calendar.url 
-                  : `${calendar.url}/`;
+                const calendarUrlWithSlash = targetCalendarUrl.endsWith('/') 
+                  ? targetCalendarUrl 
+                  : `${targetCalendarUrl}/`;
                 
                 // Approach 1: Try direct PUT to the event URL with If-Match header
                 console.log(`First approach: Direct PUT to event URL with If-Match: ${updatedEvent.url}`);
@@ -1316,6 +1406,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (error) {
           const discoverError = error as Error;
           console.log("Standard calendar discovery failed:", discoverError.message);
+        }
+        
+        // Filter out proxy calendars and address books
+        if (serverCalendars.length > 0) {
+          const originalCount = serverCalendars.length;
+          
+          // Filter calendars to only include primary calendars
+          serverCalendars = serverCalendars.filter((cal: any) => {
+            // Skip proxy calendars of any type
+            if (cal.url.includes('/calendar-proxy')) {
+              console.log(`Filtering out proxy calendar: ${cal.displayName}`);
+              return false;
+            }
+            
+            // Skip address books
+            if (cal.url.includes('/addresses/') || 
+                cal.displayName.toLowerCase().includes('addressbook')) {
+              console.log(`Filtering out address book: ${cal.displayName}`);
+              return false;
+            }
+            
+            // Prioritize primary calendars
+            // Look for common primary calendar names
+            const isPrimary = 
+              cal.displayName === "Calendar" || 
+              cal.displayName.includes("D K Pandey calendar") || 
+              cal.displayName === "default" || 
+              cal.displayName.toLowerCase().includes("primary");
+            
+            if (isPrimary) {
+              console.log(`Found primary calendar: ${cal.displayName}`);
+            }
+            
+            return true;
+          });
+          
+          console.log(`Filtered calendars from ${originalCount} down to ${serverCalendars.length} primary calendars`);
         }
         
         // 2. If standard discovery failed or found no calendars, try manual principal-based approaches
