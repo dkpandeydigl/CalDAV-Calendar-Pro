@@ -496,28 +496,43 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
       
+      // Force the event to be immediately removed from the main events cache
+      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
+        return oldEvents.filter((e: Event) => e.id !== id);
+      });
+      
+      // If we know which calendar it belongs to, update that cache too
+      if (context?.eventToDelete?.calendarId) {
+        queryClient.setQueryData<Event[]>(
+          ['/api/calendars', context.eventToDelete.calendarId, 'events'], 
+          (oldEvents = []) => {
+            return oldEvents.filter((e: Event) => e.id !== id);
+          }
+        );
+      }
+      
       // Show success toast
       toast({
         title: "Event Deleted",
         description: "Event has been deleted successfully."
       });
       
-      // Disable auto-refetching temporarily to prevent flicker
-      const refetchAfterDelay = () => {
-        setTimeout(() => {
-          // Refetch data to ensure our cache is up to date
-          queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-          
-          // Also invalidate the specific calendar's events if we have that info
-          if (context?.eventToDelete) {
-            queryClient.invalidateQueries({ 
-              queryKey: ['/api/calendars', context.eventToDelete.calendarId, 'events'] 
-            });
-          }
-        }, 500); // Half-second delay before refetching
-      };
-      
-      refetchAfterDelay();
+      // Only do the background refetch after a longer delay
+      // This ensures the user sees their delete reflected immediately
+      setTimeout(() => {
+        console.log("Performing background data refresh after delete");
+        // Just mark the data as stale, but don't trigger an immediate refetch
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/events']
+        });
+        
+        // Also invalidate the specific calendar's events if we have that info
+        if (context?.eventToDelete) {
+          queryClient.invalidateQueries({ 
+            queryKey: ['/api/calendars', context.eventToDelete.calendarId, 'events']
+          });
+        }
+      }, 1000); // Full second delay for background refresh
     },
     // This happens if the server request fails
     onError: (error, id, context) => {
