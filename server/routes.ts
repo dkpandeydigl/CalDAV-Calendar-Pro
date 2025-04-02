@@ -343,10 +343,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/calendars", async (req, res) => {
+  app.post("/api/calendars", isAuthenticated, async (req, res) => {
     try {
-      // In a real app, you'd get the userId from the authenticated user
-      const userId = 1; // Using default user for demo
+      // Get userId from authenticated user
+      const userId = req.user!.id;
       
       // Add userId to request body
       const calendarData = { ...req.body, userId };
@@ -355,6 +355,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertCalendarSchema.parse(calendarData);
       
       const newCalendar = await storage.createCalendar(validatedData);
+      console.log(`Created new calendar for user ${userId}:`, newCalendar);
       res.status(201).json(newCalendar);
     } catch (err) {
       console.error("Error creating calendar:", err);
@@ -362,9 +363,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/calendars/:id", async (req, res) => {
+  app.put("/api/calendars/:id", isAuthenticated, async (req, res) => {
     try {
       const calendarId = parseInt(req.params.id);
+      const userId = req.user!.id;
+      
+      // Check if calendar belongs to user
+      const calendar = await storage.getCalendar(calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      if (calendar.userId !== userId) {
+        return res.status(403).json({ message: "You don't have permission to update this calendar" });
+      }
       
       // Validate with zod (partial validation for update)
       const validatedData = insertCalendarSchema.partial().parse(req.body);
@@ -375,6 +387,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Calendar not found" });
       }
       
+      console.log(`Updated calendar ${calendarId} for user ${userId}:`, updatedCalendar);
       res.json(updatedCalendar);
     } catch (err) {
       console.error("Error updating calendar:", err);
@@ -382,14 +395,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/calendars/:id", async (req, res) => {
+  app.delete("/api/calendars/:id", isAuthenticated, async (req, res) => {
     try {
       const calendarId = parseInt(req.params.id);
+      const userId = req.user!.id;
       
       // Check if calendar exists
       const calendar = await storage.getCalendar(calendarId);
       if (!calendar) {
         return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Check if user owns this calendar
+      if (calendar.userId !== userId) {
+        return res.status(403).json({ message: "You don't have permission to delete this calendar" });
       }
       
       // Check if this is a primary calendar (should not be deleted)
@@ -404,6 +423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Calendar not found" });
       }
       
+      console.log(`Deleted calendar ${calendarId} for user ${userId}`);
       res.status(204).send();
     } catch (err) {
       console.error("Error deleting calendar:", err);
