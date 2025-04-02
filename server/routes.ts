@@ -158,6 +158,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // All API routes are prefixed with /api
   
+  // Format date for iCalendar - YYYYMMDDTHHMMSSZ format
+  function formatICALDate(date: Date): string {
+    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  }
+  
+  // Generate Thunderbird-compatible iCalendar data with properties 
+  // that improve visibility with various CalDAV clients
+  function generateThunderbirdCompatibleICS(
+    event: {
+      uid: string;
+      title: string;
+      startDate: Date;
+      endDate: Date;
+      description?: string;
+      location?: string;
+    }
+  ): string {
+    // Create a formatted UID that's compatible with Thunderbird
+    // We'll use the provided UID, but ensure it has the right format
+    const safeUid = event.uid.includes('@') ? event.uid : `${event.uid}@caldavclient.local`;
+    
+    // Format dates properly - use formatICALDate helper
+    const now = formatICALDate(new Date());
+    const startDate = formatICALDate(event.startDate);
+    const endDate = formatICALDate(event.endDate);
+    
+    // Build a Thunderbird-compatible iCalendar string
+    // Including necessary X- properties that Thunderbird expects
+    return [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:${safeUid}`,
+      `DTSTAMP:${now}`,
+      `DTSTART:${startDate}`,
+      `DTEND:${endDate}`,
+      `SUMMARY:${event.title}`,
+      event.description ? `DESCRIPTION:${event.description}` : '',
+      event.location ? `LOCATION:${event.location}` : '',
+      'TRANSP:OPAQUE',
+      'SEQUENCE:0',
+      `CREATED:${now}`,
+      `LAST-MODIFIED:${now}`,
+      'STATUS:CONFIRMED',
+      'X-MOZ-GENERATION:1',
+      'X-MICROSOFT-CDO-ALLDAYEVENT:FALSE',
+      'X-MICROSOFT-CDO-IMPORTANCE:1',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].filter(Boolean).join('\r\n');
+  }
+  
   // Error handling middleware for Zod validation errors
   const handleZodError = (err: unknown, res: any) => {
     if (err instanceof ZodError) {
@@ -1315,26 +1370,16 @@ END:VCALENDAR`
               });
               
               // Prepare event for CalDAV format (iCalendar)
-              // We'll use a simple implementation for now
-              const now = new Date().toISOString().replace(/[-:.]/g, '');
-              const startDate = eventData.startDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-              const endDate = eventData.endDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-              
-              const icalEvent = [
-                'BEGIN:VCALENDAR',
-                'VERSION:2.0',
-                'PRODID:-//CalDAV Client//EN',
-                'BEGIN:VEVENT',
-                `UID:${eventData.uid}`,
-                `DTSTAMP:${now}`,
-                `DTSTART:${startDate}`,
-                `DTEND:${endDate}`,
-                `SUMMARY:${eventData.title}`,
-                eventData.description ? `DESCRIPTION:${eventData.description}` : '',
-                eventData.location ? `LOCATION:${eventData.location}` : '',
-                'END:VEVENT',
-                'END:VCALENDAR'
-              ].filter(Boolean).join('\r\n');
+              // Use our Thunderbird-compatible iCalendar generator
+              console.log("Using Thunderbird-compatible iCalendar format");
+              const icalEvent = generateThunderbirdCompatibleICS({
+                uid: eventData.uid,
+                title: eventData.title,
+                startDate: eventData.startDate,
+                endDate: eventData.endDate,
+                description: eventData.description,
+                location: eventData.location
+              });
               
               console.log(`Creating event on CalDAV server for calendar URL: ${targetCalendarUrl}`);
               
@@ -1611,26 +1656,16 @@ END:VCALENDAR`
                 defaultAccountType: 'caldav'
               });
               
-              // Prepare event for CalDAV format (iCalendar)
-              const now = new Date().toISOString().replace(/[-:.]/g, '');
-              const startDate = updatedEvent.startDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-              const endDate = updatedEvent.endDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-              
-              const icalEvent = [
-                'BEGIN:VCALENDAR',
-                'VERSION:2.0',
-                'PRODID:-//CalDAV Client//EN',
-                'BEGIN:VEVENT',
-                `UID:${updatedEvent.uid}`,
-                `DTSTAMP:${now}`,
-                `DTSTART:${startDate}`,
-                `DTEND:${endDate}`,
-                `SUMMARY:${updatedEvent.title}`,
-                updatedEvent.description ? `DESCRIPTION:${updatedEvent.description}` : '',
-                updatedEvent.location ? `LOCATION:${updatedEvent.location}` : '',
-                'END:VEVENT',
-                'END:VCALENDAR'
-              ].filter(Boolean).join('\r\n');
+              // Use our Thunderbird-compatible iCalendar generator for updates too
+              console.log("Using Thunderbird-compatible iCalendar format for update");
+              const icalEvent = generateThunderbirdCompatibleICS({
+                uid: updatedEvent.uid,
+                title: updatedEvent.title,
+                startDate: updatedEvent.startDate,
+                endDate: updatedEvent.endDate,
+                description: updatedEvent.description,
+                location: updatedEvent.location
+              });
               
               console.log(`Updating event on CalDAV server at URL: ${updatedEvent.url}`);
               
@@ -1930,19 +1965,16 @@ END:VCALENDAR`
             try {
               console.log(`Third approach: PUT empty tombstone event to URL: ${eventToDelete.url}`);
               
-              // Create a minimal tombstone event with CANCELLED status
-              const now = new Date().toISOString().replace(/[-:.]/g, '');
-              const tombstoneEvent = [
-                'BEGIN:VCALENDAR',
-                'VERSION:2.0',
-                'PRODID:-//CalDAV Client//EN',
-                'BEGIN:VEVENT',
-                `UID:${eventToDelete.uid}`,
-                `DTSTAMP:${now}`,
-                'STATUS:CANCELLED',
-                'END:VEVENT',
-                'END:VCALENDAR'
-              ].join('\r\n');
+              // Create a Thunderbird-compatible tombstone event with CANCELLED status
+              console.log("Using Thunderbird-compatible iCalendar format for deletion (tombstone)");
+              const tombstoneEvent = generateThunderbirdCompatibleICS({
+                uid: eventToDelete.uid,
+                title: 'CANCELLED: ' + eventToDelete.title,
+                startDate: eventToDelete.startDate,
+                endDate: eventToDelete.endDate,
+                description: 'This event has been cancelled.',
+                location: eventToDelete.location
+              }).replace('STATUS:CONFIRMED', 'STATUS:CANCELLED');
               
               const putResponse = await fetch(eventToDelete.url, {
                 method: 'PUT',
@@ -2637,26 +2669,16 @@ END:VCALENDAR`
                 try {
                   console.log(`Syncing local event "${event.title}" (${uid}) to server`);
                   
-                  // Format to iCalendar
-                  const now = new Date().toISOString().replace(/[-:.]/g, '');
-                  const startDate = event.startDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-                  const endDate = event.endDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-                  
-                  const icalEvent = [
-                    'BEGIN:VCALENDAR',
-                    'VERSION:2.0',
-                    'PRODID:-//CalDAV Client//EN',
-                    'BEGIN:VEVENT',
-                    `UID:${event.uid}`,
-                    `DTSTAMP:${now}`,
-                    `DTSTART:${startDate}`,
-                    `DTEND:${endDate}`,
-                    `SUMMARY:${event.title}`,
-                    event.description ? `DESCRIPTION:${event.description}` : '',
-                    event.location ? `LOCATION:${event.location}` : '',
-                    'END:VEVENT',
-                    'END:VCALENDAR'
-                  ].filter(Boolean).join('\r\n');
+                  // Use our Thunderbird-compatible iCalendar generator for sync
+                  console.log("Using Thunderbird-compatible iCalendar format for server sync");
+                  const icalEvent = generateThunderbirdCompatibleICS({
+                    uid: event.uid,
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    description: event.description,
+                    location: event.location
+                  });
                   
                   // Ensure the calendar URL ends with a trailing slash
                   const calendarUrlWithSlash = serverCalendar.url.endsWith('/') 
@@ -2913,26 +2935,16 @@ END:VCALENDAR`
                 try {
                   console.log(`Syncing local event "${event.title}" (${uid}) to server`);
                   
-                  // Format to iCalendar
-                  const now = new Date().toISOString().replace(/[-:.]/g, '');
-                  const startDate = event.startDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-                  const endDate = event.endDate.toISOString().replace(/[-:.]/g, '').replace('Z', '');
-                  
-                  const icalEvent = [
-                    'BEGIN:VCALENDAR',
-                    'VERSION:2.0',
-                    'PRODID:-//CalDAV Client//EN',
-                    'BEGIN:VEVENT',
-                    `UID:${event.uid}`,
-                    `DTSTAMP:${now}`,
-                    `DTSTART:${startDate}`,
-                    `DTEND:${endDate}`,
-                    `SUMMARY:${event.title}`,
-                    event.description ? `DESCRIPTION:${event.description}` : '',
-                    event.location ? `LOCATION:${event.location}` : '',
-                    'END:VEVENT',
-                    'END:VCALENDAR'
-                  ].filter(Boolean).join('\r\n');
+                  // Use our Thunderbird-compatible iCalendar generator for sync
+                  console.log("Using Thunderbird-compatible iCalendar format for server sync");
+                  const icalEvent = generateThunderbirdCompatibleICS({
+                    uid: event.uid,
+                    title: event.title,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    description: event.description,
+                    location: event.location
+                  });
                   
                   // Ensure the calendar URL ends with a trailing slash
                   const calendarUrlWithSlash = serverCalendar.url.endsWith('/') 
