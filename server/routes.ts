@@ -407,27 +407,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Create calendar on CalDAV server
           try {
-            // Use the DAV Client methods to find the calendar home URL
-            let principal = '';
-            let homeUrl = '';
+            // Let's use the server URL directly 
+            // Most CalDAV servers follow a predictable structure
+            // Format: serverURL/username/
+            let homeUrl = serverConnection.url;
             
+            // Make sure the URL ends with a slash
+            if (!homeUrl.endsWith('/')) {
+              homeUrl += '/';
+            }
+            
+            // Remove any trailing path components if they exist
+            if (homeUrl.includes(serverConnection.username)) {
+              // If the URL already contains the username, use it as is
+              console.log(`Using server URL as is: ${homeUrl}`);
+            } else {
+              // Otherwise append the username
+              homeUrl = `${homeUrl}${serverConnection.username}/`;
+              console.log(`Appending username to server URL: ${homeUrl}`);
+            }
+            
+            console.log(`Using calendar home URL: ${homeUrl}`);
+            
+            // For troubleshooting, let's try to get a list of calendars first
             try {
-              // First try to discover the principal using the official methods
-              principal = (await davClient.fetchPrincipalUrl()) || '';
-              if (!principal) {
-                throw new Error("Principal URL not found");
-              }
+              console.log(`Attempting to list existing calendars...`);
+              const response = await fetch(homeUrl, {
+                method: 'PROPFIND',
+                headers: {
+                  'Content-Type': 'application/xml; charset=utf-8',
+                  'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64'),
+                  'Depth': '1'
+                },
+                body: `<?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop>
+                    <D:resourcetype/>
+                    <D:displayname/>
+                  </D:prop>
+                </D:propfind>`
+              });
               
-              // Then discover the calendar home
-              const calendarHomes = await davClient.fetchCalendarHomeUrl();
-              homeUrl = calendarHomes && calendarHomes.length > 0 ? calendarHomes[0] : '';
-              
-              if (!homeUrl) {
-                throw new Error("Calendar home URL not found");
+              if (response.ok) {
+                console.log(`Successfully listed resources at ${homeUrl}`);
+                const text = await response.text();
+                console.log(`Server response: ${text.substring(0, 500)}...`);
+              } else {
+                console.log(`Failed to list resources: ${response.status} ${response.statusText}`);
               }
-            } catch (discoveryError) {
-              console.error("Error during CalDAV discovery:", discoveryError);
-              throw new Error("Failed to discover CalDAV URLs");
+            } catch (listError) {
+              console.error(`Error listing resources:`, listError);
             }
             
             // Sanitize the calendar name for URL safety
@@ -582,7 +611,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user is the owner of the calendar
-      if (calendar.userId !== req.user.id) {
+      if (calendar.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to view sharing for this calendar" });
       }
       
@@ -606,7 +635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user is the owner of the calendar
-      if (calendar.userId !== req.user.id) {
+      if (calendar.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to share this calendar" });
       }
       
@@ -668,7 +697,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user is the owner of the calendar
-      if (calendar.userId !== req.user.id) {
+      if (calendar.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to update sharing for this calendar" });
       }
       
@@ -708,7 +737,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Check if user is the owner of the calendar
-      if (calendar.userId !== req.user.id) {
+      if (calendar.userId !== req.user!.id) {
         return res.status(403).json({ message: "You don't have permission to remove sharing for this calendar" });
       }
       
@@ -729,7 +758,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get calendars shared with the current user
   app.get("/api/shared-calendars", isAuthenticated, async (req, res) => {
     try {
-      const sharedCalendars = await storage.getSharedCalendars(req.user.id);
+      const sharedCalendars = await storage.getSharedCalendars(req.user!.id);
       res.json(sharedCalendars);
     } catch (err) {
       console.error("Error getting shared calendars:", err);
