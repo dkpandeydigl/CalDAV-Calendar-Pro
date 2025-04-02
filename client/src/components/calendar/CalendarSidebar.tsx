@@ -8,6 +8,38 @@ import { useServerConnection } from '@/hooks/useServerConnection';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { getTimezones } from '@/lib/date-utils';
 import { formatFullDate } from '@/lib/date-utils';
+import { 
+  Edit, 
+  Trash2, 
+  MoreVertical,
+  Calendar as CalendarIcon 
+} from 'lucide-react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Input } from '@/components/ui/input';
+import { Calendar } from '@shared/schema';
 
 interface CalendarSidebarProps {
   visible: boolean;
@@ -20,7 +52,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
   onCreateEvent,
   onOpenServerSettings
 }) => {
-  const { calendars, updateCalendar } = useCalendars();
+  const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
   const { 
     selectedTimezone, 
@@ -28,14 +60,119 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
     saveTimezonePreference,
     isSavingTimezone 
   } = useCalendarContext();
+  
+  // Calendar creation state
   const [showAddCalendar, setShowAddCalendar] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
   const [newCalendarColor, setNewCalendarColor] = useState('#0078d4');
+  const [calendarNameError, setCalendarNameError] = useState('');
+  
+  // Calendar editing state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingCalendar, setEditingCalendar] = useState<Calendar | null>(null);
+  const [editCalendarName, setEditCalendarName] = useState('');
+  const [editCalendarColor, setEditCalendarColor] = useState('');
+  const [editCalendarNameError, setEditCalendarNameError] = useState('');
+  
+  // Calendar deletion state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingCalendar, setDeletingCalendar] = useState<Calendar | null>(null);
 
   const timezones = getTimezones();
 
   const handleCalendarToggle = (id: number, checked: boolean) => {
     updateCalendar({ id, data: { enabled: checked } });
+  };
+  
+  // Calendar name validation
+  const validateCalendarName = (name: string): boolean => {
+    if (!name.trim()) {
+      setCalendarNameError('Calendar name is required');
+      return false;
+    }
+    
+    // Validate against allowed characters (letters, digits, underscore, hyphen, period)
+    const regex = /^[A-Za-z0-9_\-\.]+$/;
+    if (!regex.test(name)) {
+      setCalendarNameError('Only letters, digits, underscore, hyphen, and period are allowed');
+      return false;
+    }
+    
+    setCalendarNameError('');
+    return true;
+  };
+  
+  // Create calendar
+  const handleCreateCalendar = () => {
+    if (!validateCalendarName(newCalendarName)) return;
+    
+    createCalendar({
+      name: newCalendarName.trim(),
+      color: newCalendarColor,
+      enabled: true,
+      isLocal: true,
+      isPrimary: false,
+      url: null,
+      syncToken: null,
+      description: null
+    });
+    
+    setShowAddCalendar(false);
+    setNewCalendarName('');
+    setNewCalendarColor('#0078d4');
+  };
+  
+  // Open edit dialog
+  const handleOpenEditDialog = (calendar: Calendar) => {
+    setEditingCalendar(calendar);
+    setEditCalendarName(calendar.name);
+    setEditCalendarColor(calendar.color);
+    setEditCalendarNameError('');
+    setIsEditDialogOpen(true);
+  };
+  
+  // Update calendar
+  const handleUpdateCalendar = () => {
+    if (!editingCalendar) return;
+    
+    // Validate calendar name
+    if (!editCalendarName.trim()) {
+      setEditCalendarNameError('Calendar name is required');
+      return;
+    }
+    
+    // Validate against allowed characters (letters, digits, underscore, hyphen, period)
+    const regex = /^[A-Za-z0-9_\-\.]+$/;
+    if (!regex.test(editCalendarName)) {
+      setEditCalendarNameError('Only letters, digits, underscore, hyphen, and period are allowed');
+      return;
+    }
+    
+    updateCalendar({
+      id: editingCalendar.id,
+      data: {
+        name: editCalendarName.trim(),
+        color: editCalendarColor
+      }
+    });
+    
+    setIsEditDialogOpen(false);
+    setEditingCalendar(null);
+  };
+  
+  // Open delete dialog
+  const handleOpenDeleteDialog = (calendar: Calendar) => {
+    setDeletingCalendar(calendar);
+    setIsDeleteDialogOpen(true);
+  };
+  
+  // Delete calendar
+  const handleDeleteCalendar = () => {
+    if (!deletingCalendar) return;
+    
+    deleteCalendar(deletingCalendar.id);
+    setIsDeleteDialogOpen(false);
+    setDeletingCalendar(null);
   };
 
   return (
@@ -55,36 +192,77 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
         <div className="mb-6">
           <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Calendars</h3>
           {calendars.map(calendar => (
-            <div className="flex items-center mb-2" key={calendar.id}>
-              <Checkbox 
-                id={`cal-${calendar.id}`} 
-                checked={calendar.enabled ?? true}
-                onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean)}
-                className="h-4 w-4"
-                style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
-              />
-              <Label htmlFor={`cal-${calendar.id}`} className="ml-2 text-sm text-neutral-800">
-                {calendar.name}
-              </Label>
+            <div className="flex items-center justify-between mb-2" key={calendar.id}>
+              <div className="flex items-center flex-1">
+                <Checkbox 
+                  id={`cal-${calendar.id}`} 
+                  checked={calendar.enabled ?? true}
+                  onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean)}
+                  className="h-4 w-4"
+                  style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
+                />
+                <Label htmlFor={`cal-${calendar.id}`} className="ml-2 text-sm text-neutral-800 truncate">
+                  {calendar.name}
+                </Label>
+              </div>
+              
+              {/* Edit and delete buttons for non-primary calendars */}
+              {!calendar.isPrimary && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-6 w-6">
+                      <MoreVertical className="h-3 w-3" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <div className="flex flex-col">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center justify-start px-3 py-2 rounded-none"
+                        onClick={() => handleOpenEditDialog(calendar)}
+                      >
+                        <Edit className="mr-2 h-4 w-4" />
+                        <span>Edit</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center justify-start px-3 py-2 text-destructive rounded-none"
+                        onClick={() => handleOpenDeleteDialog(calendar)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        <span>Delete</span>
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
             </div>
           ))}
           
           {showAddCalendar ? (
             <div className="mt-2">
-              <div className="mb-2">
-                <Label htmlFor="newCalendarName" className="sr-only">
+              <div className="mb-1">
+                <Label htmlFor="newCalendarName" className="text-sm">
                   Calendar Name
                 </Label>
-                <input
+                <Input
                   id="newCalendarName"
                   type="text"
                   placeholder="Calendar name"
-                  className="block w-full px-3 py-2 text-sm border border-neutral-200 rounded-md bg-white focus:outline-none focus:ring-primary focus:border-primary"
+                  className="mt-1"
                   value={newCalendarName}
                   onChange={(e) => setNewCalendarName(e.target.value)}
                 />
+                {calendarNameError && (
+                  <p className="text-xs text-destructive mt-1">{calendarNameError}</p>
+                )}
+                <div className="text-xs text-neutral-500 mt-1">
+                  Note: Allowed Characters- [Letters, digits, _, -, and .]
+                </div>
               </div>
-              <div className="mb-2 flex items-center">
+              <div className="mb-2 flex items-center mt-3">
                 <Label htmlFor="newCalendarColor" className="text-sm mr-2">
                   Color
                 </Label>
@@ -96,17 +274,13 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
                   onChange={(e) => setNewCalendarColor(e.target.value)}
                 />
               </div>
-              <div className="flex mt-2">
+              <div className="flex mt-3">
                 <Button
                   size="sm"
                   variant="default"
                   className="mr-2"
                   disabled={!newCalendarName.trim()}
-                  onClick={() => {
-                    // Handle add calendar logic here
-                    setShowAddCalendar(false);
-                    setNewCalendarName('');
-                  }}
+                  onClick={handleCreateCalendar}
                 >
                   Add
                 </Button>
@@ -116,6 +290,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
                   onClick={() => {
                     setShowAddCalendar(false);
                     setNewCalendarName('');
+                    setCalendarNameError('');
                   }}
                 >
                   Cancel
@@ -129,9 +304,75 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
               className="mt-2 text-primary hover:text-primary/80 p-0 h-auto font-normal"
               onClick={() => setShowAddCalendar(true)}
             >
+              <CalendarIcon className="h-3 w-3 mr-1" />
               Add Calendar
             </Button>
           )}
+          
+          {/* Edit Calendar Dialog */}
+          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Calendar</DialogTitle>
+                <DialogDescription>
+                  Update your calendar settings.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label htmlFor="editCalendarName">Calendar Name</Label>
+                  <Input
+                    id="editCalendarName"
+                    value={editCalendarName}
+                    onChange={(e) => setEditCalendarName(e.target.value)}
+                  />
+                  {editCalendarNameError && (
+                    <p className="text-xs text-destructive">{editCalendarNameError}</p>
+                  )}
+                  <div className="text-xs text-neutral-500">
+                    Note: Allowed Characters- [Letters, digits, _, -, and .]
+                  </div>
+                </div>
+                
+                <div className="flex items-center">
+                  <Label htmlFor="editCalendarColor" className="mr-2">Color</Label>
+                  <input
+                    id="editCalendarColor"
+                    type="color"
+                    className="h-8 w-8 rounded cursor-pointer"
+                    value={editCalendarColor}
+                    onChange={(e) => setEditCalendarColor(e.target.value)}
+                  />
+                </div>
+              </div>
+              
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleUpdateCalendar}>Save Changes</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          
+          {/* Delete Calendar Dialog */}
+          <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Calendar</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete the calendar "{deletingCalendar?.name}" and ALL its events from both local storage and the server. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleDeleteCalendar} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
         
         <div className="mb-6">
