@@ -257,7 +257,7 @@ function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (eve
 }
 
 function CalendarContent() {
-  const { viewStartDate, viewEndDate, viewType, setViewType, setServerStatus } = useCalendarContext();
+  const { viewStartDate, viewEndDate, viewType, setViewType, setServerStatus, currentDate } = useCalendarContext();
   const [showSidebar, setShowSidebar] = useState(true);
   const [eventFormOpen, setEventFormOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
@@ -385,7 +385,7 @@ function CalendarContent() {
       <EventFormModal 
         open={eventFormOpen} 
         event={selectedEvent}
-        selectedDate={selectedEvent ? undefined : currentDate} 
+        selectedDate={!selectedEvent && viewType !== 'year' ? new Date(currentDate) : undefined} 
         onClose={() => setEventFormOpen(false)} 
       />
       
