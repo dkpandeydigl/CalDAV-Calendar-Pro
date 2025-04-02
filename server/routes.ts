@@ -312,8 +312,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Filter out proxy calendars and address books to match Thunderbird's behavior
       // This ensures we only show primary calendars that all CalDAV clients can see
+      // Also include local calendars that have no URL (created by the user in the app)
       const filteredCalendars = allCalendars.filter(cal => 
-        // Explicitly exclude proxy calendars and address books
+        // Include local calendars (no URL)
+        cal.isLocal === true ||
+        // OR include non-proxy, non-address book remote calendars 
         (cal.url && !cal.url.includes("/calendar-proxy-") && !cal.url.includes("/addresses/"))
       );
       
@@ -348,8 +351,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get userId from authenticated user
       const userId = req.user!.id;
       
-      // Add userId to request body
-      const calendarData = { ...req.body, userId };
+      // Add userId to request body and mark as a local calendar
+      const calendarData = { 
+        ...req.body, 
+        userId,
+        isLocal: true, // Mark as a local calendar (not from CalDAV server)
+        url: null      // Local calendars don't have URLs
+      };
       
       // Validate with zod
       const validatedData = insertCalendarSchema.parse(calendarData);
@@ -641,8 +649,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allCalendars = await storage.getCalendars(userId);
       
       // Filter out proxy calendars and address books, then filter for enabled ones
+      // Also include local calendars that have no URL (created by the user in the app)
       const filteredCalendars = allCalendars.filter(cal => 
-        cal.url && !cal.url.includes("/calendar-proxy-") && !cal.url.includes("/addresses/")
+        cal.isLocal === true ||
+        (cal.url && !cal.url.includes("/calendar-proxy-") && !cal.url.includes("/addresses/"))
       );
       
       console.log(`Filtered ${allCalendars.length} calendars to ${filteredCalendars.length} primary calendars`);
