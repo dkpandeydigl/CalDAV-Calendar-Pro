@@ -26,6 +26,7 @@ import { useAuth } from '@/hooks/use-auth';
 interface EventFormModalProps {
   open: boolean;
   event: Event | null;
+  selectedDate?: Date; // Optional date to pre-fill when creating a new event
   onClose: () => void;
 }
 
@@ -36,7 +37,7 @@ type RecurrenceEndType = 'never' | 'after' | 'on';
 
 const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose }) => {
+const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDate, onClose }) => {
   const { calendars } = useCalendars();
   const { createEvent, updateEvent } = useCalendarEvents();
   const { selectedTimezone } = useCalendarContext();
@@ -171,19 +172,26 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
         }
       } else {
         // Creating new event
-        // Default to current date
-        const now = new Date();
+        // Use selected date if provided, otherwise default to current date
+        const now = selectedDate || new Date();
         const nowPlus1Hour = new Date(now.getTime() + 60 * 60 * 1000);
+        
+        // Format the date properly in the local timezone of the user
+        const dateStr = now.toISOString().split('T')[0];
+        const timeStr = now.toTimeString().slice(0, 5);
+        const endTimeStr = nowPlus1Hour.toTimeString().slice(0, 5);
+        
+        console.log(`Creating new event with date: ${dateStr}, time: ${timeStr}`);
         
         setTitle('');
         setDescription('');
         setLocation('');
-        setStartDate(now.toISOString().split('T')[0]);
-        setEndDate(now.toISOString().split('T')[0]);
-        setStartTime(now.toTimeString().slice(0, 5));
-        setEndTime(nowPlus1Hour.toTimeString().slice(0, 5));
+        setStartDate(dateStr);
+        setEndDate(dateStr);
+        setStartTime(timeStr);
+        setEndTime(endTimeStr);
         setCalendarId(calendars.length > 0 ? calendars[0].id.toString() : '');
-        setTimezone(selectedTimezone);
+        setTimezone(selectedTimezone);  // Always use current user timezone preference
         setAllDay(false);
         resetRecurrenceState();
         setAttendees([]);  // Don't add current user by default
@@ -191,7 +199,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
         setBusyStatus('busy');
       }
     }
-  }, [open, event, calendars, selectedTimezone]);
+  }, [open, event, calendars, selectedTimezone, selectedDate]);
   
   // Helper function to parse recurrence rule
   const parseRecurrenceRule = (rule: string) => {

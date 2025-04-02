@@ -384,7 +384,8 @@ function CalendarContent() {
       {/* Modals */}
       <EventFormModal 
         open={eventFormOpen} 
-        event={selectedEvent} 
+        event={selectedEvent}
+        selectedDate={selectedEvent ? undefined : currentDate} 
         onClose={() => setEventFormOpen(false)} 
       />
       
