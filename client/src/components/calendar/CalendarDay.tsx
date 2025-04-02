@@ -8,7 +8,7 @@ interface CalendarDayProps {
   day: CalendarDayType;
   events: Event[];
   onEventClick: (event: Event) => void;
-  onDayDoubleClick?: () => void;
+  onDayDoubleClick?: (date: Date) => void;
 }
 
 const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick, onDayDoubleClick }) => {
@@ -19,7 +19,7 @@ const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick, on
       className={`p-1 border border-neutral-200 min-h-[100px] cursor-pointer ${
         isToday ? 'bg-blue-50' : ''
       }`}
-      onDoubleClick={onDayDoubleClick}
+      onDoubleClick={(e) => onDayDoubleClick && onDayDoubleClick(date)}
     >
       <div className="text-right p-1">
         {isToday ? (

@@ -261,6 +261,7 @@ function CalendarContent() {
   const [showSidebar, setShowSidebar] = useState(true);
   const [eventFormOpen, setEventFormOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [eventDetailOpen, setEventDetailOpen] = useState(false);
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -274,8 +275,9 @@ function CalendarContent() {
   
   const toggleSidebar = () => setShowSidebar(!showSidebar);
 
-  const handleCreateEvent = () => {
+  const handleCreateEvent = (date?: Date) => {
     setSelectedEvent(null);
+    setSelectedDate(date);
     setEventFormOpen(true);
   };
 
@@ -385,8 +387,11 @@ function CalendarContent() {
       <EventFormModal 
         open={eventFormOpen} 
         event={selectedEvent}
-        selectedDate={!selectedEvent && viewType !== 'year' ? new Date(currentDate) : undefined} 
-        onClose={() => setEventFormOpen(false)} 
+        selectedDate={!selectedEvent ? selectedDate : undefined} 
+        onClose={() => {
+          setEventFormOpen(false);
+          setSelectedDate(undefined);
+        }} 
       />
       
       <EventDetailModal 
