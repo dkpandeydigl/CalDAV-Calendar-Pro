@@ -351,6 +351,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get userId from authenticated user
       const userId = req.user!.id;
       
+      // Check if calendar with the same name already exists for this user
+      const existingCalendars = await storage.getCalendars(userId);
+      const calendarName = req.body.name?.trim();
+      
+      if (!calendarName) {
+        return res.status(400).json({ message: "Calendar name is required" });
+      }
+      
+      const duplicateCalendar = existingCalendars.find(
+        cal => cal.name.toLowerCase() === calendarName.toLowerCase()
+      );
+      
+      if (duplicateCalendar) {
+        return res.status(400).json({ 
+          message: "A calendar with this name already exists. Please choose a different name." 
+        });
+      }
+      
       // Add userId to request body and mark as a local calendar
       const calendarData = { 
         ...req.body, 
@@ -362,8 +380,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate with zod
       const validatedData = insertCalendarSchema.parse(calendarData);
       
+      // Create calendar in local storage
       const newCalendar = await storage.createCalendar(validatedData);
       console.log(`Created new calendar for user ${userId}:`, newCalendar);
+      
+      // Sync the new calendar to the CalDAV server if user has a connection
+      const serverConnection = await storage.getServerConnection(userId);
+      
+      if (serverConnection && serverConnection.status === 'connected') {
+        try {
+          console.log(`Attempting to create calendar "${calendarName}" on CalDAV server...`);
+          
+          // Initialize CalDAV client
+          const { DAVClient } = await import('tsdav');
+          
+          // Create CalDAV client
+          const davClient = new DAVClient({
+            serverUrl: serverConnection.url,
+            credentials: {
+              username: serverConnection.username,
+              password: serverConnection.password
+            },
+            authMethod: 'Basic',
+            defaultAccountType: 'caldav'
+          });
+          
+          // Create calendar on CalDAV server
+          try {
+            // Use the DAV Client methods to find the calendar home URL
+            let principal = '';
+            let homeUrl = '';
+            
+            try {
+              // First try to discover the principal using the official methods
+              principal = (await davClient.fetchPrincipalUrl()) || '';
+              if (!principal) {
+                throw new Error("Principal URL not found");
+              }
+              
+              // Then discover the calendar home
+              const calendarHomes = await davClient.fetchCalendarHomeUrl();
+              homeUrl = calendarHomes && calendarHomes.length > 0 ? calendarHomes[0] : '';
+              
+              if (!homeUrl) {
+                throw new Error("Calendar home URL not found");
+              }
+            } catch (discoveryError) {
+              console.error("Error during CalDAV discovery:", discoveryError);
+              throw new Error("Failed to discover CalDAV URLs");
+            }
+            
+            // Sanitize the calendar name for URL safety
+            const safeCalendarName = calendarName.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+            
+            // Use MKCALENDAR request to create the calendar
+            const calendarUrl = `${homeUrl}${safeCalendarName}/`;
+            console.log(`Creating calendar at URL: ${calendarUrl}`);
+            
+            // Build the MKCALENDAR request XML
+            const mkcalendarXml = `<?xml version="1.0" encoding="UTF-8"?>
+            <mkcalendar xmlns="urn:ietf:params:xml:ns:caldav">
+              <set xmlns="DAV:">
+                <prop>
+                  <displayname>${calendarName}</displayname>
+                  <calendar-color xmlns="http://apple.com/ns/ical/">${calendarData.color || '#0078d4'}</calendar-color>
+                  <calendar-description xmlns="urn:ietf:params:xml:ns:caldav">${calendarData.description || ''}</calendar-description>
+                </prop>
+              </set>
+            </mkcalendar>`;
+            
+            // Send the MKCALENDAR request
+            const response = await fetch(calendarUrl, {
+              method: 'MKCALENDAR',
+              headers: {
+                'Content-Type': 'application/xml; charset=utf-8',
+                'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+              },
+              body: mkcalendarXml
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Failed to create calendar: ${response.status} ${response.statusText}`);
+            }
+            
+            // Create calendar object for further processing
+            const calendarObject = { url: calendarUrl };
+            
+            if (calendarObject) {
+              // Update the local calendar with the URL from the server
+              console.log(`Successfully created calendar on server: ${calendarObject.url}`);
+              await storage.updateCalendar(newCalendar.id, {
+                url: calendarObject.url,
+                isLocal: false, // No longer just a local calendar
+                syncToken: null
+              });
+              
+              // Get the updated calendar to return to the client
+              const updatedCalendar = await storage.getCalendar(newCalendar.id);
+              if (updatedCalendar) {
+                console.log(`Updated local calendar with server URL: ${updatedCalendar.url}`);
+                res.status(201).json(updatedCalendar);
+                return;
+              }
+            }
+          } catch (davError) {
+            console.error(`Error creating calendar on CalDAV server:`, davError);
+            // We still return success since the local calendar was created
+          }
+        } catch (syncError) {
+          console.error(`Error syncing calendar to server:`, syncError);
+          // We still return success since the local calendar was created
+        }
+      }
+      
+      // If we reach here, either there was no server connection or syncing failed
+      // Still return the locally created calendar
       res.status(201).json(newCalendar);
     } catch (err) {
       console.error("Error creating calendar:", err);
