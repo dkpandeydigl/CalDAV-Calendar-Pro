@@ -203,9 +203,18 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             .then(response => {
               if (response.ok) {
                 console.log('Manual sync triggered successfully after event creation');
+                return response.json();
               } else {
                 console.warn('Failed to trigger manual sync after event creation');
+                throw new Error('Sync failed');
               }
+            })
+            .then(data => {
+              console.log('Sync completed successfully:', data);
+              // After sync completes, refresh the events to show the latest state from server
+              setTimeout(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              }, 1000);
             })
             .catch(error => {
               console.error('Error triggering manual sync:', error);
@@ -451,9 +460,18 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           .then(response => {
             if (response.ok) {
               console.log('Manual sync triggered successfully after event update');
+              return response.json();
             } else {
               console.warn('Failed to trigger manual sync after event update');
+              throw new Error('Sync failed');
             }
+          })
+          .then(data => {
+            console.log('Sync completed successfully after update:', data);
+            // After sync completes, refresh the events again to ensure all caches are up-to-date
+            setTimeout(() => {
+              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            }, 1000);
           })
           .catch(error => {
             console.error('Error triggering manual sync:', error);
@@ -658,9 +676,18 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           .then(response => {
             if (response.ok) {
               console.log('Manual sync triggered successfully after event deletion');
+              return response.json();
             } else {
               console.warn('Failed to trigger manual sync after event deletion');
+              throw new Error('Sync failed');
             }
+          })
+          .then(data => {
+            console.log('Sync completed successfully after deletion:', data);
+            // After sync completes, refresh the events again to ensure all caches are up-to-date
+            setTimeout(() => {
+              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            }, 1000);
           })
           .catch(error => {
             console.error('Error triggering manual sync:', error);
