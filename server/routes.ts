@@ -576,34 +576,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Get the calendar for this event
             const calendar = await storage.getCalendar(eventData.calendarId);
             
-            // Force using the primary calendar regardless of the selected calendar
+            // ALWAYS use the primary calendar regardless of the selected calendar
             // This ensures events are always created in the main calendar that Thunderbird can see
             const forcePrimaryCalendar = true;
+            
+            // Default to the selected calendar (but we'll override this)
             let targetCalendarUrl = calendar?.url;
             let targetCalendar = calendar;
             
-            if (forcePrimaryCalendar) {
-              // Get all calendars
-              const allCalendars = await storage.getCalendars(userId);
-              
-              // Look for a primary calendar - likely named something like "Calendar" or username's calendar
-              // Specifically avoid proxy calendars and address books
-              const primaryCalendar = allCalendars.find(cal => 
-                (cal.name.includes("D K Pandey calendar") || 
-                 cal.name === "Calendar" || 
-                 cal.name === "default" || 
-                 cal.name.includes("primary")) &&
-                !cal.url.includes("/calendar-proxy-") &&
-                !cal.url.includes("/addresses/")
-              );
-              
-              if (primaryCalendar) {
-                console.log(`Found primary calendar: "${primaryCalendar.name}" (${primaryCalendar.url})`);
-                targetCalendarUrl = primaryCalendar.url;
-                targetCalendar = primaryCalendar;
-              } else {
-                console.log(`Could not find primary calendar, using originally selected calendar`);
+            // Get all calendars
+            const allCalendars = await storage.getCalendars(userId);
+            console.log(`Examining ${allCalendars.length} calendars to find a primary calendar...`);
+            
+            // First, log all calendars for debugging
+            allCalendars.forEach((cal, index) => {
+              console.log(`Calendar ${index + 1}: "${cal.name}" - URL: ${cal.url || 'N/A'}`);
+            });
+            
+            // Filter out proxy calendars and address books first
+            const nonProxyCalendars = allCalendars.filter(cal => {
+              if (!cal.url) return false;
+              if (cal.url.includes('/calendar-proxy-')) {
+                console.log(`Excluding proxy calendar: ${cal.name} (${cal.url})`);
+                return false;
               }
+              if (cal.url.includes('/addresses/')) {
+                console.log(`Excluding address book: ${cal.name} (${cal.url})`);
+                return false;
+              }
+              return true;
+            });
+            
+            console.log(`Found ${nonProxyCalendars.length} non-proxy calendars`);
+            
+            // Define a scoring function to identify the most likely primary calendar
+            const scorePrimaryCalendar = (cal: any): number => {
+              let score = 0;
+              
+              // Give points for common primary calendar names
+              if (cal.name === "Calendar") score += 10;
+              if (cal.name.includes("calendar")) score += 5;
+              if (cal.name.includes("D K Pandey")) score += 8;
+              if (cal.name.includes("dkpandey")) score += 8;
+              if (cal.name === "default") score += 7;
+              if (cal.name.toLowerCase().includes("primary")) score += 6;
+              if (cal.name.toLowerCase() === connection.username) score += 9;
+              if (cal.name.toLowerCase().includes(connection.username)) score += 7;
+              
+              // Give points for likely primary calendar URLs
+              if (cal.url.includes(`/${connection.username}/calendar/`)) score += 10;
+              if (cal.url.includes(`/${connection.username}/`)) score += 8;
+              if (cal.url.includes('/calendar/')) score += 6;
+              if (cal.url.includes('/calendars/')) score += 5;
+              
+              // Penalize URLs that are likely not primary
+              if (cal.url.includes('/inbox/')) score -= 10;
+              if (cal.url.includes('/outbox/')) score -= 10;
+              if (cal.url.includes('/notification/')) score -= 10;
+              
+              return score;
+            };
+            
+            // Score and sort calendars
+            const scoredCalendars = nonProxyCalendars.map(cal => ({
+              calendar: cal,
+              score: scorePrimaryCalendar(cal)
+            })).sort((a, b) => b.score - a.score);
+            
+            // Log the scored calendars
+            scoredCalendars.forEach(({calendar, score}) => {
+              console.log(`Calendar "${calendar.name}" (${calendar.url}) - Score: ${score}`);
+            });
+            
+            // Use the highest scoring calendar if available
+            if (scoredCalendars.length > 0 && scoredCalendars[0].score > 0) {
+              const bestCalendar = scoredCalendars[0].calendar;
+              console.log(`Selected primary calendar: "${bestCalendar.name}" (${bestCalendar.url}) with score ${scoredCalendars[0].score}`);
+              targetCalendarUrl = bestCalendar.url;
+              targetCalendar = bestCalendar;
+            } else if (nonProxyCalendars.length > 0) {
+              // If we couldn't score any calendars well, just use the first non-proxy calendar
+              const fallbackCalendar = nonProxyCalendars[0];
+              console.log(`Using fallback non-proxy calendar: "${fallbackCalendar.name}" (${fallbackCalendar.url})`);
+              targetCalendarUrl = fallbackCalendar.url;
+              targetCalendar = fallbackCalendar;
+            } else {
+              console.log(`Warning: Could not find any suitable primary calendar`);
             }
             
             if (targetCalendar && targetCalendarUrl) {
@@ -803,34 +861,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Get the calendar for this event
             const calendar = await storage.getCalendar(updatedEvent.calendarId);
             
-            // Force using the primary calendar regardless of the calendar in the database
-            // This ensures updates go to the same calendar that Thunderbird can see
+            // ALWAYS use the primary calendar regardless of the selected calendar
+            // This ensures events are always created in the main calendar that Thunderbird can see
             const forcePrimaryCalendar = true;
+            
+            // Default to the selected calendar (but we'll override this)
             let targetCalendarUrl = calendar?.url;
             let targetCalendar = calendar;
             
-            if (forcePrimaryCalendar) {
-              // Get all calendars
-              const allCalendars = await storage.getCalendars(userId);
-              
-              // Look for a primary calendar - likely named something like "Calendar" or username's calendar
-              // Specifically avoid proxy calendars and address books
-              const primaryCalendar = allCalendars.find(cal => 
-                (cal.name.includes("D K Pandey calendar") || 
-                 cal.name === "Calendar" || 
-                 cal.name === "default" || 
-                 cal.name.includes("primary")) &&
-                !cal.url.includes("/calendar-proxy-") &&
-                !cal.url.includes("/addresses/")
-              );
-              
-              if (primaryCalendar) {
-                console.log(`Found primary calendar: "${primaryCalendar.name}" (${primaryCalendar.url})`);
-                targetCalendarUrl = primaryCalendar.url;
-                targetCalendar = primaryCalendar;
-              } else {
-                console.log(`Could not find primary calendar, using originally selected calendar`);
+            // Get all calendars
+            const allCalendars = await storage.getCalendars(userId);
+            console.log(`Examining ${allCalendars.length} calendars to find a primary calendar...`);
+            
+            // First, log all calendars for debugging
+            allCalendars.forEach((cal, index) => {
+              console.log(`Calendar ${index + 1}: "${cal.name}" - URL: ${cal.url || 'N/A'}`);
+            });
+            
+            // Filter out proxy calendars and address books first
+            const nonProxyCalendars = allCalendars.filter(cal => {
+              if (!cal.url) return false;
+              if (cal.url.includes('/calendar-proxy-')) {
+                console.log(`Excluding proxy calendar: ${cal.name} (${cal.url})`);
+                return false;
               }
+              if (cal.url.includes('/addresses/')) {
+                console.log(`Excluding address book: ${cal.name} (${cal.url})`);
+                return false;
+              }
+              return true;
+            });
+            
+            console.log(`Found ${nonProxyCalendars.length} non-proxy calendars`);
+            
+            // Define a scoring function to identify the most likely primary calendar
+            const scorePrimaryCalendar = (cal: any): number => {
+              let score = 0;
+              
+              // Give points for common primary calendar names
+              if (cal.name === "Calendar") score += 10;
+              if (cal.name.includes("calendar")) score += 5;
+              if (cal.name.includes("D K Pandey")) score += 8;
+              if (cal.name.includes("dkpandey")) score += 8;
+              if (cal.name === "default") score += 7;
+              if (cal.name.toLowerCase().includes("primary")) score += 6;
+              if (cal.name.toLowerCase() === connection.username) score += 9;
+              if (cal.name.toLowerCase().includes(connection.username)) score += 7;
+              
+              // Give points for likely primary calendar URLs
+              if (cal.url.includes(`/${connection.username}/calendar/`)) score += 10;
+              if (cal.url.includes(`/${connection.username}/`)) score += 8;
+              if (cal.url.includes('/calendar/')) score += 6;
+              if (cal.url.includes('/calendars/')) score += 5;
+              
+              // Penalize URLs that are likely not primary
+              if (cal.url.includes('/inbox/')) score -= 10;
+              if (cal.url.includes('/outbox/')) score -= 10;
+              if (cal.url.includes('/notification/')) score -= 10;
+              
+              return score;
+            };
+            
+            // Score and sort calendars
+            const scoredCalendars = nonProxyCalendars.map(cal => ({
+              calendar: cal,
+              score: scorePrimaryCalendar(cal)
+            })).sort((a, b) => b.score - a.score);
+            
+            // Log the scored calendars
+            scoredCalendars.forEach(({calendar, score}) => {
+              console.log(`Calendar "${calendar.name}" (${calendar.url}) - Score: ${score}`);
+            });
+            
+            // Use the highest scoring calendar if available
+            if (scoredCalendars.length > 0 && scoredCalendars[0].score > 0) {
+              const bestCalendar = scoredCalendars[0].calendar;
+              console.log(`Selected primary calendar: "${bestCalendar.name}" (${bestCalendar.url}) with score ${scoredCalendars[0].score}`);
+              targetCalendarUrl = bestCalendar.url;
+              targetCalendar = bestCalendar;
+            } else if (nonProxyCalendars.length > 0) {
+              // If we couldn't score any calendars well, just use the first non-proxy calendar
+              const fallbackCalendar = nonProxyCalendars[0];
+              console.log(`Using fallback non-proxy calendar: "${fallbackCalendar.name}" (${fallbackCalendar.url})`);
+              targetCalendarUrl = fallbackCalendar.url;
+              targetCalendar = fallbackCalendar;
+            } else {
+              console.log(`Warning: Could not find any suitable primary calendar`);
             }
             
             // Get the base URL from the event URL for updating operations
