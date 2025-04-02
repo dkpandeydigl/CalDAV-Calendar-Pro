@@ -1477,7 +1477,30 @@ END:VCALENDAR`
                   // Force immediate refresh to ensure the event is visible to other clients
                   try {
                     console.log("Forcing immediate server refresh...");
-                    await davClient.refreshCalendars();
+                    
+                    // More efficient approach 1: First try a direct PROPFIND request to refresh the calendar
+                    try {
+                      const propfindResponse = await fetch(calendarUrlWithSlash, {
+                        method: 'PROPFIND',
+                        headers: {
+                          'Content-Type': 'application/xml; charset=utf-8',
+                          'Depth': '1',
+                          'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                        },
+                        body: `<?xml version="1.0" encoding="utf-8" ?>
+                          <D:propfind xmlns:D="DAV:">
+                            <D:prop>
+                              <D:getetag/>
+                            </D:prop>
+                          </D:propfind>`
+                      });
+                      console.log(`PROPFIND response status: ${propfindResponse.status}`);
+                    } catch (propfindError) {
+                      console.error("Error during PROPFIND refresh:", propfindError);
+                    }
+                    
+                    // Backup approach: Fetch all calendars if needed
+                    await davClient.fetchCalendars();
                     console.log("Server calendars refreshed successfully");
                     
                     // Send a REPORT request to make the changes visible to other clients
@@ -1801,7 +1824,30 @@ END:VCALENDAR`
                     // Force immediate refresh to ensure the event is visible to other clients
                     try {
                       console.log("Forcing immediate server refresh after direct PUT...");
-                      await davClient.refreshCalendars();
+                      
+                      // More efficient approach 1: First try a direct PROPFIND request to refresh the calendar
+                      try {
+                        const propfindResponse = await fetch(calendarUrlWithSlash, {
+                          method: 'PROPFIND',
+                          headers: {
+                            'Content-Type': 'application/xml; charset=utf-8',
+                            'Depth': '1',
+                            'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                          },
+                          body: `<?xml version="1.0" encoding="utf-8" ?>
+                            <D:propfind xmlns:D="DAV:">
+                              <D:prop>
+                                <D:getetag/>
+                              </D:prop>
+                            </D:propfind>`
+                        });
+                        console.log(`PROPFIND response status: ${propfindResponse.status}`);
+                      } catch (propfindError) {
+                        console.error("Error during PROPFIND refresh:", propfindError);
+                      }
+                      
+                      // Backup approach: Fetch all calendars if needed
+                      await davClient.fetchCalendars();
                       console.log("Server calendars refreshed successfully");
                       
                       // Send a REPORT request to make the changes visible to other clients
