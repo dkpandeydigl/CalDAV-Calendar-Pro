@@ -244,7 +244,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   type UpdateMutationContext = {
     previousEvents?: Event[];
     eventToUpdate?: Event;
-    updatedEvent?: Event;
+    updatedEvent?: Partial<Event> & { id: number };
     allQueryKeys?: QueryKey[];
   };
 
@@ -264,31 +264,74 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onMutate: async ({ id, data }) => {
       console.log(`Starting optimistic update for event ${id}`);
       
+      // Fetch the event directly if it's not in the cache
+      const fetchEventIfNeeded = async () => {
+        try {
+          const res = await fetch(`/api/events/${id}`, { credentials: 'include' });
+          if (res.ok) {
+            return await res.json();
+          }
+        } catch (error) {
+          console.error(`Error fetching event ${id}:`, error);
+        }
+        return null;
+      };
+      
       // Cancel all outgoing refetches to prevent overwriting optimistic update
       await queryClient.cancelQueries();
       
       // Store the current state for possible rollback
-      const previousEvents = queryClient.getQueryData<Event[]>(['/api/events']);
+      const previousEvents = queryClient.getQueryData<Event[]>(['/api/events']) || [];
       const allQueryKeys = queryClient.getQueryCache().getAll().map(query => query.queryKey);
       
       // Find the event in the cache
-      const eventToUpdate = previousEvents?.find(e => e.id === id);
+      let eventToUpdate = previousEvents.find(e => e.id === id);
+      
+      // If not in the cache, try to fetch it directly
       if (!eventToUpdate) {
-        console.warn(`Event with id ${id} not found in cache for update`);
-        return { previousEvents, allQueryKeys };
+        console.warn(`Event with id ${id} not found in cache for update, fetching directly...`);
+        const fetchedEvent = await fetchEventIfNeeded();
+        
+        if (fetchedEvent) {
+          eventToUpdate = fetchedEvent;
+          // Add to the cache
+          queryClient.setQueryData<Event[]>(['/api/events'], 
+            (oldEvents = []) => [...oldEvents, fetchedEvent]
+          );
+        } else {
+          console.error(`Could not find or fetch event with id ${id} for update`);
+          // Return context without attempting optimistic update
+          return { previousEvents, allQueryKeys };
+        }
       }
       
-      // Create an updated version of the event
-      const updatedEvent = { 
+      // At this point eventToUpdate is guaranteed to exist due to the check above
+      // Create an updated version of the event with proper typing
+      const updatedEvent: Event = { 
+        // First spread the original event to get all fields
         ...eventToUpdate, 
+        // Then apply the partial updates
         ...data,
-        updatedAt: new Date() // Update the timestamp to show recent changes
+        // Finally ensure critical fields are always present
+        id: id,
+        uid: eventToUpdate.uid,
+        calendarId: eventToUpdate.calendarId,
+        title: data.title || eventToUpdate.title,
+        startDate: data.startDate || eventToUpdate.startDate,
+        endDate: data.endDate || eventToUpdate.endDate,
+        // Add the updatedAt timestamp
+        updatedAt: new Date()
       };
       
       console.log(`Optimistically updating event ${id} in UI`, updatedEvent);
       
       // 1. Update the main events cache immediately
       queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
+        // If the event doesn't exist in the cache, add it
+        if (!oldEvents.some(e => e.id === id)) {
+          return [...oldEvents, updatedEvent];
+        }
+        // Otherwise update it
         return oldEvents.map(e => e.id === id ? updatedEvent : e);
       });
       
@@ -296,16 +339,29 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       allQueryKeys.forEach((key: QueryKey) => {
         if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
           queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
+            // If the event doesn't exist in this date-filtered cache, we shouldn't add it
+            // as it might not belong in this date range
+            const hasEvent = oldEvents.some(e => e.id === id);
+            if (!hasEvent) return oldEvents;
+            
             return oldEvents.map(e => e.id === id ? updatedEvent : e);
           });
         }
       });
       
       // 3. Also update the calendar-specific cache
-      queryClient.setQueryData<Event[]>(
-        ['/api/calendars', eventToUpdate.calendarId, 'events'], 
-        (oldEvents = []) => oldEvents.map(e => e.id === id ? updatedEvent : e)
-      );
+      if (eventToUpdate.calendarId) {
+        queryClient.setQueryData<Event[]>(
+          ['/api/calendars', eventToUpdate.calendarId, 'events'], 
+          (oldEvents = []) => {
+            // If the event doesn't exist in this calendar cache, add it
+            if (!oldEvents.some(e => e.id === id)) {
+              return [...oldEvents, updatedEvent];
+            }
+            return oldEvents.map(e => e.id === id ? updatedEvent : e);
+          }
+        );
+      }
       
       return { previousEvents, eventToUpdate, updatedEvent, allQueryKeys };
     },

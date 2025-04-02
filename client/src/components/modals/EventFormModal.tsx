@@ -10,6 +10,8 @@ import { getTimezones } from '@/lib/date-utils';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
+import { queryClient } from '@/lib/queryClient';
 import type { Event } from '@shared/schema';
 
 interface EventFormModalProps {
@@ -22,6 +24,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
   const { calendars } = useCalendars();
   const { createEvent, updateEvent } = useCalendarEvents();
   const { selectedTimezone } = useCalendarContext();
+  const { toast } = useToast();
   
   // Form state
   const [title, setTitle] = useState('');
@@ -155,19 +158,55 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
     
     if (event) {
       // Update existing event
-      // Skip temporary IDs (negative numbers from optimistic updates)
-      if (event.id > 0) {
-        console.log(`Updating existing event with server ID: ${event.id}`);
-        updateEvent({
-          id: event.id,
-          data: {
+      try {
+        console.log(`Updating existing event with ID: ${event.id}, title: ${event.title}, to new title: ${title}`);
+        
+        // Ensure we have all required fields for the update
+        const updateData = {
+          ...eventData,
+          uid: event.uid,
+          // Preserve these fields from the original event
+          etag: event.etag,
+          url: event.url,
+          recurrenceRule: event.recurrenceRule
+        };
+        
+        // Skip direct updates on temporary IDs (negative numbers)
+        if (event.id > 0) {
+          updateEvent({
+            id: event.id,
+            data: updateData
+          });
+        } else {
+          console.log(`Event has temporary ID ${event.id}, creating new event instead`);
+          // For temporary IDs, create new event with a fresh UID
+          const newEventData = {
             ...eventData,
-            uid: event.uid
-          }
+            uid: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            etag: null,
+            url: null,
+            recurrenceRule: null,
+            rawData: null
+          };
+          createEvent(newEventData);
+          
+          // Force a refetch to ensure UI consistency
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+          }, 500);
+        }
+      } catch (error) {
+        console.error("Error during event update:", error);
+        toast({
+          title: "Error Updating Event",
+          description: "There was a problem saving your changes. Please try again.",
+          variant: "destructive"
         });
-      } else {
-        console.log(`Attempted to update event with temporary ID: ${event.id}, creating new event instead`);
-        // If it's a temporary ID, create a new event instead
+      }
+    } else {
+      // Create new event
+      try {
+        console.log(`Creating new event: ${title}`);
         const newEventData = {
           ...eventData,
           uid: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -176,22 +215,16 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, onClose })
           recurrenceRule: null,
           rawData: null
         };
+        
         createEvent(newEventData);
+      } catch (error) {
+        console.error("Error during event creation:", error);
+        toast({
+          title: "Error Creating Event",
+          description: "There was a problem creating your event. Please try again.",
+          variant: "destructive"
+        });
       }
-    } else {
-      // Create new event
-      // For new events, we need to create the proper object shape with required fields
-      const newEventData = {
-        ...eventData,
-        uid: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        etag: null,
-        url: null,
-        recurrenceRule: null,
-        rawData: null
-      };
-      
-      // Create the event
-      createEvent(newEventData);
     }
     
     setIsSubmitting(false);
