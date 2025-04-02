@@ -199,7 +199,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           });
           
           // Trigger a manual sync with the server to ensure the event is pushed to the CalDAV server
-          fetch('/api/sync', { method: 'POST', credentials: 'include' })
+          // Use forceRefresh and full mode for immediate propagation to other clients
+          fetch('/api/sync?forceRefresh=true&mode=full', { method: 'POST', credentials: 'include' })
             .then(response => {
               if (response.ok) {
                 console.log('Manual sync triggered successfully after event creation');
@@ -288,6 +289,12 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     },
     onMutate: async ({ id, data }) => {
       console.log(`Starting optimistic update for event ${id}`);
+      
+      // Mark the event as syncing in the UI before server response
+      const updatedDataWithSyncStatus = {
+        ...data,
+        syncStatus: 'syncing'
+      };
       
       // Fetch the event directly if it's not in the cache
       const fetchEventIfNeeded = async () => {
@@ -456,7 +463,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         });
         
         // Trigger a manual sync with the server to ensure updates are pushed to CalDAV
-        fetch('/api/sync', { method: 'POST', credentials: 'include' })
+        // Use forceRefresh and full mode for immediate propagation to other clients
+        fetch('/api/sync?forceRefresh=true&mode=full', { method: 'POST', credentials: 'include' })
           .then(response => {
             if (response.ok) {
               console.log('Manual sync triggered successfully after event update');
@@ -672,7 +680,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         }
         
         // Trigger a manual sync with CalDAV server to ensure deletion is propagated
-        fetch('/api/sync', { method: 'POST', credentials: 'include' })
+        // Use forceRefresh and full mode for immediate propagation to other clients
+        fetch('/api/sync?forceRefresh=true&mode=full', { method: 'POST', credentials: 'include' })
           .then(response => {
             if (response.ok) {
               console.log('Manual sync triggered successfully after event deletion');

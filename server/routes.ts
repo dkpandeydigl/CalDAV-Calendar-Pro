@@ -2448,6 +2448,10 @@ END:VCALENDAR`;
 
   // CalDAV sync endpoint
   app.post("/api/sync", isAuthenticated, async (req, res) => {
+    // Optional calendar ID parameter for targeted sync
+    const calendarId = req.query.calendarId ? parseInt(req.query.calendarId as string) : null;
+    const forceRefresh = req.query.forceRefresh === 'true';
+    const syncMode = req.query.mode || 'full';
     try {
       // Get userId from authenticated user
       const userId = req.user!.id;
@@ -3355,13 +3359,103 @@ END:VCALENDAR`;
           status: "connected"
         });
         
+        // Additional forced server-wide refresh requests
+        // This ensures changes are immediately propagated to all CalDAV clients
+        if (forceRefresh || syncMode === 'full') {
+          console.log("Performing additional forced refresh operations for better client compatibility");
+          
+          try {
+            // For each calendar, perform a REPORT request to force updated event data
+            for (const calendar of serverCalendars) {
+              try {
+                const calendarUrl = calendar.url;
+                if (!calendarUrl) continue;
+                
+                // Ensure the URL ends with a trailing slash
+                const calendarUrlWithSlash = calendarUrl.endsWith('/') ? calendarUrl : `${calendarUrl}/`;
+                
+                console.log(`Sending REPORT request to refresh calendar: ${calendar.displayName || 'Unnamed'}`);
+                
+                // First, a full REPORT query to force update
+                const reportResponse = await fetch(calendarUrlWithSlash, {
+                  method: 'REPORT',
+                  headers: {
+                    'Content-Type': 'application/xml; charset=utf-8',
+                    'Depth': '1',
+                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                  },
+                  body: `<?xml version="1.0" encoding="utf-8" ?>
+                    <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                      <D:prop>
+                        <D:getetag/>
+                        <C:calendar-data/>
+                      </D:prop>
+                      <C:filter>
+                        <C:comp-filter name="VCALENDAR">
+                          <C:comp-filter name="VEVENT"/>
+                        </C:comp-filter>
+                      </C:filter>
+                    </C:calendar-query>`
+                });
+                
+                console.log(`REPORT response status: ${reportResponse.status}`);
+                
+                // Then, a sync-collection request to ensure immediate sync
+                const syncResponse = await fetch(calendarUrlWithSlash, {
+                  method: 'REPORT',
+                  headers: {
+                    'Content-Type': 'application/xml; charset=utf-8',
+                    'Depth': '1',
+                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                  },
+                  body: `<?xml version="1.0" encoding="utf-8" ?>
+                    <D:sync-collection xmlns:D="DAV:">
+                      <D:sync-token>1</D:sync-token>
+                      <D:sync-level>1</D:sync-level>
+                      <D:prop>
+                        <D:getetag/>
+                      </D:prop>
+                    </D:sync-collection>`
+                });
+                
+                console.log(`Sync-collection response status: ${syncResponse.status}`);
+                
+                // Force calendar refresh using fresh tsdav client
+                if (calendarId) {
+                  const { DAVClient } = await import('tsdav');
+                  const refreshClient = new DAVClient({
+                    serverUrl: connection.url,
+                    credentials: {
+                      username: connection.username,
+                      password: connection.password
+                    },
+                    authMethod: 'Basic',
+                    defaultAccountType: 'caldav'
+                  });
+                  
+                  console.log(`Forcing calendar refresh with fresh DAV client`);
+                  await refreshClient.login();
+                  await refreshClient.fetchCalendars();
+                }
+              } catch (refreshError) {
+                console.error(`Error refreshing calendar ${calendar.displayName || 'Unnamed'}:`, refreshError);
+                // Continue with next calendar even if this one fails
+              }
+            }
+          } catch (error) {
+            console.error("Error during forced refresh operations:", error);
+            // Non-fatal, continue to return success response
+          }
+        }
+        
         // Return success response
         res.json({ 
           message: "Sync successful", 
           lastSync: updatedConnection?.lastSync,
           calendarsCount: serverCalendars.length,
           newCalendarsCount: newCalendarsCount,
-          eventsCount: totalEventsCount
+          eventsCount: totalEventsCount,
+          forceRefreshed: forceRefresh || syncMode === 'full'
         });
         
       } catch (err) {

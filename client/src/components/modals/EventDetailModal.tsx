@@ -199,6 +199,40 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 </div>
               </div>
             )}
+            
+            {/* Attendees section */}
+            {event.attendees && Array.isArray(event.attendees) && event.attendees.length > 0 && (
+              <div>
+                <div className="text-sm font-medium mb-1">Attendees</div>
+                <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                  <ul className="space-y-1">
+                    {(event.attendees as unknown as string[]).map((attendee, index) => (
+                      <li key={index} className="flex items-center">
+                        <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
+                        {attendee}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+            
+            {/* Resources section */}
+            {event.resources && Array.isArray(event.resources) && event.resources.length > 0 && (
+              <div>
+                <div className="text-sm font-medium mb-1">Resources</div>
+                <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                  <ul className="space-y-1">
+                    {(event.resources as unknown as string[]).map((resource, index) => (
+                      <li key={index} className="flex items-center">
+                        <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
+                        {resource}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
           
           <DialogFooter>
