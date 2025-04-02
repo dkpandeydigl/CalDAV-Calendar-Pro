@@ -144,8 +144,6 @@ export function setupAuth(app: Express) {
       const { 
         username, 
         password, 
-        caldavUsername, 
-        caldavPassword, 
         caldavServerUrl 
       } = req.body;
       
@@ -159,8 +157,8 @@ export function setupAuth(app: Express) {
       try {
         const isValidCalDAV = await verifyCalDAVCredentials(
           caldavServerUrl,
-          caldavUsername,
-          caldavPassword
+          username,
+          password
         );
         
         if (!isValidCalDAV) {
@@ -187,8 +185,8 @@ export function setupAuth(app: Express) {
         await storage.createServerConnection({
           userId: user.id,
           url: caldavServerUrl,
-          username: caldavUsername,
-          password: caldavPassword,
+          username: username,
+          password: password,
           autoSync: true,
           syncInterval: 15, // 15 minutes default
           status: "connected"
@@ -214,7 +212,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", async (req, res, next) => {
-    const { caldavUsername, caldavPassword, caldavServerUrl } = req.body;
+    const { username, password, caldavServerUrl } = req.body;
     
     passport.authenticate("local", async (err: Error | null, user: Express.User | false, info: { message: string } | undefined) => {
       if (err) return next(err);
@@ -226,8 +224,8 @@ export function setupAuth(app: Express) {
       try {
         const isValidCalDAV = await verifyCalDAVCredentials(
           caldavServerUrl,
-          caldavUsername,
-          caldavPassword
+          username,
+          password
         );
         
         if (!isValidCalDAV) {
@@ -244,8 +242,8 @@ export function setupAuth(app: Express) {
           // Update existing connection
           await storage.updateServerConnection(existingConnection.id, {
             url: caldavServerUrl,
-            username: caldavUsername,
-            password: caldavPassword,
+            username: username,
+            password: password,
             status: "connected"
           });
           console.log(`Updated server connection for user ${(user as SelectUser).username}`);
@@ -254,8 +252,8 @@ export function setupAuth(app: Express) {
           await storage.createServerConnection({
             userId: userId,
             url: caldavServerUrl,
-            username: caldavUsername,
-            password: caldavPassword,
+            username: username,
+            password: password,
             autoSync: true,
             syncInterval: 15,
             status: "connected"
