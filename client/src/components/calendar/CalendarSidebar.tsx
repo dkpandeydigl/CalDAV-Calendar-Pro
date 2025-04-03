@@ -12,7 +12,8 @@ import {
   Edit, 
   Trash2, 
   MoreVertical,
-  Calendar as CalendarIcon 
+  Calendar as CalendarIcon,
+  Share2
 } from 'lucide-react';
 import {
   Popover,
@@ -46,13 +47,15 @@ interface CalendarSidebarProps {
   onCreateEvent: () => void;
   onOpenServerSettings: () => void;
   onOpenSyncSettings?: () => void;
+  onShareCalendar?: (calendar: Calendar) => void;
 }
 
 const CalendarSidebar: React.FC<CalendarSidebarProps> = ({ 
   visible, 
   onCreateEvent,
   onOpenServerSettings,
-  onOpenSyncSettings
+  onOpenSyncSettings,
+  onShareCalendar
 }) => {
   const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
@@ -226,6 +229,15 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
                       >
                         <Edit className="mr-2 h-4 w-4" />
                         <span>Edit</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center justify-start px-3 py-2 rounded-none"
+                        onClick={() => onShareCalendar && onShareCalendar(calendar)}
+                      >
+                        <Share2 className="mr-2 h-4 w-4" />
+                        <span>Share</span>
                       </Button>
                       <Button
                         variant="ghost"

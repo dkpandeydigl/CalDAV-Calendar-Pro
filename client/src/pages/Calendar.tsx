@@ -6,8 +6,9 @@ import EventFormModal from '@/components/modals/EventFormModal';
 import EventDetailModal from '@/components/modals/EventDetailModal';
 import ServerConnectionModal from '@/components/modals/ServerConnectionModal';
 import { SyncSettingsModal } from '@/components/modals/SyncSettingsModal';
+import ShareCalendarModal from '@/components/modals/ShareCalendarModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
-import { Event } from '@shared/schema';
+import { Event, Calendar as CalendarType } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -267,6 +268,8 @@ function CalendarContent() {
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
   const [syncSettingsOpen, setSyncSettingsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [shareCalendarOpen, setShareCalendarOpen] = useState(false);
+  const [selectedCalendar, setSelectedCalendar] = useState<CalendarType | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -298,6 +301,11 @@ function CalendarContent() {
   const handleOpenServerSettings = () => setServerSettingsOpen(true);
   
   const handleOpenSyncSettings = () => setSyncSettingsOpen(true);
+  
+  const handleShareCalendar = (calendar: CalendarType) => {
+    setSelectedCalendar(calendar);
+    setShareCalendarOpen(true);
+  };
   
   const handleSync = async () => {
     try {
@@ -339,6 +347,7 @@ function CalendarContent() {
           onCreateEvent={handleCreateEvent}
           onOpenServerSettings={handleOpenServerSettings}
           onOpenSyncSettings={handleOpenSyncSettings}
+          onShareCalendar={handleShareCalendar}
         />
         
         {/* Main Calendar */}
@@ -414,6 +423,12 @@ function CalendarContent() {
       <SyncSettingsModal
         open={syncSettingsOpen}
         onClose={() => setSyncSettingsOpen(false)}
+      />
+      
+      <ShareCalendarModal
+        open={shareCalendarOpen}
+        onClose={() => setShareCalendarOpen(false)}
+        calendar={selectedCalendar}
       />
     </div>
   );
