@@ -1054,52 +1054,86 @@ END:VCALENDAR`
       // Try to find user ID for this email - several matching approaches
       let sharedWithUserId = null;
       
-      // First, try to find an exact match for the email as a username
-      const sharedUser = await storage.getUserByUsername(req.body.sharedWithEmail);
-      if (sharedUser) {
-        sharedWithUserId = sharedUser.id;
-        console.log(`Found user ID ${sharedWithUserId} with username exactly matching the shared email: ${req.body.sharedWithEmail}`);
-      } else {
-        // If no exact match, look for any user with matching username or email patterns
-        const allUsers = await storage.getAllUsers();
-        console.log(`Checking ${allUsers.length} users to find a match for email: ${req.body.sharedWithEmail}`);
-        
-        // First try: Exact case-insensitive match
+      console.log(`Trying to find user matching shared email: ${req.body.sharedWithEmail}`);
+      
+      // Get all users to try different matching approaches
+      const allUsers = await storage.getAllUsers();
+      console.log(`Checking ${allUsers.length} users to find a match for email: ${req.body.sharedWithEmail}`);
+      
+      // Priority 1: Exact match on user's email field
+      for (const user of allUsers) {
+        if (user.email && user.email === req.body.sharedWithEmail) {
+          sharedWithUserId = user.id;
+          console.log(`Found user ID ${sharedWithUserId} with email exactly matching: ${req.body.sharedWithEmail}`);
+          break;
+        }
+      }
+      
+      // Priority 2: Case-insensitive match on user's email field
+      if (!sharedWithUserId) {
+        const lowerCaseEmail = req.body.sharedWithEmail.toLowerCase();
         for (const user of allUsers) {
-          if (user.username.toLowerCase() === req.body.sharedWithEmail.toLowerCase()) {
+          if (user.email && user.email.toLowerCase() === lowerCaseEmail) {
+            sharedWithUserId = user.id;
+            console.log(`Found user ID ${sharedWithUserId} with email case-insensitive matching: ${req.body.sharedWithEmail}`);
+            break;
+          }
+        }
+      }
+      
+      // Priority 3: Exact match on username
+      if (!sharedWithUserId) {
+        for (const user of allUsers) {
+          if (user.username === req.body.sharedWithEmail) {
+            sharedWithUserId = user.id;
+            console.log(`Found user ID ${sharedWithUserId} with username exactly matching: ${req.body.sharedWithEmail}`);
+            break;
+          }
+        }
+      }
+      
+      // Priority 4: Case-insensitive match on username
+      if (!sharedWithUserId) {
+        const lowerCaseEmail = req.body.sharedWithEmail.toLowerCase();
+        for (const user of allUsers) {
+          if (user.username.toLowerCase() === lowerCaseEmail) {
             sharedWithUserId = user.id;
             console.log(`Found user ID ${sharedWithUserId} with username case-insensitive matching: ${req.body.sharedWithEmail}`);
             break;
           }
         }
-        
-        // Second try: Check if username is part of the email address
-        if (!sharedWithUserId) {
-          // Split email into username and domain
-          const [emailUsername, domain] = req.body.sharedWithEmail.split('@');
-          if (emailUsername) {
-            for (const user of allUsers) {
-              if (user.username === emailUsername || 
-                  user.username.includes(emailUsername) || 
-                  emailUsername.includes(user.username)) {
-                sharedWithUserId = user.id;
-                console.log(`Found user ID ${sharedWithUserId} matching email username part: ${emailUsername}`);
-                break;
-              }
+      }
+      
+      // Priority 5: Check if username is part of the email address
+      if (!sharedWithUserId) {
+        // Split email into username and domain
+        const [emailUsername, domain] = req.body.sharedWithEmail.split('@');
+        if (emailUsername) {
+          for (const user of allUsers) {
+            if (user.username === emailUsername || 
+                user.username.includes(emailUsername) || 
+                emailUsername.includes(user.username)) {
+              sharedWithUserId = user.id;
+              console.log(`Found user ID ${sharedWithUserId} matching email username part: ${emailUsername}`);
+              break;
             }
           }
         }
-        
-        // Third try: Look for any partial match
-        if (!sharedWithUserId) {
-          for (const user of allUsers) {
-            // Check for any kind of partial match in either direction
-            if (user.username.includes(req.body.sharedWithEmail) || 
-                req.body.sharedWithEmail.includes(user.username)) {
-              sharedWithUserId = user.id;
-              console.log(`Found user ID ${sharedWithUserId} with partial match between username and email: ${req.body.sharedWithEmail}`);
-              break;
-            }
+      }
+      
+      // Priority 6: Look for any partial match
+      if (!sharedWithUserId) {
+        for (const user of allUsers) {
+          // Check for any kind of partial match in either direction
+          if (user.username.includes(req.body.sharedWithEmail) || 
+              req.body.sharedWithEmail.includes(user.username) ||
+              (user.email && (
+                user.email.includes(req.body.sharedWithEmail) ||
+                req.body.sharedWithEmail.includes(user.email)
+              ))) {
+            sharedWithUserId = user.id;
+            console.log(`Found user ID ${sharedWithUserId} with partial match between email/username: ${req.body.sharedWithEmail}`);
+            break;
           }
         }
       }
@@ -1248,34 +1282,61 @@ END:VCALENDAR`
       // Match sharing records with the current user using the same flexible matching
       const findSharingForUserAndCalendar = (calendarId: number) => {
         // Try several ways to match:
-        // 1. By user ID
+        // 1. By user ID (highest priority)
         const byUserId = allSharingRecords.find(s => 
           s.calendarId === calendarId && s.sharedWithUserId === userId
         );
         if (byUserId) return byUserId;
         
-        // 2. By exact username/email match
+        // 2a. By exact email match if user has email
+        if (req.user!.email) {
+          const byEmail = allSharingRecords.find(s =>
+            s.calendarId === calendarId && s.sharedWithEmail === req.user!.email
+          );
+          if (byEmail) return byEmail;
+          
+          // 2b. By case-insensitive email match
+          const byEmailIgnoreCase = allSharingRecords.find(s =>
+            s.calendarId === calendarId && 
+            s.sharedWithEmail.toLowerCase() === req.user!.email!.toLowerCase()
+          );
+          if (byEmailIgnoreCase) return byEmailIgnoreCase;
+        }
+        
+        // 3a. By exact username match (treat username as email)
         const byUsername = allSharingRecords.find(s =>
           s.calendarId === calendarId && s.sharedWithEmail === req.user!.username
         );
         if (byUsername) return byUsername;
         
-        // 3. By case-insensitive match
+        // 3b. By case-insensitive username match
         const byUsernameIgnoreCase = allSharingRecords.find(s =>
           s.calendarId === calendarId && 
           s.sharedWithEmail.toLowerCase() === req.user!.username.toLowerCase()
         );
         if (byUsernameIgnoreCase) return byUsernameIgnoreCase;
         
-        // 4. By partial username/email match
-        const byPartialMatch = allSharingRecords.find(s =>
+        // 4a. By partial email match if user has email
+        if (req.user!.email) {
+          const byPartialEmailMatch = allSharingRecords.find(s =>
+            s.calendarId === calendarId && (
+              s.sharedWithEmail.includes(req.user!.email!) ||
+              req.user!.email!.includes(s.sharedWithEmail)
+            )
+          );
+          if (byPartialEmailMatch) return byPartialEmailMatch;
+        }
+        
+        // 4b. By partial username match
+        const byPartialUsernameMatch = allSharingRecords.find(s =>
           s.calendarId === calendarId && (
             s.sharedWithEmail.includes(req.user!.username) ||
             req.user!.username.includes(s.sharedWithEmail)
           )
         );
         
-        return byPartialMatch;
+        // Return the last match we could find, or undefined if nothing matched
+        return byPartialUsernameMatch;
       };
       
       // Add permission level to each calendar

@@ -213,7 +213,9 @@ export class MemStorage implements IStorage {
     const id = this.userIdCounter++;
     // Set default preferredTimezone if not provided
     const preferredTimezone = insertUser.preferredTimezone || "UTC";
-    const user: User = { ...insertUser, id, preferredTimezone };
+    // Set email to null if not provided
+    const email = insertUser.email || null;
+    const user: User = { ...insertUser, id, preferredTimezone, email };
     this.users.set(id, user);
     return user;
   }
@@ -293,29 +295,41 @@ export class MemStorage implements IStorage {
     const user = await this.getUser(userId);
     if (!user) return [];
     
-    console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}`);
+    console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'not set'}`);
     
     // Find all sharing records that might match this user using flexible matching
     const userSharings = Array.from(this.calendarSharingMap.values()).filter(sharing => {
-      // Exact user ID match
+      // Priority 1: Exact user ID match (highest confidence)
       if (sharing.sharedWithUserId === userId) {
-        console.log(`Found sharing record with matching user ID: ${userId}`);
+        console.log(`Found sharing record with exact user ID match: ${userId}`);
         return true;
       }
       
-      // Exact email/username match
+      // Priority 2: Exact email match (if user has email)
+      if (user.email && sharing.sharedWithEmail === user.email) {
+        console.log(`Found sharing record with exact email match: ${user.email}`);
+        return true;
+      }
+      
+      // Priority 3: Case-insensitive email match (if user has email)
+      if (user.email && sharing.sharedWithEmail.toLowerCase() === user.email.toLowerCase()) {
+        console.log(`Found sharing record with case-insensitive email match: ${sharing.sharedWithEmail} ≈ ${user.email}`);
+        return true;
+      }
+      
+      // Priority 4: Exact username match (treating username as email)
       if (sharing.sharedWithEmail === user.username) {
         console.log(`Found sharing record with exact username match: ${user.username}`);
         return true;
       }
       
-      // Case-insensitive email/username match
+      // Priority 5: Case-insensitive username match
       if (sharing.sharedWithEmail.toLowerCase() === user.username.toLowerCase()) {
         console.log(`Found sharing record with case-insensitive username match: ${sharing.sharedWithEmail} ≈ ${user.username}`);
         return true;
       }
       
-      // Check if username is part of the email address
+      // Priority 6: Check if username is part of the email address
       if (sharing.sharedWithEmail.includes('@')) {
         const [emailUsername] = sharing.sharedWithEmail.split('@');
         if (user.username === emailUsername || 
@@ -326,10 +340,19 @@ export class MemStorage implements IStorage {
         }
       }
       
-      // Check for any partial match in either direction
+      // Priority 7: Check for partial match with email (if user has email)
+      if (user.email && (
+        sharing.sharedWithEmail.includes(user.email) || 
+        user.email.includes(sharing.sharedWithEmail)
+      )) {
+        console.log(`Found sharing record with partial email match: ${sharing.sharedWithEmail} ≈ ${user.email}`);
+        return true;
+      }
+      
+      // Priority 8: Check for partial match with username (lowest confidence)
       if (sharing.sharedWithEmail.includes(user.username) || 
           user.username.includes(sharing.sharedWithEmail)) {
-        console.log(`Found sharing record with partial match: ${sharing.sharedWithEmail} ≈ ${user.username}`);
+        console.log(`Found sharing record with partial username match: ${sharing.sharedWithEmail} ≈ ${user.username}`);
         return true;
       }
       
@@ -357,11 +380,35 @@ export class MemStorage implements IStorage {
     // Try to find a user ID for the email if available
     let sharedWithUserId = insertSharing.sharedWithUserId;
     if (!sharedWithUserId) {
-      const user = Array.from(this.users.values()).find(
-        (u) => u.username === insertSharing.sharedWithEmail
+      // First check: Exact email match
+      const usersByEmail = Array.from(this.users.values()).find(
+        u => u.email === insertSharing.sharedWithEmail
       );
-      if (user) {
-        sharedWithUserId = user.id;
+      
+      if (usersByEmail) {
+        console.log(`Found user with matching email: ${insertSharing.sharedWithEmail}`);
+        sharedWithUserId = usersByEmail.id;
+      } else {
+        // Second check: Username match
+        const usersByUsername = Array.from(this.users.values()).find(
+          u => u.username === insertSharing.sharedWithEmail
+        );
+        
+        if (usersByUsername) {
+          console.log(`Found user with username matching the shared email: ${insertSharing.sharedWithEmail}`);
+          sharedWithUserId = usersByUsername.id;
+        } else {
+          // Third check: Case-insensitive email match
+          const lowerCaseEmail = insertSharing.sharedWithEmail.toLowerCase();
+          const usersByCaseInsensitiveEmail = Array.from(this.users.values()).find(
+            u => u.email && u.email.toLowerCase() === lowerCaseEmail
+          );
+          
+          if (usersByCaseInsensitiveEmail) {
+            console.log(`Found user with case-insensitive email: ${insertSharing.sharedWithEmail}`);
+            sharedWithUserId = usersByCaseInsensitiveEmail.id;
+          }
+        }
       }
     }
     

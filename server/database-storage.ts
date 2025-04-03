@@ -245,20 +245,33 @@ export class DatabaseStorage implements IStorage {
       
       // Find ANY sharing records:
       // 1. Shared directly with user ID
-      // 2. Shared with email matching username
-      // 3. Shared with email matching any case-insensitive version of username
-      // 4. Shared with email containing username in any form
+      // 2. Shared with email matching user email (if exists)
+      // 3. Shared with email matching username
+      // 4. Shared with email matching any case-insensitive version of email/username
+      const conditions = [
+        eq(calendarSharing.sharedWithUserId, userId),
+      ];
+      
+      // Check user email if it exists
+      if (user.email) {
+        console.log(`User has email: ${user.email}, will check for matches`);
+        conditions.push(eq(calendarSharing.sharedWithEmail, user.email));
+        conditions.push(sql`LOWER(${calendarSharing.sharedWithEmail}) = LOWER(${user.email})`);
+      }
+      
+      // Also check username as email (backwards compatibility)
+      conditions.push(eq(calendarSharing.sharedWithEmail, user.username));
+      conditions.push(sql`LOWER(${calendarSharing.sharedWithEmail}) = LOWER(${user.username})`);
+      
+      // Check if any part of the email resembles the username/email
+      conditions.push(sql`${calendarSharing.sharedWithEmail} LIKE ${'%' + user.username + '%'}`);
+      if (user.email) {
+        conditions.push(sql`${calendarSharing.sharedWithEmail} LIKE ${'%' + user.email + '%'}`);
+      }
+      
       const sharingRecords = await db.select()
         .from(calendarSharing)
-        .where(
-          or(
-            eq(calendarSharing.sharedWithUserId, userId),
-            eq(calendarSharing.sharedWithEmail, user.username),
-            sql`LOWER(${calendarSharing.sharedWithEmail}) = LOWER(${user.username})`,
-            // Check if any part of the email resembles the username
-            sql`${calendarSharing.sharedWithEmail} LIKE ${'%' + user.username + '%'}`
-          )
-        );
+        .where(or(...conditions));
       
       console.log(`Found ${sharingRecords.length} sharing records for user ${user.username}`);
       
