@@ -91,7 +91,29 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
   const timezones = getTimezones();
 
   const handleCalendarToggle = (id: number, checked: boolean) => {
-    updateCalendar({ id, data: { enabled: checked } });
+    // Find if this is a shared calendar
+    const isSharedCalendar = sharedCalendars.some(cal => cal.id === id);
+    
+    if (isSharedCalendar) {
+      // For shared calendars, store visibility in localStorage
+      const sharedCalendarStates = JSON.parse(localStorage.getItem('sharedCalendarStates') || '{}');
+      sharedCalendarStates[id] = checked;
+      localStorage.setItem('sharedCalendarStates', JSON.stringify(sharedCalendarStates));
+      
+      // Update the shared calendars in the query cache
+      queryClient.setQueryData(['/api/shared-calendars'], (oldData: any) => {
+        if (!oldData) return oldData;
+        return oldData.map((cal: any) => 
+          cal.id === id ? { ...cal, enabled: checked } : cal
+        );
+      });
+      
+      // Refresh events to update calendar view
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+    } else {
+      // For user's own calendars, use the API
+      updateCalendar({ id, data: { enabled: checked } });
+    }
   };
   
   // Calendar name validation

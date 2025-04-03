@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
+import { useSharedCalendars } from '@/hooks/useSharedCalendars';
 import { formatDayOfWeekDate, formatTime, formatEventTimeRange } from '@/lib/date-utils';
 import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
@@ -24,6 +25,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   onEdit
 }) => {
   const { calendars } = useCalendars();
+  const { sharedCalendars } = useSharedCalendars();
   const { deleteEvent } = useCalendarEvents();
   const { getCalendarPermission } = useCalendarPermissions();
   const { user } = useAuth();
@@ -49,8 +51,18 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // For events in user's own calendars, always allow edit
   // If we don't have a user object, default to the permissions from getCalendarPermission
   const isUsersOwnCalendar = calendar && user ? calendar.userId === user.id : isOwner;
-  // Allow edit and delete for the calendar owner
-  const effectiveCanEdit = isUsersOwnCalendar || canEdit;
+  
+  // Check if this is a shared calendar
+  const isSharedCalendar = !isUsersOwnCalendar && 
+    sharedCalendars.some((cal: { id: number }) => cal.id === event.calendarId);
+  
+  // If it's a shared calendar, look up the permission from sharedCalendars
+  const sharedCalendarPermission = isSharedCalendar ? 
+    sharedCalendars.find((cal: { id: number }) => cal.id === event.calendarId)?.permission : 
+    undefined;
+    
+  // Allow edit and delete for either: calendar owners or shared calendars with edit permission
+  const effectiveCanEdit = isUsersOwnCalendar || (isSharedCalendar && sharedCalendarPermission === 'edit');
   
   // Debug log permissions
   console.log(`Event ${event.title} - Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}, effectiveCanEdit: ${effectiveCanEdit}`);
@@ -230,7 +242,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="text-sm font-medium mb-1">Attendees</div>
                 <div className="text-sm p-3 bg-neutral-100 rounded-md">
                   <ul className="space-y-1">
-                    {(event.attendees as unknown as string[]).map((attendee, index) => (
+                    {(event.attendees as string[]).map((attendee, index) => (
                       <li key={index} className="flex items-center">
                         <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
                         {attendee}
@@ -247,7 +259,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="text-sm font-medium mb-1">Resources</div>
                 <div className="text-sm p-3 bg-neutral-100 rounded-md">
                   <ul className="space-y-1">
-                    {(event.resources as unknown as string[]).map((resource, index) => (
+                    {(event.resources as string[]).map((resource, index) => (
                       <li key={index} className="flex items-center">
                         <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
                         {resource}
