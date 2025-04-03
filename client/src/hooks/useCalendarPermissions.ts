@@ -30,11 +30,22 @@ export const useCalendarPermissions = () => {
 
     // First check if it's the user's own calendar
     const ownCalendar = calendars.find(cal => cal.id === calendarId);
-    if (ownCalendar && ownCalendar.userId === user.id) {
+    if (ownCalendar) {
+      // If this is the user's own calendar, they have full permissions
+      if (ownCalendar.userId === user.id) {
+        return {
+          canView: true,
+          canEdit: true,
+          isOwner: true
+        };
+      }
+      
+      // If it's not the user's calendar but we found it in the calendars list,
+      // it means it's possibly a local calendar they have access to
       return {
         canView: true,
         canEdit: true,
-        isOwner: true
+        isOwner: false
       };
     }
 
