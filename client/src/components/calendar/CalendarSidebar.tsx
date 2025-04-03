@@ -45,12 +45,14 @@ interface CalendarSidebarProps {
   visible: boolean;
   onCreateEvent: () => void;
   onOpenServerSettings: () => void;
+  onOpenSyncSettings?: () => void;
 }
 
 const CalendarSidebar: React.FC<CalendarSidebarProps> = ({ 
   visible, 
   onCreateEvent,
-  onOpenServerSettings
+  onOpenServerSettings,
+  onOpenSyncSettings
 }) => {
   const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
@@ -431,6 +433,18 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
               >
                 Server Settings
               </Button>
+              
+              {onOpenSyncSettings && (
+                <Button 
+                  variant="link" 
+                  size="sm" 
+                  className="p-0 h-auto text-primary hover:text-primary/80 font-normal ml-4"
+                  onClick={onOpenSyncSettings}
+                >
+                  Sync Settings
+                </Button>
+              )}
+              
               {serverConnection?.status === 'connected' && (
                 <Button
                   variant="link"

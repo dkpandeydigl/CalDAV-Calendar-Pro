@@ -1,8 +1,8 @@
 import session from "express-session";
 import { 
   Calendar, Event, InsertCalendar, InsertEvent, InsertServerConnection, 
-  InsertUser, ServerConnection, User,
-  users, calendars, events, serverConnections
+  InsertUser, ServerConnection, User, CalendarSharing, InsertCalendarSharing,
+  users, calendars, events, serverConnections, calendarSharing
 } from "@shared/schema";
 import { createId } from '@paralleldrive/cuid2';
 import { neon, neonConfig } from '@neondatabase/serverless';
@@ -158,6 +158,10 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0 ? result[0] : undefined;
   }
   
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+  
   async createUser(insertUser: InsertUser): Promise<User> {
     const preferredTimezone = insertUser.preferredTimezone || "UTC";
     const result = await db.insert(users).values({
@@ -217,6 +221,37 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
   
+  // Calendar sharing methods
+  async getCalendarSharing(calendarId: number): Promise<CalendarSharing[]> {
+    // TODO: Implement properly when needed
+    console.warn("getCalendarSharing called but not fully implemented in DatabaseStorage");
+    return [];
+  }
+  
+  async getSharedCalendars(userId: number): Promise<Calendar[]> {
+    // TODO: Implement properly when needed
+    console.warn("getSharedCalendars called but not fully implemented in DatabaseStorage");
+    return [];
+  }
+  
+  async shareCalendar(sharing: InsertCalendarSharing): Promise<CalendarSharing> {
+    // TODO: Implement properly when needed
+    console.warn("shareCalendar called but not fully implemented in DatabaseStorage");
+    throw new Error("shareCalendar not implemented in DatabaseStorage");
+  }
+  
+  async updateCalendarSharing(id: number, sharing: Partial<CalendarSharing>): Promise<CalendarSharing | undefined> {
+    // TODO: Implement properly when needed
+    console.warn("updateCalendarSharing called but not fully implemented in DatabaseStorage");
+    return undefined;
+  }
+  
+  async removeCalendarSharing(id: number): Promise<boolean> {
+    // TODO: Implement properly when needed
+    console.warn("removeCalendarSharing called but not fully implemented in DatabaseStorage");
+    return false;
+  }
+  
   // Event methods
   async getEvents(calendarId: number): Promise<Event[]> {
     return await db.select()
@@ -268,6 +303,21 @@ export class DatabaseStorage implements IStorage {
       return result.length > 0;
     } catch (error) {
       console.error(`Error deleting event with ID ${id}:`, error);
+      return false;
+    }
+  }
+  
+  async deleteEventsByCalendarId(calendarId: number): Promise<boolean> {
+    try {
+      console.log(`Attempting to delete all events for calendar ID ${calendarId} from database`);
+      const result = await db.delete(events)
+        .where(eq(events.calendarId, calendarId))
+        .returning({ id: events.id });
+      
+      console.log(`Deleted ${result.length} events for calendar ID ${calendarId}`);
+      return true;
+    } catch (error) {
+      console.error(`Error deleting events for calendar ID ${calendarId}:`, error);
       return false;
     }
   }

@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { syncService } from './sync-service';
 import { 
   insertCalendarSchema, 
   insertEventSchema, 
@@ -3482,6 +3483,103 @@ END:VCALENDAR`;
     }
   });
 
+  // Sync service routes
+  
+  // Get sync status
+  app.get("/api/sync/status", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const status = syncService.getSyncStatus(userId);
+      res.json(status);
+    } catch (err) {
+      console.error("Error getting sync status:", err);
+      res.status(500).json({ message: "Failed to get sync status" });
+    }
+  });
+  
+  // Start or stop auto-sync
+  app.post("/api/sync/auto", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { enabled } = req.body;
+      
+      if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ message: "The 'enabled' field must be a boolean" });
+      }
+      
+      const success = await syncService.updateAutoSync(userId, enabled);
+      
+      if (success) {
+        res.json({ 
+          message: `Auto-sync ${enabled ? 'enabled' : 'disabled'} successfully`,
+          autoSync: enabled
+        });
+      } else {
+        res.status(500).json({ message: "Failed to update auto-sync setting" });
+      }
+    } catch (err) {
+      console.error("Error updating auto-sync:", err);
+      res.status(500).json({ message: "Failed to update auto-sync setting" });
+    }
+  });
+  
+  // Update sync interval
+  app.post("/api/sync/interval", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { interval } = req.body;
+      
+      // Basic validation
+      const intervalValue = parseInt(interval);
+      if (isNaN(intervalValue) || intervalValue < 60 || intervalValue > 86400) {
+        return res.status(400).json({ 
+          message: "Interval must be a number between 60 and 86400 seconds (1 minute to 24 hours)" 
+        });
+      }
+      
+      const success = await syncService.updateSyncInterval(userId, intervalValue);
+      
+      if (success) {
+        // Also update the interval in the database
+        const connection = await storage.getServerConnection(userId);
+        if (connection) {
+          await storage.updateServerConnection(connection.id, {
+            syncInterval: intervalValue
+          });
+        }
+        
+        res.json({ 
+          message: `Sync interval updated to ${intervalValue} seconds`,
+          interval: intervalValue
+        });
+      } else {
+        res.status(500).json({ message: "Failed to update sync interval" });
+      }
+    } catch (err) {
+      console.error("Error updating sync interval:", err);
+      res.status(500).json({ message: "Failed to update sync interval" });
+    }
+  });
+  
+  // Sync immediately
+  app.post("/api/sync/now", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // This will trigger a sync right away
+      const success = await syncService.syncNow(userId);
+      
+      if (success) {
+        res.json({ message: "Sync triggered successfully" });
+      } else {
+        res.status(500).json({ message: "Failed to trigger sync" });
+      }
+    } catch (err) {
+      console.error("Error triggering sync:", err);
+      res.status(500).json({ message: "Failed to trigger sync" });
+    }
+  });
+  
   const httpServer = createServer(app);
   return httpServer;
 }

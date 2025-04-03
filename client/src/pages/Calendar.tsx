@@ -5,6 +5,7 @@ import CalendarGrid from '@/components/calendar/CalendarGrid';
 import EventFormModal from '@/components/modals/EventFormModal';
 import EventDetailModal from '@/components/modals/EventDetailModal';
 import ServerConnectionModal from '@/components/modals/ServerConnectionModal';
+import { SyncSettingsModal } from '@/components/modals/SyncSettingsModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Event } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -264,6 +265,7 @@ function CalendarContent() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [eventDetailOpen, setEventDetailOpen] = useState(false);
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
+  const [syncSettingsOpen, setSyncSettingsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -294,6 +296,8 @@ function CalendarContent() {
   };
 
   const handleOpenServerSettings = () => setServerSettingsOpen(true);
+  
+  const handleOpenSyncSettings = () => setSyncSettingsOpen(true);
   
   const handleSync = async () => {
     try {
@@ -334,6 +338,7 @@ function CalendarContent() {
           visible={showSidebar} 
           onCreateEvent={handleCreateEvent}
           onOpenServerSettings={handleOpenServerSettings}
+          onOpenSyncSettings={handleOpenSyncSettings}
         />
         
         {/* Main Calendar */}
@@ -404,6 +409,11 @@ function CalendarContent() {
       <ServerConnectionModal 
         open={serverSettingsOpen} 
         onClose={() => setServerSettingsOpen(false)} 
+      />
+      
+      <SyncSettingsModal
+        open={syncSettingsOpen}
+        onClose={() => setSyncSettingsOpen(false)}
       />
     </div>
   );

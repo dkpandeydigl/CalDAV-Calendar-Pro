@@ -1,6 +1,8 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { storage } from "./storage";
+import { initializeSyncService, syncService } from "./sync-service";
 
 const app = express();
 app.use(express.json());
@@ -37,7 +39,15 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize database storage
+  await storage.initializeDatabase();
+  
+  // Register API routes
   const server = await registerRoutes(app);
+  
+  // Initialize the sync service for automatic CalDAV synchronization
+  await initializeSyncService();
+  log("CalDAV synchronization service initialized");
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -67,4 +77,19 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
   });
+  
+  // Handle graceful shutdown
+  const shutdown = () => {
+    log("Server is shutting down...");
+    
+    // Gracefully shut down sync service
+    syncService.shutdownAll();
+    log("Sync service shut down");
+    
+    process.exit(0);
+  };
+  
+  // Listen for termination signals
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 })();
