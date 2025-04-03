@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -27,12 +27,33 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const { calendars } = useCalendars();
   const { deleteEvent } = useCalendarEvents();
   const { getCalendarPermission } = useCalendarPermissions();
-  const { user, isLoading: isUserLoading } = useAuth();
+  const { user, isLoading: isUserLoadingFromAuth } = useAuth();
   const queryClient = useQueryClient();
   
   // State hooks
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
+  
+  // Add a timeout to prevent infinite loading state
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
+    if (isUserLoadingFromAuth) {
+      setIsUserLoading(true);
+      timeoutId = setTimeout(() => {
+        // Force loading to end after 3 seconds to prevent UI getting stuck
+        setIsUserLoading(false);
+        console.log("Auth loading timeout - forcing UI to proceed");
+      }, 3000);
+    } else {
+      setIsUserLoading(isUserLoadingFromAuth);
+    }
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isUserLoadingFromAuth]);
   
   // If event is null, show an error state
   if (!event) {
@@ -234,7 +255,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="text-sm font-medium mb-1">Attendees</div>
                 <div className="text-sm p-3 bg-neutral-100 rounded-md">
                   <ul className="space-y-1">
-                    {event.attendees
+                    {(event.attendees as string[])
                       .filter(Boolean)
                       .map((attendee, index) => (
                         <li key={index} className="flex items-center">
@@ -253,7 +274,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="text-sm font-medium mb-1">Resources</div>
                 <div className="text-sm p-3 bg-neutral-100 rounded-md">
                   <ul className="space-y-1">
-                    {event.resources
+                    {(event.resources as string[])
                       .filter(Boolean)
                       .map((resource, index) => (
                         <li key={index} className="flex items-center">
