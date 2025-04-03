@@ -1,0 +1,85 @@
+6:42:08 AM [express] GET /api/calendars 304 in 42ms :: [{"id":32,"name":"Ashutosh Sharma calendar","…
+Getting shared calendars for user ID: 5, username: ashutosh.sharma@xgenplus.com
+Looking for calendars shared with user ID: 5, username: ashutosh.sharma@xgenplus.com
+6:42:08 AM [express] GET /api/server-connection 200 in 92ms :: {"id":5,"userId":5,"url":"https://zpu…
+User has email: ashutosh.sharma@xgenplus.com, will check for matches
+Error fetching shared calendars: NeonDbError: bind message supplies 0 parameters, but prepared statement "" requires 2
+    at execute (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1556:55)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async DatabaseStorage.getSharedCalendars (/home/runner/workspace/server/database-storage.ts:283:24)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:1332:31) {
+  severity: 'ERROR',
+  code: '08P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '1735',
+  routine: 'exec_bind_message',
+  sourceError: undefined
+}
+Found 0 shared calendars for user ashutosh.sharma@xgenplus.com
+6:42:08 AM [express] GET /api/shared-calendars 304 in 178ms :: []
+Filtered 3 calendars to 3 primary calendars
+Filtered 3 calendars to 3 primary calendars
+Looking for calendars shared with user ID: 5, username: ashutosh.sharma@xgenplus.com
+Looking for calendars shared with user ID: 5, username: ashutosh.sharma@xgenplus.com
+User has email: ashutosh.sharma@xgenplus.com, will check for matches
+User has email: ashutosh.sharma@xgenplus.com, will check for matches
+Error fetching shared calendars: NeonDbError: bind message supplies 0 parameters, but prepared statement "" requires 2
+    at execute (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1556:55)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async DatabaseStorage.getSharedCalendars (/home/runner/workspace/server/database-storage.ts:283:24)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:1512:39) {
+  severity: 'ERROR',
+  code: '08P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '1735',
+  routine: 'exec_bind_message',
+  sourceError: undefined
+}
+Found 0 shared calendars
+Total calendars to fetch events from: 3
+Error fetching shared calendars: NeonDbError: bind message supplies 0 parameters, but prepared statement "" requires 2
+    at execute (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1556:55)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async DatabaseStorage.getSharedCalendars (/home/runner/workspace/server/database-storage.ts:283:24)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:1512:39) {
+  severity: 'ERROR',
+  code: '08P01',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'postgres.c',
+  line: '1735',
+  routine: 'exec_bind_message',
+  sourceError: undefined
+}
+Found 0 shared calendars
