@@ -31,24 +31,30 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   
-  // Don't render anything if the event is null
-  if (!event) return null;
+  // Always render the dialog, even when loading
+  // This prevents the modal from disappearing during loading states
   
-  // If we're still loading user data, show a loading spinner instead
-  if (isUserLoading) {
+  // If event is null, show an error state
+  if (!event) {
     return (
       <Dialog open={open} onOpenChange={open => !open && onClose()}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Loading...</DialogTitle>
+            <DialogTitle>Error</DialogTitle>
           </DialogHeader>
-          <div className="py-8 flex justify-center">
-            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+          <div className="py-4">
+            <p>Unable to load event details.</p>
           </div>
+          <DialogFooter>
+            <Button onClick={onClose}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     );
   }
+  
+  // If we're still loading user data, show a loading spinner
+  const isLoading = isUserLoading;
   
   // Get calendar metadata either from the rawData or find it from calendars
   const calendarMetadata = event.rawData as any;
@@ -66,27 +72,33 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // For events in user's own calendars, always allow edit
   // If we don't have a user object, default to the permissions from getCalendarPermission
   
-  // User data should be fully loaded at this point, but double-check to be safe
-  if (!user || !user.id) {
-    console.log(`User data incomplete for event ${event.title}, user:`, user);
-    return null; // This shouldn't happen since we already check for isUserLoading above
+  // If user data is still loading, we'll treat this as a view-only event until the data is loaded
+  // This allows the event details to be shown even while we're verifying permissions
+  let isUsersOwnCalendar = false;
+  let effectiveCanEdit = false;
+  
+  if (isLoading || !user || !user.id) {
+    console.log(`Still loading user data for event ${event.title}, user:`, user);
+    // We'll set default permissions to false while loading
+    effectiveCanEdit = false;
+    isUsersOwnCalendar = false;
+  } else {
+    // Once user is loaded, check if they own this calendar
+    isUsersOwnCalendar = calendar ? calendar.userId === user.id : false;
+    
+    // Allow edit and delete if:
+    // 1. The user owns the calendar, OR
+    // 2. The user has explicit edit permission through sharing
+    effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner;
+    
+    // Log detailed ownership information for debugging
+    if (calendar) {
+      console.log(`Ownership check: Calendar ${calendar.id} (${calendar.name}) - Calendar userId: ${calendar.userId}, Current userId: ${user.id}, Match: ${calendar.userId === user.id}`);
+    }
   }
   
-  // Step 2: Once user is loaded, check if they own this calendar
-  const isUsersOwnCalendar = calendar ? calendar.userId === user.id : false;
-  
-  // Log detailed ownership information for debugging
-  if (calendar) {
-    console.log(`Ownership check: Calendar ${calendar.id} (${calendar.name}) - Calendar userId: ${calendar.userId}, Current userId: ${user.id}, Match: ${calendar.userId === user.id}`);
-  }
-  
-  // Allow edit and delete if:
-  // 1. The user owns the calendar, OR
-  // 2. The user has explicit edit permission through sharing
-  const effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner;
-  
-  // Debug log permissions
-  console.log(`Event ${event.title} - Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}, effectiveCanEdit: ${effectiveCanEdit}`);
+  // Debug log permissions with loading status
+  console.log(`Event ${event.title} - Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}, effectiveCanEdit: ${effectiveCanEdit}, isLoading: ${isLoading}`);
   // Safely create date objects with validation
   let startDate: Date;
   let endDate: Date;
@@ -154,8 +166,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex justify-between items-center">
-              <DialogTitle>Event Details</DialogTitle>
-              {isOwner || effectiveCanEdit ? (
+              <DialogTitle>
+                Event Details
+                {isLoading && (
+                  <span className="ml-2 inline-block w-4 h-4 rounded-full border-2 border-t-transparent border-primary animate-spin" />
+                )}
+              </DialogTitle>
+              {isLoading ? (
+                <div className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-secondary">
+                  Loading...
+                </div>
+              ) : isOwner || effectiveCanEdit ? (
                 <div className="flex">
                   <Button variant="ghost" size="icon" onClick={onEdit} title="Edit">
                     <span className="material-icons">edit</span>
@@ -294,7 +315,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           
           <DialogFooter className="flex justify-between space-x-2">
             <div className="flex space-x-2">
-              {(isOwner || effectiveCanEdit) && (
+              {!isLoading && (isOwner || effectiveCanEdit) && (
                 <>
                   <Button 
                     variant="outline" 
@@ -310,6 +331,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     Edit
                   </Button>
                 </>
+              )}
+              {isLoading && (
+                <div className="text-sm text-muted-foreground py-2">
+                  Loading permission information...
+                </div>
               )}
             </div>
             <Button onClick={onClose}>
