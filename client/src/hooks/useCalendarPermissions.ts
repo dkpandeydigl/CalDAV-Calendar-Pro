@@ -33,6 +33,7 @@ export const useCalendarPermissions = () => {
     if (ownCalendar) {
       // If this is the user's own calendar, they have full permissions
       if (ownCalendar.userId === user.id) {
+        console.log(`Calendar ${calendarId} is owned by current user - full permissions granted`);
         return {
           canView: true,
           canEdit: true,
@@ -42,6 +43,7 @@ export const useCalendarPermissions = () => {
       
       // If it's not the user's calendar but we found it in the calendars list,
       // it means it's possibly a local calendar they have access to
+      console.log(`Calendar ${calendarId} is in user's local calendars but not owned - access granted`);
       return {
         canView: true,
         canEdit: true,
@@ -52,6 +54,7 @@ export const useCalendarPermissions = () => {
     // Next check if it's a shared calendar
     const sharedCalendar = sharedCalendars.find(cal => cal.id === calendarId);
     if (sharedCalendar) {
+      console.log(`Calendar ${calendarId} is shared with user - permission: ${sharedCalendar.permission}`);
       return {
         canView: true,
         canEdit: sharedCalendar.permission === 'edit',
@@ -59,6 +62,7 @@ export const useCalendarPermissions = () => {
       };
     }
 
+    console.log(`Calendar ${calendarId} not found in user's calendars - no permissions`);
     return defaultPermission;
   };
 

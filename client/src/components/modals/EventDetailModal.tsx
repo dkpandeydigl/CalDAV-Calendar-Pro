@@ -8,6 +8,7 @@ import { formatDayOfWeekDate, formatTime, formatEventTimeRange } from '@/lib/dat
 import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface EventDetailModalProps {
   open: boolean;
@@ -25,6 +26,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const { calendars } = useCalendars();
   const { deleteEvent } = useCalendarEvents();
   const { getCalendarPermission } = useCalendarPermissions();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -43,6 +45,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const { canEdit, isOwner } = event.calendarId ? 
     getCalendarPermission(event.calendarId) : 
     { canEdit: false, isOwner: false };
+    
+  // For events in user's own calendars, always allow edit
+  const isUsersOwnCalendar = calendar && user && calendar.userId === user.id;
+  const effectiveCanEdit = isUsersOwnCalendar ? true : canEdit;
+  
+  // Debug log permissions
+  console.log(`Event ${event.title} - Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}`);
   // Safely create date objects with validation
   let startDate: Date;
   let endDate: Date;
@@ -111,7 +120,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           <DialogHeader>
             <div className="flex justify-between items-center">
               <DialogTitle>Event Details</DialogTitle>
-              {isOwner || canEdit ? (
+              {isOwner || effectiveCanEdit ? (
                 <div className="flex">
                   <Button variant="ghost" size="icon" onClick={onEdit} title="Edit">
                     <span className="material-icons">edit</span>
@@ -250,7 +259,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           
           <DialogFooter className="flex justify-between space-x-2">
             <div className="flex space-x-2">
-              {(isOwner || canEdit) && (
+              {(isOwner || effectiveCanEdit) && (
                 <>
                   <Button 
                     variant="outline" 
