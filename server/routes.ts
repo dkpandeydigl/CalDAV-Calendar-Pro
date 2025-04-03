@@ -8,7 +8,8 @@ import {
   insertServerConnectionSchema,
   insertUserSchema,
   User,
-  serverConnections
+  serverConnections,
+  CalendarSharing
 } from "@shared/schema";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
@@ -1169,45 +1170,88 @@ END:VCALENDAR`
   app.patch("/api/calendars/shares/:id", isAuthenticated, async (req, res) => {
     try {
       const sharingId = parseInt(req.params.id);
+      console.log(`Attempting to update calendar sharing with ID ${sharingId}`);
       
-      // Get the sharing record
-      const sharingRecords = Array.from(await storage.getCalendarSharing(0));
-      const sharing = sharingRecords.find(s => s.id === sharingId);
+      // If direct update is possible, try it first
+      // Validate permission level if provided
+      if (req.body.permissionLevel && !['view', 'edit'].includes(req.body.permissionLevel)) {
+        return res.status(400).json({ message: "Permission level must be 'view' or 'edit'" });
+      }
+      
+      // Update sharing record directly
+      const updatedSharing = await storage.updateCalendarSharing(sharingId, {
+        permissionLevel: req.body.permissionLevel
+      });
+      
+      if (updatedSharing) {
+        console.log(`Successfully updated calendar sharing with ID ${sharingId}`);
+        // Transform to match client-side expected format
+        const transformedSharing = {
+          id: updatedSharing.id,
+          calendarId: updatedSharing.calendarId,
+          userId: updatedSharing.sharedWithUserId,
+          email: updatedSharing.sharedWithEmail,
+          username: null,
+          permission: updatedSharing.permissionLevel === 'view' ? 'read' : 'write'
+        };
+        
+        return res.json(transformedSharing);
+      }
+      
+      // If direct update failed, we need to find the sharing record
+      console.log(`Direct update failed, searching for sharing record with ID ${sharingId}`);
+      const userId = req.user!.id;
+      const userCalendars = await storage.getCalendars(userId);
+      
+      // Get sharing records for all user's calendars
+      let allSharingRecords: CalendarSharing[] = [];
+      for (const calendar of userCalendars) {
+        const calendarShares = await storage.getCalendarSharing(calendar.id);
+        allSharingRecords = [...allSharingRecords, ...calendarShares];
+      }
+      
+      // Find the specific sharing record
+      const sharing = allSharingRecords.find(s => s.id === sharingId);
       
       if (!sharing) {
+        console.log(`Sharing record with ID ${sharingId} not found`);
         return res.status(404).json({ message: "Sharing record not found" });
       }
       
       // Get the calendar
       const calendar = await storage.getCalendar(sharing.calendarId);
       if (!calendar) {
+        console.log(`Calendar ${sharing.calendarId} not found`);
         return res.status(404).json({ message: "Calendar not found" });
       }
       
       // Check if user is the owner of the calendar
-      if (calendar.userId !== req.user!.id) {
+      if (calendar.userId !== userId) {
+        console.log(`User ${userId} is not the owner of calendar ${calendar.id}`);
         return res.status(403).json({ message: "You don't have permission to update sharing for this calendar" });
       }
       
-      // Validate permission level if provided
-      if (req.body.permissionLevel && !['view', 'edit'].includes(req.body.permissionLevel)) {
-        return res.status(400).json({ message: "Permission level must be 'view' or 'edit'" });
-      }
-      
-      // Update sharing record
-      const updatedSharing = await storage.updateCalendarSharing(sharingId, {
+      // Try updating again
+      const secondUpdateAttempt = await storage.updateCalendarSharing(sharingId, {
         permissionLevel: req.body.permissionLevel
       });
       
+      if (!secondUpdateAttempt) {
+        console.log(`Failed to update sharing record with ID ${sharingId} on second attempt`);
+        return res.status(404).json({ message: "Failed to update sharing record" });
+      }
+      
+      console.log(`Successfully updated calendar sharing with ID ${sharingId} on second attempt`);
+      
       // Transform to match client-side expected format
-      const transformedSharing = updatedSharing ? {
-        id: updatedSharing.id,
-        calendarId: updatedSharing.calendarId,
-        userId: updatedSharing.sharedWithUserId,
-        email: updatedSharing.sharedWithEmail,
+      const transformedSharing = {
+        id: secondUpdateAttempt.id,
+        calendarId: secondUpdateAttempt.calendarId,
+        userId: secondUpdateAttempt.sharedWithUserId,
+        email: secondUpdateAttempt.sharedWithEmail,
         username: null,
-        permission: updatedSharing.permissionLevel === 'view' ? 'read' : 'write'
-      } : { message: "Failed to update sharing record" };
+        permission: secondUpdateAttempt.permissionLevel === 'view' ? 'read' : 'write'
+      };
       
       res.json(transformedSharing);
     } catch (err) {
@@ -1219,33 +1263,58 @@ END:VCALENDAR`
   app.delete("/api/calendars/shares/:id", isAuthenticated, async (req, res) => {
     try {
       const sharingId = parseInt(req.params.id);
+      console.log(`Attempting to delete calendar sharing with ID ${sharingId}`);
       
-      // Get the sharing record
-      const sharingRecords = Array.from(await storage.getCalendarSharing(0));
-      const sharing = sharingRecords.find(s => s.id === sharingId);
+      // First, directly delete the sharing record
+      const deleted = await storage.removeCalendarSharing(sharingId);
+      
+      if (deleted) {
+        console.log(`Successfully deleted calendar sharing with ID ${sharingId}`);
+        return res.status(204).send();
+      }
+      
+      // If direct deletion failed, get all sharing records for this user's calendars
+      console.log(`Direct deletion failed, searching for sharing record with ID ${sharingId}`);
+      const userId = req.user!.id;
+      const userCalendars = await storage.getCalendars(userId);
+      
+      // Get sharing records for all user's calendars
+      let allSharingRecords: CalendarSharing[] = [];
+      for (const calendar of userCalendars) {
+        const calendarShares = await storage.getCalendarSharing(calendar.id);
+        allSharingRecords = [...allSharingRecords, ...calendarShares];
+      }
+      
+      // Find the specific sharing record
+      const sharing = allSharingRecords.find(s => s.id === sharingId);
       
       if (!sharing) {
+        console.log(`Sharing record with ID ${sharingId} not found`);
         return res.status(404).json({ message: "Sharing record not found" });
       }
       
       // Get the calendar
       const calendar = await storage.getCalendar(sharing.calendarId);
       if (!calendar) {
+        console.log(`Calendar ${sharing.calendarId} not found`);
         return res.status(404).json({ message: "Calendar not found" });
       }
       
       // Check if user is the owner of the calendar
-      if (calendar.userId !== req.user!.id) {
+      if (calendar.userId !== userId) {
+        console.log(`User ${userId} is not the owner of calendar ${calendar.id}`);
         return res.status(403).json({ message: "You don't have permission to remove sharing for this calendar" });
       }
       
-      // Delete sharing record
-      const deleted = await storage.removeCalendarSharing(sharingId);
+      // Try deleting again
+      const secondDeleteAttempt = await storage.removeCalendarSharing(sharingId);
       
-      if (!deleted) {
+      if (!secondDeleteAttempt) {
+        console.log(`Failed to delete sharing record with ID ${sharingId} on second attempt`);
         return res.status(404).json({ message: "Sharing record not found" });
       }
       
+      console.log(`Successfully deleted calendar sharing with ID ${sharingId} on second attempt`);
       res.status(204).send();
     } catch (err) {
       console.error("Error removing calendar sharing:", err);
