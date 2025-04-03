@@ -1232,6 +1232,48 @@ END:VCALENDAR`
         permission: sharing.permissionLevel === 'view' ? 'read' : 'write'
       };
       
+      // Sync with CalDAV server if sync flag is set and the calendar has a URL
+      if (req.query.syncWithServer === 'true' && calendar.url) {
+        try {
+          // Get user's server connection
+          const userId = req.user!.id;
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection) {
+            console.log(`Attempting to share calendar on CalDAV server: ${calendar.url}`);
+            
+            // Import and use our CalDAV client for sharing
+            const { CalDAVClient } = await import('../client/src/lib/caldav');
+            
+            // Create CalDAV client with user's connection details
+            const caldavClient = new CalDAVClient({
+              serverUrl: connection.url,
+              username: connection.username,
+              password: connection.password
+            });
+            
+            // Map permission level to CalDAV access level
+            const caldavAccess = req.body.permissionLevel === 'edit' 
+              ? 'read-write' 
+              : 'read-only';
+            
+            // Share calendar on the server
+            const serverShareResult = await caldavClient.shareCalendar(
+              calendar.url,
+              req.body.sharedWithEmail,
+              caldavAccess
+            );
+            
+            console.log(`CalDAV server sharing result: ${serverShareResult ? 'Success' : 'Failed'}`);
+          } else {
+            console.log(`No server connection found for user ${userId}, skipping CalDAV sharing`);
+          }
+        } catch (syncError) {
+          console.error("Error syncing calendar sharing with CalDAV server:", syncError);
+          // Don't fail the request, just log the error
+        }
+      }
+      
       res.status(201).json(transformedSharing);
     } catch (err) {
       console.error("Error sharing calendar:", err);
@@ -1325,6 +1367,47 @@ END:VCALENDAR`
         permission: secondUpdateAttempt.permissionLevel === 'view' ? 'read' : 'write'
       };
       
+      // Sync with CalDAV server if sync flag is set and calendar has URL
+      if (req.query.syncWithServer === 'true' && calendar.url) {
+        try {
+          // Get user's server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection) {
+            console.log(`Attempting to update calendar sharing on CalDAV server: ${calendar.url}`);
+            
+            // Import and use our CalDAV client for updating sharing
+            const { CalDAVClient } = await import('../client/src/lib/caldav');
+            
+            // Create CalDAV client with user's connection details
+            const caldavClient = new CalDAVClient({
+              serverUrl: connection.url,
+              username: connection.username,
+              password: connection.password
+            });
+            
+            // Map permission level to CalDAV access level
+            const caldavAccess = req.body.permissionLevel === 'edit' 
+              ? 'read-write' 
+              : 'read-only';
+            
+            // Update calendar sharing on the server
+            const serverUpdateResult = await caldavClient.updateCalendarSharing(
+              calendar.url,
+              secondUpdateAttempt.sharedWithEmail,
+              caldavAccess
+            );
+            
+            console.log(`CalDAV server sharing update result: ${serverUpdateResult ? 'Success' : 'Failed'}`);
+          } else {
+            console.log(`No server connection found for user ${userId}, skipping CalDAV sharing update`);
+          }
+        } catch (syncError) {
+          console.error("Error syncing calendar sharing update with CalDAV server:", syncError);
+          // Don't fail the request, just log the error
+        }
+      }
+      
       res.json(transformedSharing);
     } catch (err) {
       console.error("Error updating calendar sharing:", err);
@@ -1387,6 +1470,42 @@ END:VCALENDAR`
       }
       
       console.log(`Successfully deleted calendar sharing with ID ${sharingId} on second attempt`);
+      
+      // Sync with CalDAV server if sync flag is set and calendar has URL
+      if (req.query.syncWithServer === 'true' && calendar.url) {
+        try {
+          // Get user's server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection) {
+            console.log(`Attempting to remove calendar sharing on CalDAV server: ${calendar.url}`);
+            
+            // Import and use our CalDAV client for unsharing
+            const { CalDAVClient } = await import('../client/src/lib/caldav');
+            
+            // Create CalDAV client with user's connection details
+            const caldavClient = new CalDAVClient({
+              serverUrl: connection.url,
+              username: connection.username,
+              password: connection.password
+            });
+            
+            // Remove calendar sharing on the server
+            const serverUnshareResult = await caldavClient.unshareCalendar(
+              calendar.url,
+              sharing.sharedWithEmail
+            );
+            
+            console.log(`CalDAV server unsharing result: ${serverUnshareResult ? 'Success' : 'Failed'}`);
+          } else {
+            console.log(`No server connection found for user ${userId}, skipping CalDAV unsharing`);
+          }
+        } catch (syncError) {
+          console.error("Error syncing calendar unsharing with CalDAV server:", syncError);
+          // Don't fail the request, just log the error
+        }
+      }
+      
       res.status(204).send();
     } catch (err) {
       console.error("Error removing calendar sharing:", err);

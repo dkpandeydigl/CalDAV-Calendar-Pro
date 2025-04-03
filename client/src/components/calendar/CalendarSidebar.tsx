@@ -439,8 +439,13 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
                       onClick={() => {
                         // Add confirmation before unsharing
                         if (confirm(`Stop sharing "${calendar.name}" from ${ownerEmail}?`)) {
+                          // Build URL with sync option if calendar has URL
+                          const apiUrl = calendar.url 
+                            ? `/api/calendars/shares/${calendar.id}?syncWithServer=true` 
+                            : `/api/calendars/shares/${calendar.id}`;
+                          
                           // Call API to remove calendar sharing
-                          fetch(`/api/calendars/shares/${calendar.id}`, {
+                          fetch(apiUrl, {
                             method: 'DELETE',
                           }).then(() => {
                             // Refresh shared calendars
@@ -449,7 +454,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
                             });
                             toast({
                               title: "Calendar unshared",
-                              description: `You no longer have access to "${calendar.name}"`,
+                              description: `You no longer have access to "${calendar.name}"${calendar.url ? ' (synchronized with CalDAV server)' : ''}`,
                             });
                           }).catch(error => {
                             console.error('Error unsharing calendar:', error);

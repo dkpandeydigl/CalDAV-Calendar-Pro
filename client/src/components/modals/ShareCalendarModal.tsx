@@ -6,10 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@shared/schema";
-import { Trash2 } from 'lucide-react';
+import { Trash2, Server } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
+import { Switch } from "@/components/ui/switch";
 
 interface ShareCalendarModalProps {
   open: boolean;
@@ -32,6 +33,7 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [shares, setShares] = useState<CalendarSharing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [syncWithServer, setSyncWithServer] = useState(true);
   const { toast } = useToast();
 
   // Fetch existing shares when calendar changes
@@ -68,7 +70,12 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
 
     setIsSubmitting(true);
     try {
-      const response = await apiRequest('POST', `/api/calendars/${calendar.id}/shares`, {
+      // Build the API URL with sync flag if enabled and calendar has a URL
+      const apiUrl = calendar.url && syncWithServer
+        ? `/api/calendars/${calendar.id}/shares?syncWithServer=true`
+        : `/api/calendars/${calendar.id}/shares`;
+        
+      const response = await apiRequest('POST', apiUrl, {
         sharedWithEmail: email,
         permissionLevel: permission === 'read' ? 'view' : 'edit'
       });
@@ -76,7 +83,7 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
       if (response.ok) {
         toast({
           title: 'Calendar Shared',
-          description: `Calendar shared with ${email} successfully`
+          description: `Calendar shared with ${email} successfully${syncWithServer && calendar.url ? ' and synchronized with CalDAV server' : ''}`
         });
         setEmail('');
         // Refresh the shares list
@@ -102,12 +109,17 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
     if (!calendar?.id) return;
 
     try {
-      const response = await apiRequest('DELETE', `/api/calendars/shares/${shareId}`);
+      // Build the API URL with sync flag if enabled and calendar has a URL
+      const apiUrl = calendar.url && syncWithServer
+        ? `/api/calendars/shares/${shareId}?syncWithServer=true`
+        : `/api/calendars/shares/${shareId}`;
+          
+      const response = await apiRequest('DELETE', apiUrl);
 
       if (response.ok) {
         toast({
           title: 'Sharing Removed',
-          description: 'Calendar sharing has been removed'
+          description: `Calendar sharing has been removed${syncWithServer && calendar.url ? ' and synchronized with CalDAV server' : ''}`
         });
         // Update the local state to remove this share
         setShares(shares.filter(share => share.id !== shareId));
@@ -129,14 +141,19 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
     if (!calendar?.id) return;
 
     try {
-      const response = await apiRequest('PATCH', `/api/calendars/shares/${shareId}`, {
+      // Build the API URL with sync flag if enabled and calendar has a URL
+      const apiUrl = calendar.url && syncWithServer
+        ? `/api/calendars/shares/${shareId}?syncWithServer=true`
+        : `/api/calendars/shares/${shareId}`;
+          
+      const response = await apiRequest('PATCH', apiUrl, {
         permissionLevel: newPermission === 'read' ? 'view' : 'edit'
       });
 
       if (response.ok) {
         toast({
           title: 'Permission Updated',
-          description: 'Calendar sharing permission has been updated'
+          description: `Calendar sharing permission has been updated${syncWithServer && calendar.url ? ' and synchronized with CalDAV server' : ''}`
         });
         // Update the local state with the new permission
         setShares(shares.map(share => 
@@ -202,6 +219,26 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
                   </SelectContent>
                 </Select>
               </div>
+              
+              {/* CalDAV server sync option */}
+              {calendar?.url && (
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="syncServer" className="text-right flex items-center gap-1">
+                    <Server className="h-4 w-4" />
+                    <span>CalDAV</span>
+                  </Label>
+                  <div className="flex items-center space-x-2 col-span-3">
+                    <Switch
+                      id="syncServer"
+                      checked={syncWithServer}
+                      onCheckedChange={setSyncWithServer}
+                    />
+                    <Label htmlFor="syncServer" className="cursor-pointer text-sm text-muted-foreground">
+                      {syncWithServer ? 'Synchronize with CalDAV server' : 'Store sharing locally only'}
+                    </Label>
+                  </div>
+                </div>
+              )}
             </div>
 
             <Button 

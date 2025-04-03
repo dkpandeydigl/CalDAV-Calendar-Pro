@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -23,159 +23,19 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   onClose,
   onEdit
 }) => {
-  // Hook calls - all of these must be called every time, in the same order
+  // Hook calls - all must be at the top level
   const { calendars } = useCalendars();
   const { deleteEvent } = useCalendarEvents();
   const { getCalendarPermission } = useCalendarPermissions();
   const { user, isLoading: isUserLoading } = useAuth();
   const queryClient = useQueryClient();
   
-  // State hooks - must be called in the same order every time
+  // State hooks
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [effectiveCanEdit, setEffectiveCanEdit] = useState(false);
-  const [isUsersOwnCalendar, setIsUsersOwnCalendar] = useState(false);
-  const [startDate, setStartDate] = useState(new Date());
-  const [endDate, setEndDate] = useState(new Date());
-  const [isAuthError, setIsAuthError] = useState(false);
-  const [calendar, setCalendar] = useState<any>(null);
-  const [calendarName, setCalendarName] = useState<string>("");
-  const [calendarColor, setCalendarColor] = useState<string>("");
   
-  // Error state for when event is null - we still render the dialog but with error content
-  const [hasEventError] = useState(!event);
-  
-  // Update auth error state
-  useEffect(() => {
-    setIsAuthError(!isUserLoading && !user);
-  }, [isUserLoading, user]);
-  
-  // Update loading state
-  useEffect(() => {
-    if (isAuthError) {
-      setIsLoading(false);
-    } else {
-      setIsLoading(isUserLoading);
-    }
-  }, [isUserLoading, isAuthError]);
-  
-  // Update event data - runs when event changes
-  useEffect(() => {
-    if (!event) return;
-    
-    // Get calendar metadata
-    const metadata = event.rawData as any;
-    setCalendarName(metadata?.calendarName || "");
-    setCalendarColor(metadata?.calendarColor || "");
-    
-    // Find calendar
-    const foundCalendar = calendars.find(cal => cal.id === event.calendarId);
-    setCalendar(foundCalendar);
-    
-    // Parse dates
-    try {
-      const newStartDate = new Date(event.startDate);
-      const newEndDate = new Date(event.endDate);
-      
-      if (!isNaN(newStartDate.getTime()) && !isNaN(newEndDate.getTime())) {
-        setStartDate(newStartDate);
-        setEndDate(newEndDate);
-      } else {
-        console.error(`Invalid event dates for "${event.title}"`);
-        const now = new Date();
-        const hourLater = new Date();
-        hourLater.setHours(hourLater.getHours() + 1);
-        setStartDate(now);
-        setEndDate(hourLater);
-      }
-    } catch (error) {
-      console.error(`Error parsing dates for event "${event.title}":`, error);
-      const now = new Date();
-      const hourLater = new Date();
-      hourLater.setHours(hourLater.getHours() + 1);
-      setStartDate(now);
-      setEndDate(hourLater);
-    }
-  }, [event, calendars]);
-  
-  // Update permission state
-  useEffect(() => {
-    if (!event) return;
-    
-    // Default permissions
-    let canEdit = false;
-    let isOwner = false;
-    
-    // Get permission info if we have a calendar ID
-    if (event.calendarId) {
-      const permissions = getCalendarPermission(event.calendarId);
-      canEdit = permissions.canEdit;
-      isOwner = permissions.isOwner;
-    }
-    
-    // Log permissions for debugging
-    if (event.calendarId && calendar) {
-      console.log(`Ownership check: Calendar ${calendar.id} (${calendar.name}) - Calendar userId: ${calendar.userId}, Current userId: ${user?.id}, Match: ${calendar?.userId === user?.id}`);
-    }
-    
-    // Determine effective permissions
-    if (isAuthError) {
-      setEffectiveCanEdit(false);
-      setIsUsersOwnCalendar(false);
-    } else if (isUserLoading || !user || !user.id) {
-      setEffectiveCanEdit(false);
-      setIsUsersOwnCalendar(false);
-    } else {
-      const ownCalendar = calendar ? calendar.userId === user.id : false;
-      setIsUsersOwnCalendar(ownCalendar);
-      setEffectiveCanEdit(ownCalendar || canEdit || isOwner);
-    }
-    
-    // Debug log
-    if (event) {
-      console.log(`Event ${event.title} - Auth status: ${isAuthError ? 'AUTH_ERROR' : isLoading ? 'LOADING' : 'AUTHENTICATED'}, Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${calendar ? calendar.userId === user?.id : false}, effectiveCanEdit: ${calendar ? (calendar.userId === user?.id || canEdit || isOwner) : false}`);
-    }
-  }, [event, calendar, user, isUserLoading, isAuthError, isLoading, getCalendarPermission]);
-  
-  // Handle delete event
-  const handleDelete = async () => {
-    if (!event) return;
-    
-    try {
-      console.log(`Attempting to delete event with ID: ${event.id}`);
-      setIsDeleting(true);
-      
-      // Delete the event
-      deleteEvent(event.id);
-      
-      // Invalidate queries
-      queryClient.invalidateQueries({
-        queryKey: ['/api/events'],
-        refetchType: 'all'
-      });
-      
-      if (event.calendarId) {
-        queryClient.invalidateQueries({
-          queryKey: ['/api/calendars', event.calendarId, 'events'],
-          refetchType: 'all'
-        });
-      }
-      
-      // Close modals
-      setIsDeleting(false);
-      setDeleteDialogOpen(false);
-      onClose();
-    } catch (error) {
-      console.error(`Unexpected error during delete: ${(error as Error).message}`);
-      setIsDeleting(false);
-      setDeleteDialogOpen(false);
-      onClose();
-    }
-  };
-  
-  // Render error state
-  if (hasEventError) {
+  // If event is null, show an error state
+  if (!event) {
     return (
       <Dialog open={open} onOpenChange={open => !open && onClose()}>
         <DialogContent className="sm:max-w-md">
@@ -192,79 +52,71 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       </Dialog>
     );
   }
+
+  // Parse the event data
+  const calendarMetadata = event.rawData as any || {};
+  const calendarName = calendarMetadata?.calendarName;
+  const calendarColor = calendarMetadata?.calendarColor;
+  const calendar = calendars.find(cal => cal.id === event.calendarId);
   
-  // These helper functions must be called as-is every render
-  const renderAttendees = () => {
-    if (!event) return null;
+  // Get permissions in a safe way
+  const permissions = event.calendarId ? getCalendarPermission(event.calendarId) : { canEdit: false, isOwner: false };
+  const canEdit = permissions.canEdit;
+  const isOwner = permissions.isOwner;
+  
+  // For events in user's own calendars, always allow edit
+  const isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
+  const effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner;
+  const isAuthError = !isUserLoading && !user;
+  
+  // Parse dates safely
+  let startDate: Date;
+  let endDate: Date;
+  
+  try {
+    startDate = new Date(event.startDate);
+    endDate = new Date(event.endDate);
+    
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.error(`Invalid event dates for "${event.title}"`);
+      startDate = new Date();
+      endDate = new Date();
+      endDate.setHours(endDate.getHours() + 1);
+    }
+  } catch (error) {
+    console.error(`Error parsing dates for event "${event.title}":`, error);
+    startDate = new Date();
+    endDate = new Date();
+    endDate.setHours(endDate.getHours() + 1);
+  }
+  
+  // Handle delete event
+  const handleDelete = async () => {
+    if (!event) return;
     
     try {
-      if (event.attendees && Array.isArray(event.attendees) && event.attendees.length > 0) {
-        // Convert to string array safely
-        const attendeeList = event.attendees
-          .filter(a => a !== null && a !== undefined)
-          .map(a => String(a));
-          
-        if (attendeeList.length > 0) {
-          return (
-            <div>
-              <div className="text-sm font-medium mb-1">Attendees</div>
-              <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                <ul className="space-y-1">
-                  {attendeeList.map((attendee, index) => (
-                    <li key={index} className="flex items-center">
-                      <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
-                      {attendee}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          );
-        }
+      setIsDeleting(true);
+      deleteEvent(event.id);
+      
+      // Force UI refresh
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
+      if (event.calendarId) {
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/calendars', event.calendarId, 'events'] 
+        });
       }
+      
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+      onClose();
     } catch (error) {
-      console.error("Error rendering attendees:", error);
+      console.error(`Error during delete: ${(error as Error).message}`);
+      setIsDeleting(false);
+      setDeleteDialogOpen(false);
+      onClose();
     }
-    return null;
   };
-  
-  const renderResources = () => {
-    if (!event) return null;
-    
-    try {
-      if (event.resources && Array.isArray(event.resources) && event.resources.length > 0) {
-        // Convert to string array safely
-        const resourceList = event.resources
-          .filter(r => r !== null && r !== undefined)
-          .map(r => String(r));
-          
-        if (resourceList.length > 0) {
-          return (
-            <div>
-              <div className="text-sm font-medium mb-1">Resources</div>
-              <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                <ul className="space-y-1">
-                  {resourceList.map((resource, index) => (
-                    <li key={index} className="flex items-center">
-                      <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
-                      {resource}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          );
-        }
-      }
-    } catch (error) {
-      console.error("Error rendering resources:", error);
-    }
-    return null;
-  };
-  
-  // Get final calendar display values
-  const displayCalendarName = calendarName || (calendar ? calendar.name : null);
-  const displayCalendarColor = calendarColor || (calendar ? calendar.color : null);
   
   return (
     <>
@@ -274,11 +126,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex justify-between items-center">
               <DialogTitle>
                 Event Details
-                {isLoading && (
+                {isUserLoading && (
                   <span className="ml-2 inline-block w-4 h-4 rounded-full border-2 border-t-transparent border-primary animate-spin" />
                 )}
               </DialogTitle>
-              {isLoading ? (
+              {isUserLoading ? (
                 <div className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-secondary">
                   Loading...
                 </div>
@@ -306,85 +158,118 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </div>
           </DialogHeader>
           
-          {event && (
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between">
-                  <h1 className="text-xl font-semibold">{event.title}</h1>
-                  
-                  {/* Sync status indicator */}
-                  {event.syncStatus && (
-                    <div 
-                      className={`text-xs px-2 py-1 rounded-full ${
-                        event.syncStatus === 'synced' 
-                          ? 'bg-green-100 text-green-800' 
-                          : event.syncStatus === 'syncing' 
-                            ? 'bg-blue-100 text-blue-800' 
-                            : event.syncStatus === 'sync_failed' 
-                              ? 'bg-red-100 text-red-800' 
-                              : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {event.syncStatus === 'synced' 
-                        ? 'Synced' 
-                        : event.syncStatus === 'syncing' 
-                          ? 'Syncing...' 
-                          : event.syncStatus === 'sync_failed' 
-                            ? 'Sync Failed' 
-                            : 'Local'}
-                    </div>
-                  )}
-                </div>
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between">
+                <h1 className="text-xl font-semibold">{event.title}</h1>
                 
-                {/* Show calendar info if available */}
-                {(displayCalendarName && displayCalendarColor) && (
-                  <div className="text-sm text-neutral-500 flex items-center">
-                    <span 
-                      className="w-3 h-3 rounded-full mr-2" 
-                      style={{ backgroundColor: displayCalendarColor }}
-                    ></span>
-                    {displayCalendarName} {!calendarName && calendar && "Calendar"}
+                {/* Sync status indicator */}
+                {event.syncStatus && (
+                  <div 
+                    className={`text-xs px-2 py-1 rounded-full ${
+                      event.syncStatus === 'synced' 
+                        ? 'bg-green-100 text-green-800' 
+                        : event.syncStatus === 'syncing' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : event.syncStatus === 'sync_failed' 
+                            ? 'bg-red-100 text-red-800' 
+                            : 'bg-yellow-100 text-yellow-800'
+                    }`}
+                  >
+                    {event.syncStatus === 'synced' 
+                      ? 'Synced' 
+                      : event.syncStatus === 'syncing' 
+                        ? 'Syncing...' 
+                        : event.syncStatus === 'sync_failed' 
+                          ? 'Sync Failed' 
+                          : 'Local'}
                   </div>
                 )}
               </div>
               
-              <div className="flex items-start">
-                <span className="material-icons text-neutral-500 mr-2">schedule</span>
-                <div>
-                  <div className="text-sm">{formatDayOfWeekDate(startDate)}</div>
-                  <div className="text-sm">
-                    {event.allDay 
-                      ? 'All Day' 
-                      : formatEventTimeRange(startDate, endDate)}
-                    {' '}({event.timezone})
-                  </div>
+              {/* Show calendar info if available */}
+              {calendar && (
+                <div className="text-sm text-neutral-500 flex items-center">
+                  <span 
+                    className="w-3 h-3 rounded-full mr-2" 
+                    style={{ backgroundColor: calendarColor || calendar.color }}
+                  ></span>
+                  {calendarName || calendar.name} {!calendarName && "Calendar"}
+                </div>
+              )}
+            </div>
+            
+            <div className="flex items-start">
+              <span className="material-icons text-neutral-500 mr-2">schedule</span>
+              <div>
+                <div className="text-sm">{formatDayOfWeekDate(startDate)}</div>
+                <div className="text-sm">
+                  {event.allDay 
+                    ? 'All Day' 
+                    : formatEventTimeRange(startDate, endDate)}
+                  {' '}({event.timezone})
                 </div>
               </div>
-              
-              {event.location && (
-                <div className="flex items-start">
-                  <span className="material-icons text-neutral-500 mr-2">location_on</span>
-                  <div className="text-sm">{event.location}</div>
-                </div>
-              )}
-              
-              {event.description && (
-                <div>
-                  <div className="text-sm font-medium mb-1">Description</div>
-                  <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                    {event.description}
-                  </div>
-                </div>
-              )}
-              
-              {renderAttendees()}
-              {renderResources()}
             </div>
-          )}
+            
+            {event.location && (
+              <div className="flex items-start">
+                <span className="material-icons text-neutral-500 mr-2">location_on</span>
+                <div className="text-sm">{event.location}</div>
+              </div>
+            )}
+            
+            {event.description && (
+              <div>
+                <div className="text-sm font-medium mb-1">Description</div>
+                <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                  {event.description}
+                </div>
+              </div>
+            )}
+            
+            {/* Attendees section */}
+            {event.attendees && Array.isArray(event.attendees) && event.attendees.length > 0 && (
+              <div>
+                <div className="text-sm font-medium mb-1">Attendees</div>
+                <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                  <ul className="space-y-1">
+                    {event.attendees
+                      .filter(Boolean)
+                      .map((attendee, index) => (
+                        <li key={index} className="flex items-center">
+                          <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
+                          {String(attendee)}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+            
+            {/* Resources section */}
+            {event.resources && Array.isArray(event.resources) && event.resources.length > 0 && (
+              <div>
+                <div className="text-sm font-medium mb-1">Resources</div>
+                <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                  <ul className="space-y-1">
+                    {event.resources
+                      .filter(Boolean)
+                      .map((resource, index) => (
+                        <li key={index} className="flex items-center">
+                          <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
+                          {String(resource)}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
           
           <DialogFooter className="flex justify-between space-x-2">
             <div className="flex space-x-2">
-              {!isLoading && effectiveCanEdit && (
+              {!isUserLoading && effectiveCanEdit && (
                 <>
                   <Button 
                     variant="outline" 
@@ -401,7 +286,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   </Button>
                 </>
               )}
-              {isLoading && (
+              {isUserLoading && (
                 <div className="text-sm text-muted-foreground py-2">
                   Loading permission information...
                 </div>

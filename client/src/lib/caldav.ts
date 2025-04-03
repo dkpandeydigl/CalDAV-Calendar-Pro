@@ -24,6 +24,7 @@ export interface CalDAVCalendar {
   syncToken?: string;
   events?: CalDAVEvent[];
   ctag?: string;
+  sharedWith?: CalDAVSharing[];
 }
 
 export interface CalDAVAccount {
@@ -32,6 +33,22 @@ export interface CalDAVAccount {
   password: string;
   calendars?: CalDAVCalendar[];
 }
+
+// Interface for sharing information
+export interface CalDAVSharing {
+  principalHref: string; // The user with whom the calendar is shared
+  displayName?: string;  // Display name for the user
+  email?: string;        // Email of the user
+  access: 'read-only' | 'read-write'; // Access level
+}
+
+// Access control privilege constants
+const ACL_PRIVILEGES = {
+  READ: 'read',
+  WRITE: 'write',
+  READ_WRITE: 'read-write',
+  READ_ONLY: 'read-only'
+};
 
 // Type for the response from calendar operations
 interface CalendarObjectOperationResult {
@@ -397,6 +414,239 @@ export class CalDAVClient {
     } catch (error) {
       console.error("Error syncing calendar:", error);
       throw new Error("Failed to synchronize calendar with the server");
+    }
+  }
+  
+  /**
+   * Get current ACL (Access Control List) for a calendar
+   * @param calendarUrl The URL of the calendar
+   * @returns Promise with the XML response from the ACL request
+   */
+  async getCalendarAcl(calendarUrl: string): Promise<string> {
+    try {
+      // Ensure the URL has a trailing slash
+      const url = calendarUrl.endsWith('/') ? calendarUrl : `${calendarUrl}/`;
+      
+      // Make a PROPFIND request to get current ACL
+      const response = await fetch(url, {
+        method: 'PROPFIND',
+        headers: {
+          'Content-Type': 'application/xml; charset=utf-8',
+          'Depth': '0',
+          'Authorization': 'Basic ' + btoa(`${this.account.username}:${this.account.password}`)
+        },
+        body: `<?xml version="1.0" encoding="utf-8" ?>
+          <D:propfind xmlns:D="DAV:">
+            <D:prop>
+              <D:acl/>
+              <D:owner/>
+              <D:current-user-privilege-set/>
+            </D:prop>
+          </D:propfind>`
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to get ACL: ${response.status} ${response.statusText}`);
+      }
+      
+      const xmlText = await response.text();
+      return xmlText;
+    } catch (error) {
+      console.error("Error getting calendar ACL:", error);
+      throw new Error("Failed to retrieve calendar permissions");
+    }
+  }
+  
+  /**
+   * Get sharing information for a calendar
+   * @param calendarUrl The URL of the calendar
+   * @returns Array of CalDAVSharing objects
+   */
+  async getCalendarSharing(calendarUrl: string): Promise<CalDAVSharing[]> {
+    try {
+      const aclXml = await this.getCalendarAcl(calendarUrl);
+      // Parse XML to extract sharing information
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(aclXml, "text/xml");
+      
+      // Extract ACL entries
+      const aclNode = xmlDoc.querySelector('acl');
+      if (!aclNode) return [];
+      
+      const aceNodes = aclNode.querySelectorAll('ace');
+      if (!aceNodes || aceNodes.length === 0) return [];
+      
+      const sharingList: CalDAVSharing[] = [];
+      
+      // Process each ACE (Access Control Entry)
+      aceNodes.forEach(ace => {
+        // Skip owner or non-user entries
+        const principalNode = ace.querySelector('principal');
+        if (!principalNode) return;
+        
+        // Skip self references
+        const selfNode = principalNode.querySelector('self');
+        if (selfNode) return;
+        
+        // Get the principal href
+        const hrefNode = principalNode.querySelector('href');
+        if (!hrefNode || !hrefNode.textContent) return;
+        
+        const principalHref = hrefNode.textContent;
+        
+        // Check if this is a user principal (contains 'principals')
+        if (!principalHref.includes('principals/')) return;
+        
+        // Determine access level
+        const grantNode = ace.querySelector('grant');
+        if (!grantNode) return;
+        
+        let access: 'read-only' | 'read-write' = 'read-only';
+        
+        // Check for write privilege
+        const writePrivilege = grantNode.querySelector('write');
+        if (writePrivilege) {
+          access = 'read-write';
+        }
+        
+        // Add to sharing list
+        sharingList.push({
+          principalHref,
+          // Extract email/username from principal href
+          email: principalHref.split('/').filter(Boolean).pop(),
+          access
+        });
+      });
+      
+      return sharingList;
+    } catch (error) {
+      console.error("Error getting calendar sharing:", error);
+      return [];
+    }
+  }
+  
+  /**
+   * Share a calendar with another user
+   * @param calendarUrl The URL of the calendar
+   * @param userEmail Email of the user to share with
+   * @param access Permission level (read-only or read-write)
+   * @returns Boolean indicating success
+   */
+  async shareCalendar(calendarUrl: string, userEmail: string, access: 'read-only' | 'read-write'): Promise<boolean> {
+    try {
+      // Ensure the URL has a trailing slash
+      const url = calendarUrl.endsWith('/') ? calendarUrl : `${calendarUrl}/`;
+      
+      // First get the current ACL
+      const currentAcl = await this.getCalendarAcl(calendarUrl);
+      
+      // Determine the principal URL for the user email
+      // This is server-specific - in DAViCal it's typically /principals/[username]/
+      const serverUrlObj = new URL(this.account.serverUrl);
+      const baseUrl = serverUrlObj.origin;
+      
+      // Format principal URL based on server type (assuming DAViCal)
+      // This needs to be adapted to the specific CalDAV server's principal URL format
+      const principalHref = `${baseUrl}/principals/${userEmail}/`;
+      
+      // Create an ACL XML with the new permission
+      const aclXml = `<?xml version="1.0" encoding="utf-8" ?>
+        <D:acl xmlns:D="DAV:">
+          <D:ace>
+            <D:principal>
+              <D:href>${principalHref}</D:href>
+            </D:principal>
+            <D:grant>
+              <D:privilege><D:read/></D:privilege>
+              ${access === 'read-write' ? '<D:privilege><D:write/></D:privilege>' : ''}
+            </D:grant>
+          </D:ace>
+        </D:acl>`;
+      
+      // Make an ACL request to update permissions
+      const response = await fetch(url, {
+        method: 'ACL',
+        headers: {
+          'Content-Type': 'application/xml; charset=utf-8',
+          'Authorization': 'Basic ' + btoa(`${this.account.username}:${this.account.password}`)
+        },
+        body: aclXml
+      });
+      
+      return response.ok;
+    } catch (error) {
+      console.error("Error sharing calendar:", error);
+      throw new Error("Failed to share calendar");
+    }
+  }
+  
+  /**
+   * Remove sharing for a calendar
+   * @param calendarUrl The URL of the calendar
+   * @param userEmail Email of the user to unshare with
+   * @returns Boolean indicating success
+   */
+  async unshareCalendar(calendarUrl: string, userEmail: string): Promise<boolean> {
+    try {
+      // Ensure the URL has a trailing slash
+      const url = calendarUrl.endsWith('/') ? calendarUrl : `${calendarUrl}/`;
+      
+      // Get current sharing settings to find the principal to remove
+      const currentSharing = await this.getCalendarSharing(calendarUrl);
+      const sharingToRemove = currentSharing.find(share => 
+        share.email === userEmail || share.principalHref.includes(userEmail)
+      );
+      
+      if (!sharingToRemove) {
+        // Calendar is not shared with this user
+        return false;
+      }
+      
+      // Create an ACL XML that removes the specific ACE
+      const aclXml = `<?xml version="1.0" encoding="utf-8" ?>
+        <D:acl xmlns:D="DAV:">
+          <D:ace>
+            <D:principal>
+              <D:href>${sharingToRemove.principalHref}</D:href>
+            </D:principal>
+            <D:deny>
+              <D:privilege><D:read/></D:privilege>
+              <D:privilege><D:write/></D:privilege>
+            </D:deny>
+          </D:ace>
+        </D:acl>`;
+      
+      // Make an ACL request to update permissions
+      const response = await fetch(url, {
+        method: 'ACL',
+        headers: {
+          'Content-Type': 'application/xml; charset=utf-8',
+          'Authorization': 'Basic ' + btoa(`${this.account.username}:${this.account.password}`)
+        },
+        body: aclXml
+      });
+      
+      return response.ok;
+    } catch (error) {
+      console.error("Error unsharing calendar:", error);
+      throw new Error("Failed to unshare calendar");
+    }
+  }
+  
+  /**
+   * Update sharing permissions for a calendar
+   * @param calendarUrl The URL of the calendar
+   * @param userEmail Email of the user
+   * @param access New permission level (read-only or read-write)
+   * @returns Boolean indicating success
+   */
+  async updateCalendarSharing(calendarUrl: string, userEmail: string, access: 'read-only' | 'read-write'): Promise<boolean> {
+    try {
+      // Simply call the share function which will update existing permissions
+      return await this.shareCalendar(calendarUrl, userEmail, access);
+    } catch (error) {
+      console.error("Error updating calendar sharing:", error);
+      throw new Error("Failed to update calendar sharing");
     }
   }
 }
