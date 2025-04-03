@@ -5,15 +5,13 @@ import { z } from "zod";
 // User schema
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
-  username: text("username").notNull().unique(), // Keep username for CalDAV server compatibility
-  email: text("email").notNull().unique(), // Add email for app login
+  username: text("username").notNull().unique(),
   password: text("password").notNull(),
   preferredTimezone: text("preferred_timezone").default("UTC"),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
-  email: true,
   password: true,
   preferredTimezone: true,
 });

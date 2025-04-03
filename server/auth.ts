@@ -109,21 +109,17 @@ export function setupAuth(app: Express) {
   app.use(passport.session());
 
   passport.use(
-    new LocalStrategy({
-      usernameField: 'email', // Use email field for authentication
-      passwordField: 'password'
-    }, async (email, password, done) => {
+    new LocalStrategy(async (username, password, done) => {
       try {
-        // Look up user by email instead of username
-        const user = await storage.getUserByEmail(email);
+        const user = await storage.getUserByUsername(username);
         
         if (!user) {
-          return done(null, false, { message: "Invalid email or password" });
+          return done(null, false, { message: "Invalid username or password" });
         }
         
         const isPasswordValid = await comparePasswords(password, user.password);
         if (!isPasswordValid) {
-          return done(null, false, { message: "Invalid email or password" });
+          return done(null, false, { message: "Invalid username or password" });
         }
         
         return done(null, user);
@@ -146,28 +142,22 @@ export function setupAuth(app: Express) {
   app.post("/api/register", async (req, res, next) => {
     try {
       const { 
-        email,
         username, 
         password, 
         caldavServerUrl 
       } = req.body;
       
-      // Check if user already exists (by email or username)
-      const existingUserByEmail = await storage.getUserByEmail(email);
-      if (existingUserByEmail) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-      
-      const existingUserByUsername = await storage.getUserByUsername(username);
-      if (existingUserByUsername) {
+      // Check if user already exists
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
       }
       
-      // Verify CalDAV credentials first (using username for CalDAV)
+      // Verify CalDAV credentials first
       try {
         const isValidCalDAV = await verifyCalDAVCredentials(
           caldavServerUrl,
-          username, // Use username for CalDAV server
+          username,
           password
         );
         
@@ -183,10 +173,9 @@ export function setupAuth(app: Express) {
         });
       }
       
-      // Create new user with both email and username
+      // Create new user
       const hashedPassword = await hashPassword(password);
       const user = await storage.createUser({
-        email,
         username,
         password: hashedPassword,
       });
@@ -196,14 +185,14 @@ export function setupAuth(app: Express) {
         await storage.createServerConnection({
           userId: user.id,
           url: caldavServerUrl,
-          username: username, // Use username for CalDAV server
+          username: username,
           password: password,
           autoSync: true,
           syncInterval: 15, // 15 minutes default
           status: "connected"
         });
         
-        console.log(`Created server connection for user ${email} (username: ${username})`);
+        console.log(`Created server connection for user ${username}`);
       } catch (error) {
         console.error("Error creating server connection:", error);
         // Continue even if server connection creation fails
@@ -223,22 +212,19 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", async (req, res, next) => {
-    const { email, caldavUsername, password, caldavServerUrl } = req.body;
+    const { username, password, caldavServerUrl } = req.body;
     
     passport.authenticate("local", async (err: Error | null, user: Express.User | false, info: { message: string } | undefined) => {
       if (err) return next(err);
       if (!user) {
-        return res.status(401).json({ message: info?.message || "Invalid email or password" });
+        return res.status(401).json({ message: info?.message || "Invalid username or password" });
       }
 
-      // Using email for app login, but caldavUsername for CalDAV server
-      const caldavUser = caldavUsername || user.username; // Fall back to the stored username if caldavUsername not provided
-      
       // App login successful, now check CalDAV credentials
       try {
         const isValidCalDAV = await verifyCalDAVCredentials(
           caldavServerUrl,
-          caldavUser,
+          username,
           password
         );
         
@@ -256,23 +242,23 @@ export function setupAuth(app: Express) {
           // Update existing connection
           await storage.updateServerConnection(existingConnection.id, {
             url: caldavServerUrl,
-            username: caldavUser,
+            username: username,
             password: password,
             status: "connected"
           });
-          console.log(`Updated server connection for user ${user.email} (CalDAV username: ${caldavUser})`);
+          console.log(`Updated server connection for user ${(user as SelectUser).username}`);
         } else {
           // Create new server connection
           await storage.createServerConnection({
             userId: userId,
             url: caldavServerUrl,
-            username: caldavUser,
+            username: username,
             password: password,
             autoSync: true,
             syncInterval: 15,
             status: "connected"
           });
-          console.log(`Created server connection for user ${user.email} (CalDAV username: ${caldavUser})`);
+          console.log(`Created server connection for user ${(user as SelectUser).username}`);
         }
       } catch (error) {
         console.error("Error with CalDAV credentials:", error);

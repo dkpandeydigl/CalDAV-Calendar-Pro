@@ -17,12 +17,7 @@ type AuthContextType = {
   registerMutation: UseMutationResult<SelectUser, Error, InsertUser>;
 };
 
-type LoginData = {
-  email: string;
-  password: string;
-  caldavUsername?: string;
-  caldavServerUrl?: string;
-};
+type LoginData = Pick<InsertUser, "username" | "password">;
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
