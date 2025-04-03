@@ -243,138 +243,75 @@ export class DatabaseStorage implements IStorage {
       
       console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}`);
       
-      // Use direct queries to simplify this function and avoid circular references
-      let sharingRecords: {id: number, calendarId: number}[] = [];
+      // Use the simplest approach possible to avoid SQL parameter binding issues
+      // Just fetch all calendar sharing records first
+      const allSharingRecords = await db.select().from(calendarSharing);
+      console.log(`Found ${allSharingRecords.length} total sharing records in database`);
       
-      // 1. First try direct user ID match
-      try {
-        const result = await db.execute(
-          "SELECT id, calendar_id FROM calendar_sharing WHERE shared_with_user_id = $1",
-          [userId]
-        );
-        
-        const directMatches = result.rows.map(row => ({
-          id: Number(row.id),
-          calendarId: Number(row.calendar_id)
-        }));
-        
-        console.log(`Found ${directMatches.length} direct user ID matches`);
-        sharingRecords = [...sharingRecords, ...directMatches];
-      } catch (error) {
-        console.error("Error in direct user ID match query:", error);
-      }
-      
-      // 2. Try exact email/username matches
-      try {
-        // Build query parameters
-        const params: any[] = [user.username];
-        let emailPlaceholder = "";
-        
-        if (user.email) {
-          params.push(user.email);
-          emailPlaceholder = "OR shared_with_email = $2";
-          console.log(`User has email: ${user.email}, including in exact match query`);
+      // Then filter them manually based on matching criteria
+      const matchingRecords = allSharingRecords.filter(record => {
+        // Direct user ID match
+        if (record.sharedWithUserId === userId) {
+          return true;
         }
         
-        const exactQuery = `
-          SELECT id, calendar_id FROM calendar_sharing 
-          WHERE shared_with_email = $1 
-          ${emailPlaceholder}
-        `;
+        // Username is email in this application - match email in sharing email field
+        const emailMatches = record.sharedWithEmail && 
+          (record.sharedWithEmail.toLowerCase() === user.username.toLowerCase());
         
-        const result = await db.execute(exactQuery, params);
-        
-        const exactMatches = result.rows.map(row => ({
-          id: Number(row.id),
-          calendarId: Number(row.calendar_id)
-        }));
-        
-        console.log(`Found ${exactMatches.length} exact username/email matches`);
-        sharingRecords = [...sharingRecords, ...exactMatches];
-      } catch (error) {
-        console.error("Error in exact match query:", error);
-      }
-      
-      // 3. Try partial matches with ILIKE
-      try {
-        // Username partial match
-        const usernameResult = await db.execute(
-          "SELECT id, calendar_id FROM calendar_sharing WHERE shared_with_email ILIKE $1",
-          [`%${user.username}%`]
-        );
-        
-        const usernameMatches = usernameResult.rows.map(row => ({
-          id: Number(row.id),
-          calendarId: Number(row.calendar_id)
-        }));
-        
-        console.log(`Found ${usernameMatches.length} partial username matches`);
-        sharingRecords = [...sharingRecords, ...usernameMatches];
-        
-        // Email partial match if exists
-        if (user.email) {
-          const emailResult = await db.execute(
-            "SELECT id, calendar_id FROM calendar_sharing WHERE shared_with_email ILIKE $1",
-            [`%${user.email}%`]
-          );
-          
-          const emailMatches = emailResult.rows.map(row => ({
-            id: Number(row.id),
-            calendarId: Number(row.calendar_id)
-          }));
-          
-          console.log(`Found ${emailMatches.length} partial email matches`);
-          sharingRecords = [...sharingRecords, ...emailMatches];
+        if (emailMatches) {
+          return true;
         }
-      } catch (error) {
-        console.error("Error in partial match query:", error);
+        
+        // If user has an email, match that too
+        if (user.email && record.sharedWithEmail) {
+          const userEmailMatches = record.sharedWithEmail.toLowerCase() === user.email.toLowerCase();
+          if (userEmailMatches) {
+            return true;
+          }
+        }
+        
+        // Check for partial matches (username or email contained within sharedWithEmail)
+        if (record.sharedWithEmail && 
+            record.sharedWithEmail.toLowerCase().includes(user.username.toLowerCase())) {
+          return true;
+        }
+        
+        if (user.email && record.sharedWithEmail && 
+            record.sharedWithEmail.toLowerCase().includes(user.email.toLowerCase())) {
+          return true;
+        }
+        
+        return false;
+      });
+      
+      console.log(`Found ${matchingRecords.length} matching sharing records for user ${user.username}`);
+      
+      if (matchingRecords.length === 0) {
+        return [];
       }
       
-      // Deduplicate calendar IDs (sharing records may have duplicates)
-      const calendarIdSet = new Set<number>();
-      sharingRecords.forEach(record => calendarIdSet.add(record.calendarId));
-      const calendarIds = Array.from(calendarIdSet);
+      // Get unique calendar IDs
+      const calendarIds = Array.from(new Set(matchingRecords.map(record => record.calendarId)));
+      console.log(`Found ${calendarIds.length} unique calendar IDs to fetch: ${calendarIds.join(', ')}`);
       
-      console.log(`Found ${calendarIds.length} unique calendar IDs to fetch`);
-      
+      // Fetch all calendars at once if there are any IDs
       if (calendarIds.length === 0) {
         return [];
       }
       
-      // Get the actual calendars
-      const sharedCalendars: Calendar[] = [];
-      
-      for (const calendarId of calendarIds) {
-        try {
-          const calendarResult = await db.execute(
-            "SELECT * FROM calendars WHERE id = $1",
-            [calendarId]
-          );
-          
-          if (calendarResult.rows.length > 0) {
-            const row = calendarResult.rows[0];
-            
-            // Convert to Calendar type with proper typing
-            sharedCalendars.push({
-              id: Number(row.id),
-              name: String(row.name || ''),
-              color: String(row.color || '#3788d8'),
-              ownerId: Number(row.owner_id),
-              serverCalendarId: row.server_calendar_id ? String(row.server_calendar_id) : null,
-              serverUrl: row.server_url ? String(row.server_url) : null,
-              description: row.description ? String(row.description) : null,
-              isVisible: Boolean(row.is_visible),
-              isReadOnly: Boolean(row.is_read_only),
-              createdAt: row.created_at ? new Date(row.created_at) : null,
-              lastModified: row.last_modified ? new Date(row.last_modified) : null
-            });
-          }
-        } catch (error) {
-          console.error(`Error fetching calendar with ID ${calendarId}:`, error);
-        }
-      }
+      const sharedCalendars = await db.select()
+        .from(calendars)
+        .where(inArray(calendars.id, calendarIds));
       
       console.log(`Found ${sharedCalendars.length} shared calendars for user ${user.username}`);
+      
+      // Debug info
+      for (const calendar of sharedCalendars) {
+        // Log based on Calendar type fields in schema
+        console.log(`Shared calendar: ID ${calendar.id}, Name: ${calendar.name}, Owner ID: ${calendar.userId}`);
+      }
+      
       return sharedCalendars;
     } catch (error) {
       console.error("Error fetching shared calendars:", error);
