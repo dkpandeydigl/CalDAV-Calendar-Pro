@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -29,7 +30,8 @@ import { Loader2 } from "lucide-react";
 
 // Login schema
 const loginSchema = z.object({
-  username: z.string().min(1, "Username is required"),
+  email: z.string().email("Please enter a valid email address"),
+  caldavUsername: z.string().optional(),
   password: z.string().min(1, "Password is required"),
   caldavServerUrl: z.string().url("Please enter a valid URL").default("https://zpush.ajaydata.com/davical/"),
 });
@@ -37,6 +39,7 @@ const loginSchema = z.object({
 // Registration schema
 const registerSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
+  email: z.string().email("Please enter a valid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string().min(6, "Confirm your password"),
   caldavServerUrl: z.string().url("Please enter a valid URL").default("https://zpush.ajaydata.com/davical/"),
@@ -59,7 +62,8 @@ export default function AuthPage() {
   const loginForm = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      username: "",
+      email: "",
+      caldavUsername: "",
       password: "",
       caldavServerUrl: "https://zpush.ajaydata.com/davical/",
     },
@@ -70,6 +74,7 @@ export default function AuthPage() {
     resolver: zodResolver(registerSchema),
     defaultValues: {
       username: "",
+      email: "",
       password: "",
       confirmPassword: "",
       caldavServerUrl: "https://zpush.ajaydata.com/davical/",
@@ -125,17 +130,37 @@ export default function AuthPage() {
                     >
                       <FormField
                         control={loginForm.control}
-                        name="username"
+                        name="email"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Username</FormLabel>
+                            <FormLabel>Email</FormLabel>
                             <FormControl>
                               <Input
-                                placeholder="Enter your username"
+                                placeholder="Enter your email address"
                                 {...field}
                               />
                             </FormControl>
                             <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={loginForm.control}
+                        name="caldavUsername"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CalDAV Username (Optional)</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Enter your CalDAV server username if different"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                            <FormDescription>
+                              Only required if your CalDAV username is different from your email
+                            </FormDescription>
                           </FormItem>
                         )}
                       />
@@ -239,14 +264,38 @@ export default function AuthPage() {
                         name="username"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Username</FormLabel>
+                            <FormLabel>Username for CalDAV Server</FormLabel>
                             <FormControl>
                               <Input
-                                placeholder="Choose a username"
+                                placeholder="Choose a username for the CalDAV server"
                                 {...field}
                               />
                             </FormControl>
                             <FormMessage />
+                            <FormDescription>
+                              This will be used to authenticate with the CalDAV server
+                            </FormDescription>
+                          </FormItem>
+                        )}
+                      />
+                      
+                      <FormField
+                        control={registerForm.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email Address</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Enter your email address"
+                                type="email"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                            <FormDescription>
+                              This will be used for logging into the application
+                            </FormDescription>
                           </FormItem>
                         )}
                       />

@@ -57,6 +57,7 @@ export class DatabaseStorage implements IStorage {
       // Create a default user for demo purposes
       const defaultUser: InsertUser = {
         username: "demo",
+        email: "demo@example.com",
         password: "$2a$10$JNtOWyzifkSQPN9x.kFI0et9rEHP0XvKkQHZZS5sKdCXJ7.BViAf.", // "password"
         preferredTimezone: "UTC"
       };
@@ -155,6 +156,11 @@ export class DatabaseStorage implements IStorage {
   
   async getUserByUsername(username: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.username, username));
+    return result.length > 0 ? result[0] : undefined;
+  }
+  
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.email, email));
     return result.length > 0 ? result[0] : undefined;
   }
   

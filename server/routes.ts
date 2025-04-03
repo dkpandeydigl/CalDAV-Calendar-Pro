@@ -85,6 +85,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const hashedPassword = await bcrypt.hash(password, 10);
           user = await storage.createUser({
             username,
+            email: `${username}@caldav.example.com`, // Generate a placeholder email from username
             password: hashedPassword,
             preferredTimezone: 'UTC'
           });
