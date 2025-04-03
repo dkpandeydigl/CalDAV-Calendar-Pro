@@ -9,6 +9,8 @@ import { useServerConnection } from '@/hooks/useServerConnection';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { getTimezones } from '@/lib/date-utils';
 import { formatFullDate } from '@/lib/date-utils';
+import { useToast } from '@/hooks/use-toast';
+import { queryClient } from '@/lib/queryClient';
 import { 
   Edit, 
   Trash2, 
@@ -58,6 +60,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
   onOpenSyncSettings,
   onShareCalendar
 }) => {
+  const { toast } = useToast();
   const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
   const { sharedCalendars } = useSharedCalendars();
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
@@ -395,20 +398,75 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
         {sharedCalendars.length > 0 && (
           <div className="mb-6">
             <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Shared Calendars</h3>
-            {sharedCalendars.map(calendar => (
-              <div className="flex items-center justify-between mb-2" key={`shared-${calendar.id}`}>
-                <div className="flex items-center flex-1">
-                  <Checkbox 
-                    id={`shared-cal-${calendar.id}`} 
-                    checked={calendar.enabled ?? true}
-                    onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean)}
-                    className="h-4 w-4"
-                    style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
-                  />
-                  <Label htmlFor={`shared-cal-${calendar.id}`} className="ml-2 text-sm text-neutral-800 truncate">
-                    {calendar.name}
-                  </Label>
+            
+            {/* Group calendars by owner email */}
+            {Object.entries(sharedCalendars.reduce((acc, calendar) => {
+              const ownerEmail = calendar.ownerEmail || 'Unknown';
+              if (!acc[ownerEmail]) {
+                acc[ownerEmail] = [];
+              }
+              acc[ownerEmail].push(calendar);
+              return acc;
+            }, {} as Record<string, typeof sharedCalendars>)).map(([ownerEmail, ownerCalendars]) => (
+              <div key={ownerEmail} className="mb-3">
+                <div className="text-xs text-gray-500 italic mb-1">
+                  Shared by: {ownerEmail}
                 </div>
+                
+                {ownerCalendars.map(calendar => (
+                  <div className="flex items-center justify-between mb-2 pl-2" key={`shared-${calendar.id}`}>
+                    <div className="flex items-center flex-1">
+                      <Checkbox 
+                        id={`shared-cal-${calendar.id}`} 
+                        checked={calendar.enabled ?? true}
+                        onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean)}
+                        className="h-4 w-4"
+                        style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
+                      />
+                      <Label htmlFor={`shared-cal-${calendar.id}`} className="ml-2 text-sm text-neutral-800 truncate">
+                        {calendar.name}
+                        {calendar.permission === 'edit' && (
+                          <span className="ml-1 text-xs text-green-600">(Can edit)</span>
+                        )}
+                      </Label>
+                    </div>
+                    
+                    {/* Unshare option */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-red-500 hover:text-red-700"
+                      onClick={() => {
+                        // Add confirmation before unsharing
+                        if (confirm(`Stop sharing "${calendar.name}" from ${ownerEmail}?`)) {
+                          // Call API to remove calendar sharing
+                          fetch(`/api/calendars/shares/${calendar.id}`, {
+                            method: 'DELETE',
+                          }).then(() => {
+                            // Refresh shared calendars
+                            queryClient.invalidateQueries({
+                              queryKey: ['/api/shared-calendars']
+                            });
+                            toast({
+                              title: "Calendar unshared",
+                              description: `You no longer have access to "${calendar.name}"`,
+                            });
+                          }).catch(error => {
+                            console.error('Error unsharing calendar:', error);
+                            toast({
+                              title: "Error",
+                              description: "Failed to unshare calendar. Please try again.",
+                              variant: "destructive"
+                            });
+                          });
+                        }
+                      }}
+                      title="Unshare calendar"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

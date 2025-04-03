@@ -5,6 +5,7 @@ import type { Calendar } from '@shared/schema';
 export interface SharedCalendar extends Calendar {
   permission: 'view' | 'edit';
   isShared: boolean;
+  ownerEmail?: string; // Email address of the user who shared the calendar
 }
 
 export const useSharedCalendars = () => {

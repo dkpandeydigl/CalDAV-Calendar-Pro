@@ -8,6 +8,7 @@ import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { getTimezones } from '@/lib/date-utils';
 import { useCalendarContext } from '@/contexts/CalendarContext';
+import { useSharedCalendars } from '@/hooks/useSharedCalendars';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -39,10 +40,14 @@ const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 
 const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDate, onClose }) => {
   const { calendars } = useCalendars();
+  const { sharedCalendars } = useSharedCalendars();
   const { createEvent, updateEvent } = useCalendarEvents();
   const { selectedTimezone } = useCalendarContext();
   const { toast } = useToast();
   const { user } = useAuth();
+  
+  // Filter shared calendars to only include those with edit permissions
+  const editableSharedCalendars = sharedCalendars.filter(cal => cal.permission === 'edit');
   
   // Tab state
   const [activeTab, setActiveTab] = useState('description');
@@ -201,7 +206,14 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
         setEndDate(dateStr);
         setStartTime(timeStr);
         setEndTime(endTimeStr);
-        setCalendarId(calendars.length > 0 ? calendars[0].id.toString() : '');
+        // Set calendar ID - prioritize user's own calendars, but fall back to shared ones if available
+        if (calendars.length > 0) {
+          setCalendarId(calendars[0].id.toString());
+        } else if (editableSharedCalendars.length > 0) {
+          setCalendarId(editableSharedCalendars[0].id.toString());
+        } else {
+          setCalendarId('');
+        }
         setTimezone(selectedTimezone);  // Always use current user timezone preference
         setAllDay(false);
         resetRecurrenceState();
@@ -210,7 +222,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
         setBusyStatus('busy');
       }
     }
-  }, [open, event, calendars, selectedTimezone, selectedDate]);
+  }, [open, event, calendars, editableSharedCalendars, selectedTimezone, selectedDate]);
   
   // Helper function to parse recurrence rule
   const parseRecurrenceRule = (rule: string) => {
@@ -913,17 +925,46 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
                     <SelectValue placeholder="Select a calendar" />
                   </SelectTrigger>
                   <SelectContent>
-                    {calendars.map(calendar => (
-                      <SelectItem key={calendar.id} value={calendar.id.toString()}>
-                        <div className="flex items-center">
-                          <span 
-                            className="w-3 h-3 rounded-full mr-2" 
-                            style={{ backgroundColor: calendar.color }}
-                          ></span>
-                          {calendar.name}
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {/* User's own calendars */}
+                    {calendars.length > 0 && (
+                      <>
+                        <div className="px-2 py-1 text-xs text-muted-foreground">My Calendars</div>
+                        {calendars.map(calendar => (
+                          <SelectItem key={calendar.id} value={calendar.id.toString()}>
+                            <div className="flex items-center">
+                              <span 
+                                className="w-3 h-3 rounded-full mr-2" 
+                                style={{ backgroundColor: calendar.color }}
+                              ></span>
+                              {calendar.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
+                    
+                    {/* Shared calendars with edit permissions */}
+                    {editableSharedCalendars.length > 0 && (
+                      <>
+                        <div className="px-2 py-1 text-xs text-muted-foreground mt-1">Shared With Me (Edit Permission)</div>
+                        {editableSharedCalendars.map(calendar => (
+                          <SelectItem key={`shared-${calendar.id}`} value={calendar.id.toString()}>
+                            <div className="flex items-center">
+                              <span 
+                                className="w-3 h-3 rounded-full mr-2" 
+                                style={{ backgroundColor: calendar.color }}
+                              ></span>
+                              {calendar.name}
+                              {calendar.ownerEmail && (
+                                <span className="ml-2 text-xs text-muted-foreground">
+                                  ({calendar.ownerEmail})
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
