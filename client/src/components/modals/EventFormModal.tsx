@@ -506,8 +506,8 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
   };
   
   return (
-    <Dialog open={open} onOpenChange={open => !open && onClose()} modal>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+    <Dialog open={open} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" autoFocus={false}>
         <DialogHeader className="border-b pb-2">
           <DialogTitle className="flex items-center text-lg font-semibold">
             <Calendar className="mr-2 h-5 w-5" />
@@ -604,6 +604,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
                   onChange={e => setTitle(e.target.value)}
                   placeholder="Add title"
                   className="mt-1"
+                  autoFocus={false}
                 />
               </div>
 
@@ -616,6 +617,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
                   placeholder="Add description"
                   rows={5}
                   className="mt-1"
+                  autoFocus={false}
                 />
               </div>
               
@@ -914,6 +916,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
                   onChange={e => setLocation(e.target.value)}
                   placeholder="Add location"
                   className="mt-1"
+                  autoFocus={false}
                 />
               </div>
               
