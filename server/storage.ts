@@ -293,16 +293,57 @@ export class MemStorage implements IStorage {
     const user = await this.getUser(userId);
     if (!user) return [];
     
-    // Find all sharing records that match this user
-    const userSharings = Array.from(this.calendarSharingMap.values()).filter(
-      (sharing) => sharing.sharedWithUserId === userId || sharing.sharedWithEmail === user.username
-    );
+    console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}`);
+    
+    // Find all sharing records that might match this user using flexible matching
+    const userSharings = Array.from(this.calendarSharingMap.values()).filter(sharing => {
+      // Exact user ID match
+      if (sharing.sharedWithUserId === userId) {
+        console.log(`Found sharing record with matching user ID: ${userId}`);
+        return true;
+      }
+      
+      // Exact email/username match
+      if (sharing.sharedWithEmail === user.username) {
+        console.log(`Found sharing record with exact username match: ${user.username}`);
+        return true;
+      }
+      
+      // Case-insensitive email/username match
+      if (sharing.sharedWithEmail.toLowerCase() === user.username.toLowerCase()) {
+        console.log(`Found sharing record with case-insensitive username match: ${sharing.sharedWithEmail} ≈ ${user.username}`);
+        return true;
+      }
+      
+      // Check if username is part of the email address
+      if (sharing.sharedWithEmail.includes('@')) {
+        const [emailUsername] = sharing.sharedWithEmail.split('@');
+        if (user.username === emailUsername || 
+            user.username.includes(emailUsername) || 
+            emailUsername.includes(user.username)) {
+          console.log(`Found sharing record with email username part match: ${emailUsername} ≈ ${user.username}`);
+          return true;
+        }
+      }
+      
+      // Check for any partial match in either direction
+      if (sharing.sharedWithEmail.includes(user.username) || 
+          user.username.includes(sharing.sharedWithEmail)) {
+        console.log(`Found sharing record with partial match: ${sharing.sharedWithEmail} ≈ ${user.username}`);
+        return true;
+      }
+      
+      return false;
+    });
+    
+    console.log(`Found ${userSharings.length} sharing records for user ${user.username}`);
     
     // Fetch all the calendars that are shared with this user
     const calendars: Calendar[] = [];
     for (const sharing of userSharings) {
       const calendar = await this.getCalendar(sharing.calendarId);
       if (calendar) {
+        console.log(`Adding shared calendar "${calendar.name}" to user's shared calendars`);
         calendars.push(calendar);
       }
     }

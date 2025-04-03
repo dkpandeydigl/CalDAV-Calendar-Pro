@@ -243,17 +243,24 @@ export class DatabaseStorage implements IStorage {
       
       console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}`);
       
-      // Get all calendar sharing records
+      // Find ANY sharing records:
+      // 1. Shared directly with user ID
+      // 2. Shared with email matching username
+      // 3. Shared with email matching any case-insensitive version of username
+      // 4. Shared with email containing username in any form
       const sharingRecords = await db.select()
         .from(calendarSharing)
         .where(
           or(
             eq(calendarSharing.sharedWithUserId, userId),
-            eq(calendarSharing.sharedWithEmail, user.username)
+            eq(calendarSharing.sharedWithEmail, user.username),
+            sql`LOWER(${calendarSharing.sharedWithEmail}) = LOWER(${user.username})`,
+            // Check if any part of the email resembles the username
+            sql`${calendarSharing.sharedWithEmail} LIKE ${'%' + user.username + '%'}`
           )
         );
       
-      console.log(`Found ${sharingRecords.length} sharing records:`, JSON.stringify(sharingRecords, null, 2));
+      console.log(`Found ${sharingRecords.length} sharing records for user ${user.username}`);
       
       if (sharingRecords.length === 0) return [];
       
@@ -265,7 +272,7 @@ export class DatabaseStorage implements IStorage {
         .from(calendars)
         .where(inArray(calendars.id, calendarIds));
       
-      console.log(`Found ${sharedCalendars.length} shared calendars:`, JSON.stringify(sharedCalendars, null, 2));
+      console.log(`Found ${sharedCalendars.length} shared calendars for user ${user.username}`);
       
       return sharedCalendars;
     } catch (error) {

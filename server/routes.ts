@@ -1051,28 +1051,61 @@ END:VCALENDAR`
         return res.status(400).json({ message: "Calendar already shared with this email" });
       }
       
-      // Try to find user ID for this email - this might be the username
+      // Try to find user ID for this email - several matching approaches
       let sharedWithUserId = null;
       
       // First, try to find an exact match for the email as a username
       const sharedUser = await storage.getUserByUsername(req.body.sharedWithEmail);
       if (sharedUser) {
         sharedWithUserId = sharedUser.id;
-        console.log(`Found user ID ${sharedWithUserId} with username matching the shared email: ${req.body.sharedWithEmail}`);
+        console.log(`Found user ID ${sharedWithUserId} with username exactly matching the shared email: ${req.body.sharedWithEmail}`);
       } else {
-        // If no exact match, look for any user with this username
+        // If no exact match, look for any user with matching username or email patterns
         const allUsers = await storage.getAllUsers();
         console.log(`Checking ${allUsers.length} users to find a match for email: ${req.body.sharedWithEmail}`);
         
+        // First try: Exact case-insensitive match
         for (const user of allUsers) {
-          console.log(`Checking user ${user.id}: ${user.username}`);
           if (user.username.toLowerCase() === req.body.sharedWithEmail.toLowerCase()) {
             sharedWithUserId = user.id;
             console.log(`Found user ID ${sharedWithUserId} with username case-insensitive matching: ${req.body.sharedWithEmail}`);
             break;
           }
         }
+        
+        // Second try: Check if username is part of the email address
+        if (!sharedWithUserId) {
+          // Split email into username and domain
+          const [emailUsername, domain] = req.body.sharedWithEmail.split('@');
+          if (emailUsername) {
+            for (const user of allUsers) {
+              if (user.username === emailUsername || 
+                  user.username.includes(emailUsername) || 
+                  emailUsername.includes(user.username)) {
+                sharedWithUserId = user.id;
+                console.log(`Found user ID ${sharedWithUserId} matching email username part: ${emailUsername}`);
+                break;
+              }
+            }
+          }
+        }
+        
+        // Third try: Look for any partial match
+        if (!sharedWithUserId) {
+          for (const user of allUsers) {
+            // Check for any kind of partial match in either direction
+            if (user.username.includes(req.body.sharedWithEmail) || 
+                req.body.sharedWithEmail.includes(user.username)) {
+              sharedWithUserId = user.id;
+              console.log(`Found user ID ${sharedWithUserId} with partial match between username and email: ${req.body.sharedWithEmail}`);
+              break;
+            }
+          }
+        }
       }
+      
+      console.log(`Final user ID for sharing: ${sharedWithUserId || 'No user found - sharing with email only'}`);
+      
       
       // Create sharing record
       const sharing = await storage.shareCalendar({
@@ -1133,14 +1166,14 @@ END:VCALENDAR`
       });
       
       // Transform to match client-side expected format
-      const transformedSharing = {
+      const transformedSharing = updatedSharing ? {
         id: updatedSharing.id,
         calendarId: updatedSharing.calendarId,
         userId: updatedSharing.sharedWithUserId,
         email: updatedSharing.sharedWithEmail,
         username: null,
         permission: updatedSharing.permissionLevel === 'view' ? 'read' : 'write'
-      };
+      } : { message: "Failed to update sharing record" };
       
       res.json(transformedSharing);
     } catch (err) {
@@ -1189,8 +1222,75 @@ END:VCALENDAR`
   // Get calendars shared with the current user
   app.get("/api/shared-calendars", isAuthenticated, async (req, res) => {
     try {
-      const sharedCalendars = await storage.getSharedCalendars(req.user!.id);
-      res.json(sharedCalendars);
+      const userId = req.user!.id;
+      console.log(`Getting shared calendars for user ID: ${userId}, username: ${req.user!.username}`);
+      
+      // First, get all shared calendars
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      console.log(`Found ${sharedCalendars.length} shared calendars for user ${req.user!.username}`);
+      
+      if (sharedCalendars.length === 0) {
+        return res.json([]);
+      }
+      
+      // For each calendar, get the sharing record to determine permissions
+      const calendarIds = sharedCalendars.map(cal => cal.id);
+      let allSharingRecords: any[] = [];
+      
+      // Get all sharing records
+      for (const calendarId of calendarIds) {
+        const sharingRecords = await storage.getCalendarSharing(calendarId);
+        allSharingRecords = [...allSharingRecords, ...sharingRecords];
+      }
+      
+      console.log(`Found ${allSharingRecords.length} total sharing records`);
+      
+      // Match sharing records with the current user using the same flexible matching
+      const findSharingForUserAndCalendar = (calendarId: number) => {
+        // Try several ways to match:
+        // 1. By user ID
+        const byUserId = allSharingRecords.find(s => 
+          s.calendarId === calendarId && s.sharedWithUserId === userId
+        );
+        if (byUserId) return byUserId;
+        
+        // 2. By exact username/email match
+        const byUsername = allSharingRecords.find(s =>
+          s.calendarId === calendarId && s.sharedWithEmail === req.user!.username
+        );
+        if (byUsername) return byUsername;
+        
+        // 3. By case-insensitive match
+        const byUsernameIgnoreCase = allSharingRecords.find(s =>
+          s.calendarId === calendarId && 
+          s.sharedWithEmail.toLowerCase() === req.user!.username.toLowerCase()
+        );
+        if (byUsernameIgnoreCase) return byUsernameIgnoreCase;
+        
+        // 4. By partial username/email match
+        const byPartialMatch = allSharingRecords.find(s =>
+          s.calendarId === calendarId && (
+            s.sharedWithEmail.includes(req.user!.username) ||
+            req.user!.username.includes(s.sharedWithEmail)
+          )
+        );
+        
+        return byPartialMatch;
+      };
+      
+      // Add permission level to each calendar
+      const calendarWithPermissions = sharedCalendars.map(calendar => {
+        const sharing = findSharingForUserAndCalendar(calendar.id);
+        console.log(`Calendar ${calendar.id} (${calendar.name}) permission: ${sharing?.permissionLevel || 'unknown'}`);
+        
+        return {
+          ...calendar,
+          permission: sharing?.permissionLevel || 'view', // Default to view-only if no record found
+          isShared: true
+        };
+      });
+      
+      res.json(calendarWithPermissions);
     } catch (err) {
       console.error("Error getting shared calendars:", err);
       res.status(500).json({ message: "Failed to get shared calendars" });
@@ -1203,16 +1303,43 @@ END:VCALENDAR`
       const calendarId = parseInt(req.params.calendarId);
       const userId = req.user!.id;
       
-      // Get the calendar to make sure it belongs to the user
+      // Get the calendar
       const calendar = await storage.getCalendar(calendarId);
       
-      if (!calendar || calendar.userId !== userId) {
+      if (!calendar) {
         return res.status(404).json({ message: "Calendar not found" });
       }
       
-      // Return local events only
+      // If calendar doesn't belong to user, check if it's shared with them
+      if (calendar.userId !== userId) {
+        console.log(`Calendar ${calendarId} is not owned by user ${userId}, checking if shared...`);
+        const sharedCalendars = await storage.getSharedCalendars(userId);
+        const isShared = sharedCalendars.some(sc => sc.id === calendarId);
+        
+        if (!isShared) {
+          console.log(`Calendar ${calendarId} is not shared with user ${userId}`);
+          return res.status(403).json({ message: "You don't have permission to access this calendar" });
+        }
+        console.log(`Calendar ${calendarId} is shared with user ${userId}`);
+      }
+      
+      // Return events for the calendar
       const events = await storage.getEvents(calendarId);
-      return res.json(events);
+      
+      // Add calendar info to each event
+      const eventsWithCalendarInfo = events.map(event => {
+        return {
+          ...event,
+          rawData: {
+            ...(event.rawData || {}),
+            calendarName: calendar.name,
+            calendarColor: calendar.color,
+            isShared: calendar.userId !== userId
+          }
+        };
+      });
+      
+      return res.json(eventsWithCalendarInfo);
     } catch (err) {
       console.error("Error fetching events:", err);
       res.status(500).json({ message: "Failed to fetch events" });
@@ -1251,7 +1378,19 @@ END:VCALENDAR`
       // Then filter for enabled calendars
       const enabledCalendars = filteredCalendars.filter(cal => cal.enabled);
       
-      if (enabledCalendars.length === 0) {
+      // ADDITIONAL: Get shared calendars
+      const sharedCalendarsResponse = await storage.getSharedCalendars(userId);
+      console.log(`Found ${sharedCalendarsResponse.length} shared calendars`);
+      
+      // Add enabled shared calendars to the list of enabled calendars
+      const enabledSharedCalendars = sharedCalendarsResponse.filter(cal => cal.enabled);
+      
+      // Combine user's calendars and enabled shared calendars
+      const allEnabledCalendars = [...enabledCalendars, ...enabledSharedCalendars];
+      
+      console.log(`Total calendars to fetch events from: ${allEnabledCalendars.length}`);
+      
+      if (allEnabledCalendars.length === 0) {
         return res.json([]);
       }
       
@@ -1259,7 +1398,7 @@ END:VCALENDAR`
       // Use any[] to avoid TypeScript errors since we're adding metadata
       let allEvents: any[] = [];
       
-      for (const calendar of enabledCalendars) {
+      for (const calendar of allEnabledCalendars) {
         const calendarEvents = await storage.getEvents(calendar.id);
         
         // Add all events from the calendar with minimal filtering
@@ -1290,7 +1429,8 @@ END:VCALENDAR`
             rawData: {
               ...(event.rawData || {}),
               calendarName: calendar.name,
-              calendarColor: calendar.color
+              calendarColor: calendar.color,
+              isShared: calendar.userId !== userId
             }
           };
         });
