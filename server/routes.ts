@@ -34,6 +34,78 @@ declare global {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  /**
+   * Helper function to check if a user has permission to modify a calendar
+   * @param userId The ID of the user
+   * @param calendarId The ID of the calendar
+   * @param requiredPermission The permission level required ('view' or 'edit')
+   * @param req Express request object (needed for user email/username)
+   * @returns Object with permission status and message
+   */
+  async function checkCalendarPermission(
+    userId: number, 
+    calendarId: number, 
+    requiredPermission: 'view' | 'edit' = 'edit',
+    req: Request
+  ): Promise<{ permitted: boolean; message?: string }> {
+    // Get the calendar
+    const calendar = await storage.getCalendar(calendarId);
+    if (!calendar) {
+      return { permitted: false, message: "Calendar not found" };
+    }
+    
+    // Allow if user is the owner of the calendar
+    const isOwner = calendar.userId === userId;
+    if (isOwner) {
+      return { permitted: true };
+    }
+    
+    // If not owner, check if calendar is shared with appropriate permissions
+    const sharedCalendars = await storage.getSharedCalendars(userId);
+    const isShared = sharedCalendars.some(c => c.id === calendar.id);
+    
+    if (!isShared) {
+      return { 
+        permitted: false, 
+        message: `You don't have permission to access this calendar` 
+      };
+    }
+    
+    // Check permission level by getting the calendar sharing record
+    const sharingRecords = await storage.getCalendarSharing(calendar.id);
+    
+    // Find the sharing record for this user
+    const userSharing = sharingRecords.find(share => {
+      return (
+        (share.sharedWithUserId === userId) || 
+        (share.sharedWithEmail && ((req.user as any).email === share.sharedWithEmail || 
+                                   (req.user as any).username === share.sharedWithEmail))
+      );
+    });
+    
+    if (!userSharing) {
+      return { 
+        permitted: false, 
+        message: "Sharing configuration not found" 
+      };
+    }
+    
+    // For view permission, both 'view' and 'edit' sharing is sufficient
+    if (requiredPermission === 'view') {
+      return { permitted: true };
+    }
+    
+    // For edit permission, only 'edit' sharing is sufficient
+    if (userSharing.permissionLevel !== 'edit') {
+      return { 
+        permitted: false, 
+        message: "You have view-only access to this calendar" 
+      };
+    }
+    
+    return { permitted: true };
+  }
+
   // Set up session middleware
   const MemoryStore = MemoryStoreFactory(session);
   
@@ -1605,53 +1677,12 @@ END:VCALENDAR`
       console.log(`Event create request. Authenticated User ID: ${userId}`);
       console.log(`Event create payload:`, JSON.stringify(req.body, null, 2));
       
-      // Get the calendar to check permissions
-      const calendarId = req.body.calendarId;
-      const calendar = await storage.getCalendar(calendarId);
-      
-      if (!calendar) {
-        return res.status(404).json({ message: "Calendar not found" });
-      }
-      
       // Check if user has permission to create events in this calendar
-      // Allow if user is the owner of the calendar
-      const isOwner = calendar.userId === userId;
+      const calendarId = req.body.calendarId;
+      const permissionCheck = await checkCalendarPermission(userId, calendarId, 'edit', req);
       
-      // If not owner, check if calendar is shared with edit permissions
-      if (!isOwner) {
-        // Check if calendar is shared with this user
-        const sharedCalendars = await storage.getSharedCalendars(userId);
-        const isShared = sharedCalendars.some(c => c.id === calendar.id);
-        
-        if (!isShared) {
-          console.log(`Calendar ${calendar.id} is not shared with user ${userId}`);
-          return res.status(403).json({ message: "You don't have permission to add events to this calendar" });
-        }
-        
-        // Check permission level by getting the calendar sharing record
-        const sharingRecords = await storage.getCalendarSharing(calendar.id);
-        
-        // Find the sharing record for this user
-        const userSharing = sharingRecords.find(share => {
-          return (
-            (share.sharedWithUserId === userId) || 
-            (share.sharedWithEmail && ((req.user as any).email === share.sharedWithEmail || 
-                                       (req.user as any).username === share.sharedWithEmail))
-          );
-        });
-        
-        if (!userSharing) {
-          console.log(`No sharing record found for user ${userId} on calendar ${calendar.id}`);
-          return res.status(403).json({ message: "Sharing configuration not found" });
-        }
-        
-        // Check permission level
-        if (userSharing.permissionLevel !== 'edit') {
-          console.log(`User ${userId} has ${userSharing.permissionLevel} permission on calendar ${calendar.id}`);
-          return res.status(403).json({ message: "You have view-only access to this calendar" });
-        }
-        
-        console.log(`User ${userId} has edit permission on calendar ${calendar.id}`);
+      if (!permissionCheck.permitted) {
+        return res.status(403).json({ message: permissionCheck.message || "Permission denied" });
       }
       
       // Generate a unique UID for the event if not provided
@@ -2016,52 +2047,18 @@ END:VCALENDAR`
         return res.status(404).json({ message: "Event not found" });
       }
       
-      // Get the calendar to check permissions
-      const calendar = await storage.getCalendar(originalEvent.calendarId);
-      if (!calendar) {
-        return res.status(404).json({ message: "Calendar not found" });
-      }
-      
       // Check if user has permission to update this event
-      // Allow update if user is the owner of the calendar
-      const isOwner = calendar.userId === userId;
+      const permissionCheck = await checkCalendarPermission(userId, originalEvent.calendarId, 'edit', req);
       
-      // If not owner, check if calendar is shared with edit permissions
-      if (!isOwner) {
-        // Check if calendar is shared with this user
-        const sharedCalendars = await storage.getSharedCalendars(userId);
-        const isShared = sharedCalendars.some(c => c.id === calendar.id);
-        
-        if (!isShared) {
-          console.log(`Calendar ${calendar.id} is not shared with user ${userId}`);
-          return res.status(403).json({ message: "You don't have permission to edit events in this calendar" });
-        }
-        
-        // Check permission level by getting the calendar sharing record
-        const sharingRecords = await storage.getCalendarSharing(calendar.id);
-        
-        // Find the sharing record for this user
-        const userSharing = sharingRecords.find(share => {
-          return (
-            (share.sharedWithUserId === userId) || 
-            (share.sharedWithEmail && ((req.user as any).email === share.sharedWithEmail || 
-                                       (req.user as any).username === share.sharedWithEmail))
-          );
-        });
-        
-        if (!userSharing) {
-          console.log(`No sharing record found for user ${userId} on calendar ${calendar.id}`);
-          return res.status(403).json({ message: "Sharing configuration not found" });
-        }
-        
-        // Check permission level
-        if (userSharing.permissionLevel !== 'edit') {
-          console.log(`User ${userId} has ${userSharing.permissionLevel} permission on calendar ${calendar.id}`);
-          return res.status(403).json({ message: "You have view-only access to this calendar" });
-        }
-        
-        console.log(`User ${userId} has edit permission on calendar ${calendar.id}`);
+      if (!permissionCheck.permitted) {
+        return res.status(403).json({ message: permissionCheck.message || "Permission denied" });
       }
+      
+      // Get the calendar for reference
+      const calendar = await storage.getCalendar(originalEvent.calendarId);
+      
+      // Get owner status for later usage
+      const isOwner = calendar?.userId === userId;
       
       // Now that permissions are validated, continue with the event update
       // Create a copy of the request body to make modifications
@@ -2519,52 +2516,21 @@ END:VCALENDAR`
         return res.status(404).json({ message: "Event not found" });
       }
       
-      // Get the calendar to check permissions
+      // Check if user has permission to delete this event
+      const permissionCheck = await checkCalendarPermission(userId, eventToDelete.calendarId, 'edit', req);
+      
+      if (!permissionCheck.permitted) {
+        return res.status(403).json({ message: permissionCheck.message || "Permission denied" });
+      }
+      
+      // Get the calendar for reference
       const calendar = await storage.getCalendar(eventToDelete.calendarId);
       if (!calendar) {
         return res.status(404).json({ message: "Calendar not found" });
       }
       
-      // Check if user has permission to delete this event
-      // Allow if user is the owner of the calendar
+      // For compatibility with existing code
       const isOwner = calendar.userId === userId;
-      
-      // If not owner, check if calendar is shared with edit permissions
-      if (!isOwner) {
-        // Check if calendar is shared with this user
-        const sharedCalendars = await storage.getSharedCalendars(userId);
-        const isShared = sharedCalendars.some(c => c.id === calendar.id);
-        
-        if (!isShared) {
-          console.log(`Calendar ${calendar.id} is not shared with user ${userId}`);
-          return res.status(403).json({ message: "You don't have permission to delete events in this calendar" });
-        }
-        
-        // Check permission level by getting the calendar sharing record
-        const sharingRecords = await storage.getCalendarSharing(calendar.id);
-        
-        // Find the sharing record for this user
-        const userSharing = sharingRecords.find(share => {
-          return (
-            (share.sharedWithUserId === userId) || 
-            (share.sharedWithEmail && ((req.user as any).email === share.sharedWithEmail || 
-                                       (req.user as any).username === share.sharedWithEmail))
-          );
-        });
-        
-        if (!userSharing) {
-          console.log(`No sharing record found for user ${userId} on calendar ${calendar.id}`);
-          return res.status(403).json({ message: "Sharing configuration not found" });
-        }
-        
-        // Check permission level
-        if (userSharing.permissionLevel !== 'edit') {
-          console.log(`User ${userId} has ${userSharing.permissionLevel} permission on calendar ${calendar.id}`);
-          return res.status(403).json({ message: "You have view-only access to this calendar" });
-        }
-        
-        console.log(`User ${userId} has edit permission on calendar ${calendar.id}`);
-      }
       
       // First delete from our local database
       const deleted = await storage.deleteEvent(eventId);

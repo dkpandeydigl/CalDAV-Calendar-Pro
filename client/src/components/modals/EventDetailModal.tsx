@@ -7,6 +7,7 @@ import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { formatDayOfWeekDate, formatTime, formatEventTimeRange } from '@/lib/date-utils';
 import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
+import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 
 interface EventDetailModalProps {
   open: boolean;
@@ -23,11 +24,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
 }) => {
   const { calendars } = useCalendars();
   const { deleteEvent } = useCalendarEvents();
+  const { getCalendarPermission } = useCalendarPermissions();
   const queryClient = useQueryClient();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   
   if (!event) return null;
+  
+  // Check if user has edit permission for this calendar
+  const { canEdit } = event.calendarId ? getCalendarPermission(event.calendarId) : { canEdit: false };
   
   // Get calendar metadata either from the rawData or find it from calendars
   const calendarMetadata = event.rawData as any;
@@ -104,21 +109,27 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           <DialogHeader>
             <div className="flex justify-between items-center">
               <DialogTitle>Event Details</DialogTitle>
-              <div className="flex">
-                <Button variant="ghost" size="icon" onClick={onEdit} title="Edit">
-                  <span className="material-icons">edit</span>
-                  <span className="sr-only">Edit</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setDeleteDialogOpen(true)}
-                  title="Delete"
-                >
-                  <span className="material-icons">delete</span>
-                  <span className="sr-only">Delete</span>
-                </Button>
-              </div>
+              {canEdit ? (
+                <div className="flex">
+                  <Button variant="ghost" size="icon" onClick={onEdit} title="Edit">
+                    <span className="material-icons">edit</span>
+                    <span className="sr-only">Edit</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setDeleteDialogOpen(true)}
+                    title="Delete"
+                  >
+                    <span className="material-icons">delete</span>
+                    <span className="sr-only">Delete</span>
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-secondary">
+                  View only
+                </div>
+              )}
             </div>
           </DialogHeader>
           
@@ -235,7 +246,26 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             )}
           </div>
           
-          <DialogFooter>
+          <DialogFooter className="flex justify-between space-x-2">
+            <div className="flex space-x-2">
+              {canEdit && (
+                <>
+                  <Button 
+                    variant="outline" 
+                    className="border-red-200 text-red-600 hover:bg-red-50" 
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
+                    Delete
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={onEdit}
+                  >
+                    Edit
+                  </Button>
+                </>
+              )}
+            </div>
             <Button onClick={onClose}>
               Close
             </Button>
