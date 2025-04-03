@@ -25,7 +25,13 @@ export const useSharedCalendars = () => {
       calendar.id === calendarId ? { ...calendar, enabled } : calendar
     );
     
+    // Update the shared calendars data in cache
     queryClient.setQueryData(['/api/shared-calendars'], updatedData);
+    
+    // Since the enabled status affects which events are displayed,
+    // we need to invalidate the events query to trigger a re-fetch
+    // with the updated enabled calendar IDs
+    queryClient.invalidateQueries({ queryKey: ['/api/events'] });
   };
 
   return {

@@ -4,6 +4,7 @@ import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Event } from '@shared/schema';
 import { useCalendars } from './useCalendars';
+import { useSharedCalendars } from './useSharedCalendars';
 
 // Type declarations to help with TanStack Query types
 type QueryKey = unknown;
@@ -12,11 +13,20 @@ type EventFilter = (e: Event) => boolean;
 export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   const { toast } = useToast();
   const { calendars } = useCalendars();
+  const { sharedCalendars } = useSharedCalendars();
   
-  // Get calendar IDs that are enabled
-  const enabledCalendarIds = calendars
+  // Get calendar IDs that are enabled (from regular calendars)
+  const enabledUserCalendarIds = calendars
     .filter(calendar => calendar.enabled)
     .map(calendar => calendar.id);
+    
+  // Get calendar IDs that are enabled (from shared calendars)
+  const enabledSharedCalendarIds = sharedCalendars
+    .filter(calendar => calendar.enabled)
+    .map(calendar => calendar.id);
+    
+  // Combine all enabled calendar IDs
+  const enabledCalendarIds = [...enabledUserCalendarIds, ...enabledSharedCalendarIds];
   
   // Load events for all calendars with date range filtering in a single API call
   const eventsQueries = useQuery<Event[]>({
@@ -25,8 +35,10 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty to handle user session expiry gracefully
   });
   
-  // No need to filter events as the API already does that
-  const filteredEvents = eventsQueries.data || [];
+  // Filter events client-side to ensure we only show events from enabled calendars
+  const filteredEvents = (eventsQueries.data || []).filter(event => 
+    enabledCalendarIds.includes(event.calendarId)
+  );
 
   type CreateMutationContext = {
     tempEvent?: Event;
