@@ -90,8 +90,24 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
 
   const timezones = getTimezones();
 
-  const handleCalendarToggle = (id: number, checked: boolean) => {
-    updateCalendar({ id, data: { enabled: checked } });
+  const handleCalendarToggle = (id: number, checked: boolean, isShared: boolean = false) => {
+    // If it's a shared calendar, we need to handle it differently
+    // We'll update the local state without making an API call to update the calendar
+    if (isShared) {
+      // For shared calendars, we'll use the client-side filtering approach
+      // This allows toggling visibility without modifying the calendar itself
+      // We'll just update the React Query cache directly
+      const updatedCalendars = queryClient.getQueryData<any[]>(['/api/shared-calendars'])?.map(cal => 
+        cal.id === id ? { ...cal, enabled: checked } : cal
+      ) || [];
+      
+      queryClient.setQueryData(['/api/shared-calendars'], updatedCalendars);
+      
+      // We don't need to show a toast for this operation
+    } else {
+      // For user's own calendars, use the normal update mechanism
+      updateCalendar({ id, data: { enabled: checked } });
+    }
   };
   
   // Calendar name validation
@@ -409,8 +425,55 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
               return acc;
             }, {} as Record<string, typeof sharedCalendars>)).map(([ownerEmail, ownerCalendars]) => (
               <div key={ownerEmail} className="mb-3">
-                <div className="text-xs text-gray-500 italic mb-1">
-                  Shared by: {ownerEmail}
+                <div className="flex items-center justify-between mb-1">
+                  <div className="text-xs text-gray-500 italic">
+                    {ownerEmail}
+                  </div>
+                  
+                  {/* Unshare all calendars from this email */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5 text-red-500 hover:text-red-700"
+                    onClick={() => {
+                      if (confirm(`Remove all calendars shared by ${ownerEmail}?`)) {
+                        // Create an array of promises for each unshare operation
+                        const unsharePromises = ownerCalendars.map(calendar => {
+                          // Build URL with sync option if calendar has URL
+                          const apiUrl = calendar.url 
+                            ? `/api/calendars/shares/${calendar.id}?syncWithServer=true` 
+                            : `/api/calendars/shares/${calendar.id}`;
+                          
+                          // Return the fetch promise
+                          return fetch(apiUrl, { method: 'DELETE' });
+                        });
+                        
+                        // Execute all unshare operations and wait for all to complete
+                        Promise.all(unsharePromises)
+                          .then(() => {
+                            // Refresh shared calendars
+                            queryClient.invalidateQueries({
+                              queryKey: ['/api/shared-calendars']
+                            });
+                            toast({
+                              title: "Calendars unshared",
+                              description: `You no longer have access to calendars shared by ${ownerEmail}`,
+                            });
+                          })
+                          .catch(error => {
+                            console.error('Error unsharing calendars:', error);
+                            toast({
+                              title: "Error",
+                              description: "Failed to unshare all calendars. Please try again.",
+                              variant: "destructive"
+                            });
+                          });
+                      }
+                    }}
+                    title={`Unshare all calendars from ${ownerEmail}`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
                 </div>
                 
                 {ownerCalendars.map(calendar => (
@@ -419,7 +482,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
                       <Checkbox 
                         id={`shared-cal-${calendar.id}`} 
                         checked={calendar.enabled ?? true}
-                        onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean)}
+                        onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean, true)}
                         className="h-4 w-4"
                         style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
                       />
@@ -431,7 +494,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
                       </Label>
                     </div>
                     
-                    {/* Unshare option */}
+                    {/* Unshare option for individual calendar */}
                     <Button
                       variant="ghost"
                       size="icon"
