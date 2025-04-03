@@ -48,9 +48,21 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     
   // For events in user's own calendars, always allow edit
   // If we don't have a user object, default to the permissions from getCalendarPermission
-  const isUsersOwnCalendar = calendar && user ? calendar.userId === user.id : isOwner;
-  // Allow edit and delete for the calendar owner
-  const effectiveCanEdit = isUsersOwnCalendar || canEdit;
+  
+  // Check if the current user is the owner of this calendar
+  const isUsersOwnCalendar = calendar && user ? 
+    calendar.userId === user.id : 
+    false;
+  
+  // Log additional debugging information
+  if (calendar && user) {
+    console.log(`Ownership check: Calendar ${calendar.id} (${calendar.name}) - Calendar userId: ${calendar.userId}, Current userId: ${user.id}, Match: ${calendar.userId === user.id}`);
+  }
+  
+  // Allow edit and delete if:
+  // 1. The user owns the calendar, OR
+  // 2. The user has explicit edit permission through sharing
+  const effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner;
   
   // Debug log permissions
   console.log(`Event ${event.title} - Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}, effectiveCanEdit: ${effectiveCanEdit}`);
