@@ -390,6 +390,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(req.user);
   });
   
+  // Get all users (for sharing purposes)
+  app.get('/api/users', isAuthenticated, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      
+      // Transform to safe format without passwords
+      const safeUsers = users.map(user => ({
+        id: user.id,
+        username: user.username,
+      }));
+      
+      res.json(safeUsers);
+    } catch (err) {
+      console.error("Error fetching users:", err);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+  
   // Update user timezone preference
   app.put('/api/user/timezone', isAuthenticated, async (req, res) => {
     try {
@@ -1033,11 +1051,27 @@ END:VCALENDAR`
         return res.status(400).json({ message: "Calendar already shared with this email" });
       }
       
-      // Try to find user ID for this email
+      // Try to find user ID for this email - this might be the username
       let sharedWithUserId = null;
+      
+      // First, try to find an exact match for the email as a username
       const sharedUser = await storage.getUserByUsername(req.body.sharedWithEmail);
       if (sharedUser) {
         sharedWithUserId = sharedUser.id;
+        console.log(`Found user ID ${sharedWithUserId} with username matching the shared email: ${req.body.sharedWithEmail}`);
+      } else {
+        // If no exact match, look for any user with this username
+        const allUsers = await storage.getAllUsers();
+        console.log(`Checking ${allUsers.length} users to find a match for email: ${req.body.sharedWithEmail}`);
+        
+        for (const user of allUsers) {
+          console.log(`Checking user ${user.id}: ${user.username}`);
+          if (user.username.toLowerCase() === req.body.sharedWithEmail.toLowerCase()) {
+            sharedWithUserId = user.id;
+            console.log(`Found user ID ${sharedWithUserId} with username case-insensitive matching: ${req.body.sharedWithEmail}`);
+            break;
+          }
+        }
       }
       
       // Create sharing record

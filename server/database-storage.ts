@@ -241,6 +241,8 @@ export class DatabaseStorage implements IStorage {
       const user = await this.getUser(userId);
       if (!user) return [];
       
+      console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}`);
+      
       // Get all calendar sharing records
       const sharingRecords = await db.select()
         .from(calendarSharing)
@@ -251,13 +253,19 @@ export class DatabaseStorage implements IStorage {
           )
         );
       
+      console.log(`Found ${sharingRecords.length} sharing records:`, JSON.stringify(sharingRecords, null, 2));
+      
       if (sharingRecords.length === 0) return [];
       
       // Get all the calendars that are shared with this user
       const calendarIds = sharingRecords.map(sharing => sharing.calendarId);
+      console.log(`Calendar IDs of shared calendars: ${calendarIds.join(', ')}`);
+      
       const sharedCalendars = await db.select()
         .from(calendars)
         .where(inArray(calendars.id, calendarIds));
+      
+      console.log(`Found ${sharedCalendars.length} shared calendars:`, JSON.stringify(sharedCalendars, null, 2));
       
       return sharedCalendars;
     } catch (error) {
