@@ -506,21 +506,8 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
   };
   
   return (
-    // Using a basic modal implementation without the Dialog component
-    open ? (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}>
-        <div className="bg-background max-w-5xl max-h-[90vh] overflow-hidden flex flex-col rounded-md shadow-lg" onClick={(e) => e.stopPropagation()}>
-          <div className="border-b pb-2 p-4 flex items-center justify-between">
-            <div className="flex items-center text-lg font-semibold">
-              <Calendar className="mr-2 h-5 w-5" />
-              {event ? 'Edit Meeting' : 'Create Meeting'}
-            </div>
-            <button className="text-muted-foreground hover:text-foreground" onClick={onClose}>
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+    <Dialog open={open} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" autoFocus={false} onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader className="border-b pb-2">
           <DialogTitle className="flex items-center text-lg font-semibold">
             <Calendar className="mr-2 h-5 w-5" />
