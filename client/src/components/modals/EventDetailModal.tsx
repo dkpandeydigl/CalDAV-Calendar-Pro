@@ -42,10 +42,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     if (isUserLoadingFromAuth) {
       setIsUserLoading(true);
       timeoutId = setTimeout(() => {
-        // Force loading to end after 3 seconds to prevent UI getting stuck
+        // Force loading to end after 2 seconds to prevent UI getting stuck
         setIsUserLoading(false);
-        console.log("Auth loading timeout - forcing UI to proceed");
-      }, 3000);
+        console.log("Auth loading timeout - forcing UI to proceed with available permissions");
+      }, 2000);
     } else {
       setIsUserLoading(isUserLoadingFromAuth);
     }
@@ -88,7 +88,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // For events in user's own calendars, always allow edit
   const isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
   const effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner;
-  const isAuthError = !isUserLoading && !user;
+  
+  // Only show auth error if we don't have user info AND don't have calendar data
+  // If we have calendar data, assume server session is valid even if client-side auth state is missing
+  const isAuthError = !isUserLoading && !user && !calendar;
   
   // Parse dates safely
   let startDate: Date;

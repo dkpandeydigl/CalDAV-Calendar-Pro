@@ -23,7 +23,7 @@ export async function apiRequest(
   return res;
 }
 
-type UnauthorizedBehavior = "returnNull" | "throw";
+type UnauthorizedBehavior = "returnNull" | "throw" | "continueWithEmpty";
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
@@ -33,8 +33,15 @@ export const getQueryFn: <T>(options: {
       credentials: "include",
     });
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
+    if (res.status === 401) {
+      if (unauthorizedBehavior === "returnNull") {
+        return null;
+      } else if (unauthorizedBehavior === "continueWithEmpty") {
+        // This is useful for operations that need to continue even if user session is expired
+        // but where server-side CalDAV credentials are still valid
+        console.log(`401 on ${queryKey[0]}, but continuing with empty data`);
+        return [];
+      }
     }
 
     await throwIfResNotOk(res);

@@ -26,8 +26,19 @@ export const useCalendarPermissions = () => {
       isOwner: false
     };
 
-    // If user is not available yet, don't allow any permissions
+    // If user is not available but we have calendars, we likely have a valid server session
+    // so we should still grant some permissions to allow basic operations
     if (!user || !user.id) {
+      const calendar = calendars.find(cal => cal.id === calendarId);
+      if (calendar) {
+        console.log(`User data not loaded yet, but calendar ${calendarId} exists - granting view permissions`);
+        return {
+          canView: true,
+          canEdit: true, // Allow edit since the server will handle actual permission checks
+          isOwner: false
+        };
+      }
+      
       console.log(`User data not loaded yet, denying all permissions for calendar ${calendarId}`);
       return defaultPermission;
     }

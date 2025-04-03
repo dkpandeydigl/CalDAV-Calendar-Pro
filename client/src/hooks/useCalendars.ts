@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, getQueryFn } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Calendar } from '@shared/schema';
@@ -9,6 +9,7 @@ export const useCalendars = () => {
 
   const calendarsQuery = useQuery<Calendar[]>({
     queryKey: ['/api/calendars'],
+    queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty for graceful auth handling
   });
 
   const createCalendarMutation = useMutation({
