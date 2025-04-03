@@ -507,7 +507,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
   
   return (
     <Dialog open={open} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" autoFocus={false}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col" autoFocus={false} onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader className="border-b pb-2">
           <DialogTitle className="flex items-center text-lg font-semibold">
             <Calendar className="mr-2 h-5 w-5" />
@@ -896,7 +896,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
                     <SelectTrigger className="mt-1">
                       <SelectValue placeholder="Select timezone" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent position="popper" sideOffset={0} className="max-h-[300px] overflow-y-auto">
                       {getTimezones().map(tz => (
                         <SelectItem key={tz.value} value={tz.value}>
                           {tz.label}
@@ -927,7 +927,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
                   <SelectTrigger className="mt-1">
                     <SelectValue placeholder="Select a calendar" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" sideOffset={0} className="max-h-[300px] overflow-y-auto">
                     {/* User's own calendars */}
                     {calendars.length > 0 && (
                       <>
@@ -981,7 +981,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" sideOffset={0}>
                 <SelectItem value="busy">Busy</SelectItem>
                 <SelectItem value="free">Free</SelectItem>
                 <SelectItem value="tentative">Tentative</SelectItem>
