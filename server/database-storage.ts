@@ -243,42 +243,68 @@ export class DatabaseStorage implements IStorage {
       
       console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}`);
       
-      // Find ANY sharing records:
-      // 1. Shared directly with user ID
-      // 2. Shared with email matching user email (if exists)
-      // 3. Shared with email matching username
-      // 4. Shared with email matching any case-insensitive version of email/username
-      const conditions = [
-        eq(calendarSharing.sharedWithUserId, userId),
-      ];
+      // Use a simplified approach without SQL templates that cause circular references
+      // First get the sharing records
+      let sharingRecords: CalendarSharing[] = [];
       
-      // Check user email if it exists
+      // 1. Direct user ID match
+      const directUserIdShares = await db.select()
+        .from(calendarSharing)
+        .where(eq(calendarSharing.sharedWithUserId, userId));
+      sharingRecords = [...sharingRecords, ...directUserIdShares];
+      
+      // 2. If user has email, get exact email matches
       if (user.email) {
         console.log(`User has email: ${user.email}, will check for matches`);
-        conditions.push(eq(calendarSharing.sharedWithEmail, user.email));
-        conditions.push(sql`LOWER(${calendarSharing.sharedWithEmail}) = LOWER(${user.email})`);
+        const emailShares = await db.select()
+          .from(calendarSharing)
+          .where(eq(calendarSharing.sharedWithEmail, user.email));
+        sharingRecords = [...sharingRecords, ...emailShares];
       }
       
-      // Also check username as email (backwards compatibility)
-      conditions.push(eq(calendarSharing.sharedWithEmail, user.username));
-      conditions.push(sql`LOWER(${calendarSharing.sharedWithEmail}) = LOWER(${user.username})`);
-      
-      // Check if any part of the email resembles the username/email
-      conditions.push(sql`${calendarSharing.sharedWithEmail} LIKE ${'%' + user.username + '%'}`);
-      if (user.email) {
-        conditions.push(sql`${calendarSharing.sharedWithEmail} LIKE ${'%' + user.email + '%'}`);
-      }
-      
-      const sharingRecords = await db.select()
+      // 3. Get username matches
+      const usernameShares = await db.select()
         .from(calendarSharing)
-        .where(or(...conditions));
+        .where(eq(calendarSharing.sharedWithEmail, user.username));
+      sharingRecords = [...sharingRecords, ...usernameShares];
       
-      console.log(`Found ${sharingRecords.length} sharing records for user ${user.username}`);
+      // 4. Get case-insensitive email matches using raw SQL for better compatibility
+      const query = `
+        SELECT * FROM calendar_sharing 
+        WHERE (shared_with_email ILIKE $1) 
+        ${user.email ? 'OR (shared_with_email ILIKE $2)' : ''}
+      `;
       
-      if (sharingRecords.length === 0) return [];
+      const params = [`%${user.username}%`];
+      if (user.email) {
+        params.push(`%${user.email}%`);
+      }
+      
+      const { rows } = await db.execute(query, params);
+      
+      // Convert rows to our CalendarSharing type (handling snake_case to camelCase)
+      const additionalShares = rows.map(row => ({
+        id: row.id,
+        calendarId: row.calendar_id,
+        sharedWithUserId: row.shared_with_user_id,
+        sharedWithEmail: row.shared_with_email,
+        permissionLevel: row.permission_level,
+        createdAt: row.created_at,
+        lastModified: row.last_modified
+      }));
+      
+      // Combine all sharing records and remove duplicates by ID
+      const allShares = [...sharingRecords, ...additionalShares];
+      const uniqueShares = Array.from(
+        new Map(allShares.map(share => [share.id, share])).values()
+      );
+      
+      console.log(`Found ${uniqueShares.length} sharing records for user ${user.username}`);
+      
+      if (uniqueShares.length === 0) return [];
       
       // Get all the calendars that are shared with this user
-      const calendarIds = sharingRecords.map(sharing => sharing.calendarId);
+      const calendarIds = uniqueShares.map(sharing => sharing.calendarId);
       console.log(`Calendar IDs of shared calendars: ${calendarIds.join(', ')}`);
       
       const sharedCalendars = await db.select()

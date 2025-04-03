@@ -1,0 +1,36 @@
+Looking for calendars shared with user ID: 5, username: ashutosh.sharma@xgenplus.com
+User has email: ashutosh.sharma@xgenplus.com, will check for matches
+Error fetching shared calendars: TypeError: Converting circular structure to JSON
+    --> starting at object with constructor 'PgTable'
+    |     property 'id' -> object with constructor 'PgSerial'
+    --- property 'table' closes the circle
+    at JSON.stringify (<anonymous>)
+    at prepareObject (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:721:70)
+    at prepareValue (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:718:55)
+    at prepareValueWrapper (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:735:82)
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1532:69
+    at Array.map (<anonymous>)
+    at resolve (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1532:40)
+    at DatabaseStorage.getSharedCalendars (/home/runner/workspace/server/database-storage.ts:259:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:1512:39)
+Found 0 shared calendars
+Total calendars to fetch events from: 3
+Filtered 3 calendars to 3 primary calendars
+Looking for calendars shared with user ID: 5, username: ashutosh.sharma@xgenplus.com
+User has email: ashutosh.sharma@xgenplus.com, will check for matches
+Error fetching shared calendars: TypeError: Converting circular structure to JSON
+    --> starting at object with constructor 'PgTable'
+    |     property 'id' -> object with constructor 'PgSerial'
+    --- property 'table' closes the circle
+    at JSON.stringify (<anonymous>)
+    at prepareObject (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:721:70)
+    at prepareValue (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:718:55)
+    at prepareValueWrapper (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:735:82)
+    at file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1532:69
+    at Array.map (<anonymous>)
+    at resolve (file:///home/runner/workspace/node_modules/@neondatabase/serverless/index.mjs:1532:40)
+    at DatabaseStorage.getSharedCalendars (/home/runner/workspace/server/database-storage.ts:259:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:1512:39)
+Found 0 shared calendars
