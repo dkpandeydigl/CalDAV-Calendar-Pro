@@ -1598,12 +1598,61 @@ END:VCALENDAR`
     }
   });
 
-  app.post("/api/events", async (req, res) => {
+  app.post("/api/events", isAuthenticated, async (req, res) => {
     try {
-      // Get authenticated user ID if available
-      const userId = req.user?.id;
-      console.log(`Event create request. Authenticated User ID: ${userId || 'Not authenticated'}`);
+      // Get authenticated user ID 
+      const userId = req.user!.id;
+      console.log(`Event create request. Authenticated User ID: ${userId}`);
       console.log(`Event create payload:`, JSON.stringify(req.body, null, 2));
+      
+      // Get the calendar to check permissions
+      const calendarId = req.body.calendarId;
+      const calendar = await storage.getCalendar(calendarId);
+      
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Check if user has permission to create events in this calendar
+      // Allow if user is the owner of the calendar
+      const isOwner = calendar.userId === userId;
+      
+      // If not owner, check if calendar is shared with edit permissions
+      if (!isOwner) {
+        // Check if calendar is shared with this user
+        const sharedCalendars = await storage.getSharedCalendars(userId);
+        const isShared = sharedCalendars.some(c => c.id === calendar.id);
+        
+        if (!isShared) {
+          console.log(`Calendar ${calendar.id} is not shared with user ${userId}`);
+          return res.status(403).json({ message: "You don't have permission to add events to this calendar" });
+        }
+        
+        // Check permission level by getting the calendar sharing record
+        const sharingRecords = await storage.getCalendarSharing(calendar.id);
+        
+        // Find the sharing record for this user
+        const userSharing = sharingRecords.find(share => {
+          return (
+            (share.sharedWithUserId === userId) || 
+            (share.sharedWithEmail && ((req.user as any).email === share.sharedWithEmail || 
+                                       (req.user as any).username === share.sharedWithEmail))
+          );
+        });
+        
+        if (!userSharing) {
+          console.log(`No sharing record found for user ${userId} on calendar ${calendar.id}`);
+          return res.status(403).json({ message: "Sharing configuration not found" });
+        }
+        
+        // Check permission level
+        if (userSharing.permissionLevel !== 'edit') {
+          console.log(`User ${userId} has ${userSharing.permissionLevel} permission on calendar ${calendar.id}`);
+          return res.status(403).json({ message: "You have view-only access to this calendar" });
+        }
+        
+        console.log(`User ${userId} has edit permission on calendar ${calendar.id}`);
+      }
       
       // Generate a unique UID for the event if not provided
       const eventData = {
@@ -1953,14 +2002,68 @@ END:VCALENDAR`
     }
   });
 
-  app.put("/api/events/:id", async (req, res) => {
+  app.put("/api/events/:id", isAuthenticated, async (req, res) => {
     try {
       const eventId = parseInt(req.params.id);
-      // Get authenticated user ID if available
-      const userId = req.user?.id;
-      console.log(`Event update request for ID ${eventId}. Authenticated User ID: ${userId || 'Not authenticated'}`);
+      // Get authenticated user ID
+      const userId = req.user!.id;
+      console.log(`Event update request for ID ${eventId}. Authenticated User ID: ${userId}`);
       console.log(`Event update payload:`, JSON.stringify(req.body, null, 2));
       
+      // Get the original event to have complete data
+      const originalEvent = await storage.getEvent(eventId);
+      if (!originalEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // Get the calendar to check permissions
+      const calendar = await storage.getCalendar(originalEvent.calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Check if user has permission to update this event
+      // Allow update if user is the owner of the calendar
+      const isOwner = calendar.userId === userId;
+      
+      // If not owner, check if calendar is shared with edit permissions
+      if (!isOwner) {
+        // Check if calendar is shared with this user
+        const sharedCalendars = await storage.getSharedCalendars(userId);
+        const isShared = sharedCalendars.some(c => c.id === calendar.id);
+        
+        if (!isShared) {
+          console.log(`Calendar ${calendar.id} is not shared with user ${userId}`);
+          return res.status(403).json({ message: "You don't have permission to edit events in this calendar" });
+        }
+        
+        // Check permission level by getting the calendar sharing record
+        const sharingRecords = await storage.getCalendarSharing(calendar.id);
+        
+        // Find the sharing record for this user
+        const userSharing = sharingRecords.find(share => {
+          return (
+            (share.sharedWithUserId === userId) || 
+            (share.sharedWithEmail && ((req.user as any).email === share.sharedWithEmail || 
+                                       (req.user as any).username === share.sharedWithEmail))
+          );
+        });
+        
+        if (!userSharing) {
+          console.log(`No sharing record found for user ${userId} on calendar ${calendar.id}`);
+          return res.status(403).json({ message: "Sharing configuration not found" });
+        }
+        
+        // Check permission level
+        if (userSharing.permissionLevel !== 'edit') {
+          console.log(`User ${userId} has ${userSharing.permissionLevel} permission on calendar ${calendar.id}`);
+          return res.status(403).json({ message: "You have view-only access to this calendar" });
+        }
+        
+        console.log(`User ${userId} has edit permission on calendar ${calendar.id}`);
+      }
+      
+      // Now that permissions are validated, continue with the event update
       // Create a copy of the request body to make modifications
       const eventData = { ...req.body };
       
@@ -1977,12 +2080,6 @@ END:VCALENDAR`
       
       // Validate with zod (partial validation for update)
       const validatedData = insertEventSchema.partial().parse(eventData);
-      
-      // Get the original event to have complete data for sync
-      const originalEvent = await storage.getEvent(eventId);
-      if (!originalEvent) {
-        return res.status(404).json({ message: "Event not found" });
-      }
       
       // Update event in our local database
       const updatedEvent = await storage.updateEvent(eventId, validatedData);
@@ -2401,12 +2498,12 @@ END:VCALENDAR`
     }
   });
 
-  app.delete("/api/events/:id", async (req, res) => {
+  app.delete("/api/events/:id", isAuthenticated, async (req, res) => {
     try {
       const eventId = parseInt(req.params.id);
-      // Get authenticated user ID if available
-      const userId = req.user?.id;
-      console.log(`Event delete request for ID ${eventId}. Authenticated User ID: ${userId || 'Not authenticated'}`);
+      // Get authenticated user ID
+      const userId = req.user!.id;
+      console.log(`Event delete request for ID ${eventId}. Authenticated User ID: ${userId}`);
       
       // Get the event before deleting it so we have its URL and other data for CalDAV sync
       const eventToDelete = await storage.getEvent(eventId);
@@ -2420,6 +2517,53 @@ END:VCALENDAR`
         }
         
         return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // Get the calendar to check permissions
+      const calendar = await storage.getCalendar(eventToDelete.calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Check if user has permission to delete this event
+      // Allow if user is the owner of the calendar
+      const isOwner = calendar.userId === userId;
+      
+      // If not owner, check if calendar is shared with edit permissions
+      if (!isOwner) {
+        // Check if calendar is shared with this user
+        const sharedCalendars = await storage.getSharedCalendars(userId);
+        const isShared = sharedCalendars.some(c => c.id === calendar.id);
+        
+        if (!isShared) {
+          console.log(`Calendar ${calendar.id} is not shared with user ${userId}`);
+          return res.status(403).json({ message: "You don't have permission to delete events in this calendar" });
+        }
+        
+        // Check permission level by getting the calendar sharing record
+        const sharingRecords = await storage.getCalendarSharing(calendar.id);
+        
+        // Find the sharing record for this user
+        const userSharing = sharingRecords.find(share => {
+          return (
+            (share.sharedWithUserId === userId) || 
+            (share.sharedWithEmail && ((req.user as any).email === share.sharedWithEmail || 
+                                       (req.user as any).username === share.sharedWithEmail))
+          );
+        });
+        
+        if (!userSharing) {
+          console.log(`No sharing record found for user ${userId} on calendar ${calendar.id}`);
+          return res.status(403).json({ message: "Sharing configuration not found" });
+        }
+        
+        // Check permission level
+        if (userSharing.permissionLevel !== 'edit') {
+          console.log(`User ${userId} has ${userSharing.permissionLevel} permission on calendar ${calendar.id}`);
+          return res.status(403).json({ message: "You have view-only access to this calendar" });
+        }
+        
+        console.log(`User ${userId} has edit permission on calendar ${calendar.id}`);
       }
       
       // First delete from our local database
@@ -2744,7 +2888,7 @@ END:VCALENDAR`;
     }
   });
 
-  app.put("/api/server-connection/:id", async (req, res) => {
+  app.put("/api/server-connection/:id", isAuthenticated, async (req, res) => {
     try {
       const connectionId = parseInt(req.params.id);
       
@@ -2766,7 +2910,7 @@ END:VCALENDAR`;
     }
   });
 
-  app.delete("/api/server-connection/:id", async (req, res) => {
+  app.delete("/api/server-connection/:id", isAuthenticated, async (req, res) => {
     try {
       const connectionId = parseInt(req.params.id);
       const deleted = await storage.deleteServerConnection(connectionId);
