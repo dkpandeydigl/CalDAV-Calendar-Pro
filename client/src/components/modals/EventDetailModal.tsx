@@ -51,7 +51,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const effectiveCanEdit = isUsersOwnCalendar ? true : canEdit;
   
   // Debug log permissions
-  console.log(`Event ${event.title} - Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}`);
+  console.log(`Event ${event.title} - Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}, effectiveCanEdit: ${effectiveCanEdit}`);
   // Safely create date objects with validation
   let startDate: Date;
   let endDate: Date;
