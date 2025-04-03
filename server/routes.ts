@@ -1480,26 +1480,17 @@ END:VCALENDAR`
         return byPartialUsernameMatch;
       };
       
-      // Get owner information for each calendar
-      const calendarWithPermissions = await Promise.all(sharedCalendars.map(async calendar => {
+      // Add permission level to each calendar
+      const calendarWithPermissions = sharedCalendars.map(calendar => {
         const sharing = findSharingForUserAndCalendar(calendar.id);
         console.log(`Calendar ${calendar.id} (${calendar.name}) permission: ${sharing?.permissionLevel || 'unknown'}`);
-        
-        // Get owner information if available
-        let ownerEmail = null;
-        if (calendar.userId) {
-          const owner = await storage.getUser(calendar.userId);
-          ownerEmail = owner?.email || owner?.username;
-          console.log(`Calendar ${calendar.id} owner: ${ownerEmail || 'unknown'}`);
-        }
         
         return {
           ...calendar,
           permission: sharing?.permissionLevel || 'view', // Default to view-only if no record found
-          isShared: true,
-          ownerEmail: ownerEmail
+          isShared: true
         };
-      }));
+      });
       
       res.json(calendarWithPermissions);
     } catch (err) {
