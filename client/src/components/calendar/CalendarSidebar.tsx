@@ -62,7 +62,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
 }) => {
   const { toast } = useToast();
   const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
-  const { sharedCalendars } = useSharedCalendars();
+  const { sharedCalendars, toggleCalendarVisibility } = useSharedCalendars();
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
   const { 
     selectedTimezone, 
@@ -94,18 +94,11 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
     // If it's a shared calendar, we need to handle it differently
     // We'll update the local state without making an API call to update the calendar
     if (isShared) {
-      // For shared calendars, we'll use the client-side filtering approach
-      // This allows toggling visibility without modifying the calendar itself
-      // We'll just update the React Query cache directly
-      const updatedCalendars = queryClient.getQueryData<any[]>(['/api/shared-calendars'])?.map(cal => 
-        cal.id === id ? { ...cal, enabled: checked } : cal
-      ) || [];
-      
-      queryClient.setQueryData(['/api/shared-calendars'], updatedCalendars);
-      
-      // We don't need to show a toast for this operation
+      // Use our new toggleCalendarVisibility function from the useSharedCalendars hook
+      // This will update the React Query cache directly without making an API call
+      toggleCalendarVisibility(id, checked);
     } else {
-      // For user's own calendars, use the normal update mechanism
+      // For user's own calendars, use the normal update mechanism via API
       updateCalendar({ id, data: { enabled: checked } });
     }
   };
