@@ -4,6 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCalendars } from '@/hooks/useCalendars';
+import { useSharedCalendars } from '@/hooks/useSharedCalendars';
 import { useServerConnection } from '@/hooks/useServerConnection';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { getTimezones } from '@/lib/date-utils';
@@ -58,6 +59,7 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
   onShareCalendar
 }) => {
   const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
+  const { sharedCalendars } = useSharedCalendars();
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
   const { 
     selectedTimezone, 
@@ -388,6 +390,29 @@ const CalendarSidebar: React.FC<CalendarSidebarProps> = ({
             </AlertDialogContent>
           </AlertDialog>
         </div>
+        
+        {/* Shared Calendars Section */}
+        {sharedCalendars.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Shared Calendars</h3>
+            {sharedCalendars.map(calendar => (
+              <div className="flex items-center justify-between mb-2" key={`shared-${calendar.id}`}>
+                <div className="flex items-center flex-1">
+                  <Checkbox 
+                    id={`shared-cal-${calendar.id}`} 
+                    checked={calendar.enabled ?? true}
+                    onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean)}
+                    className="h-4 w-4"
+                    style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
+                  />
+                  <Label htmlFor={`shared-cal-${calendar.id}`} className="ml-2 text-sm text-neutral-800 truncate">
+                    {calendar.name}
+                  </Label>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         
         <div className="mb-6">
           <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Timezone</h3>

@@ -966,7 +966,7 @@ END:VCALENDAR`
   });
   
   // Calendar sharing endpoints
-  app.get("/api/calendars/:id/sharing", isAuthenticated, async (req, res) => {
+  app.get("/api/calendars/:id/shares", isAuthenticated, async (req, res) => {
     try {
       const calendarId = parseInt(req.params.id);
       
@@ -983,14 +983,25 @@ END:VCALENDAR`
       
       // Get sharing records
       const sharingRecords = await storage.getCalendarSharing(calendarId);
-      res.json(sharingRecords);
+      
+      // Transform to match client-side expected format
+      const transformedRecords = sharingRecords.map(record => ({
+        id: record.id,
+        calendarId: record.calendarId,
+        userId: record.sharedWithUserId,
+        email: record.sharedWithEmail,
+        username: null, // This would need to be fetched from users table
+        permission: record.permissionLevel === 'view' ? 'read' : 'write'
+      }));
+      
+      res.json(transformedRecords);
     } catch (err) {
       console.error("Error getting calendar sharing:", err);
       res.status(500).json({ message: "Failed to get calendar sharing" });
     }
   });
   
-  app.post("/api/calendars/:id/sharing", isAuthenticated, async (req, res) => {
+  app.post("/api/calendars/:id/shares", isAuthenticated, async (req, res) => {
     try {
       const calendarId = parseInt(req.params.id);
       
@@ -1037,14 +1048,24 @@ END:VCALENDAR`
         permissionLevel: req.body.permissionLevel
       });
       
-      res.status(201).json(sharing);
+      // Transform to match client-side expected format
+      const transformedSharing = {
+        id: sharing.id,
+        calendarId: sharing.calendarId,
+        userId: sharing.sharedWithUserId,
+        email: sharing.sharedWithEmail,
+        username: null,
+        permission: sharing.permissionLevel === 'view' ? 'read' : 'write'
+      };
+      
+      res.status(201).json(transformedSharing);
     } catch (err) {
       console.error("Error sharing calendar:", err);
       res.status(500).json({ message: "Failed to share calendar" });
     }
   });
   
-  app.patch("/api/calendars/sharing/:id", isAuthenticated, async (req, res) => {
+  app.patch("/api/calendars/shares/:id", isAuthenticated, async (req, res) => {
     try {
       const sharingId = parseInt(req.params.id);
       
@@ -1077,14 +1098,24 @@ END:VCALENDAR`
         permissionLevel: req.body.permissionLevel
       });
       
-      res.json(updatedSharing);
+      // Transform to match client-side expected format
+      const transformedSharing = {
+        id: updatedSharing.id,
+        calendarId: updatedSharing.calendarId,
+        userId: updatedSharing.sharedWithUserId,
+        email: updatedSharing.sharedWithEmail,
+        username: null,
+        permission: updatedSharing.permissionLevel === 'view' ? 'read' : 'write'
+      };
+      
+      res.json(transformedSharing);
     } catch (err) {
       console.error("Error updating calendar sharing:", err);
       res.status(500).json({ message: "Failed to update calendar sharing" });
     }
   });
   
-  app.delete("/api/calendars/sharing/:id", isAuthenticated, async (req, res) => {
+  app.delete("/api/calendars/shares/:id", isAuthenticated, async (req, res) => {
     try {
       const sharingId = parseInt(req.params.id);
       

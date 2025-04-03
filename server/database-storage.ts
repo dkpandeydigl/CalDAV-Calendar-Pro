@@ -7,7 +7,7 @@ import {
 import { createId } from '@paralleldrive/cuid2';
 import { neon, neonConfig } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, or, inArray } from 'drizzle-orm';
 import connectPg from "connect-pg-simple";
 import { IStorage } from './storage';
 
@@ -223,33 +223,122 @@ export class DatabaseStorage implements IStorage {
   
   // Calendar sharing methods
   async getCalendarSharing(calendarId: number): Promise<CalendarSharing[]> {
-    // TODO: Implement properly when needed
-    console.warn("getCalendarSharing called but not fully implemented in DatabaseStorage");
-    return [];
+    try {
+      const sharingRecords = await db.select()
+        .from(calendarSharing)
+        .where(eq(calendarSharing.calendarId, calendarId));
+      
+      return sharingRecords;
+    } catch (error) {
+      console.error("Error fetching calendar sharing records:", error);
+      return [];
+    }
   }
   
   async getSharedCalendars(userId: number): Promise<Calendar[]> {
-    // TODO: Implement properly when needed
-    console.warn("getSharedCalendars called but not fully implemented in DatabaseStorage");
-    return [];
+    try {
+      // Get the user
+      const user = await this.getUser(userId);
+      if (!user) return [];
+      
+      // Get all calendar sharing records
+      const sharingRecords = await db.select()
+        .from(calendarSharing)
+        .where(
+          or(
+            eq(calendarSharing.sharedWithUserId, userId),
+            eq(calendarSharing.sharedWithEmail, user.username)
+          )
+        );
+      
+      if (sharingRecords.length === 0) return [];
+      
+      // Get all the calendars that are shared with this user
+      const calendarIds = sharingRecords.map(sharing => sharing.calendarId);
+      const sharedCalendars = await db.select()
+        .from(calendars)
+        .where(inArray(calendars.id, calendarIds));
+      
+      return sharedCalendars;
+    } catch (error) {
+      console.error("Error fetching shared calendars:", error);
+      return [];
+    }
   }
   
   async shareCalendar(sharing: InsertCalendarSharing): Promise<CalendarSharing> {
-    // TODO: Implement properly when needed
-    console.warn("shareCalendar called but not fully implemented in DatabaseStorage");
-    throw new Error("shareCalendar not implemented in DatabaseStorage");
+    try {
+      // First, check if a sharing already exists for this calendar and email/user
+      let existingSharing;
+      
+      if (sharing.sharedWithUserId) {
+        existingSharing = await db.select()
+          .from(calendarSharing)
+          .where(
+            and(
+              eq(calendarSharing.calendarId, sharing.calendarId),
+              eq(calendarSharing.sharedWithUserId, sharing.sharedWithUserId)
+            )
+          );
+      } else if (sharing.sharedWithEmail) {
+        existingSharing = await db.select()
+          .from(calendarSharing)
+          .where(
+            and(
+              eq(calendarSharing.calendarId, sharing.calendarId),
+              eq(calendarSharing.sharedWithEmail, sharing.sharedWithEmail)
+            )
+          );
+      }
+      
+      // If sharing already exists, update the permissions
+      if (existingSharing && existingSharing.length > 0) {
+        const sharingId = existingSharing[0].id;
+        return await this.updateCalendarSharing(sharingId, { permissionLevel: sharing.permissionLevel }) 
+          || existingSharing[0];
+      }
+      
+      // Otherwise, create a new sharing record
+      const result = await db.insert(calendarSharing)
+        .values({
+          ...sharing,
+          createdAt: new Date(),
+          lastModified: new Date()
+        })
+        .returning();
+      
+      return result[0];
+    } catch (error: any) {
+      console.error("Error sharing calendar:", error);
+      throw new Error(`Failed to share calendar: ${error?.message || 'Unknown error'}`);
+    }
   }
   
   async updateCalendarSharing(id: number, sharing: Partial<CalendarSharing>): Promise<CalendarSharing | undefined> {
-    // TODO: Implement properly when needed
-    console.warn("updateCalendarSharing called but not fully implemented in DatabaseStorage");
-    return undefined;
+    try {
+      const result = await db.update(calendarSharing)
+        .set(sharing)
+        .where(eq(calendarSharing.id, id))
+        .returning();
+      
+      return result.length > 0 ? result[0] : undefined;
+    } catch (error: any) {
+      console.error(`Error updating calendar sharing with ID ${id}:`, error);
+      return undefined;
+    }
   }
   
   async removeCalendarSharing(id: number): Promise<boolean> {
-    // TODO: Implement properly when needed
-    console.warn("removeCalendarSharing called but not fully implemented in DatabaseStorage");
-    return false;
+    try {
+      const result = await db.delete(calendarSharing)
+        .where(eq(calendarSharing.id, id))
+        .returning();
+      
+      return result.length > 0;
+    } catch (error: any) {
+      console.error(`Error removing calendar sharing with ID ${id}:`, error);
+      return false;
+    }
   }
   
   // Event methods
@@ -301,7 +390,7 @@ export class DatabaseStorage implements IStorage {
       
       console.log(`Delete result:`, result);
       return result.length > 0;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error deleting event with ID ${id}:`, error);
       return false;
     }
@@ -316,7 +405,7 @@ export class DatabaseStorage implements IStorage {
       
       console.log(`Deleted ${result.length} events for calendar ID ${calendarId}`);
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error deleting events for calendar ID ${calendarId}:`, error);
       return false;
     }

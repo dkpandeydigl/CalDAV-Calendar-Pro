@@ -68,9 +68,9 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
 
     setIsSubmitting(true);
     try {
-      const response = await apiRequest('POST', `/api/calendars/${calendar.id}/share`, {
-        email,
-        permission
+      const response = await apiRequest('POST', `/api/calendars/${calendar.id}/shares`, {
+        sharedWithEmail: email,
+        permissionLevel: permission === 'read' ? 'view' : 'edit'
       });
 
       if (response.ok) {
@@ -130,7 +130,7 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
 
     try {
       const response = await apiRequest('PATCH', `/api/calendars/shares/${shareId}`, {
-        permission: newPermission
+        permissionLevel: newPermission === 'read' ? 'view' : 'edit'
       });
 
       if (response.ok) {
