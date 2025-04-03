@@ -31,16 +31,18 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   
   if (!event) return null;
   
-  // Check if user has edit permission for this calendar
-  const { canEdit } = event.calendarId ? getCalendarPermission(event.calendarId) : { canEdit: false };
-  
   // Get calendar metadata either from the rawData or find it from calendars
   const calendarMetadata = event.rawData as any;
   const calendarName = calendarMetadata?.calendarName;
   const calendarColor = calendarMetadata?.calendarColor;
   
-  // Fallback to looking up calendar if no metadata
+  // Find the calendar in the user's calendars
   const calendar = calendars.find(cal => cal.id === event.calendarId);
+  
+  // Get permission information for this calendar
+  const { canEdit, isOwner } = event.calendarId ? 
+    getCalendarPermission(event.calendarId) : 
+    { canEdit: false, isOwner: false };
   // Safely create date objects with validation
   let startDate: Date;
   let endDate: Date;
@@ -109,7 +111,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           <DialogHeader>
             <div className="flex justify-between items-center">
               <DialogTitle>Event Details</DialogTitle>
-              {canEdit ? (
+              {isOwner || canEdit ? (
                 <div className="flex">
                   <Button variant="ghost" size="icon" onClick={onEdit} title="Edit">
                     <span className="material-icons">edit</span>
@@ -248,7 +250,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           
           <DialogFooter className="flex justify-between space-x-2">
             <div className="flex space-x-2">
-              {canEdit && (
+              {(isOwner || canEdit) && (
                 <>
                   <Button 
                     variant="outline" 
