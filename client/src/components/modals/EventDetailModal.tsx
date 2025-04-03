@@ -315,7 +315,16 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               {isAuthError && (
                 <div className="text-sm text-muted-foreground py-2 flex items-center">
                   <span className="material-icons text-amber-500 mr-1 text-sm">info</span>
-                  Log in to edit events
+                  <Button 
+                    variant="link" 
+                    className="p-0 h-auto text-primary hover:text-primary/80 font-normal"
+                    onClick={() => {
+                      onClose();
+                      window.location.href = '/auth';
+                    }}
+                  >
+                    Log in to edit events
+                  </Button>
                 </div>
               )}
             </div>

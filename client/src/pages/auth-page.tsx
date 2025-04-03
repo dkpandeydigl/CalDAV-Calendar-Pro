@@ -160,7 +160,8 @@ export default function AuthPage() {
                       
                       <div className="mt-6 mb-3">
                         <p className="text-sm text-muted-foreground">
-                          Your login credentials will be used to connect to your CalDAV server. No separate CalDAV login is needed.
+                          Your login credentials will be used both for this application and to connect to your CalDAV server.
+                          This provides seamless integration between the local app and your calendar server.
                         </p>
                       </div>
                       
@@ -289,7 +290,8 @@ export default function AuthPage() {
                       
                       <div className="mt-6 mb-3">
                         <p className="text-sm text-muted-foreground">
-                          Your registration credentials will be used to connect to your CalDAV server. No separate CalDAV login is needed.
+                          Your registration credentials will be used both for this application and to connect to your CalDAV server.
+                          This creates a new account that integrates smoothly with your calendar server.
                         </p>
                       </div>
                       

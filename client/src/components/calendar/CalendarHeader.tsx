@@ -62,7 +62,7 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
           </div>
           
           {/* User dropdown with logout */}
-          {user && (
+          {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center p-1 h-auto rounded-md hover:bg-neutral-100">
@@ -77,6 +77,16 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => window.location.href = '/auth'}
+              className="ml-2"
+            >
+              <User className="h-4 w-4 mr-1" />
+              Login
+            </Button>
           )}
         </div>
       </div>

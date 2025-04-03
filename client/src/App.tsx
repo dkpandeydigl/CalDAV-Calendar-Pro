@@ -13,6 +13,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth" component={AuthPage} />
+      <Route path="/login" component={AuthPage} /> {/* Alias for /auth */}
       <Route path="/">
         {() => <ProtectedRoute component={Calendar} />}
       </Route>
