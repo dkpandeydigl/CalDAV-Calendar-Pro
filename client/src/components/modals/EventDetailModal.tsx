@@ -30,6 +30,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const queryClient = useQueryClient();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Use useState to track loading state that we can modify
+  const [showLoading, setShowLoading] = useState(isUserLoading);
   
   // Always render the dialog, even when loading
   // This prevents the modal from disappearing during loading states
@@ -53,8 +55,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     );
   }
   
-  // If we're still loading user data, show a loading spinner
-  const isLoading = isUserLoading;
+  // Update state to reflect authentication status
+  const [isLoading, setIsLoading] = useState(isUserLoading);
   
   // Get calendar metadata either from the rawData or find it from calendars
   const calendarMetadata = event.rawData as any;
@@ -72,33 +74,59 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // For events in user's own calendars, always allow edit
   // If we don't have a user object, default to the permissions from getCalendarPermission
   
-  // If user data is still loading, we'll treat this as a view-only event until the data is loaded
-  // This allows the event details to be shown even while we're verifying permissions
+  // For security, we use view-only as the default permission when auth state is incomplete
   let isUsersOwnCalendar = false;
   let effectiveCanEdit = false;
   
-  if (isLoading || !user || !user.id) {
-    console.log(`Still loading user data for event ${event.title}, user:`, user);
-    // We'll set default permissions to false while loading
+  // Authentication status check
+  const isAuthError = !isUserLoading && !user; // If not loading and no user, this is an auth error
+  
+  // If auth state changes, update our loading state
+  React.useEffect(() => {
+    if (isAuthError) {
+      // Auth error - stop showing loading spinner, show view-only mode
+      setIsLoading(false);
+    } else {
+      // Normal loading state tracks the user loading state
+      setIsLoading(isUserLoading);
+    }
+  }, [isUserLoading, isAuthError]);
+  
+  // Determine permissions based on auth state
+  React.useEffect(() => {
+    // If we have an authentication error, we'll just show the event as view-only
+    if (isAuthError) {
+      console.log(`Authentication required for full permission check on event "${event.title}"`);
+    } 
+    // If user data is still loading, remain in loading state
+    else if (isUserLoading || !user || !user.id) {
+      console.log(`Still loading user data for event ${event.title}, user:`, user);
+    }
+    // User is authenticated, determine actual permissions  
+    else if (user && user.id) {
+      if (calendar) {
+        console.log(`Ownership check: Calendar ${calendar.id} (${calendar.name}) - Calendar userId: ${calendar.userId}, Current userId: ${user.id}, Match: ${calendar.userId === user.id}`);
+      }
+    }
+  }, [isAuthError, isUserLoading, user, calendar, event.title]);
+  
+  // Determine permissions based on auth state
+  if (isAuthError) {
+    // Auth error - show view-only mode
+    effectiveCanEdit = false;
+    isUsersOwnCalendar = false;
+  } else if (isUserLoading || !user || !user.id) {
+    // Still loading - default to view-only until we know more
     effectiveCanEdit = false;
     isUsersOwnCalendar = false;
   } else {
-    // Once user is loaded, check if they own this calendar
+    // User is authenticated, determine actual permissions
     isUsersOwnCalendar = calendar ? calendar.userId === user.id : false;
-    
-    // Allow edit and delete if:
-    // 1. The user owns the calendar, OR
-    // 2. The user has explicit edit permission through sharing
     effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner;
-    
-    // Log detailed ownership information for debugging
-    if (calendar) {
-      console.log(`Ownership check: Calendar ${calendar.id} (${calendar.name}) - Calendar userId: ${calendar.userId}, Current userId: ${user.id}, Match: ${calendar.userId === user.id}`);
-    }
   }
   
-  // Debug log permissions with loading status
-  console.log(`Event ${event.title} - Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}, effectiveCanEdit: ${effectiveCanEdit}, isLoading: ${isLoading}`);
+  // Debug log authentication and permissions status
+  console.log(`Event ${event.title} - Auth status: ${isAuthError ? 'AUTH_ERROR' : isLoading ? 'LOADING' : 'AUTHENTICATED'}, Calendar ID: ${event.calendarId}, canEdit: ${canEdit}, isOwner: ${isOwner}, isUsersOwnCalendar: ${isUsersOwnCalendar}, User ID: ${user?.id}, Calendar UserID: ${calendar?.userId}, effectiveCanEdit: ${effectiveCanEdit}`);
   // Safely create date objects with validation
   let startDate: Date;
   let endDate: Date;
@@ -278,39 +306,73 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </div>
             )}
             
-            {/* Attendees section */}
-            {event.attendees && Array.isArray(event.attendees) && event.attendees.length > 0 && (
-              <div>
-                <div className="text-sm font-medium mb-1">Attendees</div>
-                <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                  <ul className="space-y-1">
-                    {(event.attendees as unknown as string[]).map((attendee, index) => (
-                      <li key={index} className="flex items-center">
-                        <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
-                        {attendee}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
+            {/* Attendees section - safely rendered */}
+            {(() => {
+              // Handle attendees with safe type checking
+              try {
+                if (event.attendees && Array.isArray(event.attendees) && event.attendees.length > 0) {
+                  // Convert to string array safely
+                  const attendeeList = event.attendees
+                    .filter(a => a !== null && a !== undefined)
+                    .map(a => String(a));
+                    
+                  if (attendeeList.length > 0) {
+                    return (
+                      <div>
+                        <div className="text-sm font-medium mb-1">Attendees</div>
+                        <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                          <ul className="space-y-1">
+                            {attendeeList.map((attendee, index) => (
+                              <li key={index} className="flex items-center">
+                                <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
+                                {attendee}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    );
+                  }
+                }
+              } catch (error) {
+                console.error("Error rendering attendees:", error);
+              }
+              return null;
+            })()}
             
-            {/* Resources section */}
-            {event.resources && Array.isArray(event.resources) && event.resources.length > 0 && (
-              <div>
-                <div className="text-sm font-medium mb-1">Resources</div>
-                <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                  <ul className="space-y-1">
-                    {(event.resources as unknown as string[]).map((resource, index) => (
-                      <li key={index} className="flex items-center">
-                        <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
-                        {resource}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
+            {/* Resources section - safely rendered */}
+            {(() => {
+              // Handle resources with safe type checking
+              try {
+                if (event.resources && Array.isArray(event.resources) && event.resources.length > 0) {
+                  // Convert to string array safely
+                  const resourceList = event.resources
+                    .filter(r => r !== null && r !== undefined)
+                    .map(r => String(r));
+                    
+                  if (resourceList.length > 0) {
+                    return (
+                      <div>
+                        <div className="text-sm font-medium mb-1">Resources</div>
+                        <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                          <ul className="space-y-1">
+                            {resourceList.map((resource, index) => (
+                              <li key={index} className="flex items-center">
+                                <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
+                                {resource}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    );
+                  }
+                }
+              } catch (error) {
+                console.error("Error rendering resources:", error);
+              }
+              return null;
+            })()}
           </div>
           
           <DialogFooter className="flex justify-between space-x-2">
@@ -335,6 +397,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               {isLoading && (
                 <div className="text-sm text-muted-foreground py-2">
                   Loading permission information...
+                </div>
+              )}
+              {isAuthError && (
+                <div className="text-sm text-muted-foreground py-2 flex items-center">
+                  <span className="material-icons text-amber-500 mr-1 text-sm">info</span>
+                  Log in to edit events
                 </div>
               )}
             </div>
