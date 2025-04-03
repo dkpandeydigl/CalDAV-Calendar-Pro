@@ -26,12 +26,29 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const { calendars } = useCalendars();
   const { deleteEvent } = useCalendarEvents();
   const { getCalendarPermission } = useCalendarPermissions();
-  const { user } = useAuth();
+  const { user, isLoading: isUserLoading } = useAuth();
   const queryClient = useQueryClient();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   
+  // Don't render anything if the event is null
   if (!event) return null;
+  
+  // If we're still loading user data, show a loading spinner instead
+  if (isUserLoading) {
+    return (
+      <Dialog open={open} onOpenChange={open => !open && onClose()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Loading...</DialogTitle>
+          </DialogHeader>
+          <div className="py-8 flex justify-center">
+            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
   
   // Get calendar metadata either from the rawData or find it from calendars
   const calendarMetadata = event.rawData as any;
@@ -49,13 +66,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // For events in user's own calendars, always allow edit
   // If we don't have a user object, default to the permissions from getCalendarPermission
   
-  // Check if the current user is the owner of this calendar
-  const isUsersOwnCalendar = calendar && user ? 
-    calendar.userId === user.id : 
-    false;
+  // User data should be fully loaded at this point, but double-check to be safe
+  if (!user || !user.id) {
+    console.log(`User data incomplete for event ${event.title}, user:`, user);
+    return null; // This shouldn't happen since we already check for isUserLoading above
+  }
   
-  // Log additional debugging information
-  if (calendar && user) {
+  // Step 2: Once user is loaded, check if they own this calendar
+  const isUsersOwnCalendar = calendar ? calendar.userId === user.id : false;
+  
+  // Log detailed ownership information for debugging
+  if (calendar) {
     console.log(`Ownership check: Calendar ${calendar.id} (${calendar.name}) - Calendar userId: ${calendar.userId}, Current userId: ${user.id}, Match: ${calendar.userId === user.id}`);
   }
   

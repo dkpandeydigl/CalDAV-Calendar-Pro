@@ -26,7 +26,11 @@ export const useCalendarPermissions = () => {
       isOwner: false
     };
 
-    if (!user) return defaultPermission;
+    // If user is not available yet, don't allow any permissions
+    if (!user || !user.id) {
+      console.log(`User data not loaded yet, denying all permissions for calendar ${calendarId}`);
+      return defaultPermission;
+    }
 
     // First check if it's the user's own calendar
     const ownCalendar = calendars.find(cal => cal.id === calendarId);
