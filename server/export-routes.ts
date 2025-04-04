@@ -22,7 +22,122 @@ function isAuthenticated(req: Request, res: Response, next: NextFunction) {
 }
 
 export function registerExportRoutes(app: Express) {
-  // Calendar Export API
+  // Debug route to identify NaN issue
+  app.get("/api/debug-export", isAuthenticated, async (req, res) => {
+    try {
+      // Just send back the parsed calendar IDs to check for NaN issues
+      const calendarIds = req.query.ids 
+        ? String(req.query.ids)
+            .split(',')
+            .map(id => {
+              const parsedId = parseInt(id.trim(), 10);
+              return { original: id.trim(), parsed: parsedId, isNaN: isNaN(parsedId) };
+            })
+        : [];
+        
+      res.json({ 
+        message: 'Debug info', 
+        calendarIds,
+        rawIds: req.query.ids 
+      });
+    } catch (error) {
+      console.error('Debug error:', error);
+      res.status(500).json({ message: 'Debug error', error: String(error) });
+    }
+  });
+
+  // Calendar Export API - new implementation completely bypassing database calls
+  app.get("/api/export-simple", isAuthenticated, async (req, res) => {
+    try {
+      console.log('Using simple export endpoint');
+      const userId = (req.user as User).id;
+      
+      // Get all events for the user without calendar database lookups
+      const userCalendars = await storage.getCalendars(userId);
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      
+      const allCalendars = [...userCalendars, ...sharedCalendars];
+      
+      // If no calendars are available, return an error
+      if (allCalendars.length === 0) {
+        return res.status(404).json({ message: 'No calendars found for user' });
+      }
+      
+      // Get all events from all user's calendars
+      const allEvents = [];
+      
+      for (const calendar of allCalendars) {
+        const events = await storage.getEvents(calendar.id);
+        allEvents.push(...events.map(event => ({
+          ...event,
+          calendarName: calendar.name
+        })));
+      }
+      
+      if (allEvents.length === 0) {
+        return res.status(404).json({ message: 'No events found to export' });
+      }
+      
+      // Generate simple iCalendar file
+      const now = formatICALDate(new Date());
+      let icalContent = 
+        `BEGIN:VCALENDAR\r\n` +
+        `VERSION:2.0\r\n` +
+        `PRODID:-//CalDAV Client//NONSGML v1.0//EN\r\n` +
+        `CALSCALE:GREGORIAN\r\n` +
+        `METHOD:PUBLISH\r\n` +
+        `X-WR-CALNAME:All Calendars\r\n` +
+        `X-WR-CALDESC:Exported Calendar\r\n`;
+      
+      // Add each event
+      for (const event of allEvents) {
+        const safeUid = event.uid.includes('@') ? event.uid : `${event.uid}@caldavclient.local`;
+        const startDate = formatICALDate(new Date(event.startDate));
+        const endDate = formatICALDate(new Date(event.endDate));
+        
+        icalContent += 
+          `BEGIN:VEVENT\r\n` +
+          `UID:${safeUid}\r\n` +
+          `DTSTAMP:${now}\r\n` +
+          `DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}\r\n` +
+          `DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}\r\n` +
+          `SUMMARY:${event.title}\r\n`;
+        
+        if (event.calendarName) {
+          icalContent += `CATEGORIES:${event.calendarName}\r\n`;
+        }
+        
+        if (event.description) {
+          icalContent += `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\r\n`;
+        }
+        
+        if (event.location) {
+          icalContent += `LOCATION:${event.location}\r\n`;
+        }
+        
+        if (event.allDay) {
+          icalContent += `X-MICROSOFT-CDO-ALLDAYEVENT:TRUE\r\n`;
+        }
+        
+        icalContent += `END:VEVENT\r\n`;
+      }
+      
+      icalContent += `END:VCALENDAR`;
+      
+      // Set the appropriate headers for file download
+      res.setHeader('Content-Type', 'text/calendar');
+      res.setHeader('Content-Disposition', `attachment; filename="all_calendars.ics"`);
+      res.send(icalContent);
+      
+      console.log(`Successfully exported ${allEvents.length} events from simple export endpoint`);
+      
+    } catch (error) {
+      console.error('Error in simple export:', error);
+      res.status(500).json({ message: 'Export failed', error: String(error) });
+    }
+  });
+  
+  // Original Calendar Export API
   app.get("/api/calendars/export", isAuthenticated, async (req, res) => {
     try {
       const userId = (req.user as User).id;

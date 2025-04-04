@@ -86,27 +86,16 @@ export default function ExportCalendarModal({
     try {
       setIsExporting(true);
       
-      // Filter out any invalid IDs before sending the request
-      const validIds = selectedCalendarIds.filter(id => !isNaN(id) && id > 0);
+      // We'll try a different approach using the new simplified endpoint
+      console.log('Using simplified export approach');
       
-      if (validIds.length === 0) {
-        toast({
-          title: "No valid calendars",
-          description: "No valid calendar IDs were found for export",
-          variant: "destructive",
-        });
-        return;
-      }
+      // First try the debug endpoint to diagnose issues
+      const debugResponse = await fetch(`/api/debug-export?ids=${selectedCalendarIds.join(',')}`);
+      const debugData = await debugResponse.json();
+      console.log('Debug data:', debugData);
       
-      // Build the export URL with query parameters
-      let exportUrl = `/api/calendars/export?ids=${validIds.join(',')}`;
-      
-      // Add date filter if enabled
-      if (showDateFilter && startDate && endDate) {
-        exportUrl += `&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`;
-      }
-      
-      console.log(`Attempting to export calendars with IDs: ${validIds.join(', ')}`);
+      // Use our simplified export endpoint instead
+      const exportUrl = '/api/export-simple';
       
       // Make a test fetch request first to check for errors
       const testResponse = await fetch(exportUrl);
