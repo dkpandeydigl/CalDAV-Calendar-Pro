@@ -6,16 +6,19 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@shared/schema";
-import { Trash2, Server } from 'lucide-react';
+import { Trash2, Server, PlusCircle, Calendar as CalendarIcon, Check, X } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from '@/components/ui/checkbox';
+import { useCalendars } from '@/hooks/useCalendars';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ShareCalendarModalProps {
   open: boolean;
   onClose: () => void;
-  calendar: Calendar | null;
+  calendar: Calendar | null; // For backward compatibility, now supports multiple calendars
 }
 
 interface CalendarSharing {
@@ -27,77 +30,163 @@ interface CalendarSharing {
   permission: 'read' | 'write';
 }
 
-export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarModalProps) {
+// Extended interface to track selected calendars and their shares
+interface SelectedCalendarInfo {
+  calendar: Calendar;
+  shares: CalendarSharing[];
+  loading: boolean;
+}
+
+export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }: ShareCalendarModalProps) {
+  const { calendars: userCalendars } = useCalendars();
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState<'read' | 'write'>('read');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [shares, setShares] = useState<CalendarSharing[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedCalendars, setSelectedCalendars] = useState<SelectedCalendarInfo[]>([]);
   const [syncWithServer, setSyncWithServer] = useState(true);
+  const [isMultiSelectionMode, setIsMultiSelectionMode] = useState(false);
   const { toast } = useToast();
 
-  // Fetch existing shares when calendar changes
+  // Initialize with the initial calendar (for backward compatibility)
   useEffect(() => {
-    if (calendar?.id) {
-      fetchShares(calendar.id);
+    // Clear selections when the modal is opened/closed
+    if (!open) {
+      setSelectedCalendars([]);
+      setIsMultiSelectionMode(false);
+      return;
     }
-  }, [calendar]);
+
+    // If an initial calendar is provided, add it to selected calendars
+    if (initialCalendar) {
+      setSelectedCalendars([{ 
+        calendar: initialCalendar, 
+        shares: [],
+        loading: true
+      }]);
+      setIsMultiSelectionMode(false);
+    } else {
+      setIsMultiSelectionMode(true);
+    }
+  }, [initialCalendar, open]);
+
+  // Fetch shares for each selected calendar
+  useEffect(() => {
+    selectedCalendars.forEach(({ calendar, loading }) => {
+      if (loading) {
+        fetchShares(calendar.id);
+      }
+    });
+  }, [selectedCalendars]);
 
   const fetchShares = async (calendarId: number) => {
-    setIsLoading(true);
     try {
       const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
       if (response.ok) {
         const data = await response.json();
-        setShares(data);
+        // Update the shares for this calendar
+        setSelectedCalendars(prev => prev.map(item => 
+          item.calendar.id === calendarId 
+            ? { ...item, shares: data, loading: false } 
+            : item
+        ));
       } else {
-        throw new Error('Failed to fetch calendar shares');
+        throw new Error(`Failed to fetch shares for calendar ${calendarId}`);
       }
     } catch (error) {
-      console.error('Error fetching calendar shares:', error);
+      console.error(`Error fetching calendar shares for calendar ${calendarId}:`, error);
       toast({
         title: 'Error',
         description: 'Failed to load calendar sharing information',
         variant: 'destructive',
       });
-    } finally {
-      setIsLoading(false);
+      // Mark as not loading even on error
+      setSelectedCalendars(prev => prev.map(item => 
+        item.calendar.id === calendarId 
+          ? { ...item, loading: false } 
+          : item
+      ));
     }
   };
 
-  const handleShareCalendar = async () => {
-    if (!calendar?.id || !email) return;
+  // Toggle a calendar selection
+  const toggleCalendarSelection = (calendar: Calendar) => {
+    setSelectedCalendars(prev => {
+      // Check if this calendar is already selected
+      const isSelected = prev.some(item => item.calendar.id === calendar.id);
+      
+      if (isSelected) {
+        // Remove it
+        return prev.filter(item => item.calendar.id !== calendar.id);
+      } else {
+        // Add it
+        return [...prev, { calendar, shares: [], loading: true }];
+      }
+    });
+  };
+
+  // Share selected calendars with the recipient
+  const handleShareCalendars = async () => {
+    if (selectedCalendars.length === 0 || !email) return;
 
     setIsSubmitting(true);
+    
     try {
-      // Build the API URL with sync flag if enabled and calendar has a URL
-      const apiUrl = calendar.url && syncWithServer
-        ? `/api/calendars/${calendar.id}/shares?syncWithServer=true`
-        : `/api/calendars/${calendar.id}/shares`;
-        
-      const response = await apiRequest('POST', apiUrl, {
-        sharedWithEmail: email,
-        permissionLevel: permission === 'read' ? 'view' : 'edit'
-      });
+      // Track successful shares to show in toast
+      const successfulShares = [];
+      const failedShares = [];
+      
+      // Share each selected calendar
+      for (const { calendar } of selectedCalendars) {
+        try {
+          // Build the API URL with sync flag if enabled and calendar has a URL
+          const apiUrl = calendar.url && syncWithServer
+            ? `/api/calendars/${calendar.id}/shares?syncWithServer=true`
+            : `/api/calendars/${calendar.id}/shares`;
+            
+          const response = await apiRequest('POST', apiUrl, {
+            sharedWithEmail: email,
+            permissionLevel: permission === 'read' ? 'view' : 'edit'
+          });
 
-      if (response.ok) {
-        toast({
-          title: 'Calendar Shared',
-          description: `Calendar shared with ${email} successfully${syncWithServer && calendar.url ? ' and synchronized with CalDAV server' : ''}`
-        });
-        setEmail('');
-        // Refresh the shares list
-        fetchShares(calendar.id);
-        // Invalidate any related queries
-        queryClient.invalidateQueries({queryKey: ['/api/calendars']});
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to share calendar');
+          if (response.ok) {
+            successfulShares.push(calendar.name);
+            // Refresh the shares list for this calendar
+            fetchShares(calendar.id);
+          } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `Failed to share calendar "${calendar.name}"`);
+          }
+        } catch (error: any) {
+          failedShares.push({ name: calendar.name, error: error.message });
+        }
       }
+      
+      // Show toast with results
+      if (successfulShares.length > 0) {
+        toast({
+          title: 'Calendars Shared',
+          description: `Successfully shared ${successfulShares.length} calendar(s) with ${email}${syncWithServer ? ' and synchronized with CalDAV server' : ''}`
+        });
+      }
+      
+      if (failedShares.length > 0) {
+        toast({
+          title: 'Some Calendars Failed to Share',
+          description: `Failed to share ${failedShares.length} calendar(s). Please try again.`,
+          variant: 'destructive'
+        });
+      }
+      
+      // Clear email after sharing attempt (regardless of success)
+      setEmail('');
+      
+      // Invalidate calendars query to refresh
+      queryClient.invalidateQueries({queryKey: ['/api/calendars']});
+      
     } catch (error: any) {
       toast({
         title: 'Sharing Failed',
-        description: error.message || 'Could not share calendar',
+        description: error.message || 'Could not share calendars',
         variant: 'destructive'
       });
     } finally {
@@ -105,12 +194,13 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
     }
   };
 
-  const handleRemoveShare = async (shareId: number) => {
-    if (!calendar?.id) return;
+  const handleRemoveShare = async (calendarId: number, shareId: number) => {
+    const calendarInfo = selectedCalendars.find(c => c.calendar.id === calendarId);
+    if (!calendarInfo) return;
 
     try {
       // Build the API URL with sync flag if enabled and calendar has a URL
-      const apiUrl = calendar.url && syncWithServer
+      const apiUrl = calendarInfo.calendar.url && syncWithServer
         ? `/api/calendars/shares/${shareId}?syncWithServer=true`
         : `/api/calendars/shares/${shareId}`;
           
@@ -119,10 +209,16 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
       if (response.ok) {
         toast({
           title: 'Sharing Removed',
-          description: `Calendar sharing has been removed${syncWithServer && calendar.url ? ' and synchronized with CalDAV server' : ''}`
+          description: `Calendar sharing has been removed${syncWithServer && calendarInfo.calendar.url ? ' and synchronized with CalDAV server' : ''}`
         });
+        
         // Update the local state to remove this share
-        setShares(shares.filter(share => share.id !== shareId));
+        setSelectedCalendars(prev => prev.map(item => 
+          item.calendar.id === calendarId 
+            ? { ...item, shares: item.shares.filter(share => share.id !== shareId) } 
+            : item
+        ));
+        
         // Invalidate any related queries
         queryClient.invalidateQueries({queryKey: ['/api/calendars']});
       } else {
@@ -137,12 +233,13 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
     }
   };
 
-  const handleUpdatePermission = async (shareId: number, newPermission: 'read' | 'write') => {
-    if (!calendar?.id) return;
+  const handleUpdatePermission = async (calendarId: number, shareId: number, newPermission: 'read' | 'write') => {
+    const calendarInfo = selectedCalendars.find(c => c.calendar.id === calendarId);
+    if (!calendarInfo) return;
 
     try {
       // Build the API URL with sync flag if enabled and calendar has a URL
-      const apiUrl = calendar.url && syncWithServer
+      const apiUrl = calendarInfo.calendar.url && syncWithServer
         ? `/api/calendars/shares/${shareId}?syncWithServer=true`
         : `/api/calendars/shares/${shareId}`;
           
@@ -153,12 +250,21 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
       if (response.ok) {
         toast({
           title: 'Permission Updated',
-          description: `Calendar sharing permission has been updated${syncWithServer && calendar.url ? ' and synchronized with CalDAV server' : ''}`
+          description: `Calendar sharing permission has been updated${syncWithServer && calendarInfo.calendar.url ? ' and synchronized with CalDAV server' : ''}`
         });
+        
         // Update the local state with the new permission
-        setShares(shares.map(share => 
-          share.id === shareId ? {...share, permission: newPermission} : share
+        setSelectedCalendars(prev => prev.map(item => 
+          item.calendar.id === calendarId 
+            ? { 
+                ...item, 
+                shares: item.shares.map(share => 
+                  share.id === shareId ? {...share, permission: newPermission} : share
+                ) 
+              } 
+            : item
         ));
+        
         // Invalidate any related queries
         queryClient.invalidateQueries({queryKey: ['/api/calendars']});
       } else {
@@ -173,20 +279,101 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
     }
   };
 
+  // Calculate title based on selected calendars
+  const getDialogTitle = () => {
+    if (selectedCalendars.length === 0) {
+      return 'Share Calendars';
+    } else if (selectedCalendars.length === 1) {
+      return `Share "${selectedCalendars[0].calendar.name}"`;
+    } else {
+      return `Share ${selectedCalendars.length} Calendars`;
+    }
+  };
+
+  // Description based on selection mode and selected calendars
+  const getDialogDescription = () => {
+    if (isMultiSelectionMode) {
+      if (selectedCalendars.length === 0) {
+        return 'Select one or more calendars to share with others.';
+      } else {
+        return `Share ${selectedCalendars.length} selected calendar(s) with others. Recipients will be able to see or edit these calendars based on the permissions you set.`;
+      }
+    } else if (selectedCalendars.length === 1) {
+      return `Share "${selectedCalendars[0].calendar.name}" with others. They will be able to see or edit this calendar based on the permissions you set.`;
+    } else {
+      return 'Select a calendar to share';
+    }
+  };
+
+  const canShareWithServer = selectedCalendars.some(c => c.calendar.url);
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Share Calendar</DialogTitle>
+          <DialogTitle>{getDialogTitle()}</DialogTitle>
           <DialogDescription>
-            {calendar ? 
-              `Share "${calendar.name}" with others. They will be able to see or edit this calendar based on the permissions you set.` :
-              'Select a calendar to share'
-            }
+            {getDialogDescription()}
           </DialogDescription>
         </DialogHeader>
 
-        {calendar && (
+        {/* Calendar Selection Section */}
+        {isMultiSelectionMode && (
+          <div className="border rounded-md p-2">
+            <h3 className="font-medium text-sm mb-2 flex items-center">
+              <CalendarIcon className="h-4 w-4 mr-1" />
+              Select Calendars
+            </h3>
+            
+            <ScrollArea className="h-32 rounded-md">
+              <div className="space-y-2 pr-3">
+                {userCalendars
+                  .filter(cal => cal.userId === initialCalendar?.userId) // Only show user's own calendars
+                  .map(calendar => (
+                    <div key={calendar.id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={`calendar-${calendar.id}`}
+                        checked={selectedCalendars.some(c => c.calendar.id === calendar.id)}
+                        onCheckedChange={() => toggleCalendarSelection(calendar)}
+                      />
+                      <div 
+                        className="flex items-center cursor-pointer"
+                        onClick={() => toggleCalendarSelection(calendar)}
+                      >
+                        <span 
+                          className="w-3 h-3 rounded-full mr-2"
+                          style={{ backgroundColor: calendar.color }}
+                        ></span>
+                        <Label 
+                          htmlFor={`calendar-${calendar.id}`}
+                          className="cursor-pointer"
+                        >
+                          {calendar.name}
+                        </Label>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </ScrollArea>
+            
+            <div className="mt-2 text-xs text-muted-foreground flex justify-between">
+              <span>{selectedCalendars.length} calendar(s) selected</span>
+              {selectedCalendars.length > 0 && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-5 px-2"
+                  onClick={() => setSelectedCalendars([])}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {selectedCalendars.length > 0 && (
           <>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
@@ -220,8 +407,8 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
                 </Select>
               </div>
               
-              {/* CalDAV server sync option */}
-              {calendar?.url && (
+              {/* CalDAV server sync option - only show if at least one calendar has a URL */}
+              {canShareWithServer && (
                 <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="syncServer" className="text-right flex items-center gap-1">
                     <Server className="h-4 w-4" />
@@ -242,59 +429,86 @@ export function ShareCalendarModal({ open, onClose, calendar }: ShareCalendarMod
             </div>
 
             <Button 
-              onClick={handleShareCalendar} 
-              disabled={!email || isSubmitting}
+              onClick={handleShareCalendars} 
+              disabled={!email || isSubmitting || selectedCalendars.length === 0}
               className="w-full"
             >
-              {isSubmitting ? 'Sharing...' : 'Share Calendar'}
+              {isSubmitting ? 'Sharing...' : `Share ${selectedCalendars.length === 1 ? 'Calendar' : 'Calendars'}`}
             </Button>
 
-            {/* Existing shares */}
-            {shares.length > 0 && (
-              <div className="border-t pt-4 mt-4">
-                <h3 className="font-medium mb-2">Shared with</h3>
-                <div className="space-y-2">
-                  {shares.map(share => (
-                    <div key={share.id} className="flex items-center justify-between p-2 bg-secondary/30 rounded-md">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium">{share.username || share.email}</span>
-                        <Badge variant={share.permission === 'write' ? 'default' : 'secondary'} className="mt-1 w-fit">
-                          {share.permission === 'write' ? 'Can edit' : 'View only'}
-                        </Badge>
+            {/* Existing shares - Show in tabs or accordion for multiple calendars */}
+            {selectedCalendars.map(({ calendar, shares, loading }) => (
+              <div key={calendar.id} className="border-t pt-4 mt-4">
+                <h3 className="font-medium mb-2 flex items-center">
+                  <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: calendar.color }}></span>
+                  {calendar.name} - Shared with
+                  {loading && <span className="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-current border-r-transparent"></span>}
+                </h3>
+                
+                {!loading && shares.length === 0 && (
+                  <div className="text-sm text-muted-foreground italic p-2">
+                    Not shared with anyone yet
+                  </div>
+                )}
+                
+                {!loading && shares.length > 0 && (
+                  <div className="space-y-2">
+                    {shares.map(share => (
+                      <div key={share.id} className="flex items-center justify-between p-2 bg-secondary/30 rounded-md">
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium">{share.username || share.email}</span>
+                          <Badge variant={share.permission === 'write' ? 'default' : 'secondary'} className="mt-1 w-fit">
+                            {share.permission === 'write' ? 'Can edit' : 'View only'}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Select
+                            value={share.permission}
+                            onValueChange={(value: 'read' | 'write') => 
+                              handleUpdatePermission(calendar.id, share.id, value)
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-24">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="read">View only</SelectItem>
+                              <SelectItem value="write">Can edit</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => handleRemoveShare(calendar.id, share.id)}
+                            className="h-8 w-8 text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <Select
-                          value={share.permission}
-                          onValueChange={(value: 'read' | 'write') => 
-                            handleUpdatePermission(share.id, value)
-                          }
-                        >
-                          <SelectTrigger className="h-8 w-24">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="read">View only</SelectItem>
-                            <SelectItem value="write">Can edit</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleRemoveShare(share.id)}
-                          className="h-8 w-8 text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
           </>
         )}
 
-        <DialogFooter className="sm:justify-start">
+        <DialogFooter className="sm:justify-between">
+          {/* Toggle multi-selection mode button */}
+          {!isMultiSelectionMode && (
+            <Button 
+              type="button" 
+              variant="outline" 
+              size="sm"
+              onClick={() => setIsMultiSelectionMode(true)}
+              className="gap-1"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Add More Calendars
+            </Button>
+          )}
+          
           <Button 
             type="button" 
             variant="secondary" 
