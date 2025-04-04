@@ -56,6 +56,7 @@ export default function ImportCalendarModal({
   // State for import process
   const [isImporting, setIsImporting] = useState(false);
   const [importStep, setImportStep] = useState<'upload' | 'select'>('upload');
+  const [replaceExisting, setReplaceExisting] = useState(false);
 
   // Handle file selection
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -180,7 +181,8 @@ export default function ImportCalendarModal({
     try {
       const response = await apiRequest('POST', '/api/calendars/import-events', {
         calendarId: parseInt(selectedCalendarId),
-        events: selectedEvents
+        events: selectedEvents,
+        replaceExisting: replaceExisting
       });
 
       if (!response.ok) {
@@ -220,6 +222,7 @@ export default function ImportCalendarModal({
     setIsUploading(false);
     setIsParsing(false);
     setIsImporting(false);
+    setReplaceExisting(false);
     onOpenChange(false);
   };
 
@@ -311,6 +314,20 @@ export default function ImportCalendarModal({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              
+              <div className="flex items-center space-x-2 mb-4">
+                <Checkbox 
+                  id="replace-existing"
+                  checked={replaceExisting}
+                  onCheckedChange={(checked) => setReplaceExisting(checked as boolean)}
+                />
+                <Label 
+                  htmlFor="replace-existing"
+                  className="cursor-pointer text-sm"
+                >
+                  Replace existing events with same UID
+                </Label>
               </div>
               
               <div className="bg-white border rounded-md shadow-sm mb-4">

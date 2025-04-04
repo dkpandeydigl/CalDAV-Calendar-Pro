@@ -139,9 +139,14 @@ export function registerImportRoutes(app: Express) {
   app.post("/api/calendars/import-events", isAuthenticated, async (req, res) => {
     try {
       const userId = (req.user as User).id;
-      const { calendarId, events } = req.body;
+      const { calendarId, events, replaceExisting } = req.body;
       
-      console.log("Import events request:", { userId, calendarId, eventCount: events?.length || 0 });
+      console.log("Import events request:", { 
+        userId, 
+        calendarId, 
+        eventCount: events?.length || 0,
+        replaceExisting: !!replaceExisting 
+      });
       
       if (!calendarId || !Array.isArray(events)) {
         console.log("Invalid request. Missing calendarId or events:", { calendarId, eventsIsArray: Array.isArray(events) });
@@ -229,16 +234,35 @@ export function registerImportRoutes(app: Express) {
           const existingEvent = await storage.getEventByUID(newEvent.uid);
           
           if (existingEvent) {
-            // Skip this event and record the error
-            console.log("Event already exists:", { uid: newEvent.uid, title: newEvent.title });
-            errors.push(`Event "${newEvent.title}" with UID ${newEvent.uid} already exists`);
+            if (replaceExisting) {
+              // Update the existing event instead of creating a new one
+              console.log("Replacing existing event:", { uid: newEvent.uid, title: newEvent.title });
+              
+              // Include the existing event ID in the update
+              const updatedEvent = await storage.updateEvent(existingEvent.id, {
+                ...newEvent,
+                id: existingEvent.id // Make sure to keep the same ID
+              });
+              
+              if (updatedEvent) {
+                importedCount++;
+                console.log("Successfully replaced event:", { uid: newEvent.uid, title: newEvent.title });
+              } else {
+                console.error("Failed to replace event:", { uid: newEvent.uid, title: newEvent.title });
+                errors.push(`Failed to replace event "${newEvent.title}" with UID ${newEvent.uid}`);
+              }
+            } else {
+              // Skip this event and record the error if not replacing
+              console.log("Event already exists (skipping):", { uid: newEvent.uid, title: newEvent.title });
+              errors.push(`Event "${newEvent.title}" with UID ${newEvent.uid} already exists`);
+            }
             continue;
           }
           
-          // Save the event
+          // Save the event as new
           await storage.createEvent(newEvent);
           importedCount++;
-          console.log("Successfully imported event:", { uid: newEvent.uid, title: newEvent.title });
+          console.log("Successfully imported new event:", { uid: newEvent.uid, title: newEvent.title });
           
         } catch (eventError) {
           console.error("Error importing event:", eventError);
