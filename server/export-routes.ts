@@ -50,6 +50,13 @@ export function registerExportRoutes(app: Express) {
       // Check permission for each calendar (user can export their own calendars and shared calendars they have access to)
       const userCalendars = await storage.getCalendars(userId);
       const sharedCalendars = await storage.getSharedCalendars(userId);
+      
+      // Map calendars for lookup by ID
+      const calendarMap = new Map();
+      [...userCalendars, ...sharedCalendars].forEach(cal => {
+        calendarMap.set(cal.id, cal);
+      });
+      
       const accessibleCalendarIds = new Set([
         ...userCalendars.map(cal => cal.id),
         ...sharedCalendars.map(cal => cal.id)
@@ -66,8 +73,12 @@ export function registerExportRoutes(app: Express) {
       const mergedEvents = [];
       
       for (const calendarId of validCalendarIds) {
-        const calendar = await storage.getCalendar(calendarId);
-        if (!calendar) continue;
+        // Get calendar details from our map instead of another DB call
+        const calendar = calendarMap.get(calendarId);
+        if (!calendar) {
+          console.log(`Skipping calendar ${calendarId} - not found in map`);
+          continue;
+        }
         
         // Fetch all events for this calendar
         let events = await storage.getEvents(calendarId);
@@ -92,7 +103,7 @@ export function registerExportRoutes(app: Express) {
           startDate: new Date(event.startDate),
           endDate: new Date(event.endDate),
           allDay: event.allDay || false,
-          recurring: false, // We don't need to check for rrule as it's not directly in our schema
+          recurring: false,
           calendarName: calendar.name
         }));
         
@@ -103,18 +114,14 @@ export function registerExportRoutes(app: Express) {
         return res.status(404).json({ message: 'No events found to export' });
       }
       
-      // Generate a single iCalendar file with all events
+      // Determine calendar name for the export file
       let calendarName = 'Multiple Calendars';
       
       if (validCalendarIds.length === 1) {
-        try {
-          const calendarId = validCalendarIds[0];
-          const calendar = await storage.getCalendar(calendarId);
-          calendarName = calendar?.name || 'Exported Calendar';
-        } catch (err) {
-          console.error(`Error getting calendar name for ID ${validCalendarIds[0]}:`, err);
-          calendarName = 'Exported Calendar';
-        }
+        // Safely get calendar name from our map
+        const calendarId = validCalendarIds[0];
+        const calendar = calendarMap.get(calendarId);
+        calendarName = calendar?.name || 'Exported Calendar';
       }
       
       // Generate iCalendar content
