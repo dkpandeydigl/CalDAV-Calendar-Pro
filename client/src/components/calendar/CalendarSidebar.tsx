@@ -488,13 +488,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
               
               {/* Group calendars by owner email */}
               {Object.entries(sharedCalendars.reduce((acc, calendar) => {
-                // Make sure we never show a user's own calendars in the shared section
-                // This is already handled in the useSharedCalendars hook, but adding another safeguard here
-                if (currentUser && calendar.userId === currentUser.id) {
-                  console.log(`Skipping calendar ${calendar.id} (${calendar.name}) as it's owned by the current user`);
-                  return acc;
-                }
-                
+                // Trust server security - if it's in the shared calendars list, it should be displayed
+                // Our server-side filtering ensures that only properly shared calendars are returned
                 const ownerEmail = calendar.ownerEmail || 'Unknown';
                 if (!acc[ownerEmail]) {
                   acc[ownerEmail] = [];

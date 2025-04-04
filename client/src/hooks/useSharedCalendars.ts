@@ -201,27 +201,22 @@ export const useSharedCalendars = () => {
     }
   });
 
-  // Filter out any calendars that might be owned by the current user
-  // This is a double-safety in case the server sends calendars it shouldn't
-  const filteredSharedCalendars = (sharedCalendarsQuery.data || []).filter(calendar => {
-    // We only filter out calendars owned by the current user by ID
-    // This ensures we still show calendars legitimately shared with the user
-    if (calendar.userId === currentUserId) {
-      console.log(`[useSharedCalendars] Filtering out calendar ${calendar.id} (${calendar.name}) owned by current user ID: ${currentUserId}`);
-      return false;
-    }
-    
-    // We keep all calendars that are not directly owned by the user
-    // regardless of email matches, as they are likely legitimately shared
-    return true;
-  });
+  // Thanks to our strict server-side security filtering, we can now trust the shared calendars directly from the server
+  // The server will never send calendars owned by the current user in the shared calendars API
+  // This simplifies our client-side logic and prevents bugs
+  const filteredSharedCalendars = sharedCalendarsQuery.data || [];
   
-  // Log the filtering results for debugging - only if we have data
-  if (sharedCalendarsQuery.data && sharedCalendarsQuery.data.length !== filteredSharedCalendars.length) {
-    const filteredCount = sharedCalendarsQuery.data.length - filteredSharedCalendars.length;
-    console.log(
-      `[useSharedCalendars] Filtered out ${filteredCount} calendars owned by the current user (ID: ${currentUserId})`
-    );
+  // Add extra debug logging
+  console.log(`[useSharedCalendars] Received ${filteredSharedCalendars.length} shared calendars from server`);
+  if (filteredSharedCalendars.length > 0) {
+    // Log each shared calendar with detailed info
+    filteredSharedCalendars.forEach((cal, index) => {
+      console.log(
+        `[useSharedCalendars] Calendar ${index+1}: ID: ${cal.id}, Name: "${cal.name}", ` +
+        `Owner ID: ${cal.userId}, Owner Email: ${cal.ownerEmail || 'unknown'}, ` +
+        `Permission: ${cal.permission || 'view'}, Enabled: ${cal.enabled ? 'yes' : 'no'}`
+      );
+    });
   }
 
   return {
