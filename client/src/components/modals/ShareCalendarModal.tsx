@@ -330,221 +330,223 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>{getDialogTitle()}</DialogTitle>
           <DialogDescription>
             {getDialogDescription()}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Calendar Selection Section - Always shown in multi-selection mode */}
-        {isMultiSelectionMode && (
-          <div className="border rounded-md p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center">
-                <CalendarIcon className="h-5 w-5 mr-2 text-primary" />
-                <h3 className="font-medium">Your Calendars</h3>
-              </div>
-              <div className="text-xs bg-muted px-2 py-1 rounded-full">
-                {selectedCalendars.length} selected
-              </div>
-            </div>
-            
-            <ScrollArea className="h-56 rounded-md mb-3">
-              <div className="space-y-2">
-                {userCalendars
-                  // Display all available calendars
-                  .map(calendar => (
-                    <div 
-                      key={calendar.id} 
-                      className="flex items-center hover:bg-muted rounded-md cursor-pointer transition-colors mb-1"
-                      onClick={() => toggleCalendarSelection(calendar)}
-                    >
-                      <Checkbox 
-                        id={`calendar-${calendar.id}`}
-                        checked={selectedCalendars.some(c => c.calendar.id === calendar.id)}
-                        onCheckedChange={() => toggleCalendarSelection(calendar)}
-                        className="ml-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
-                      />
-                      <div className="flex items-center flex-1 p-1.5 pl-2">
-                        <span 
-                          className="w-4 h-4 rounded-full mr-2 flex-shrink-0 border border-gray-200"
-                          style={{ backgroundColor: calendar.color }}
-                        ></span>
-                        <Label 
-                          htmlFor={`calendar-${calendar.id}`}
-                          className="cursor-pointer text-sm font-medium"
-                        >
-                          {calendar.name}
-                          {calendar.isPrimary && (
-                            <span className="ml-2 text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">Primary</span>
-                          )}
-                        </Label>
-                      </div>
-                    </div>
-                  ))
-                }
-              </div>
-            </ScrollArea>
-            
-            <div className="flex justify-between border-t pt-3">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-8 px-3 gap-1"
-                onClick={() => {
-                  // Select all calendars
-                  const allCalendars = userCalendars || [];
-                  
-                  setSelectedCalendars(
-                    allCalendars.map(calendar => ({
-                      calendar,
-                      shares: [],
-                      loading: true
-                    }))
-                  );
-                }}
-              >
-                <Check className="h-3.5 w-3.5" />
-                Select All
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-8 px-3 gap-1"
-                onClick={() => setSelectedCalendars([])}
-              >
-                <X className="h-3.5 w-3.5" />
-                Clear All
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {selectedCalendars.length > 0 && (
-          <>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="email" className="text-right">
-                  Email
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="user@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="col-span-3"
-                />
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="permission" className="text-right">
-                  Permission
-                </Label>
-                <Select
-                  value={permission}
-                  onValueChange={(value: 'read' | 'write') => setPermission(value)}
-                >
-                  <SelectTrigger className="col-span-3">
-                    <SelectValue placeholder="Select permission" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="read">View only</SelectItem>
-                    <SelectItem value="write">Can edit</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {/* CalDAV server sync option - only show if at least one calendar has a URL */}
-              {canShareWithServer && (
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="syncServer" className="text-right flex items-center gap-1">
-                    <Server className="h-4 w-4" />
-                    <span>CalDAV</span>
-                  </Label>
-                  <div className="flex items-center space-x-2 col-span-3">
-                    <Switch
-                      id="syncServer"
-                      checked={syncWithServer}
-                      onCheckedChange={setSyncWithServer}
-                    />
-                    <Label htmlFor="syncServer" className="cursor-pointer text-sm text-muted-foreground">
-                      {syncWithServer ? 'Synchronize with CalDAV server' : 'Store sharing locally only'}
-                    </Label>
-                  </div>
+        <div className="flex-1 overflow-y-auto pr-1">
+          {/* Calendar Selection Section - Always shown in multi-selection mode */}
+          {isMultiSelectionMode && (
+            <div className="border rounded-md p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center">
+                  <CalendarIcon className="h-5 w-5 mr-2 text-primary" />
+                  <h3 className="font-medium">Your Calendars</h3>
                 </div>
-              )}
-            </div>
-
-            <Button 
-              onClick={handleShareCalendars} 
-              disabled={!email || isSubmitting || selectedCalendars.length === 0}
-              className="w-full"
-            >
-              {isSubmitting ? 'Sharing...' : `Share ${selectedCalendars.length === 1 ? 'Calendar' : 'Calendars'}`}
-            </Button>
-
-            {/* Existing shares - Show in tabs or accordion for multiple calendars */}
-            {selectedCalendars.map(({ calendar, shares, loading }) => (
-              <div key={calendar.id} className="border-t pt-4 mt-4">
-                <h3 className="font-medium mb-2 flex items-center">
-                  <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: calendar.color }}></span>
-                  {calendar.name} - Shared with
-                  {loading && <span className="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-current border-r-transparent"></span>}
-                </h3>
-                
-                {!loading && shares.length === 0 && (
-                  <div className="text-sm text-muted-foreground italic p-2">
-                    Not shared with anyone yet
-                  </div>
-                )}
-                
-                {!loading && shares.length > 0 && (
-                  <div>
-                    {shares.map(share => (
-                      <div key={share.id} className="flex items-center justify-between p-2 bg-secondary/20 rounded-md mb-1">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium">{share.username || share.email}</span>
-                          <Badge variant={share.permission === 'write' ? 'default' : 'secondary'} className="mt-1 w-fit">
-                            {share.permission === 'write' ? 'Can edit' : 'View only'}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Select
-                            value={share.permission}
-                            onValueChange={(value: 'read' | 'write') => 
-                              handleUpdatePermission(calendar.id, share.id, value)
-                            }
+                <div className="text-xs bg-muted px-2 py-1 rounded-full">
+                  {selectedCalendars.length} selected
+                </div>
+              </div>
+              
+              <ScrollArea className="h-56 rounded-md mb-3">
+                <div className="space-y-2">
+                  {userCalendars
+                    // Display all available calendars
+                    .map(calendar => (
+                      <div 
+                        key={calendar.id} 
+                        className="flex items-center hover:bg-muted rounded-md cursor-pointer transition-colors mb-1"
+                        onClick={() => toggleCalendarSelection(calendar)}
+                      >
+                        <Checkbox 
+                          id={`calendar-${calendar.id}`}
+                          checked={selectedCalendars.some(c => c.calendar.id === calendar.id)}
+                          onCheckedChange={() => toggleCalendarSelection(calendar)}
+                          className="ml-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                        />
+                        <div className="flex items-center flex-1 p-1.5 pl-2">
+                          <span 
+                            className="w-4 h-4 rounded-full mr-2 flex-shrink-0 border border-gray-200"
+                            style={{ backgroundColor: calendar.color }}
+                          ></span>
+                          <Label 
+                            htmlFor={`calendar-${calendar.id}`}
+                            className="cursor-pointer text-sm font-medium"
                           >
-                            <SelectTrigger className="h-8 w-24">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="read">View only</SelectItem>
-                              <SelectItem value="write">Can edit</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button 
-                            variant="ghost" 
-                            size="icon"
-                            onClick={() => handleRemoveShare(calendar.id, share.id)}
-                            className="h-8 w-8 text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                            {calendar.name}
+                            {calendar.isPrimary && (
+                              <span className="ml-2 text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">Primary</span>
+                            )}
+                          </Label>
                         </div>
                       </div>
-                    ))}
+                    ))
+                  }
+                </div>
+              </ScrollArea>
+              
+              <div className="flex justify-between border-t pt-3">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 px-3 gap-1"
+                  onClick={() => {
+                    // Select all calendars
+                    const allCalendars = userCalendars || [];
+                    
+                    setSelectedCalendars(
+                      allCalendars.map(calendar => ({
+                        calendar,
+                        shares: [],
+                        loading: true
+                      }))
+                    );
+                  }}
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Select All
+                </Button>
+                
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-8 px-3 gap-1"
+                  onClick={() => setSelectedCalendars([])}
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Clear All
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {selectedCalendars.length > 0 && (
+            <>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="email" className="text-right">
+                    Email
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="user@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="col-span-3"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="permission" className="text-right">
+                    Permission
+                  </Label>
+                  <Select
+                    value={permission}
+                    onValueChange={(value: 'read' | 'write') => setPermission(value)}
+                  >
+                    <SelectTrigger className="col-span-3">
+                      <SelectValue placeholder="Select permission" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="read">View only</SelectItem>
+                      <SelectItem value="write">Can edit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {/* CalDAV server sync option - only show if at least one calendar has a URL */}
+                {canShareWithServer && (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="syncServer" className="text-right flex items-center gap-1">
+                      <Server className="h-4 w-4" />
+                      <span>CalDAV</span>
+                    </Label>
+                    <div className="flex items-center space-x-2 col-span-3">
+                      <Switch
+                        id="syncServer"
+                        checked={syncWithServer}
+                        onCheckedChange={setSyncWithServer}
+                      />
+                      <Label htmlFor="syncServer" className="cursor-pointer text-sm text-muted-foreground">
+                        {syncWithServer ? 'Synchronize with CalDAV server' : 'Store sharing locally only'}
+                      </Label>
+                    </div>
                   </div>
                 )}
               </div>
-            ))}
-          </>
-        )}
 
-        <DialogFooter className="sm:justify-between">
+              <Button 
+                onClick={handleShareCalendars} 
+                disabled={!email || isSubmitting || selectedCalendars.length === 0}
+                className="w-full"
+              >
+                {isSubmitting ? 'Sharing...' : `Share ${selectedCalendars.length === 1 ? 'Calendar' : 'Calendars'}`}
+              </Button>
+
+              {/* Existing shares - Show in tabs or accordion for multiple calendars */}
+              {selectedCalendars.map(({ calendar, shares, loading }) => (
+                <div key={calendar.id} className="border-t pt-4 mt-4">
+                  <h3 className="font-medium mb-2 flex items-center">
+                    <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: calendar.color }}></span>
+                    {calendar.name} - Shared with
+                    {loading && <span className="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-current border-r-transparent"></span>}
+                  </h3>
+                  
+                  {!loading && shares.length === 0 && (
+                    <div className="text-sm text-muted-foreground italic p-2">
+                      Not shared with anyone yet
+                    </div>
+                  )}
+                  
+                  {!loading && shares.length > 0 && (
+                    <div>
+                      {shares.map(share => (
+                        <div key={share.id} className="flex items-center justify-between p-2 bg-secondary/20 rounded-md mb-1">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{share.username || share.email}</span>
+                            <Badge variant={share.permission === 'write' ? 'default' : 'secondary'} className="mt-1 w-fit">
+                              {share.permission === 'write' ? 'Can edit' : 'View only'}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Select
+                              value={share.permission}
+                              onValueChange={(value: 'read' | 'write') => 
+                                handleUpdatePermission(calendar.id, share.id, value)
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-24">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="read">View only</SelectItem>
+                                <SelectItem value="write">Can edit</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button 
+                              variant="ghost" 
+                              size="icon"
+                              onClick={() => handleRemoveShare(calendar.id, share.id)}
+                              className="h-8 w-8 text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+        
+        <DialogFooter className="sm:justify-between flex-shrink-0">
           {/* Toggle multi-selection mode button */}
           {!isMultiSelectionMode && (
             <Button 
