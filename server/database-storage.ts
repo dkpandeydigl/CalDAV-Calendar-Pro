@@ -255,133 +255,86 @@ export class DatabaseStorage implements IStorage {
         return [];
       }
       
-      console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'none'}`);
+      console.log(`STRICT SHARING: Looking for calendars EXPLICITLY shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'none'}`);
       
-      // SECURITY FIX: We need to ensure strict matching to avoid showing calendars to unintended users
-      // We will only show calendars if:
-      // 1. The calendar was shared directly with the user's ID (exact match)
-      // 2. The calendar was shared with the user's email address (exact match, only if email is set)
-      // 3. The calendar was shared with the username (only if we can verify it's the exact user)
+      // We only retrieve calendar sharing records that EXACTLY match this user
+      // DO NOT allow backup matching logic - if we can't find an exact match for this user, we don't show them any shared calendars
+      const sharingRecordsQuery = db.select()
+        .from(calendarSharing);
       
-      // CRITICAL FIX: Use a more flexible matching approach to find shared calendars
-      console.log(`Searching for calendars shared with user ID ${userId}, username ${user.username}, email ${user.email || 'none'}`);
+      // Build the exact matching conditions
+      const matchConditions = [];
       
-      // First, try to find all sharing records by user ID since it's the most reliable
-      let sharingRecords = await db.select()
-        .from(calendarSharing)
-        .where(eq(calendarSharing.sharedWithUserId, userId));
-      
-      console.log(`Found ${sharingRecords.length} calendar sharing records by user ID match`);
-      
-      // If user ID matching yields no results, fall back to email matching
-      if (sharingRecords.length === 0) {
-        const emailMatchConditions = [];
-        
-        // Search by user.email if available
-        if (user.email && user.email.trim() !== '') {
-          emailMatchConditions.push(eq(calendarSharing.sharedWithEmail, user.email));
-        }
-        
-        // Search by username if it contains @ symbol (could be an email)
-        if (user.username && user.username.includes('@')) {
-          emailMatchConditions.push(eq(calendarSharing.sharedWithEmail, user.username));
-        }
-        
-        // Only perform email matching if we have conditions
-        if (emailMatchConditions.length > 0) {
-          sharingRecords = await db.select()
-            .from(calendarSharing)
-            .where(or(...emailMatchConditions));
-            
-          console.log(`Found ${sharingRecords.length} calendar sharing records by email/username match`);
-        }
+      // 1. Exact match by user ID (primary key match)
+      if (userId) {
+        matchConditions.push(eq(calendarSharing.sharedWithUserId, userId));
       }
       
-      // If we still don't have records, try a completely different approach as last resort
-      if (sharingRecords.length === 0) {
-        // Get all sharing records and manually filter
-        const allSharingRecords = await db.select().from(calendarSharing);
-        
-        sharingRecords = allSharingRecords.filter(record => {
-          // Match by user ID
-          if (record.sharedWithUserId === userId) return true;
-          
-          // Match by email
-          if (user.email && record.sharedWithEmail === user.email) return true;
-          
-          // Match by username as email
-          if (user.username && user.username.includes('@') && 
-              record.sharedWithEmail === user.username) return true;
-          
-          // Special case: the email field is the username without @ symbol
-          // This catches legacy data where email might have been stored incorrectly
-          if (user.username && user.username.includes('@')) {
-            const usernameWithoutDomain = user.username.split('@')[0];
-            if (record.sharedWithEmail === usernameWithoutDomain) return true;
-          }
-          
-          return false;
-        });
-        
-        console.log(`Found ${sharingRecords.length} calendar sharing records using manual filtering`);
+      // 2. Exact match by email (secondary match)
+      if (user.email && user.email.trim() !== '') {
+        matchConditions.push(eq(calendarSharing.sharedWithEmail, user.email));
       }
       
-      console.log(`Found ${sharingRecords.length} direct sharing records for user ${user.username}`);
-      
-      // Debug info for direct matches
-      if (sharingRecords.length > 0) {
-        console.log('Direct sharing matches:', JSON.stringify(sharingRecords.map(r => ({
-          id: r.id,
-          calendarId: r.calendarId,
-          sharedWithEmail: r.sharedWithEmail,
-          sharedWithUserId: r.sharedWithUserId,
-          permissionLevel: r.permissionLevel
-        })), null, 2));
+      // 3. Exact match by username if it's an email (tertiary match)
+      if (user.username && user.username.includes('@')) {
+        matchConditions.push(eq(calendarSharing.sharedWithEmail, user.username));
       }
       
-      // Important: Never include calendars that the user owns
-      // (Prevents the "shared calendar with myself" issue)
+      // Apply the OR conditions - any ONE of these exact matches is acceptable
+      let sharingRecords: CalendarSharing[] = [];
+      if (matchConditions.length > 0) {
+        sharingRecords = await sharingRecordsQuery.where(or(...matchConditions));
+      }
+      
+      console.log(`STRICT SHARING: Found ${sharingRecords.length} exact calendar sharing matches for user ${user.username}`);
+      
+      // Detailed log of every sharing record for debugging
+      sharingRecords.forEach(record => {
+        console.log(`STRICT SHARING: Record ID ${record.id}: Calendar ID ${record.calendarId} shared with user ID ${record.sharedWithUserId || 'none'}, email ${record.sharedWithEmail || 'none'}`);
+      });
+      
+      // If no matches, just return early - CRITICAL security principle!
       if (sharingRecords.length === 0) {
+        console.log(`STRICT SHARING: No sharing records found for user ${user.username}, returning empty list`);
         return [];
       }
       
-      // Get unique calendar IDs from direct matches
-      const calendarIds = Array.from(new Set(sharingRecords.map(record => record.calendarId)));
+      // Get the IDs of calendars that have been EXPLICITLY shared with this user
+      const sharedCalendarIds = Array.from(new Set(sharingRecords.map(record => record.calendarId)));
+      console.log(`STRICT SHARING: Found ${sharedCalendarIds.length} unique shared calendar IDs: ${sharedCalendarIds.join(', ')}`);
       
-      // Fetch the shared calendars
+      // Fetch ONLY those specific calendars, and ONLY if they're not owned by the current user
       const sharedCalendars = await db.select()
         .from(calendars)
         .where(
           and(
-            // Must be in our list of shared calendar IDs
-            inArray(calendars.id, calendarIds),
-            // Must NOT be owned by the current user
+            // MUST be in our list of calendars explicitly shared with this user
+            inArray(calendars.id, sharedCalendarIds),
+            // MUST NOT be owned by the current user
             ne(calendars.userId, userId)
           )
         );
       
-      console.log(`Found ${sharedCalendars.length} shared calendars for user ${user.username} (excluding owned calendars)`);
+      console.log(`STRICT SHARING: Found ${sharedCalendars.length} shared calendars for user ${user.username}`);
       
-      // Map sharing records to their respective calendars for permission info
+      // Create a map of permissions for each calendar
       const calendarPermissionMap = new Map(
         sharingRecords.map(record => [record.calendarId, record.permissionLevel])
       );
       
-      // Detailed logging of calendar properties 
-      for (const calendar of sharedCalendars) {
-        console.log(`Calendar ${calendar.id} (${calendar.name}) owned by user ${calendar.userId}, shared with user ${userId}, permission: ${calendarPermissionMap.get(calendar.id) || 'unknown'}`);
-      }
-      
-      // Ensure we only return calendars that match our strict criteria
-      return sharedCalendars.filter(calendar => {
-        // Double check that this calendar is actually shared with the user
-        const isSharedWithUser = calendarPermissionMap.has(calendar.id);
+      // Add permission info to calendars
+      const calendarsWithPermissions = sharedCalendars.map(calendar => {
+        // Additional log for each calendar
+        console.log(`STRICT SHARING: Calendar ${calendar.id} (${calendar.name}), owned by user ${calendar.userId}, shared with user ${userId}, permission: ${calendarPermissionMap.get(calendar.id) || 'unknown'}`);
         
-        // Never show user their own calendars in shared section
-        const isNotOwnedByUser = calendar.userId !== userId;
-        
-        return isSharedWithUser && isNotOwnedByUser;
+        return {
+          ...calendar,
+          permission: calendarPermissionMap.get(calendar.id) || 'view' // Default to view
+        };
       });
+      
+      // Final list of shared calendars
+      return calendarsWithPermissions;
     } catch (error) {
       console.error("Error fetching shared calendars:", error);
       return [];
