@@ -1699,8 +1699,10 @@ END:VCALENDAR`
       
       // SECOND SECURITY CHECK: Get the actual calendars, but ONLY those explicitly shared with this user
       // and filter out any calendars owned by this user (should never be shared with yourself)
-      // Use the storage layer instead of direct database access for type safety
-      const allCalendars = await storage.getCalendars(0); // Getting all calendars
+      
+      // CRITICAL FIX: We need to directly fetch all calendars, not just ones owned by user ID 0
+      // which wouldn't include most user calendars. This was causing calendars not to show up.
+      const allCalendars = await db.select().from(calendars);
       
       // Apply our strict security filters:
       // 1. Calendar ID must be in our explicit sharing records
