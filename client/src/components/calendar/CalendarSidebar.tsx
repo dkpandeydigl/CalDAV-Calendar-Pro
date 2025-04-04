@@ -12,6 +12,7 @@ import { formatFullDate } from '@/lib/date-utils';
 import { useServerConnection } from '@/hooks/useServerConnection';
 import { CalendarIcon, Edit, MoreVertical, Share2, Trash2 } from 'lucide-react';
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Popover,
   PopoverContent,
@@ -59,6 +60,10 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
   const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
+  
+  // Get current user from query client cache
+  const queryClient = useQueryClient();
+  const currentUser = queryClient.getQueryData<any>(['/api/user']);
   const { 
     sharedCalendars, 
     toggleCalendarVisibility, 
@@ -483,6 +488,13 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
               
               {/* Group calendars by owner email */}
               {Object.entries(sharedCalendars.reduce((acc, calendar) => {
+                // Make sure we never show a user's own calendars in the shared section
+                // This is already handled in the useSharedCalendars hook, but adding another safeguard here
+                if (calendar.userId === currentUser?.id) {
+                  console.log(`Skipping calendar ${calendar.id} (${calendar.name}) as it's owned by the current user`);
+                  return acc;
+                }
+                
                 const ownerEmail = calendar.ownerEmail || 'Unknown';
                 if (!acc[ownerEmail]) {
                   acc[ownerEmail] = [];

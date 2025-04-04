@@ -16,6 +16,10 @@ export const useSharedCalendars = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
+  // Get the current user
+  const currentUser = queryClient.getQueryData<any>(['/api/user']);
+  const currentUserId = currentUser?.id;
+  
   const sharedCalendarsQuery = useQuery<SharedCalendar[]>({
     queryKey: ['/api/shared-calendars'],
     // Tanstack Query v5 doesn't support these callbacks directly in the options
@@ -197,8 +201,24 @@ export const useSharedCalendars = () => {
     }
   });
 
+  // Filter out any calendars that might be owned by the current user
+  // This is a double-safety in case the server sends calendars it shouldn't
+  const filteredSharedCalendars = (sharedCalendarsQuery.data || []).filter(calendar => {
+    // Don't show calendars owned by the current user in the "Shared Calendars" section
+    return calendar.userId !== currentUserId;
+  });
+  
+  // Log the filtering results for debugging
+  if (sharedCalendarsQuery.data?.length !== filteredSharedCalendars.length) {
+    console.log(
+      `[useSharedCalendars] Filtered out ${
+        sharedCalendarsQuery.data!.length - filteredSharedCalendars.length
+      } calendars owned by the current user (ID: ${currentUserId})`
+    );
+  }
+
   return {
-    sharedCalendars: sharedCalendarsQuery.data || [],
+    sharedCalendars: filteredSharedCalendars,
     isLoading: sharedCalendarsQuery.isLoading,
     error: sharedCalendarsQuery.error,
     toggleCalendarVisibility,
