@@ -70,10 +70,25 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
     error: sharedCalendarsError
   } = useSharedCalendars();
   
-  // Debug logging
+  // Enhanced debug logging
   console.log("CalendarSidebar: Shared calendars count:", sharedCalendars.length);
   console.log("CalendarSidebar: Is loading shared calendars:", isLoadingSharedCalendars);
   console.log("CalendarSidebar: Shared calendars error:", sharedCalendarsError);
+  
+  // Log the actual shared calendars content
+  console.log("CalendarSidebar: Shared calendars data:", JSON.stringify(sharedCalendars, null, 2));
+  
+  // Verify the grouping of calendars
+  const groupedCalendars = sharedCalendars.reduce((acc, calendar) => {
+    const ownerEmail = calendar.ownerEmail || 'Unknown';
+    if (!acc[ownerEmail]) {
+      acc[ownerEmail] = [];
+    }
+    acc[ownerEmail].push(calendar);
+    return acc;
+  }, {} as Record<string, typeof sharedCalendars>);
+  
+  console.log("CalendarSidebar: Grouped calendars by owner:", Object.keys(groupedCalendars));
   const { toast } = useToast();
   
   // State for adding a new calendar

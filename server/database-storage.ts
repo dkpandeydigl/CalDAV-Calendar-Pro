@@ -250,19 +250,32 @@ export class DatabaseStorage implements IStorage {
     try {
       // Get the user
       const user = await this.getUser(userId);
-      if (!user) return [];
+      if (!user) {
+        console.log(`User with ID ${userId} not found when looking for shared calendars`);
+        return [];
+      }
       
-      console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}`);
+      console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'none'}`);
       
       // Use the simplest approach possible to avoid SQL parameter binding issues
       // Just fetch all calendar sharing records first
       const allSharingRecords = await db.select().from(calendarSharing);
       console.log(`Found ${allSharingRecords.length} total sharing records in database`);
       
+      // For debugging, show all sharing records
+      console.log('All sharing records:', JSON.stringify(allSharingRecords.map(r => ({
+        id: r.id,
+        calendarId: r.calendarId,
+        sharedWithEmail: r.sharedWithEmail,
+        sharedWithUserId: r.sharedWithUserId,
+        permissionLevel: r.permissionLevel
+      })), null, 2));
+      
       // Then filter them manually based on matching criteria
       const matchingRecords = allSharingRecords.filter(record => {
         // Direct user ID match
         if (record.sharedWithUserId === userId) {
+          console.log(`Found direct user ID match for calendar ${record.calendarId}: sharedWithUserId ${record.sharedWithUserId} === userId ${userId}`);
           return true;
         }
         
@@ -271,6 +284,7 @@ export class DatabaseStorage implements IStorage {
           (record.sharedWithEmail.toLowerCase() === user.username.toLowerCase());
         
         if (emailMatches) {
+          console.log(`Found username match for calendar ${record.calendarId}: sharedWithEmail ${record.sharedWithEmail} matches username ${user.username}`);
           return true;
         }
         
@@ -278,6 +292,7 @@ export class DatabaseStorage implements IStorage {
         if (user.email && record.sharedWithEmail) {
           const userEmailMatches = record.sharedWithEmail.toLowerCase() === user.email.toLowerCase();
           if (userEmailMatches) {
+            console.log(`Found email match for calendar ${record.calendarId}: sharedWithEmail ${record.sharedWithEmail} matches user email ${user.email}`);
             return true;
           }
         }
@@ -285,11 +300,13 @@ export class DatabaseStorage implements IStorage {
         // Check for partial matches (username or email contained within sharedWithEmail)
         if (record.sharedWithEmail && 
             record.sharedWithEmail.toLowerCase().includes(user.username.toLowerCase())) {
+          console.log(`Found partial username match for calendar ${record.calendarId}: sharedWithEmail ${record.sharedWithEmail} includes username ${user.username}`);
           return true;
         }
         
         if (user.email && record.sharedWithEmail && 
             record.sharedWithEmail.toLowerCase().includes(user.email.toLowerCase())) {
+          console.log(`Found partial email match for calendar ${record.calendarId}: sharedWithEmail ${record.sharedWithEmail} includes user email ${user.email}`);
           return true;
         }
         
@@ -297,6 +314,13 @@ export class DatabaseStorage implements IStorage {
       });
       
       console.log(`Found ${matchingRecords.length} matching sharing records for user ${user.username}`);
+      console.log('Matching records:', JSON.stringify(matchingRecords.map(r => ({
+        id: r.id,
+        calendarId: r.calendarId,
+        sharedWithEmail: r.sharedWithEmail,
+        sharedWithUserId: r.sharedWithUserId,
+        permissionLevel: r.permissionLevel
+      })), null, 2));
       
       if (matchingRecords.length === 0) {
         return [];
@@ -317,10 +341,19 @@ export class DatabaseStorage implements IStorage {
       
       console.log(`Found ${sharedCalendars.length} shared calendars for user ${user.username}`);
       
-      // Debug info
+      // Debug info with more detailed properties
+      console.log('Shared calendars detailed properties:');
       for (const calendar of sharedCalendars) {
-        // Log based on Calendar type fields in schema
-        console.log(`Shared calendar: ID ${calendar.id}, Name: ${calendar.name}, Owner ID: ${calendar.userId}`);
+        console.log(JSON.stringify({
+          id: calendar.id,
+          name: calendar.name,
+          userId: calendar.userId,
+          enabled: calendar.enabled,
+          color: calendar.color,
+          url: calendar.url,
+          isLocal: calendar.isLocal,
+          isPrimary: calendar.isPrimary
+        }, null, 2));
       }
       
       return sharedCalendars;

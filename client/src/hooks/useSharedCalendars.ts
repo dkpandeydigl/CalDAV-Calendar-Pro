@@ -9,6 +9,7 @@ export interface SharedCalendar extends Calendar {
   permission: 'view' | 'edit';
   isShared: boolean;
   ownerEmail?: string; // Email address of the user who shared the calendar
+  enabled: boolean; // Must be explicitly defined, don't rely on inheritance
 }
 
 export const useSharedCalendars = () => {
@@ -26,14 +27,25 @@ export const useSharedCalendars = () => {
     const data = sharedCalendarsQuery.data;
     if (data) {
       console.log("Shared calendars loaded:", data.length || 0, "calendars");
+      console.log("Raw shared calendars data:", JSON.stringify(data, null, 2));
+      
       if (data.length > 0) {
         console.log("First shared calendar permissions:", {
           name: data[0].name,
           id: data[0].id,
           permission: data[0].permission,
           isShared: data[0].isShared,
-          canEdit: data[0].permission === 'edit'
+          canEdit: data[0].permission === 'edit',
+          ownerEmail: data[0].ownerEmail
         });
+        
+        // Check if enabled property exists and is properly set
+        console.log("Shared calendar enabled status check:", data.map(cal => ({
+          id: cal.id,
+          name: cal.name,
+          enabled: cal.enabled,
+          hasEnabledProperty: Object.prototype.hasOwnProperty.call(cal, 'enabled')
+        })));
       }
     }
   }, [sharedCalendarsQuery.data]);

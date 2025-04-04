@@ -1687,8 +1687,11 @@ END:VCALENDAR`
         const owner = await storage.getUser(calendar.userId);
         const ownerEmail = owner?.email || owner?.username || 'Unknown';
         
+        // Ensure the enabled property is set - default to true if not present
+        // This is important because the client-side UI uses this property to show/hide calendars
         return {
           ...calendar,
+          enabled: calendar.enabled !== undefined ? calendar.enabled : true,
           permission: sharing?.permissionLevel || 'view', // Default to view-only if no record found
           isShared: true,
           ownerEmail
@@ -1697,6 +1700,26 @@ END:VCALENDAR`
       
       // Resolve all promises
       const calendarWithPermissions = await Promise.all(calendarWithPermissionsPromises);
+      
+      // Log the full data being sent to client
+      console.log('Sending shared calendars to client with full data:', 
+        JSON.stringify(calendarWithPermissions.map(cal => ({
+          id: cal.id,
+          name: cal.name,
+          enabled: cal.enabled,
+          permission: cal.permission,
+          ownerEmail: cal.ownerEmail
+        })), null, 2)
+      );
+      
+      // Double check that we have enabled property for each calendar
+      calendarWithPermissions.forEach(cal => {
+        if (cal.enabled === undefined) {
+          console.error(`WARNING: Calendar ${cal.id} (${cal.name}) has undefined 'enabled' property!`);
+          // Force to true to ensure visibility
+          cal.enabled = true;
+        }
+      });
       
       res.json(calendarWithPermissions);
     } catch (err) {
