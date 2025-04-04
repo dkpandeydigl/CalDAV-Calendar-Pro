@@ -287,7 +287,18 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
           </div>
         
           <div className="mb-6">
-            <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Calendars</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Calendars</h3>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6" 
+                onClick={() => onShareCalendar && onShareCalendar(null)}
+                title="Share Multiple Calendars"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
             {calendars.map(calendar => (
               <div className="flex items-center justify-between mb-2" key={calendar.id}>
                 <div className="flex items-center flex-1">
