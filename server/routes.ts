@@ -1513,6 +1513,93 @@ END:VCALENDAR`
     }
   });
   
+  // New endpoint to unshare a calendar using the calendar ID instead of sharing ID
+  app.delete("/api/calendars/unshare/:calendarId", isAuthenticated, async (req, res) => {
+    try {
+      const calendarId = parseInt(req.params.calendarId);
+      const userId = req.user!.id;
+      console.log(`Attempting to unshare calendar ID ${calendarId} for user ${userId}`);
+      
+      // Get shared calendars to find the calendar info
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      const sharedCalendar = sharedCalendars.find(cal => cal.id === calendarId);
+      
+      if (!sharedCalendar) {
+        console.log(`Calendar ID ${calendarId} is not shared with user ${userId}`);
+        return res.status(404).json({ message: "Shared calendar not found" });
+      }
+      
+      // Find all sharing records for this calendar
+      const sharingRecords = await storage.getCalendarSharing(calendarId);
+      
+      // Find the sharing record for this specific user (could be username or email match)
+      const userSharing = sharingRecords.find(sharing => {
+        if (sharing.sharedWithUserId === userId) return true;
+        if (req.user!.email && sharing.sharedWithEmail.toLowerCase() === req.user!.email.toLowerCase()) return true;
+        if (sharing.sharedWithEmail.toLowerCase() === req.user!.username.toLowerCase()) return true;
+        return false;
+      });
+      
+      if (!userSharing) {
+        console.log(`No sharing record found for calendar ID ${calendarId} and user ${userId}`);
+        return res.status(404).json({ message: "Sharing record not found" });
+      }
+      
+      console.log(`Found sharing record ID ${userSharing.id} for calendar ID ${calendarId}`);
+      
+      // Delete the sharing record
+      const deleted = await storage.removeCalendarSharing(userSharing.id);
+      
+      if (!deleted) {
+        console.log(`Failed to delete sharing record ID ${userSharing.id}`);
+        return res.status(500).json({ message: "Failed to remove sharing" });
+      }
+      
+      console.log(`Successfully deleted sharing record ID ${userSharing.id} for calendar ID ${calendarId}`);
+      
+      // If calendar is synchronized with a CalDAV server, update permissions there too
+      if (req.query.syncWithServer === 'true' && sharedCalendar.url) {
+        try {
+          // Get server connection details for the current user
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection) {
+            // Import the CalDAV client
+            const { CalDAVClient } = await import('../client/src/lib/caldav');
+            
+            // Create CalDAV client
+            const caldavClient = new CalDAVClient({
+              serverUrl: connection.url,
+              username: connection.username,
+              password: connection.password
+            });
+            
+            // The email to remove from sharing is the current user's email or username
+            const userEmail = req.user!.email || req.user!.username;
+            
+            // Remove sharing on the server
+            const serverUnshareResult = await caldavClient.unshareCalendar(
+              sharedCalendar.url,
+              userEmail
+            );
+            
+            console.log(`CalDAV server unsharing result for calendar ID ${calendarId}: ${serverUnshareResult ? 'Success' : 'Failed'}`);
+          } else {
+            console.log(`No server connection found for user ${userId}, skipping CalDAV unsharing`);
+          }
+        } catch (syncError) {
+          console.error("Error syncing calendar unsharing with CalDAV server:", syncError);
+          // Don't fail the request, just log the error
+        }
+      }
+      
+      res.status(204).send();
+    } catch (err) {
+      console.error("Error removing calendar sharing:", err);
+      res.status(500).json({ message: "Failed to remove calendar sharing" });
+    }
+  });
+  
   // Get calendars shared with the current user
   app.get("/api/shared-calendars", isAuthenticated, async (req, res) => {
     try {

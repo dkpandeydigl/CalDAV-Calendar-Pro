@@ -41,8 +41,8 @@ export const useSharedCalendars = () => {
   // Unshare a single calendar - removes it from the UI immediately
   const unshareCalendarMutation = useMutation({
     mutationFn: async (calendarId: number) => {
-      // Build URL with sync option if calendar has URL
-      const apiUrl = `/api/calendars/shares/${calendarId}`;
+      // Build URL with the calendar ID parameter - the server will find the sharing record
+      const apiUrl = `/api/calendars/unshare/${calendarId}`;
       await apiRequest('DELETE', apiUrl);
       return calendarId;
     },
@@ -99,7 +99,7 @@ export const useSharedCalendars = () => {
     mutationFn: async (calendars: SharedCalendar[]) => {
       // Execute all unshare operations in parallel
       const unsharePromises = calendars.map(calendar => {
-        const apiUrl = `/api/calendars/shares/${calendar.id}`;
+        const apiUrl = `/api/calendars/unshare/${calendar.id}`;
         return apiRequest('DELETE', apiUrl);
       });
       
