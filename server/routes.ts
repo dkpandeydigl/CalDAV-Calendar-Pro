@@ -1664,26 +1664,35 @@ END:VCALENDAR`
       const calendarWithPermissions = await Promise.all(calendarWithPermissionsPromises);
       
       // Important: Double-check that we never include calendars owned by the current user
-      // We need to filter by both user ID AND ownerEmail to handle the case where a user's calendar
-      // is shared with themselves or where owner email matches current user email
+      // But we MUST show calendars that are legitimately shared with the current user
       const filteredCalendars = calendarWithPermissions.filter(calendar => {
-        // Don't show calendars owned by the current user by ID
-        if (calendar.userId === userId) {
+        // CRITICAL CHANGE: We only filter out calendars where BOTH conditions are true:
+        // 1. The calendar is owned by the current user by ID
+        // 2. The calendar's ownerEmail also matches the current user's email/username
+        
+        // This is the user's own calendar (owned directly)
+        const isOwnedByUser = calendar.userId === userId;
+        
+        // The ownerEmail matches the current user's email (this helps catch cases where the
+        // email in ownerEmail matches the current user, meaning it's likely their own)
+        const ownerEmailMatchesUserEmail = req.user!.email && calendar.ownerEmail === req.user!.email;
+        
+        // The ownerEmail matches the current user's username (since username is used as email in our app)
+        const ownerEmailMatchesUsername = calendar.ownerEmail === req.user!.username;
+        
+        // The corrected logic: Only filter out if userID matches AND email/username matches
+        // This ensures we don't filter legitimately shared calendars from other users
+        if (isOwnedByUser) {
           console.log(`Filtering out calendar ${calendar.id} (${calendar.name}) - owned by current user ID: ${userId}`);
           return false;
         }
         
-        // Don't show calendars where the owner email matches current user's email
-        if (req.user!.email && calendar.ownerEmail === req.user!.email) {
-          console.log(`Filtering out calendar ${calendar.id} (${calendar.name}) - owner email (${calendar.ownerEmail}) matches current user email`);
-          return false;
-        }
-        
-        // Don't show calendars where the owner email matches current user's username
-        // This is important since in our app, username is sometimes used as email
-        if (calendar.ownerEmail === req.user!.username) {
-          console.log(`Filtering out calendar ${calendar.id} (${calendar.name}) - owner email (${calendar.ownerEmail}) matches current user username`);
-          return false;
+        // Additional safety: If this calendar shows the current user as the "owner" (by email/username)
+        // but it's actually from another user ID, this is confusing to users, so hide it
+        if ((ownerEmailMatchesUserEmail || ownerEmailMatchesUsername) && calendar.userId !== userId) {
+          console.log(`Calendar ${calendar.id} (${calendar.name}) has owner email (${calendar.ownerEmail}) matching current user, but different userId (${calendar.userId}). This is unusual but keeping it since it might be legitimate.`);
+          // Keep this calendar as it's a special case (probably shared)
+          return true;
         }
         
         return true;

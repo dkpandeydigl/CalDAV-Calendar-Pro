@@ -204,25 +204,15 @@ export const useSharedCalendars = () => {
   // Filter out any calendars that might be owned by the current user
   // This is a double-safety in case the server sends calendars it shouldn't
   const filteredSharedCalendars = (sharedCalendarsQuery.data || []).filter(calendar => {
-    // Don't show calendars owned by the current user in the "Shared Calendars" section
+    // We only filter out calendars owned by the current user by ID
+    // This ensures we still show calendars legitimately shared with the user
     if (calendar.userId === currentUserId) {
       console.log(`[useSharedCalendars] Filtering out calendar ${calendar.id} (${calendar.name}) owned by current user ID: ${currentUserId}`);
       return false;
     }
     
-    // Don't show calendars where the owner email matches the current user's email or username
-    if (currentUser?.email && calendar.ownerEmail === currentUser.email) {
-      console.log(`[useSharedCalendars] Filtering out calendar ${calendar.id} (${calendar.name}) with owner email (${calendar.ownerEmail}) matching current user email`);
-      return false;
-    }
-    
-    // Don't show calendars where the owner email matches the current user's username
-    // This is critical since in our app, username is sometimes used as email
-    if (currentUser?.username && calendar.ownerEmail === currentUser.username) {
-      console.log(`[useSharedCalendars] Filtering out calendar ${calendar.id} (${calendar.name}) with owner email (${calendar.ownerEmail}) matching current user username`);
-      return false;
-    }
-    
+    // We keep all calendars that are not directly owned by the user
+    // regardless of email matches, as they are likely legitimately shared
     return true;
   });
   
