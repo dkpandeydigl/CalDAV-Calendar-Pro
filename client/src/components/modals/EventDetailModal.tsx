@@ -87,7 +87,24 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   
   // For events in user's own calendars, always allow edit
   const isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
-  const effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner;
+  
+  // Check if this event is from a shared calendar with edit permissions
+  const isFromSharedCalendarWithEditPermission = 
+    calendarMetadata?.isShared === true && 
+    event.calendarId && 
+    queryClient.getQueryData<any[]>(['/api/shared-calendars'])?.some?.(
+      cal => cal.id === event.calendarId && cal.permission === 'edit'
+    );
+  
+  console.log(`Event ${event.id} permission check:`, {
+    isUsersOwnCalendar,
+    canEdit,
+    isOwner,
+    isFromSharedCalendarWithEditPermission,
+    calendarMetadata
+  });
+  
+  const effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner || isFromSharedCalendarWithEditPermission;
   
   // Only show auth error if we don't have user info AND don't have calendar data
   // If we have calendar data, assume server session is valid even if client-side auth state is missing
@@ -253,7 +270,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             )}
             
             {/* Attendees section */}
-            {event.attendees && Array.isArray(event.attendees) && event.attendees.length > 0 && (
+            {event.attendees && Array.isArray(event.attendees) && (event.attendees as string[]).length > 0 && (
               <div>
                 <div className="text-sm font-medium mb-1">Attendees</div>
                 <div className="text-sm p-3 bg-neutral-100 rounded-md">
@@ -272,7 +289,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             )}
             
             {/* Resources section */}
-            {event.resources && Array.isArray(event.resources) && event.resources.length > 0 && (
+            {event.resources && Array.isArray(event.resources) && (event.resources as string[]).length > 0 && (
               <div>
                 <div className="text-sm font-medium mb-1">Resources</div>
                 <div className="text-sm p-3 bg-neutral-100 rounded-md">

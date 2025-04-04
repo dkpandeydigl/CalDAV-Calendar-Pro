@@ -69,7 +69,13 @@ export const useCalendarPermissions = () => {
     // Next check if it's a shared calendar
     const sharedCalendar = sharedCalendars.find(cal => cal.id === calendarId);
     if (sharedCalendar) {
-      console.log(`Calendar ${calendarId} is shared with user - permission: ${sharedCalendar.permission}`);
+      // Log extensive details about the shared calendar permissions for debugging
+      console.log(`Calendar ${calendarId} (${sharedCalendar.name}) is shared with user - permission type:`, {
+        permission: sharedCalendar.permission,
+        canEdit: sharedCalendar.permission === 'edit',
+        fullCalendar: sharedCalendar
+      });
+      
       return {
         canView: true,
         canEdit: sharedCalendar.permission === 'edit',

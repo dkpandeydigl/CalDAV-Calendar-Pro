@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import type { Calendar } from '@shared/schema';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -16,16 +17,33 @@ export const useSharedCalendars = () => {
   
   const sharedCalendarsQuery = useQuery<SharedCalendar[]>({
     queryKey: ['/api/shared-calendars'],
-    onSuccess: (data) => {
-      console.log("Shared calendars loaded:", data?.length || 0, "calendars");
-      if (data?.length) {
-        console.log("First shared calendar:", data[0]);
-      }
-    },
-    onError: (error) => {
-      console.error("Error loading shared calendars:", error);
-    }
+    // Tanstack Query v5 doesn't support these callbacks directly in the options
+    // so we'll use the result object's callbacks instead
   });
+  
+  // Use the data from the query for debugging using effects
+  useEffect(() => {
+    const data = sharedCalendarsQuery.data;
+    if (data) {
+      console.log("Shared calendars loaded:", data.length || 0, "calendars");
+      if (data.length > 0) {
+        console.log("First shared calendar permissions:", {
+          name: data[0].name,
+          id: data[0].id,
+          permission: data[0].permission,
+          isShared: data[0].isShared,
+          canEdit: data[0].permission === 'edit'
+        });
+      }
+    }
+  }, [sharedCalendarsQuery.data]);
+  
+  // Log errors using effects
+  useEffect(() => {
+    if (sharedCalendarsQuery.error) {
+      console.error("Error loading shared calendars:", sharedCalendarsQuery.error);
+    }
+  }, [sharedCalendarsQuery.error]);
 
   // Toggle the visibility (enabled status) of a shared calendar locally
   // without making a server API call
