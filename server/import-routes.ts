@@ -1,24 +1,11 @@
 import { Express, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { storage } from "./storage";
-import * as ical from "node-ical";
 import { v4 as uuidv4 } from "uuid";
 import { InsertEvent } from "@shared/schema";
 
-// A simple type declaration for node-ical since we don't have the official types
-declare module 'node-ical' {
-  export interface VEvent {
-    type: 'VEVENT';
-    uid: string;
-    summary: string;
-    start: any; // Could be Date or an object with dateOnly property
-    end?: any; // Could be Date or an object with dateOnly property
-    description: string;
-    location: string;
-  }
-  
-  export function parseICS(icsData: string): Record<string, any>;
-}
+// Use dynamic import for node-ical
+import * as ical from 'node-ical';
 
 // Set up multer for file uploads
 const upload = multer({
@@ -71,7 +58,9 @@ export function registerImportRoutes(app: Express) {
       const fileContent = req.file.buffer.toString();
       
       // Parse using node-ical
-      const parsedCal = ical.parseICS(fileContent);
+      // Handle both default export and named export patterns
+      const parseICS = (ical as any).default?.parseICS || ical.parseICS;
+      const parsedCal = parseICS(fileContent);
       
       // Extract events
       const events: ICSEvent[] = [];
@@ -84,19 +73,35 @@ export function registerImportRoutes(app: Express) {
           let allDay = false;
           
           // Handle start and end dates
-          let startDate = event.start instanceof Date ? event.start : new Date();
-          let endDate = event.end instanceof Date ? event.end : null;
+          let startDate: Date;
           
-          // Check if it's an all-day event (no time component)
-          if (startDate && event.start instanceof Object && 'dateOnly' in event.start && event.start.dateOnly) {
-            allDay = true;
+          if (event.start instanceof Date) {
+            startDate = event.start;
+          } else if (event.start && typeof event.start === 'object' && 'toJSDate' in event.start && typeof event.start.toJSDate === 'function') {
+            startDate = event.start.toJSDate();
+            // Check if it's an all-day event
+            if ('dateOnly' in event.start && event.start.dateOnly) {
+              allDay = true;
+            }
+          } else {
+            // Fallback to current date if we can't parse the start date
+            startDate = new Date();
           }
           
-          // If no end date is provided, set it same as start date
-          if (!endDate && startDate) {
-            // For all-day events, set end to next day
+          // Handle end date
+          let endDate: Date | null = null;
+          
+          if (event.end instanceof Date) {
+            endDate = event.end;
+          } else if (event.end && typeof event.end === 'object' && 'toJSDate' in event.end && typeof event.end.toJSDate === 'function') {
+            endDate = event.end.toJSDate();
+          }
+          
+          // If no end date is provided, derive from start date
+          if (!endDate) {
             endDate = new Date(startDate);
             if (allDay) {
+              // For all-day events, set end to next day
               endDate.setDate(endDate.getDate() + 1);
             } else {
               // For timed events, set end to 1 hour after start
