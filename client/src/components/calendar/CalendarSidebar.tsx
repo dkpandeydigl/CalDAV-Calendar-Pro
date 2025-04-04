@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatFullDate } from '@/lib/date-utils';
 import { useServerConnection } from '@/hooks/useServerConnection';
 import { CalendarIcon, Edit, MoreVertical, Share2, Trash2 } from 'lucide-react';
+import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 import {
   Popover,
   PopoverContent,
@@ -35,7 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useSharedCalendars } from '@/hooks/useSharedCalendars';
+
 import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
@@ -58,7 +59,14 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
   const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
-  const { sharedCalendars, toggleCalendarVisibility } = useSharedCalendars();
+  const { 
+    sharedCalendars, 
+    toggleCalendarVisibility, 
+    unshareCalendar,
+    isUnsharing, 
+    bulkUnshareCalendars, 
+    isBulkUnsharing 
+  } = useSharedCalendars();
   const { toast } = useToast();
   
   // State for adding a new calendar
@@ -86,7 +94,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   // Bulk unshare state
   const [isBulkUnshareDialogOpen, setIsBulkUnshareDialogOpen] = useState(false);
   const [bulkUnshareEmail, setBulkUnshareEmail] = useState('');
-  const [bulkUnshareCalendars, setBulkUnshareCalendars] = useState<Calendar[]>([]);
+  const [calendarsToUnshare, setCalendarsToUnshare] = useState<Calendar[]>([]);
 
   const timezones = getTimezones();
 
@@ -205,85 +213,35 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   const handleUnshareCalendar = () => {
     if (!unsharingCalendar) return;
     
-    // Build URL with sync option if calendar has URL
-    const apiUrl = unsharingCalendar.url 
-      ? `/api/calendars/shares/${unsharingCalendar.id}?syncWithServer=true` 
-      : `/api/calendars/shares/${unsharingCalendar.id}`;
+    // Use our new unshare mutation that updates the UI immediately
+    toggleCalendarVisibility(unsharingCalendar.id, false); // Disable it first for visual feedback
+    unshareCalendar(unsharingCalendar.id);
     
-    // Call API to remove calendar sharing
-    fetch(apiUrl, {
-      method: 'DELETE',
-    }).then(() => {
-      // Refresh shared calendars
-      queryClient.invalidateQueries({
-        queryKey: ['/api/shared-calendars']
-      });
-      toast({
-        title: "Calendar unshared",
-        description: `You no longer have access to "${unsharingCalendar.name}"`,
-      });
-      setIsUnshareDialogOpen(false);
-      setUnsharingCalendar(null);
-    }).catch(error => {
-      console.error('Error unsharing calendar:', error);
-      toast({
-        title: "Error",
-        description: "Failed to unshare calendar. Please try again.",
-        variant: "destructive"
-      });
-      setIsUnshareDialogOpen(false);
-      setUnsharingCalendar(null);
-    });
+    // Close the dialog
+    setIsUnshareDialogOpen(false);
+    setUnsharingCalendar(null);
   };
   
   // Open bulk unshare dialog
   const handleOpenBulkUnshareDialog = (ownerEmail: string, calendars: Calendar[]) => {
     setBulkUnshareEmail(ownerEmail);
-    setBulkUnshareCalendars(calendars);
+    setCalendarsToUnshare(calendars);
     setIsBulkUnshareDialogOpen(true);
   };
   
   // Handle bulk unshare
   const handleBulkUnshare = () => {
-    if (!bulkUnshareCalendars.length) return;
+    if (!calendarsToUnshare.length) return;
     
-    // Create an array of promises for each unshare operation
-    const unsharePromises = bulkUnshareCalendars.map(calendar => {
-      // Build URL with sync option if calendar has URL
-      const apiUrl = calendar.url 
-        ? `/api/calendars/shares/${calendar.id}?syncWithServer=true` 
-        : `/api/calendars/shares/${calendar.id}`;
-      
-      // Return the fetch promise
-      return fetch(apiUrl, { method: 'DELETE' });
-    });
+    // Use our bulk unshare mutation that updates the UI immediately
+    // Cast to SharedCalendar[] since we're passing the calendars to the mutation
+    calendarsToUnshare.forEach(cal => toggleCalendarVisibility(cal.id, false)); // Disable all first for visual feedback
+    bulkUnshareCalendars(calendarsToUnshare as SharedCalendar[]);
     
-    // Execute all unshare operations and wait for all to complete
-    Promise.all(unsharePromises)
-      .then(() => {
-        // Refresh shared calendars
-        queryClient.invalidateQueries({
-          queryKey: ['/api/shared-calendars']
-        });
-        toast({
-          title: "Calendars unshared",
-          description: `You no longer have access to calendars shared by ${bulkUnshareEmail}`,
-        });
-        setIsBulkUnshareDialogOpen(false);
-        setBulkUnshareCalendars([]);
-        setBulkUnshareEmail('');
-      })
-      .catch(error => {
-        console.error('Error unsharing calendars:', error);
-        toast({
-          title: "Error",
-          description: "Failed to unshare all calendars. Please try again.",
-          variant: "destructive"
-        });
-        setIsBulkUnshareDialogOpen(false);
-        setBulkUnshareCalendars([]);
-        setBulkUnshareEmail('');
-      });
+    // Close the dialog and reset state
+    setIsBulkUnshareDialogOpen(false);
+    setCalendarsToUnshare([]);
+    setBulkUnshareEmail('');
   };
 
   return (
@@ -673,7 +631,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
             <AlertDialogTitle>Unshare All Calendars</AlertDialogTitle>
             <AlertDialogDescription>
               Remove all calendars shared by {bulkUnshareEmail}? 
-              This will remove {bulkUnshareCalendars.length} calendar{bulkUnshareCalendars.length !== 1 ? 's' : ''} from your account.
+              This will remove {calendarsToUnshare.length} calendar{calendarsToUnshare.length !== 1 ? 's' : ''} from your account.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
