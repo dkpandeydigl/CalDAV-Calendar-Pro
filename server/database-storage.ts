@@ -235,6 +235,17 @@ export class DatabaseStorage implements IStorage {
     }
   }
   
+  async getAllCalendarSharings(): Promise<CalendarSharing[]> {
+    try {
+      const allSharingRecords = await db.select().from(calendarSharing);
+      console.log(`Fetched ${allSharingRecords.length} total calendar sharing records from database`);
+      return allSharingRecords;
+    } catch (error) {
+      console.error("Error fetching all calendar sharing records:", error);
+      return [];
+    }
+  }
+  
   async getSharedCalendars(userId: number): Promise<Calendar[]> {
     try {
       // Get the user

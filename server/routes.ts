@@ -1614,16 +1614,8 @@ END:VCALENDAR`
         return res.json([]);
       }
       
-      // For each calendar, get the sharing record to determine permissions
-      const calendarIds = sharedCalendars.map(cal => cal.id);
-      let allSharingRecords: any[] = [];
-      
-      // Get all sharing records
-      for (const calendarId of calendarIds) {
-        const sharingRecords = await storage.getCalendarSharing(calendarId);
-        allSharingRecords = [...allSharingRecords, ...sharingRecords];
-      }
-      
+      // Get all sharing records in one call for better performance
+      const allSharingRecords = await storage.getAllCalendarSharings();
       console.log(`Found ${allSharingRecords.length} total sharing records`);
       
       // Match sharing records with the current user using the same flexible matching

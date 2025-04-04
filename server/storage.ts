@@ -30,6 +30,7 @@ export interface IStorage {
   
   // Calendar sharing methods
   getCalendarSharing(calendarId: number): Promise<CalendarSharing[]>;
+  getAllCalendarSharings(): Promise<CalendarSharing[]>; // Get all sharing records
   getSharedCalendars(userId: number): Promise<Calendar[]>; // Calendars shared with this user
   shareCalendar(sharing: InsertCalendarSharing): Promise<CalendarSharing>;
   updateCalendarSharing(id: number, sharing: Partial<CalendarSharing>): Promise<CalendarSharing | undefined>;
@@ -288,6 +289,12 @@ export class MemStorage implements IStorage {
     return Array.from(this.calendarSharingMap.values()).filter(
       (sharing) => sharing.calendarId === calendarId
     );
+  }
+  
+  async getAllCalendarSharings(): Promise<CalendarSharing[]> {
+    const allSharings = Array.from(this.calendarSharingMap.values());
+    console.log(`Fetched ${allSharings.length} total calendar sharing records from memory storage`);
+    return allSharings;
   }
   
   async getSharedCalendars(userId: number): Promise<Calendar[]> {
