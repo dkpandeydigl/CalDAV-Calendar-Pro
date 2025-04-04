@@ -1664,8 +1664,29 @@ END:VCALENDAR`
       const calendarWithPermissions = await Promise.all(calendarWithPermissionsPromises);
       
       // Important: Double-check that we never include calendars owned by the current user
+      // We need to filter by both user ID AND ownerEmail to handle the case where a user's calendar
+      // is shared with themselves or where owner email matches current user email
       const filteredCalendars = calendarWithPermissions.filter(calendar => {
-        return calendar.userId !== userId;
+        // Don't show calendars owned by the current user by ID
+        if (calendar.userId === userId) {
+          console.log(`Filtering out calendar ${calendar.id} (${calendar.name}) - owned by current user ID: ${userId}`);
+          return false;
+        }
+        
+        // Don't show calendars where the owner email matches current user's email
+        if (req.user!.email && calendar.ownerEmail === req.user!.email) {
+          console.log(`Filtering out calendar ${calendar.id} (${calendar.name}) - owner email (${calendar.ownerEmail}) matches current user email`);
+          return false;
+        }
+        
+        // Don't show calendars where the owner email matches current user's username
+        // This is important since in our app, username is sometimes used as email
+        if (calendar.ownerEmail === req.user!.username) {
+          console.log(`Filtering out calendar ${calendar.id} (${calendar.name}) - owner email (${calendar.ownerEmail}) matches current user username`);
+          return false;
+        }
+        
+        return true;
       });
       
       if (filteredCalendars.length !== calendarWithPermissions.length) {
