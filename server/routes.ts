@@ -48,61 +48,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requiredPermission: 'view' | 'edit' = 'edit',
     req: Request
   ): Promise<{ permitted: boolean; message?: string }> {
+    // Get the user email and username from the request for strict checking
+    const userEmail = (req.user as any)?.email;
+    const userUsername = (req.user as any)?.username;
+    
+    console.log(`STRICT PERMISSION CHECK: User ${userId} (${userEmail || userUsername}) requesting ${requiredPermission} access to calendar ${calendarId}`);
+    
     // Get the calendar
     const calendar = await storage.getCalendar(calendarId);
     if (!calendar) {
+      console.log(`STRICT PERMISSION CHECK: Calendar ${calendarId} not found`);
       return { permitted: false, message: "Calendar not found" };
     }
     
     // Allow if user is the owner of the calendar
     const isOwner = calendar.userId === userId;
     if (isOwner) {
+      console.log(`STRICT PERMISSION CHECK: User ${userId} is the owner of calendar ${calendarId} - full permission granted`);
       return { permitted: true };
     }
     
-    // If not owner, check if calendar is shared with appropriate permissions
-    const sharedCalendars = await storage.getSharedCalendars(userId);
-    const isShared = sharedCalendars.some(c => c.id === calendar.id);
+    // User is not the owner, so we need to check sharing permissions
+    console.log(`STRICT PERMISSION CHECK: User ${userId} is NOT the owner of calendar ${calendarId}. Performing strict permission check...`);
+      
+    // STRICT SECURITY: Get ALL sharing records to find only exact matches for this user
+    const allSharingRecords = await storage.getAllCalendarSharings();
     
-    if (!isShared) {
+    // Filter for sharing records that match this specific calendar and user EXACTLY
+    const userSharingRecords = allSharingRecords.filter(record => {
+      // First verify this is the correct calendar
+      if (record.calendarId !== calendarId) {
+        return false;
+      }
+      
+      // Now check for exact user matches using multiple identifiers
+      
+      // 1. Exact user ID match (strongest check)
+      if (record.sharedWithUserId === userId) {
+        console.log(`STRICT PERMISSION CHECK: Found sharing record by exact user ID ${userId} for calendar ${calendarId}`);
+        return true;
+      }
+      
+      // 2. Exact email match
+      if (userEmail && record.sharedWithEmail === userEmail) {
+        console.log(`STRICT PERMISSION CHECK: Found sharing record by exact email ${userEmail} for calendar ${calendarId}`);
+        return true;
+      }
+      
+      // 3. Username as email match (only if username includes @)
+      if (userUsername && userUsername.includes('@') && record.sharedWithEmail === userUsername) {
+        console.log(`STRICT PERMISSION CHECK: Found sharing record by username-as-email ${userUsername} for calendar ${calendarId}`);
+        return true;
+      }
+      
+      return false;
+    });
+    
+    // If no sharing records found, permission is denied
+    if (userSharingRecords.length === 0) {
+      console.log(`STRICT PERMISSION CHECK: No exact sharing records found for user ${userId} and calendar ${calendarId}`);
       return { 
         permitted: false, 
         message: `You don't have permission to access this calendar` 
       };
     }
     
-    // Check permission level by getting the calendar sharing record
-    const sharingRecords = await storage.getCalendarSharing(calendar.id);
+    console.log(`STRICT PERMISSION CHECK: Found ${userSharingRecords.length} exact sharing records for user ${userId} and calendar ${calendarId}`);
     
-    // Find the sharing record for this user
-    const userSharing = sharingRecords.find(share => {
-      return (
-        (share.sharedWithUserId === userId) || 
-        (share.sharedWithEmail && ((req.user as any).email === share.sharedWithEmail || 
-                                   (req.user as any).username === share.sharedWithEmail))
-      );
-    });
-    
-    if (!userSharing) {
-      return { 
-        permitted: false, 
-        message: "Sharing configuration not found" 
-      };
+    // Find the most permissive sharing level (edit trumps view)
+    let highestPermission: 'view' | 'edit' = 'view';
+    for (const record of userSharingRecords) {
+      if (record.permissionLevel === 'edit') {
+        highestPermission = 'edit';
+        break; // We found edit permission, no need to check more
+      }
     }
+    
+    console.log(`STRICT PERMISSION CHECK: User ${userId} has highest permission level "${highestPermission}" for calendar ${calendarId}`);
     
     // For view permission, both 'view' and 'edit' sharing is sufficient
     if (requiredPermission === 'view') {
+      console.log(`STRICT PERMISSION CHECK: User ${userId} GRANTED view access to calendar ${calendarId}`);
       return { permitted: true };
     }
     
     // For edit permission, only 'edit' sharing is sufficient
-    if (userSharing.permissionLevel !== 'edit') {
+    if (highestPermission !== 'edit') {
+      console.log(`STRICT PERMISSION CHECK: User ${userId} DENIED edit access to calendar ${calendarId} (has ${highestPermission} permission)`);
       return { 
         permitted: false, 
         message: "You have view-only access to this calendar" 
       };
     }
     
+    console.log(`STRICT PERMISSION CHECK: User ${userId} GRANTED edit access to calendar ${calendarId}`);
     return { permitted: true };
   }
 
@@ -1604,67 +1643,124 @@ END:VCALENDAR`
   app.get("/api/shared-calendars", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
-      console.log(`SECURE API: Getting shared calendars for user ID ${userId} (${req.user!.username})`);
+      console.log(`STRICT SECURITY CHECK: Getting shared calendars for user ID ${userId} (${req.user!.username})`);
       
-      // SECURITY: Use our strict matching function that only returns calendars
-      // that are explicitly shared with this user through proper sharing records
-      const sharedCalendars = await storage.getSharedCalendars(userId);
+      // FIRST SECURITY CHECK: Get all exact calendar sharing records for this user
+      // We need the exact sharing records to confirm the user has explicit access
+      const userEmail = req.user!.email;
+      const userUsername = req.user!.username;
       
-      console.log(`SECURE API: Storage layer returned ${sharedCalendars.length} shared calendars for user ${req.user!.username}`);
+      console.log(`STRICT SECURITY CHECK: User details - ID: ${userId}, Email: ${userEmail || 'none'}, Username: ${userUsername}`);
       
-      // If no shared calendars found, return early with empty array
-      if (sharedCalendars.length === 0) {
-        console.log(`SECURE API: No shared calendars found for user ${req.user!.username}`);
+      // Get all sharing records to determine exactly what calendars the user has access to
+      const allSharingRecords = await storage.getAllCalendarSharings();
+      
+      // CRITICAL SECURITY: Filter sharing records to ONLY include exact matches for this user
+      // This prevents the bug where users can see calendars not shared with them
+      const strictUserSharingRecords = allSharingRecords.filter(record => {
+        // Exact user ID match (strongest)
+        if (record.sharedWithUserId === userId) {
+          console.log(`STRICT SECURITY MATCH: Found calendar ${record.calendarId} shared with user ID ${userId}`);
+          return true;
+        }
+        
+        // Exact email match
+        if (userEmail && record.sharedWithEmail === userEmail) {
+          console.log(`STRICT SECURITY MATCH: Found calendar ${record.calendarId} shared with user email ${userEmail}`);
+          return true;
+        }
+        
+        // Username as email match (only if username includes @)
+        if (userUsername && userUsername.includes('@') && record.sharedWithEmail === userUsername) {
+          console.log(`STRICT SECURITY MATCH: Found calendar ${record.calendarId} shared with username ${userUsername} as email`);
+          return true;
+        }
+        
+        return false;
+      });
+      
+      // If no sharing records found for this user, return empty array immediately
+      if (strictUserSharingRecords.length === 0) {
+        console.log(`STRICT SECURITY CHECK: No calendar sharing records found for user ${userId} (${userUsername})`);
         return res.json([]);
       }
       
-      // Add owner information to each calendar for the UI
-      const enhancedCalendarsPromises = sharedCalendars.map(async calendar => {
-        // Fetch the calendar owner's information - this is important for the UI grouping
+      console.log(`STRICT SECURITY CHECK: Found ${strictUserSharingRecords.length} explicit sharing records for user ${userId} (${userUsername})`);
+      
+      // Get the calendar IDs that this user has been explicitly given access to
+      const allowedCalendarIds = strictUserSharingRecords.map(record => record.calendarId);
+      console.log(`STRICT SECURITY CHECK: Allowed calendar IDs: ${allowedCalendarIds.join(', ')}`);
+      
+      // Create a map of calendar permissions for quick lookup
+      const calendarPermissions = new Map();
+      strictUserSharingRecords.forEach(record => {
+        calendarPermissions.set(record.calendarId, record.permissionLevel);
+      });
+      
+      // SECOND SECURITY CHECK: Get the actual calendars, but ONLY those explicitly shared with this user
+      // and filter out any calendars owned by this user (should never be shared with yourself)
+      // Use the storage layer instead of direct database access for type safety
+      const allCalendars = await storage.getCalendars(0); // Getting all calendars
+      
+      // Apply our strict security filters:
+      // 1. Calendar ID must be in our explicit sharing records
+      // 2. Calendar must NOT be owned by the current user
+      const strictlyFilteredCalendars = allCalendars.filter((calendar) => {
+        // Calendar must be in our list of explicitly shared calendars
+        const isExplicitlyShared = allowedCalendarIds.includes(calendar.id);
+        
+        // Calendar must not be owned by current user
+        const isNotOwnedByUser = calendar.userId !== userId;
+        
+        // Debug logging
+        if (isExplicitlyShared && !isNotOwnedByUser) {
+          console.log(`STRICT SECURITY CHECK: Filtering out calendar ${calendar.id} (${calendar.name}) - owned by current user`);
+        }
+        
+        // Both conditions must be true
+        return isExplicitlyShared && isNotOwnedByUser;
+      });
+      
+      console.log(`STRICT SECURITY CHECK: After strict filtering, found ${strictlyFilteredCalendars.length} shared calendars`);
+      
+      // If no calendars passed our strict filter, return empty array
+      if (strictlyFilteredCalendars.length === 0) {
+        console.log(`STRICT SECURITY CHECK: No calendars passed strict security filters for user ${userId} (${userUsername})`);
+        return res.json([]);
+      }
+      
+      // Add owner info and permission details to each calendar
+      const enhancedCalendarsPromises = strictlyFilteredCalendars.map(async calendar => {
+        // Get owner info
         const owner = await storage.getUser(calendar.userId);
         const ownerEmail = owner?.email || owner?.username || 'Unknown';
+        
+        // Get permission level from our map
+        const permission = calendarPermissions.get(calendar.id) || 'view';
         
         // Make sure enabled flag is present (default to true)
         const enabled = calendar.enabled !== undefined ? calendar.enabled : true;
         
         // Log each calendar we're including
-        console.log(`SECURE API: Including shared calendar: ${calendar.id} (${calendar.name}) owned by ${ownerEmail}, permission: ${calendar.permission || 'view'}`);
+        console.log(`STRICT SECURITY CHECK: Including calendar ${calendar.id} (${calendar.name}) owned by user ${calendar.userId} (${ownerEmail}), permission: ${permission}`);
         
-        // Return the enhanced calendar object with owner info
         return {
           ...calendar,
-          enabled,  
+          enabled,
           isShared: true,
-          ownerEmail
+          ownerEmail,
+          permission
         };
       });
       
       // Resolve all promises
       const enhancedCalendars = await Promise.all(enhancedCalendarsPromises);
       
-      // SECURITY: Final check to NEVER include calendars owned by the current user
-      const finalCalendars = enhancedCalendars.filter(calendar => {
-        // This should never be needed since our storage layer already filters,
-        // but we're being extra cautious with security
-        if (calendar.userId === userId) {
-          console.error(`SECURITY WARNING: Calendar ${calendar.id} (${calendar.name}) is owned by current user ${userId} but was incorrectly returned as shared. This should not happen!`);
-          return false;
-        }
-        return true;
-      });
+      // Final debug log
+      console.log(`STRICT SECURITY CHECK: Sending ${enhancedCalendars.length} shared calendars to user ${userId} (${userUsername})`);
       
-      // Debug: Log the final list of shared calendars being sent to the client
-      console.log('SECURE API: Sending shared calendars to client:', 
-        JSON.stringify(finalCalendars.map(cal => ({
-          id: cal.id, 
-          name: cal.name,
-          userId: cal.userId,
-          ownerEmail: cal.ownerEmail,
-          permission: cal.permission || 'view'
-        })), null, 2)
-      );
-      
-      res.json(finalCalendars);
+      // Send to client
+      res.json(enhancedCalendars);
     } catch (err) {
       console.error("Error getting shared calendars:", err);
       res.status(500).json({ message: "Failed to get shared calendars" });
