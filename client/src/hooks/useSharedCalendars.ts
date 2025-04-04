@@ -16,6 +16,15 @@ export const useSharedCalendars = () => {
   
   const sharedCalendarsQuery = useQuery<SharedCalendar[]>({
     queryKey: ['/api/shared-calendars'],
+    onSuccess: (data) => {
+      console.log("Shared calendars loaded:", data?.length || 0, "calendars");
+      if (data?.length) {
+        console.log("First shared calendar:", data[0]);
+      }
+    },
+    onError: (error) => {
+      console.error("Error loading shared calendars:", error);
+    }
   });
 
   // Toggle the visibility (enabled status) of a shared calendar locally

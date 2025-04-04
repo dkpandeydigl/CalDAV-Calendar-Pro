@@ -65,8 +65,15 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
     unshareCalendar,
     isUnsharing, 
     bulkUnshareCalendars, 
-    isBulkUnsharing 
+    isBulkUnsharing,
+    isLoading: isLoadingSharedCalendars,
+    error: sharedCalendarsError
   } = useSharedCalendars();
+  
+  // Debug logging
+  console.log("CalendarSidebar: Shared calendars count:", sharedCalendars.length);
+  console.log("CalendarSidebar: Is loading shared calendars:", isLoadingSharedCalendars);
+  console.log("CalendarSidebar: Shared calendars error:", sharedCalendarsError);
   const { toast } = useToast();
   
   // State for adding a new calendar
