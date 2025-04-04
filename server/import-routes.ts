@@ -17,7 +17,7 @@ declare module 'node-ical' {
     location: string;
   }
   
-  export function parseICS(icsData: string): Promise<Record<string, any>>;
+  export function parseICS(icsData: string): Record<string, any>;
 }
 
 // Set up multer for file uploads
@@ -71,7 +71,7 @@ export function registerImportRoutes(app: Express) {
       const fileContent = req.file.buffer.toString();
       
       // Parse using node-ical
-      const parsedCal = await ical.parseICS(fileContent);
+      const parsedCal = ical.parseICS(fileContent);
       
       // Extract events
       const events: ICSEvent[] = [];
