@@ -1737,9 +1737,34 @@ END:VCALENDAR`
       
       // Add owner info and permission details to each calendar
       const enhancedCalendarsPromises = strictlyFilteredCalendars.map(async (calendar: any) => {
-        // Get owner info
+        // CRITICAL FIX: Always get the real owner info from the database
+        // This ensures we never display incorrect owner information 
         const owner = await storage.getUser(calendar.userId);
-        const ownerEmail = owner?.email || owner?.username || 'Unknown';
+        
+        // Use the owner's actual email or username, never fallback to a default domain or test value
+        let ownerEmail = 'Unknown';
+        if (owner && owner.email) {
+          ownerEmail = owner.email;
+        } else if (owner && owner.username) {
+          ownerEmail = owner.username;
+        }
+        
+        // Double-check if the owner email has a valid format
+        if (!ownerEmail.includes('@')) {
+          // If we somehow still have invalid data, get the email from the URL if available
+          if (calendar.url && calendar.url.includes('@')) {
+            const urlMatch = calendar.url.match(/\/([^/]+%40[^/]+|[^/]+@[^/]+)\//i);
+            if (urlMatch && urlMatch[1]) {
+              let extractedEmail = urlMatch[1];
+              // Replace URL-encoded @ with regular @
+              if (extractedEmail.includes('%40')) {
+                extractedEmail = extractedEmail.replace(/%40/g, '@');
+              }
+              console.log(`Extracted email from URL: ${extractedEmail}`);
+              ownerEmail = extractedEmail;
+            }
+          }
+        }
         
         // Get permission level from our map
         const permission = calendarPermissions.get(calendar.id) || 'view';

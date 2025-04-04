@@ -323,18 +323,49 @@ export class DatabaseStorage implements IStorage {
       );
       
       // Add permission info to calendars
-      const calendarsWithPermissions = sharedCalendars.map(calendar => {
+      // We need to ensure that each calendar has accurate owner information
+      const enhancedCalendarsPromises = sharedCalendars.map(async (calendar) => {
         // Additional log for each calendar
         console.log(`STRICT SHARING: Calendar ${calendar.id} (${calendar.name}), owned by user ${calendar.userId}, shared with user ${userId}, permission: ${calendarPermissionMap.get(calendar.id) || 'unknown'}`);
         
+        // CRITICAL FIX: Get accurate owner information for each calendar
+        const owner = await this.getUser(calendar.userId);
+        let ownerEmail = 'Unknown';
+        
+        // Use the actual owner email if available
+        if (owner && owner.email) {
+          ownerEmail = owner.email;
+        } else if (owner && owner.username) {
+          // Fall back to username if it looks like an email
+          ownerEmail = owner.username;
+        } else if (calendar.url && calendar.url.includes('@')) {
+          // As a last resort, try to extract from the URL
+          const urlMatch = calendar.url.match(/\/([^/]+%40[^/]+|[^/]+@[^/]+)\//i);
+          if (urlMatch && urlMatch[1]) {
+            let extractedEmail = urlMatch[1];
+            // Replace URL-encoded @ with regular @
+            if (extractedEmail.includes('%40')) {
+              extractedEmail = extractedEmail.replace(/%40/g, '@');
+            }
+            console.log(`Extracted email from URL: ${extractedEmail}`);
+            ownerEmail = extractedEmail;
+          }
+        }
+        
+        console.log(`Calendar ${calendar.id} (${calendar.name}) - Owner email: ${ownerEmail}`);
+        
         return {
           ...calendar,
-          permission: calendarPermissionMap.get(calendar.id) || 'view' // Default to view
+          permission: calendarPermissionMap.get(calendar.id) || 'view', // Default to view
+          ownerEmail // Add the accurate owner email
         };
       });
       
+      // Resolve all enhanced calendars
+      const calendarsWithOwnerInfo = await Promise.all(enhancedCalendarsPromises);
+      
       // Final list of shared calendars
-      return calendarsWithPermissions;
+      return calendarsWithOwnerInfo;
     } catch (error) {
       console.error("Error fetching shared calendars:", error);
       return [];
