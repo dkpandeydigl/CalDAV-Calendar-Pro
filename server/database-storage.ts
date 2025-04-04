@@ -214,11 +214,29 @@ export class DatabaseStorage implements IStorage {
   }
   
   async deleteCalendar(id: number): Promise<boolean> {
-    const result = await db.delete(calendars)
-      .where(eq(calendars.id, id))
-      .returning();
-    
-    return result.length > 0;
+    try {
+      // First, delete all events in this calendar
+      console.log(`Deleting all events for calendar ID ${id} before deleting the calendar`);
+      await this.deleteEventsByCalendarId(id);
+      
+      // Delete all sharing records for this calendar
+      console.log(`Deleting all sharing records for calendar ID ${id}`);
+      const sharingRecords = await this.getCalendarSharing(id);
+      for (const record of sharingRecords) {
+        await this.removeCalendarSharing(record.id);
+      }
+      
+      // Finally, delete the calendar itself
+      console.log(`Deleting calendar with ID ${id}`);
+      const result = await db.delete(calendars)
+        .where(eq(calendars.id, id))
+        .returning();
+      
+      return result.length > 0;
+    } catch (error) {
+      console.error(`Error during calendar deletion process for ID ${id}:`, error);
+      return false;
+    }
   }
   
   // Calendar sharing methods
