@@ -358,16 +358,16 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                   .map(calendar => (
                     <div 
                       key={calendar.id} 
-                      className="flex items-center space-x-2 py-2 px-2 hover:bg-muted rounded-md cursor-pointer transition-colors"
+                      className="flex items-center hover:bg-muted rounded-md cursor-pointer transition-colors mb-1"
                       onClick={() => toggleCalendarSelection(calendar)}
                     >
                       <Checkbox 
                         id={`calendar-${calendar.id}`}
                         checked={selectedCalendars.some(c => c.calendar.id === calendar.id)}
                         onCheckedChange={() => toggleCalendarSelection(calendar)}
-                        className="data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                        className="ml-2 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                       />
-                      <div className="flex items-center flex-1">
+                      <div className="flex items-center flex-1 p-1.5 pl-2">
                         <span 
                           className="w-4 h-4 rounded-full mr-2 flex-shrink-0 border border-gray-200"
                           style={{ backgroundColor: calendar.color }}
@@ -502,16 +502,16 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                 )}
                 
                 {!loading && shares.length > 0 && (
-                  <div className="space-y-2">
+                  <div>
                     {shares.map(share => (
-                      <div key={share.id} className="flex items-center justify-between p-2 bg-secondary/30 rounded-md">
+                      <div key={share.id} className="flex items-center justify-between p-2 bg-secondary/20 rounded-md mb-1">
                         <div className="flex flex-col">
                           <span className="text-sm font-medium">{share.username || share.email}</span>
                           <Badge variant={share.permission === 'write' ? 'default' : 'secondary'} className="mt-1 w-fit">
                             {share.permission === 'write' ? 'Can edit' : 'View only'}
                           </Badge>
                         </div>
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center gap-1">
                           <Select
                             value={share.permission}
                             onValueChange={(value: 'read' | 'write') => 
