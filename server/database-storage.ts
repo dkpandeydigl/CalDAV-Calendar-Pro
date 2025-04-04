@@ -257,23 +257,33 @@ export class DatabaseStorage implements IStorage {
       
       console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'none'}`);
       
-      // Important: We only want to show calendars that were explicitly shared with this user
-      // We need to enforce strict matching to avoid showing calendars to unintended users
+      // SECURITY FIX: We need to ensure strict matching to avoid showing calendars to unintended users
+      // We will only show calendars if:
+      // 1. The calendar was shared directly with the user's ID (exact match)
+      // 2. The calendar was shared with the user's email address (exact match, only if email is set)
+      // 3. The calendar was shared with the username (only if we can verify it's the exact user)
       
-      // First approach: Direct queries for exact matches with user ID or email
-      // This prevents showing calendars to users they weren't shared with
+      // Build a secure OR condition based on the user's data
+      const matchConditions = [];
+      
+      // User ID is the strongest match and is always used when available
+      matchConditions.push(eq(calendarSharing.sharedWithUserId, userId));
+      
+      // Email match only used if the user has a verified email
+      if (user.email && user.email.trim() !== '') {
+        matchConditions.push(eq(calendarSharing.sharedWithEmail, user.email));
+      }
+      
+      // Username as email - ONLY if it contains @ symbol to ensure it's an actual email
+      // This prevents users with simple usernames from accessing calendars not meant for them
+      if (user.username && user.username.includes('@')) {
+        matchConditions.push(eq(calendarSharing.sharedWithEmail, user.username));
+      }
+      
+      // Fetch sharing records using the secure conditions
       const sharingRecords = await db.select()
         .from(calendarSharing)
-        .where(
-          or(
-            // Match by user ID (strongest match)
-            eq(calendarSharing.sharedWithUserId, userId),
-            // Match by exact email (next strongest match)
-            user.email ? eq(calendarSharing.sharedWithEmail, user.email) : sql`FALSE`,
-            // Match by username as email (fallback match)
-            eq(calendarSharing.sharedWithEmail, user.username)
-          )
-        );
+        .where(or(...matchConditions));
       
       console.log(`Found ${sharingRecords.length} direct sharing records for user ${user.username}`);
       
@@ -339,10 +349,30 @@ export class DatabaseStorage implements IStorage {
   
   async shareCalendar(sharing: InsertCalendarSharing): Promise<CalendarSharing> {
     try {
-      // First, check if a sharing already exists for this calendar and email/user
-      let existingSharing;
+      // SECURITY IMPROVEMENT: Try to map an email to a user ID when possible
+      if (sharing.sharedWithEmail && !sharing.sharedWithUserId && sharing.sharedWithEmail.includes('@')) {
+        // Find users with this email address
+        const userResults = await db.select()
+          .from(users)
+          .where(
+            or(
+              eq(users.email, sharing.sharedWithEmail),
+              eq(users.username, sharing.sharedWithEmail)
+            )
+          );
+        
+        // Update sharing with user ID if found
+        if (userResults.length > 0) {
+          console.log(`Enhancing security: Found user ID ${userResults[0].id} for email ${sharing.sharedWithEmail}`);
+          sharing.sharedWithUserId = userResults[0].id;
+        }
+      }
+      
+      // Check if sharing already exists
+      let existingSharing: CalendarSharing[] = [];
       
       if (sharing.sharedWithUserId) {
+        // Check by user ID (preferred)
         existingSharing = await db.select()
           .from(calendarSharing)
           .where(
@@ -351,7 +381,10 @@ export class DatabaseStorage implements IStorage {
               eq(calendarSharing.sharedWithUserId, sharing.sharedWithUserId)
             )
           );
-      } else if (sharing.sharedWithEmail) {
+      } 
+      
+      if (existingSharing.length === 0 && sharing.sharedWithEmail) {
+        // Check by email if no match by user ID
         existingSharing = await db.select()
           .from(calendarSharing)
           .where(
@@ -362,23 +395,33 @@ export class DatabaseStorage implements IStorage {
           );
       }
       
-      // If sharing already exists, update the permissions
-      if (existingSharing && existingSharing.length > 0) {
+      // Update existing sharing or create new
+      if (existingSharing.length > 0) {
         const sharingId = existingSharing[0].id;
-        return await this.updateCalendarSharing(sharingId, { permissionLevel: sharing.permissionLevel }) 
-          || existingSharing[0];
-      }
-      
-      // Otherwise, create a new sharing record
-      const result = await db.insert(calendarSharing)
-        .values({
-          ...sharing,
-          createdAt: new Date(),
+        const updateData: Partial<CalendarSharing> = { 
+          permissionLevel: sharing.permissionLevel,
           lastModified: new Date()
-        })
-        .returning();
-      
-      return result[0];
+        };
+        
+        // Also update user ID if we found one
+        if (sharing.sharedWithUserId && !existingSharing[0].sharedWithUserId) {
+          updateData.sharedWithUserId = sharing.sharedWithUserId;
+        }
+        
+        const updated = await this.updateCalendarSharing(sharingId, updateData);
+        return updated || existingSharing[0];
+      } else {
+        // Create new sharing
+        const result = await db.insert(calendarSharing)
+          .values({
+            ...sharing,
+            createdAt: new Date(),
+            lastModified: new Date()
+          })
+          .returning();
+        
+        return result[0];
+      }
     } catch (error: any) {
       console.error("Error sharing calendar:", error);
       throw new Error(`Failed to share calendar: ${error?.message || 'Unknown error'}`);
