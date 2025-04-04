@@ -141,13 +141,27 @@ export function registerImportRoutes(app: Express) {
       const userId = (req.user as User).id;
       const { calendarId, events } = req.body;
       
+      console.log("Import events request:", { userId, calendarId, eventCount: events?.length || 0 });
+      
       if (!calendarId || !Array.isArray(events)) {
+        console.log("Invalid request. Missing calendarId or events:", { calendarId, eventsIsArray: Array.isArray(events) });
         return res.status(400).json({ message: "Invalid request. Missing calendarId or events" });
       }
+      
+      if (events.length === 0) {
+        console.log("No events to import");
+        return res.status(400).json({ message: "No events to import" });
+      }
+      
+      // Validate the first event to see if structure is correct
+      console.log("First event sample:", JSON.stringify(events[0]));
       
       // Check if user has permission to add events to this calendar
       const userCalendars = await storage.getCalendars(userId);
       const sharedCalendars = await storage.getSharedCalendars(userId);
+      
+      console.log("User calendars:", userCalendars.map(c => ({ id: c.id, name: c.name })));
+      console.log("Shared calendars:", sharedCalendars.map(c => ({ id: c.id, name: c.name })));
       
       // Find the target calendar and check permissions
       const targetCalendar = [...userCalendars, ...sharedCalendars].find(
@@ -155,8 +169,11 @@ export function registerImportRoutes(app: Express) {
       );
       
       if (!targetCalendar) {
+        console.log("Calendar not found or no access:", calendarId);
         return res.status(403).json({ message: "You don't have access to this calendar" });
       }
+      
+      console.log("Target calendar:", { id: targetCalendar.id, name: targetCalendar.name });
       
       // For shared calendars, check if user has edit permission
       if (targetCalendar.userId !== userId) {
@@ -167,6 +184,10 @@ export function registerImportRoutes(app: Express) {
         );
         
         if (!shareRecord || shareRecord.permissionLevel !== "edit") {
+          console.log("No edit permission for shared calendar:", { 
+            calendarId: targetCalendar.id, 
+            shareRecord: shareRecord ? JSON.stringify(shareRecord) : 'none'
+          });
           return res.status(403).json({ 
             message: "You don't have permission to add events to this shared calendar" 
           });
@@ -197,11 +218,19 @@ export function registerImportRoutes(app: Express) {
             rawData: {}
           };
           
+          console.log("Attempting to import event:", { 
+            uid: newEvent.uid,
+            title: newEvent.title,
+            startDate: newEvent.startDate,
+            endDate: newEvent.endDate
+          });
+          
           // Check if an event with this UID already exists
           const existingEvent = await storage.getEventByUID(newEvent.uid);
           
           if (existingEvent) {
             // Skip this event and record the error
+            console.log("Event already exists:", { uid: newEvent.uid, title: newEvent.title });
             errors.push(`Event "${newEvent.title}" with UID ${newEvent.uid} already exists`);
             continue;
           }
@@ -209,6 +238,7 @@ export function registerImportRoutes(app: Express) {
           // Save the event
           await storage.createEvent(newEvent);
           importedCount++;
+          console.log("Successfully imported event:", { uid: newEvent.uid, title: newEvent.title });
           
         } catch (eventError) {
           console.error("Error importing event:", eventError);
@@ -217,6 +247,8 @@ export function registerImportRoutes(app: Express) {
       }
       
       // Return the result
+      console.log("Import complete:", { importedCount, totalEvents: events.length, errorCount: errors.length });
+      
       res.json({
         message: `Imported ${importedCount} events`,
         imported: importedCount,
