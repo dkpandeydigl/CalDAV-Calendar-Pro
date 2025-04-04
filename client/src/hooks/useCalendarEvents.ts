@@ -51,6 +51,28 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       // Short delay to ensure UI updates finish before server request
       await new Promise(resolve => setTimeout(resolve, 10));
       
+      // Handle the rawData object that might contain attendees and other information from the advanced form
+      // Make sure rawData is properly serialized if it's present
+      if (newEvent.rawData && typeof newEvent.rawData === 'object') {
+        newEvent = {
+          ...newEvent,
+          rawData: typeof newEvent.rawData === 'string' ? newEvent.rawData : JSON.stringify(newEvent.rawData)
+        };
+      }
+      
+      // Make sure attendees are properly serialized if they're present
+      if (newEvent.attendees && typeof newEvent.attendees === 'object' && !Array.isArray(newEvent.attendees)) {
+        newEvent = {
+          ...newEvent,
+          attendees: JSON.stringify(newEvent.attendees)
+        };
+      } else if (newEvent.attendees && Array.isArray(newEvent.attendees)) {
+        newEvent = {
+          ...newEvent,
+          attendees: JSON.stringify(newEvent.attendees)
+        };
+      }
+      
       console.log("Creating event with data:", newEvent);
       const res = await apiRequest('POST', '/api/events', newEvent);
       return res.json();
@@ -245,6 +267,28 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     mutationFn: async ({ id, data }) => {
       // Short delay to ensure UI updates finish before server request
       await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // Handle the rawData object that might contain attendees and other information from the advanced form
+      // Make sure rawData is properly serialized if it's present
+      if (data.rawData && typeof data.rawData === 'object') {
+        data = {
+          ...data,
+          rawData: typeof data.rawData === 'string' ? data.rawData : JSON.stringify(data.rawData)
+        };
+      }
+      
+      // Make sure attendees are properly serialized if they're present
+      if (data.attendees && typeof data.attendees === 'object' && !Array.isArray(data.attendees)) {
+        data = {
+          ...data,
+          attendees: JSON.stringify(data.attendees)
+        };
+      } else if (data.attendees && Array.isArray(data.attendees)) {
+        data = {
+          ...data,
+          attendees: JSON.stringify(data.attendees)
+        };
+      }
       
       const res = await apiRequest('PUT', `/api/events/${id}`, data);
       return res.json();

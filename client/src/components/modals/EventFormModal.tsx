@@ -230,10 +230,10 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
     };
     
     if (event) {
-      // Update existing event
+      // Update existing event - format it to match the expected updateEvent signature
       updateEvent({
         id: event.id,
-        ...eventData
+        data: eventData
       }, {
         onSuccess: () => {
           toast({
@@ -245,7 +245,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
         onError: onErrorHandler
       });
     } else {
-      // Create new event
+      // Create new event - no change needed for createEvent as it accepts the direct object
       createEvent(eventData, {
         onSuccess: () => {
           toast({
