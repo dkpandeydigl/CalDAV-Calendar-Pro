@@ -13,6 +13,7 @@ import {
   calendars
 } from "@shared/schema";
 import { db } from "./db";
+import { registerExportRoutes } from "./export-routes";
 import { eq, inArray, sql } from "drizzle-orm";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
@@ -282,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Generate Thunderbird-compatible iCalendar data with properties 
   // that improve visibility with various CalDAV clients
   function generateThunderbirdCompatibleICS(
-    event: {
+    calendarNameOrEvent: string | {
       uid: string;
       title: string;
       startDate: Date;
@@ -294,8 +295,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
       busyStatus?: string;
       recurrenceRule?: string;
       allDay?: boolean;
-    }
+    },
+    events?: Array<{
+      uid: string;
+      summary: string;
+      description?: string;
+      location?: string;
+      startDate: Date;
+      endDate: Date;
+      allDay?: boolean;
+      recurring?: boolean;
+      calendarName?: string;
+    }>
   ): string {
+    // Handle multi-calendar export case
+    if (typeof calendarNameOrEvent === 'string' && events) {
+      const calendarName = calendarNameOrEvent;
+      const now = formatICALDate(new Date());
+      
+      let icalContent = 
+        `BEGIN:VCALENDAR\r\n` +
+        `VERSION:2.0\r\n` +
+        `PRODID:-//CalDAV Client//NONSGML v1.0//EN\r\n` +
+        `CALSCALE:GREGORIAN\r\n` +
+        `METHOD:PUBLISH\r\n` +
+        `X-WR-CALNAME:${calendarName}\r\n` +
+        `X-WR-CALDESC:Exported Calendar\r\n`;
+      
+      // Add each event
+      for (const event of events) {
+        const safeUid = event.uid.includes('@') ? event.uid : `${event.uid}@caldavclient.local`;
+        const startDate = formatICALDate(event.startDate);
+        const endDate = formatICALDate(event.endDate);
+        
+        icalContent += 
+          `BEGIN:VEVENT\r\n` +
+          `UID:${safeUid}\r\n` +
+          `DTSTAMP:${now}\r\n` +
+          `DTSTART:${startDate}\r\n` +
+          `DTEND:${endDate}\r\n` +
+          `SUMMARY:${event.summary}\r\n`;
+        
+        if (event.calendarName) {
+          icalContent += `CATEGORIES:${event.calendarName}\r\n`;
+        }
+        
+        if (event.description) {
+          icalContent += `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\r\n`;
+        }
+        
+        if (event.location) {
+          icalContent += `LOCATION:${event.location}\r\n`;
+        }
+        
+        if (event.allDay) {
+          icalContent += `X-MICROSOFT-CDO-ALLDAYEVENT:TRUE\r\n`;
+        }
+        
+        icalContent += `END:VEVENT\r\n`;
+      }
+      
+      icalContent += `END:VCALENDAR`;
+      return icalContent;
+    }
+    
+    // Handle single event case (original implementation)
+    const event = calendarNameOrEvent as {
+      uid: string;
+      title: string;
+      startDate: Date;
+      endDate: Date;
+      description?: string;
+      location?: string;
+      attendees?: string[];
+      resources?: string[];
+      busyStatus?: string;
+      recurrenceRule?: string;
+      allDay?: boolean;
+    };
     // Create a formatted UID that's compatible with Thunderbird
     // We'll use the provided UID, but ensure it has the right format
     const safeUid = event.uid.includes('@') ? event.uid : `${event.uid}@caldavclient.local`;
@@ -4323,6 +4400,9 @@ END:VCALENDAR`;
       res.status(500).json({ message: "Failed to trigger sync" });
     }
   });
+  
+  // Register calendar export routes
+  registerExportRoutes(app);
   
   const httpServer = createServer(app);
   return httpServer;

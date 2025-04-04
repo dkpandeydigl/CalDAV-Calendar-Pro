@@ -10,7 +10,7 @@ import { getTimezones } from '@/lib/date-utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatFullDate } from '@/lib/date-utils';
 import { useServerConnection } from '@/hooks/useServerConnection';
-import { CalendarIcon, Edit, MoreVertical, Share2, Trash2 } from 'lucide-react';
+import { CalendarIcon, Download, Edit, MoreVertical, Share2, Trash2 } from 'lucide-react';
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -289,15 +289,26 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
           <div className="mb-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Calendars</h3>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-6 w-6" 
-                onClick={() => onShareCalendar && onShareCalendar(undefined)}
-                title="Share Multiple Calendars"
-              >
-                <Share2 className="h-3.5 w-3.5" />
-              </Button>
+              <div className="flex gap-1">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6" 
+                  onClick={() => window.dispatchEvent(new CustomEvent('export-calendar'))}
+                  title="Export Calendar"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6" 
+                  onClick={() => onShareCalendar && onShareCalendar(undefined)}
+                  title="Share Multiple Calendars"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
             {calendars.map(calendar => (
               <div className="flex items-center justify-between mb-2" key={calendar.id}>
