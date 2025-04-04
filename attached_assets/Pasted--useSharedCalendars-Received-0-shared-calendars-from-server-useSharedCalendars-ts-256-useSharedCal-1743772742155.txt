@@ -1,0 +1,41 @@
+[useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+CalendarSidebar.tsx:80 CalendarSidebar: Shared calendars count: 0
+CalendarSidebar.tsx:81 CalendarSidebar: Is loading shared calendars: false
+CalendarSidebar.tsx:82 CalendarSidebar: Shared calendars error: null
+CalendarSidebar.tsx:85 CalendarSidebar: Shared calendars data: []
+CalendarSidebar.tsx:97 CalendarSidebar: Grouped calendars by owner: []
+CalendarGrid.tsx:44 Using selected timezone: Asia/Kolkata
+CalendarGrid.tsx:51 Processing multi-day event "from thunderbird" from 2025-04-27T18:00:00.000Z to 2025-04-28T19:00:00.000Z
+CalendarGrid.tsx:71 Event spans these dates: 2025-04-27, 2025-04-28
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+chunk-7K3QJBY3.js?v=57de0546:336 Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+(anonymous) @ chunk-7K3QJBY3.js?v=57de0546:336
+commitHookEffectListMount @ chunk-RPCDYKBN.js?v=57de0546:16915
+commitPassiveMountOnFiber @ chunk-RPCDYKBN.js?v=57de0546:18156
+commitPassiveMountEffects_complete @ chunk-RPCDYKBN.js?v=57de0546:18129
+commitPassiveMountEffects_begin @ chunk-RPCDYKBN.js?v=57de0546:18119
+commitPassiveMountEffects @ chunk-RPCDYKBN.js?v=57de0546:18109
+flushPassiveEffectsImpl @ chunk-RPCDYKBN.js?v=57de0546:19490
+flushPassiveEffects @ chunk-RPCDYKBN.js?v=57de0546:19447
+commitRootImpl @ chunk-RPCDYKBN.js?v=57de0546:19416
+commitRoot @ chunk-RPCDYKBN.js?v=57de0546:19277
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js?v=57de0546:18895
+flushSyncCallbacks @ chunk-RPCDYKBN.js?v=57de0546:9119
+(anonymous) @ chunk-RPCDYKBN.js?v=57de0546:18627Understand this warningAI
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+useSharedCalendars.ts:256 [useSharedCalendars] Received 0 shared calendars from server
+us

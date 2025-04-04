@@ -27,62 +27,27 @@ export const useSharedCalendars = () => {
     // Add explicit debug logging for request and response
     queryFn: async ({ queryKey }) => {
       const url = queryKey[0] as string;
-      console.log(`[DEBUG] Making shared calendars API request for user ID: ${currentUserId}`);
       
       try {
         // Make the API request
         const response = await fetch(url);
-        console.log(`[DEBUG] API response status: ${response.status}`);
         
         // Handle non-200 responses
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`[DEBUG] API error: ${errorText}`);
           throw new Error(`API error: ${response.status} ${errorText}`);
         }
         
         // Parse the response
         const data = await response.json();
-        console.log(`[DEBUG] API response data length: ${data.length}`);
-        console.log(`[DEBUG] API response first few items:`, data.slice(0, 2));
-        
         return data;
       } catch (error) {
-        console.error(`[DEBUG] API request failed:`, error);
         throw error;
       }
     },
     // Tanstack Query v5 doesn't support these callbacks directly in the options
     // so we'll use the result object's callbacks instead
   });
-  
-  // Use the data from the query for debugging using effects
-  useEffect(() => {
-    const data = sharedCalendarsQuery.data;
-    if (data) {
-      console.log("Shared calendars loaded:", data.length || 0, "calendars");
-      console.log("Raw shared calendars data:", JSON.stringify(data, null, 2));
-      
-      if (data.length > 0) {
-        console.log("First shared calendar permissions:", {
-          name: data[0].name,
-          id: data[0].id,
-          permission: data[0].permission,
-          isShared: data[0].isShared,
-          canEdit: data[0].permission === 'edit',
-          ownerEmail: data[0].ownerEmail
-        });
-        
-        // Check if enabled property exists and is properly set
-        console.log("Shared calendar enabled status check:", data.map(cal => ({
-          id: cal.id,
-          name: cal.name,
-          enabled: cal.enabled,
-          hasEnabledProperty: Object.prototype.hasOwnProperty.call(cal, 'enabled')
-        })));
-      }
-    }
-  }, [sharedCalendarsQuery.data]);
   
   // Log errors using effects
   useEffect(() => {
@@ -252,18 +217,7 @@ export const useSharedCalendars = () => {
   // This simplifies our client-side logic and prevents bugs
   const filteredSharedCalendars = sharedCalendarsQuery.data || [];
   
-  // Add extra debug logging
-  console.log(`[useSharedCalendars] Received ${filteredSharedCalendars.length} shared calendars from server`);
-  if (filteredSharedCalendars.length > 0) {
-    // Log each shared calendar with detailed info
-    filteredSharedCalendars.forEach((cal, index) => {
-      console.log(
-        `[useSharedCalendars] Calendar ${index+1}: ID: ${cal.id}, Name: "${cal.name}", ` +
-        `Owner ID: ${cal.userId}, Owner Email: ${cal.ownerEmail || 'unknown'}, ` +
-        `Permission: ${cal.permission || 'view'}, Enabled: ${cal.enabled ? 'yes' : 'no'}`
-      );
-    });
-  }
+  // No debug logging in production version
 
   return {
     sharedCalendars: filteredSharedCalendars,
