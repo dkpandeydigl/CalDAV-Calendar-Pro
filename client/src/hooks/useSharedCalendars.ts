@@ -22,6 +22,34 @@ export const useSharedCalendars = () => {
   
   const sharedCalendarsQuery = useQuery<SharedCalendar[]>({
     queryKey: ['/api/shared-calendars'],
+    // Add explicit debug logging for request and response
+    queryFn: async ({ queryKey }) => {
+      const url = queryKey[0] as string;
+      console.log(`[DEBUG] Making API request to ${url}`);
+      
+      try {
+        // Make the API request
+        const response = await fetch(url);
+        console.log(`[DEBUG] API response status: ${response.status}`);
+        
+        // Handle non-200 responses
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[DEBUG] API error: ${errorText}`);
+          throw new Error(`API error: ${response.status} ${errorText}`);
+        }
+        
+        // Parse the response
+        const data = await response.json();
+        console.log(`[DEBUG] API response data length: ${data.length}`);
+        console.log(`[DEBUG] API response first few items:`, data.slice(0, 2));
+        
+        return data;
+      } catch (error) {
+        console.error(`[DEBUG] API request failed:`, error);
+        throw error;
+      }
+    },
     // Tanstack Query v5 doesn't support these callbacks directly in the options
     // so we'll use the result object's callbacks instead
   });

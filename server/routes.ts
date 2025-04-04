@@ -9,8 +9,10 @@ import {
   insertUserSchema,
   User,
   serverConnections,
-  CalendarSharing
+  CalendarSharing,
+  calendars
 } from "@shared/schema";
+import { db } from "./db";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
 import session from "express-session";
@@ -1702,12 +1704,13 @@ END:VCALENDAR`
       
       // CRITICAL FIX: We need to directly fetch all calendars, not just ones owned by user ID 0
       // which wouldn't include most user calendars. This was causing calendars not to show up.
+      // Use the imports from the top of the file
       const allCalendars = await db.select().from(calendars);
       
       // Apply our strict security filters:
       // 1. Calendar ID must be in our explicit sharing records
       // 2. Calendar must NOT be owned by the current user
-      const strictlyFilteredCalendars = allCalendars.filter((calendar) => {
+      const strictlyFilteredCalendars = allCalendars.filter((calendar: any) => {
         // Calendar must be in our list of explicitly shared calendars
         const isExplicitlyShared = allowedCalendarIds.includes(calendar.id);
         
@@ -1732,7 +1735,7 @@ END:VCALENDAR`
       }
       
       // Add owner info and permission details to each calendar
-      const enhancedCalendarsPromises = strictlyFilteredCalendars.map(async calendar => {
+      const enhancedCalendarsPromises = strictlyFilteredCalendars.map(async (calendar: any) => {
         // Get owner info
         const owner = await storage.getUser(calendar.userId);
         const ownerEmail = owner?.email || owner?.username || 'Unknown';
