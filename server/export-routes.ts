@@ -104,9 +104,18 @@ export function registerExportRoutes(app: Express) {
       }
       
       // Generate a single iCalendar file with all events
-      const calendarName = validCalendarIds.length === 1 ? 
-        (await storage.getCalendar(validCalendarIds[0]))?.name || 'Exported Calendar' : 
-        'Multiple Calendars';
+      let calendarName = 'Multiple Calendars';
+      
+      if (validCalendarIds.length === 1) {
+        try {
+          const calendarId = validCalendarIds[0];
+          const calendar = await storage.getCalendar(calendarId);
+          calendarName = calendar?.name || 'Exported Calendar';
+        } catch (err) {
+          console.error(`Error getting calendar name for ID ${validCalendarIds[0]}:`, err);
+          calendarName = 'Exported Calendar';
+        }
+      }
       
       // Generate iCalendar content
       const now = formatICALDate(new Date());
@@ -155,9 +164,13 @@ export function registerExportRoutes(app: Express) {
       icalContent += `END:VCALENDAR`;
       
       // Set the appropriate headers for file download
-      const filename = validCalendarIds.length === 1 ? 
-        `calendar_${calendarName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics` : 
-        `calendars_export.ics`;
+      let filename = 'calendars_export.ics';
+      
+      if (validCalendarIds.length === 1) {
+        // Ensure the calendar name is valid for a filename
+        const safeCalendarName = calendarName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        filename = `calendar_${safeCalendarName}.ics`;
+      }
         
       res.setHeader('Content-Type', 'text/calendar');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

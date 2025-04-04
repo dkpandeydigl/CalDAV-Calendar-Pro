@@ -86,21 +86,43 @@ export default function ExportCalendarModal({
     try {
       setIsExporting(true);
       
+      // Filter out any invalid IDs before sending the request
+      const validIds = selectedCalendarIds.filter(id => !isNaN(id) && id > 0);
+      
+      if (validIds.length === 0) {
+        toast({
+          title: "No valid calendars",
+          description: "No valid calendar IDs were found for export",
+          variant: "destructive",
+        });
+        return;
+      }
+      
       // Build the export URL with query parameters
-      let exportUrl = `/api/calendars/export?ids=${selectedCalendarIds.join(',')}`;
+      let exportUrl = `/api/calendars/export?ids=${validIds.join(',')}`;
       
       // Add date filter if enabled
       if (showDateFilter && startDate && endDate) {
         exportUrl += `&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`;
       }
       
-      // Trigger download by opening the URL in a new window
+      console.log(`Attempting to export calendars with IDs: ${validIds.join(', ')}`);
+      
+      // Make a test fetch request first to check for errors
+      const testResponse = await fetch(exportUrl);
+      
+      if (!testResponse.ok) {
+        const errorData = await testResponse.json();
+        throw new Error(errorData.message || 'Failed to export calendars');
+      }
+      
+      // If the test was successful, open the URL for download
       window.open(exportUrl, '_blank');
       
       // Show success message
       toast({
-        title: "Export started",
-        description: "Your calendar export is being prepared for download",
+        title: "Export successful",
+        description: "Your calendar export should download shortly",
       });
       
       onOpenChange(false);
@@ -108,7 +130,7 @@ export default function ExportCalendarModal({
       console.error("Export error:", error);
       toast({
         title: "Export failed",
-        description: "An error occurred while exporting calendars",
+        description: error instanceof Error ? error.message : "An error occurred while exporting calendars",
         variant: "destructive",
       });
     } finally {
