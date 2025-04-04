@@ -10,7 +10,7 @@ import { getTimezones } from '@/lib/date-utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatFullDate } from '@/lib/date-utils';
 import { useServerConnection } from '@/hooks/useServerConnection';
-import { CalendarIcon, Download, Edit, MoreVertical, Share2, Trash2 } from 'lucide-react';
+import { CalendarIcon, Download, Edit, MoreVertical, Share2, Trash2, UploadCloud } from 'lucide-react';
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -47,9 +47,10 @@ interface CalendarSidebarProps {
   onOpenServerSettings: () => void;
   onOpenSyncSettings?: () => void;
   onShareCalendar?: (calendar: Calendar | undefined) => void;
+  onImportCalendar?: () => void;
 }
 
-const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onOpenServerSettings, onOpenSyncSettings, onShareCalendar }) => {
+const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onOpenServerSettings, onOpenSyncSettings, onShareCalendar, onImportCalendar }) => {
   const { 
     selectedTimezone, 
     setSelectedTimezone, 
@@ -298,6 +299,15 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                   title="Export Calendar"
                 >
                   <Download className="h-3.5 w-3.5" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-6 w-6" 
+                  onClick={() => onImportCalendar && onImportCalendar()}
+                  title="Import Calendar"
+                >
+                  <UploadCloud className="h-3.5 w-3.5" />
                 </Button>
                 <Button 
                   variant="ghost" 

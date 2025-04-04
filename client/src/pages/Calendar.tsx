@@ -8,6 +8,7 @@ import ServerConnectionModal from '@/components/modals/ServerConnectionModal';
 import { SyncSettingsModal } from '@/components/modals/SyncSettingsModal';
 import ShareCalendarModal from '@/components/modals/ShareCalendarModal';
 import ExportCalendarModal from '@/components/modals/ExportCalendarModal';
+import ImportCalendarModal from '@/components/modals/ImportCalendarModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Event, Calendar as CalendarType } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -271,6 +272,7 @@ function CalendarContent() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [shareCalendarOpen, setShareCalendarOpen] = useState(false);
   const [exportCalendarOpen, setExportCalendarOpen] = useState(false);
+  const [importCalendarOpen, setImportCalendarOpen] = useState(false);
   
   const [selectedCalendar, setSelectedCalendar] = useState<CalendarType | null>(null);
   const queryClient = useQueryClient();
@@ -281,16 +283,22 @@ function CalendarContent() {
   
   // Server connection status is managed by the useServerConnection hook
   
-  // Add event listener for export calendar button
+  // Add event listeners for export and import calendar buttons
   useEffect(() => {
     const handleExportCalendarEvent = () => {
       setExportCalendarOpen(true);
     };
     
+    const handleImportCalendarEvent = () => {
+      setImportCalendarOpen(true);
+    };
+    
     window.addEventListener('export-calendar', handleExportCalendarEvent);
+    window.addEventListener('import-calendar', handleImportCalendarEvent);
     
     return () => {
       window.removeEventListener('export-calendar', handleExportCalendarEvent);
+      window.removeEventListener('import-calendar', handleImportCalendarEvent);
     };
   }, []);
   
@@ -325,6 +333,10 @@ function CalendarContent() {
   
   const handleExportCalendar = () => {
     setExportCalendarOpen(true);
+  };
+  
+  const handleImportCalendar = () => {
+    setImportCalendarOpen(true);
   };
   
   const handleSync = async () => {
@@ -368,6 +380,7 @@ function CalendarContent() {
           onOpenServerSettings={handleOpenServerSettings}
           onOpenSyncSettings={handleOpenSyncSettings}
           onShareCalendar={handleShareCalendar}
+          onImportCalendar={handleImportCalendar}
         />
         
         {/* Main Calendar */}
@@ -454,6 +467,11 @@ function CalendarContent() {
       <ExportCalendarModal
         open={exportCalendarOpen}
         onOpenChange={setExportCalendarOpen}
+      />
+      
+      <ImportCalendarModal
+        open={importCalendarOpen}
+        onOpenChange={setImportCalendarOpen}
       />
     </div>
   );

@@ -14,6 +14,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { registerExportRoutes } from "./export-routes";
+import { registerImportRoutes } from "./import-routes";
 import { eq, inArray, sql } from "drizzle-orm";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
@@ -4403,6 +4404,9 @@ END:VCALENDAR`;
   
   // Register calendar export routes
   registerExportRoutes(app);
+  
+  // Register calendar import routes
+  registerImportRoutes(app);
   
   const httpServer = createServer(app);
   return httpServer;
