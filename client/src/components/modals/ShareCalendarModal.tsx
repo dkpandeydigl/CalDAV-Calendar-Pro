@@ -334,47 +334,46 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
         {/* Calendar Selection Section - Always shown in multi-selection mode */}
         {isMultiSelectionMode && (
-          <div className="border rounded-md p-2">
-            <h3 className="font-medium text-sm mb-2 flex items-center justify-between">
+          <div className="border rounded-md p-4">
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center">
-                <CalendarIcon className="h-4 w-4 mr-1" />
-                <span>Your Calendars</span>
+                <CalendarIcon className="h-5 w-5 mr-2 text-primary" />
+                <h3 className="font-medium">Your Calendars</h3>
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs bg-muted px-2 py-1 rounded-full">
                 {selectedCalendars.length} selected
               </div>
-            </h3>
+            </div>
             
-            <ScrollArea className="h-48 rounded-md">
-              <div className="space-y-2 pr-3">
+            <ScrollArea className="h-56 rounded-md mb-3">
+              <div className="space-y-2">
                 {userCalendars
                   // Only include user's own calendars, not shared ones
                   .filter(cal => cal.userId === userCalendars.find(c => c.isPrimary)?.userId)
                   .map(calendar => (
                     <div 
                       key={calendar.id} 
-                      className="flex items-center space-x-2 py-1 px-1 hover:bg-gray-50 rounded"
+                      className="flex items-center space-x-2 py-2 px-2 hover:bg-muted rounded-md cursor-pointer transition-colors"
+                      onClick={() => toggleCalendarSelection(calendar)}
                     >
                       <Checkbox 
                         id={`calendar-${calendar.id}`}
                         checked={selectedCalendars.some(c => c.calendar.id === calendar.id)}
                         onCheckedChange={() => toggleCalendarSelection(calendar)}
+                        className="data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                       />
-                      <div 
-                        className="flex items-center cursor-pointer flex-1"
-                        onClick={() => toggleCalendarSelection(calendar)}
-                      >
+                      <div className="flex items-center flex-1">
                         <span 
-                          className="w-4 h-4 rounded-full mr-2 flex-shrink-0"
+                          className="w-4 h-4 rounded-full mr-2 flex-shrink-0 border border-gray-200"
                           style={{ backgroundColor: calendar.color }}
                         ></span>
                         <Label 
                           htmlFor={`calendar-${calendar.id}`}
-                          className="cursor-pointer text-sm"
+                          className="cursor-pointer text-sm font-medium"
                         >
                           {calendar.name}
                           {calendar.isPrimary && (
-                            <span className="ml-1 text-xs text-muted-foreground">(Primary)</span>
+                            <span className="ml-2 text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">Primary</span>
                           )}
                         </Label>
                       </div>
@@ -384,11 +383,11 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
               </div>
             </ScrollArea>
             
-            <div className="mt-2 flex justify-between">
+            <div className="flex justify-between border-t pt-3">
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="h-7 px-2 text-xs"
+                className="h-8 px-3 gap-1"
                 onClick={() => {
                   // Select all user calendars
                   const userOwnedCalendars = userCalendars.filter(cal => 
@@ -404,15 +403,17 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                   );
                 }}
               >
+                <Check className="h-3.5 w-3.5" />
                 Select All
               </Button>
               
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="h-7 px-2 text-xs"
+                className="h-8 px-3 gap-1"
                 onClick={() => setSelectedCalendars([])}
               >
+                <X className="h-3.5 w-3.5" />
                 Clear All
               </Button>
             </div>
