@@ -92,12 +92,20 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
   // Fetch shares for each selected calendar
   useEffect(() => {
-    selectedCalendars.forEach(({ calendar, loading }) => {
-      if (loading) {
-        fetchShares(calendar.id);
-      }
-    });
-  }, [selectedCalendars]);
+    // Create a stable array of IDs to prevent infinite loops
+    const calendarIdsToFetch = selectedCalendars
+      .filter(item => item.loading)
+      .map(item => item.calendar.id);
+    
+    // Only trigger if we have calendars to fetch
+    if (calendarIdsToFetch.length > 0) {
+      // Fetch shares for each calendar that needs loading
+      calendarIdsToFetch.forEach(calendarId => {
+        fetchShares(calendarId);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [/* We deliberately omit selectedCalendars to prevent infinite renders */]);
 
   const fetchShares = async (calendarId: number) => {
     try {

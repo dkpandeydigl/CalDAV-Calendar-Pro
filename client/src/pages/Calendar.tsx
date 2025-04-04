@@ -327,8 +327,15 @@ function CalendarContent() {
   
   const handleOpenSyncSettings = () => setSyncSettingsOpen(true);
   
-  const handleShareCalendar = (calendar: CalendarType) => {
-    setSelectedCalendar(calendar);
+  // This function can accept a possibly undefined calendar
+  const handleShareCalendar = (calendar: CalendarType | undefined) => {
+    // Only set selected calendar if it's defined
+    if (calendar) {
+      setSelectedCalendar(calendar);
+    } else {
+      // In multi-select mode we don't need a specific calendar
+      setSelectedCalendar(null);
+    }
     setShareCalendarOpen(true);
   };
   
