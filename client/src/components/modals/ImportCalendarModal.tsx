@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCalendars } from '@/hooks/useCalendars';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, UploadCloud } from 'lucide-react';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Calendar } from '@shared/schema';
 import { format } from 'date-fns';
 
@@ -191,6 +191,9 @@ export default function ImportCalendarModal({
       }
 
       const result = await response.json();
+      
+      // Invalidate the events cache to trigger a refetch
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
       
       toast({
         title: "Import successful",
