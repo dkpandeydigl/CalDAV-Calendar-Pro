@@ -46,7 +46,7 @@ interface CalendarSidebarProps {
   onCreateEvent: () => void;
   onOpenServerSettings: () => void;
   onOpenSyncSettings?: () => void;
-  onShareCalendar?: (calendar: Calendar) => void;
+  onShareCalendar?: (calendar: Calendar | undefined) => void;
 }
 
 const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onOpenServerSettings, onOpenSyncSettings, onShareCalendar }) => {
@@ -293,7 +293,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                 variant="ghost" 
                 size="icon" 
                 className="h-6 w-6" 
-                onClick={() => onShareCalendar && onShareCalendar(null)}
+                onClick={() => onShareCalendar && onShareCalendar(undefined)}
                 title="Share Multiple Calendars"
               >
                 <Share2 className="h-3.5 w-3.5" />
