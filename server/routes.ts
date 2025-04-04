@@ -1606,7 +1606,8 @@ END:VCALENDAR`
       const userId = req.user!.id;
       console.log(`Getting shared calendars for user ID: ${userId}, username: ${req.user!.username}`);
       
-      // First, get all shared calendars
+      // Our storage layer now uses more strict matching to prevent showing calendars
+      // to users they weren't intended for, and excludes the user's own calendars
       const sharedCalendars = await storage.getSharedCalendars(userId);
       console.log(`Found ${sharedCalendars.length} shared calendars for user ${req.user!.username}`);
       
@@ -1614,85 +1615,46 @@ END:VCALENDAR`
         return res.json([]);
       }
       
-      // Get all sharing records in one call for better performance
+      // Get all sharing records that exactly match this user's ID or email
+      // We now use exact matching to enforce proper access control
       const allSharingRecords = await storage.getAllCalendarSharings();
-      console.log(`Found ${allSharingRecords.length} total sharing records`);
       
-      // Match sharing records with the current user using the same flexible matching
-      const findSharingForUserAndCalendar = (calendarId: number) => {
-        // Try several ways to match:
-        // 1. By user ID (highest priority)
-        const byUserId = allSharingRecords.find(s => 
-          s.calendarId === calendarId && s.sharedWithUserId === userId
-        );
-        if (byUserId) return byUserId;
-        
-        // 2a. By exact email match if user has email
-        if (req.user!.email) {
-          const byEmail = allSharingRecords.find(s =>
-            s.calendarId === calendarId && s.sharedWithEmail === req.user!.email
-          );
-          if (byEmail) return byEmail;
-          
-          // 2b. By case-insensitive email match
-          const byEmailIgnoreCase = allSharingRecords.find(s =>
-            s.calendarId === calendarId && 
-            s.sharedWithEmail.toLowerCase() === req.user!.email!.toLowerCase()
-          );
-          if (byEmailIgnoreCase) return byEmailIgnoreCase;
-        }
-        
-        // 3a. By exact username match (treat username as email)
-        const byUsername = allSharingRecords.find(s =>
-          s.calendarId === calendarId && s.sharedWithEmail === req.user!.username
-        );
-        if (byUsername) return byUsername;
-        
-        // 3b. By case-insensitive username match
-        const byUsernameIgnoreCase = allSharingRecords.find(s =>
-          s.calendarId === calendarId && 
-          s.sharedWithEmail.toLowerCase() === req.user!.username.toLowerCase()
-        );
-        if (byUsernameIgnoreCase) return byUsernameIgnoreCase;
-        
-        // 4a. By partial email match if user has email
-        if (req.user!.email) {
-          const byPartialEmailMatch = allSharingRecords.find(s =>
-            s.calendarId === calendarId && (
-              s.sharedWithEmail.includes(req.user!.email!) ||
-              req.user!.email!.includes(s.sharedWithEmail)
-            )
-          );
-          if (byPartialEmailMatch) return byPartialEmailMatch;
-        }
-        
-        // 4b. By partial username match
-        const byPartialUsernameMatch = allSharingRecords.find(s =>
-          s.calendarId === calendarId && (
-            s.sharedWithEmail.includes(req.user!.username) ||
-            req.user!.username.includes(s.sharedWithEmail)
-          )
-        );
-        
-        // Return the last match we could find, or undefined if nothing matched
-        return byPartialUsernameMatch;
-      };
+      // Create a map of calendar IDs to sharing permissions for fast lookup
+      const sharingByCalendarId = new Map<number, string>();
       
-      // Add permission level to each calendar and fetch owner information
+      // Only include sharing records that match this user exactly by ID or email
+      allSharingRecords.forEach(record => {
+        // Direct user ID match (strongest)
+        if (record.sharedWithUserId === userId) {
+          sharingByCalendarId.set(record.calendarId, record.permissionLevel);
+        }
+        // Exact email match (next strongest)
+        else if (req.user!.email && record.sharedWithEmail === req.user!.email) {
+          sharingByCalendarId.set(record.calendarId, record.permissionLevel);
+        }
+        // Exact username match (fallback)
+        else if (record.sharedWithEmail === req.user!.username) {
+          sharingByCalendarId.set(record.calendarId, record.permissionLevel);
+        }
+      });
+      
+      // Now add permission levels and owner information to each calendar
       const calendarWithPermissionsPromises = sharedCalendars.map(async calendar => {
-        const sharing = findSharingForUserAndCalendar(calendar.id);
-        console.log(`Calendar ${calendar.id} (${calendar.name}) permission: ${sharing?.permissionLevel || 'unknown'}`);
+        // Get the permission level from our map
+        const permissionLevel = sharingByCalendarId.get(calendar.id) || 'view';
         
-        // Fetch the calendar owner's information
+        // Fetch the calendar owner's information - this is important for the UI grouping
         const owner = await storage.getUser(calendar.userId);
         const ownerEmail = owner?.email || owner?.username || 'Unknown';
         
-        // Ensure the enabled property is set - default to true if not present
-        // This is important because the client-side UI uses this property to show/hide calendars
+        // Log each calendar we're processing
+        console.log(`Processing shared calendar: ${calendar.id} (${calendar.name}) owned by ${ownerEmail}, permission: ${permissionLevel}`);
+        
+        // Return the enhanced calendar object
         return {
           ...calendar,
           enabled: calendar.enabled !== undefined ? calendar.enabled : true,
-          permission: sharing?.permissionLevel || 'view', // Default to view-only if no record found
+          permission: permissionLevel,
           isShared: true,
           ownerEmail
         };
@@ -1701,11 +1663,21 @@ END:VCALENDAR`
       // Resolve all promises
       const calendarWithPermissions = await Promise.all(calendarWithPermissionsPromises);
       
-      // Log the full data being sent to client
-      console.log('Sending shared calendars to client with full data:', 
-        JSON.stringify(calendarWithPermissions.map(cal => ({
+      // Important: Double-check that we never include calendars owned by the current user
+      const filteredCalendars = calendarWithPermissions.filter(calendar => {
+        return calendar.userId !== userId;
+      });
+      
+      if (filteredCalendars.length !== calendarWithPermissions.length) {
+        console.log(`Filtered out ${calendarWithPermissions.length - filteredCalendars.length} calendars owned by the current user`);
+      }
+      
+      // Debug: Log the final list of shared calendars being sent to the client
+      console.log('Sending shared calendars to client:', 
+        JSON.stringify(filteredCalendars.map(cal => ({
           id: cal.id,
           name: cal.name,
+          userId: cal.userId, // Log user ID to confirm it's not the current user
           enabled: cal.enabled,
           permission: cal.permission,
           ownerEmail: cal.ownerEmail
@@ -1713,7 +1685,7 @@ END:VCALENDAR`
       );
       
       // Double check that we have enabled property for each calendar
-      calendarWithPermissions.forEach(cal => {
+      filteredCalendars.forEach(cal => {
         if (cal.enabled === undefined) {
           console.error(`WARNING: Calendar ${cal.id} (${cal.name}) has undefined 'enabled' property!`);
           // Force to true to ensure visibility
@@ -1721,7 +1693,7 @@ END:VCALENDAR`
         }
       });
       
-      res.json(calendarWithPermissions);
+      res.json(filteredCalendars);
     } catch (err) {
       console.error("Error getting shared calendars:", err);
       res.status(500).json({ message: "Failed to get shared calendars" });
