@@ -263,27 +263,68 @@ export class DatabaseStorage implements IStorage {
       // 2. The calendar was shared with the user's email address (exact match, only if email is set)
       // 3. The calendar was shared with the username (only if we can verify it's the exact user)
       
-      // Build a secure OR condition based on the user's data
-      const matchConditions = [];
+      // CRITICAL FIX: Use a more flexible matching approach to find shared calendars
+      console.log(`Searching for calendars shared with user ID ${userId}, username ${user.username}, email ${user.email || 'none'}`);
       
-      // User ID is the strongest match and is always used when available
-      matchConditions.push(eq(calendarSharing.sharedWithUserId, userId));
-      
-      // Email match only used if the user has a verified email
-      if (user.email && user.email.trim() !== '') {
-        matchConditions.push(eq(calendarSharing.sharedWithEmail, user.email));
-      }
-      
-      // Username as email - ONLY if it contains @ symbol to ensure it's an actual email
-      // This prevents users with simple usernames from accessing calendars not meant for them
-      if (user.username && user.username.includes('@')) {
-        matchConditions.push(eq(calendarSharing.sharedWithEmail, user.username));
-      }
-      
-      // Fetch sharing records using the secure conditions
-      const sharingRecords = await db.select()
+      // First, try to find all sharing records by user ID since it's the most reliable
+      let sharingRecords = await db.select()
         .from(calendarSharing)
-        .where(or(...matchConditions));
+        .where(eq(calendarSharing.sharedWithUserId, userId));
+      
+      console.log(`Found ${sharingRecords.length} calendar sharing records by user ID match`);
+      
+      // If user ID matching yields no results, fall back to email matching
+      if (sharingRecords.length === 0) {
+        const emailMatchConditions = [];
+        
+        // Search by user.email if available
+        if (user.email && user.email.trim() !== '') {
+          emailMatchConditions.push(eq(calendarSharing.sharedWithEmail, user.email));
+        }
+        
+        // Search by username if it contains @ symbol (could be an email)
+        if (user.username && user.username.includes('@')) {
+          emailMatchConditions.push(eq(calendarSharing.sharedWithEmail, user.username));
+        }
+        
+        // Only perform email matching if we have conditions
+        if (emailMatchConditions.length > 0) {
+          sharingRecords = await db.select()
+            .from(calendarSharing)
+            .where(or(...emailMatchConditions));
+            
+          console.log(`Found ${sharingRecords.length} calendar sharing records by email/username match`);
+        }
+      }
+      
+      // If we still don't have records, try a completely different approach as last resort
+      if (sharingRecords.length === 0) {
+        // Get all sharing records and manually filter
+        const allSharingRecords = await db.select().from(calendarSharing);
+        
+        sharingRecords = allSharingRecords.filter(record => {
+          // Match by user ID
+          if (record.sharedWithUserId === userId) return true;
+          
+          // Match by email
+          if (user.email && record.sharedWithEmail === user.email) return true;
+          
+          // Match by username as email
+          if (user.username && user.username.includes('@') && 
+              record.sharedWithEmail === user.username) return true;
+          
+          // Special case: the email field is the username without @ symbol
+          // This catches legacy data where email might have been stored incorrectly
+          if (user.username && user.username.includes('@')) {
+            const usernameWithoutDomain = user.username.split('@')[0];
+            if (record.sharedWithEmail === usernameWithoutDomain) return true;
+          }
+          
+          return false;
+        });
+        
+        console.log(`Found ${sharingRecords.length} calendar sharing records using manual filtering`);
+      }
       
       console.log(`Found ${sharingRecords.length} direct sharing records for user ${user.username}`);
       
