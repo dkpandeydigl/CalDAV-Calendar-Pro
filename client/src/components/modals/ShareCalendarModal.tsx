@@ -74,10 +74,8 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       setIsMultiSelectionMode(true);
       
       // Get all user-owned calendars and select them all
-      const userOwnedCalendars = userCalendars?.filter(cal => 
-        // Only include user's own calendars, not shared ones
-        cal.userId === userCalendars.find(c => c.isPrimary)?.userId
-      ) || [];
+      // Since we're already receiving only the user's own calendars, we'll include all of them
+      const userOwnedCalendars = userCalendars || [];
       
       console.log("ShareCalendarModal - User owned calendars:", userOwnedCalendars.length);
       
@@ -356,8 +354,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
             <ScrollArea className="h-56 rounded-md mb-3">
               <div className="space-y-2">
                 {userCalendars
-                  // Only include user's own calendars, not shared ones
-                  .filter(cal => cal.userId === userCalendars.find(c => c.isPrimary)?.userId)
+                  // Display all available calendars
                   .map(calendar => (
                     <div 
                       key={calendar.id} 
@@ -397,13 +394,11 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                 size="sm" 
                 className="h-8 px-3 gap-1"
                 onClick={() => {
-                  // Select all user calendars
-                  const userOwnedCalendars = userCalendars.filter(cal => 
-                    cal.userId === userCalendars.find(c => c.isPrimary)?.userId
-                  );
+                  // Select all calendars
+                  const allCalendars = userCalendars || [];
                   
                   setSelectedCalendars(
-                    userOwnedCalendars.map(calendar => ({
+                    allCalendars.map(calendar => ({
                       calendar,
                       shares: [],
                       loading: true
