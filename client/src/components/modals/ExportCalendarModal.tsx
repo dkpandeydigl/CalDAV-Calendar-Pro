@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker } from "../ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Download, Calendar as CalendarIcon, Filter } from "lucide-react";
 import { Calendar } from "@shared/schema";

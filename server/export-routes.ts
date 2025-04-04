@@ -26,7 +26,18 @@ export function registerExportRoutes(app: Express) {
   app.get("/api/calendars/export", isAuthenticated, async (req, res) => {
     try {
       const userId = (req.user as User).id;
-      const calendarIds = req.query.ids ? String(req.query.ids).split(',').map(Number) : [];
+      
+      // Safely convert string IDs to numbers and filter out any NaN values
+      const calendarIds = req.query.ids 
+        ? String(req.query.ids)
+            .split(',')
+            .map(id => {
+              const num = parseInt(id.trim(), 10);
+              return isNaN(num) ? null : num;
+            })
+            .filter((id): id is number => id !== null)
+        : [];
+        
       const startDate = req.query.startDate ? new Date(String(req.query.startDate)) : null;
       const endDate = req.query.endDate ? new Date(String(req.query.endDate)) : null;
       
@@ -156,7 +167,7 @@ export function registerExportRoutes(app: Express) {
       
     } catch (error) {
       console.error('Error exporting calendars:', error);
-      res.status(500).json({ message: 'Failed to export calendars' });
+      res.status(500).json({ message: 'Failed to export calendars', error: (error as Error).message });
     }
   });
 }
