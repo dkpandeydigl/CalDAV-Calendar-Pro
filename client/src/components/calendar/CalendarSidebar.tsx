@@ -490,7 +490,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
               {Object.entries(sharedCalendars.reduce((acc, calendar) => {
                 // Make sure we never show a user's own calendars in the shared section
                 // This is already handled in the useSharedCalendars hook, but adding another safeguard here
-                if (calendar.userId === currentUser?.id) {
+                if (currentUser && calendar.userId === currentUser.id) {
                   console.log(`Skipping calendar ${calendar.id} (${calendar.name}) as it's owned by the current user`);
                   return acc;
                 }

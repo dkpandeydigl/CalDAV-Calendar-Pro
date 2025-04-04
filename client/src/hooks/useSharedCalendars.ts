@@ -208,12 +208,11 @@ export const useSharedCalendars = () => {
     return calendar.userId !== currentUserId;
   });
   
-  // Log the filtering results for debugging
-  if (sharedCalendarsQuery.data?.length !== filteredSharedCalendars.length) {
+  // Log the filtering results for debugging - only if we have data
+  if (sharedCalendarsQuery.data && sharedCalendarsQuery.data.length !== filteredSharedCalendars.length) {
+    const filteredCount = sharedCalendarsQuery.data.length - filteredSharedCalendars.length;
     console.log(
-      `[useSharedCalendars] Filtered out ${
-        sharedCalendarsQuery.data!.length - filteredSharedCalendars.length
-      } calendars owned by the current user (ID: ${currentUserId})`
+      `[useSharedCalendars] Filtered out ${filteredCount} calendars owned by the current user (ID: ${currentUserId})`
     );
   }
 
