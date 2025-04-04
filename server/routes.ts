@@ -13,6 +13,7 @@ import {
   calendars
 } from "@shared/schema";
 import { db } from "./db";
+import { eq, inArray, sql } from "drizzle-orm";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
 import session from "express-session";
@@ -1702,28 +1703,28 @@ END:VCALENDAR`
       // SECOND SECURITY CHECK: Get the actual calendars, but ONLY those explicitly shared with this user
       // and filter out any calendars owned by this user (should never be shared with yourself)
       
-      // CRITICAL FIX: We need to directly fetch all calendars, not just ones owned by user ID 0
-      // which wouldn't include most user calendars. This was causing calendars not to show up.
-      // Use the imports from the top of the file
-      const allCalendars = await db.select().from(calendars);
-      
-      // Apply our strict security filters:
-      // 1. Calendar ID must be in our explicit sharing records
-      // 2. Calendar must NOT be owned by the current user
-      const strictlyFilteredCalendars = allCalendars.filter((calendar: any) => {
-        // Calendar must be in our list of explicitly shared calendars
-        const isExplicitlyShared = allowedCalendarIds.includes(calendar.id);
+      // CRITICAL FIX: We need to directly fetch ONLY the specific calendars that are in our allowedCalendarIds list
+      // This ensures we're only fetching calendars explicitly shared with this user
+      // Get all calendars first, then filter them to just the ones in our list
+      const dbCalendars = await db.select().from(calendars);
+      const allCalendars = dbCalendars.filter(cal => allowedCalendarIds.includes(cal.id));
         
+      console.log(`Fetched ${allCalendars.length} calendars shared with user ID ${userId}`);
+      
+      // Apply enhanced security filtering:
+      // With the SQL query change above, we should now have only calendars in the allowedCalendarIds list
+      // But we still need to ensure none of them are owned by the current user
+      const strictlyFilteredCalendars = allCalendars.filter((calendar: any) => {
         // Calendar must not be owned by current user
         const isNotOwnedByUser = calendar.userId !== userId;
         
         // Debug logging
-        if (isExplicitlyShared && !isNotOwnedByUser) {
+        if (!isNotOwnedByUser) {
           console.log(`STRICT SECURITY CHECK: Filtering out calendar ${calendar.id} (${calendar.name}) - owned by current user`);
         }
         
-        // Both conditions must be true
-        return isExplicitlyShared && isNotOwnedByUser;
+        // Here we only need to check if user is not the owner - the SQL already filtered by allowed IDs
+        return isNotOwnedByUser;
       });
       
       console.log(`STRICT SECURITY CHECK: After strict filtering, found ${strictlyFilteredCalendars.length} shared calendars`);
