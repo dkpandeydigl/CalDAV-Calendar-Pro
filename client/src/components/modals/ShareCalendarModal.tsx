@@ -56,8 +56,12 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       return;
     }
 
+    console.log("ShareCalendarModal - Opened, initialCalendar:", initialCalendar);
+    console.log("ShareCalendarModal - Available calendars:", userCalendars);
+
     // If an initial calendar is provided (backward compatibility), add it only
     if (initialCalendar) {
+      console.log("ShareCalendarModal - Using single calendar mode with:", initialCalendar.name);
       setSelectedCalendars([{ 
         calendar: initialCalendar, 
         shares: [],
@@ -66,12 +70,16 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       setIsMultiSelectionMode(false);
     } else {
       // Multi-selection mode - select all user calendars by default
+      console.log("ShareCalendarModal - Using multi-selection mode");
       setIsMultiSelectionMode(true);
+      
       // Get all user-owned calendars and select them all
-      const userOwnedCalendars = userCalendars.filter(cal => 
+      const userOwnedCalendars = userCalendars?.filter(cal => 
         // Only include user's own calendars, not shared ones
         cal.userId === userCalendars.find(c => c.isPrimary)?.userId
-      );
+      ) || [];
+      
+      console.log("ShareCalendarModal - User owned calendars:", userOwnedCalendars.length);
       
       // Pre-select all user calendars
       setSelectedCalendars(
