@@ -143,7 +143,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
     }
   }, [open, event, calendars, editableSharedCalendars, selectedTimezone, selectedDate]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!title.trim() || !startDate || !endDate || !calendarId) {
       toast({
         title: "Missing information",
@@ -207,75 +207,87 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
       allDay
     };
     
-    try {
-      if (event) {
-        // Update existing event
-        await updateEvent.mutateAsync({
-          id: event.id,
-          ...eventData
-        });
-        
-        toast({
-          title: "Event updated",
-          description: "Your event has been updated successfully"
-        });
-      } else {
-        // Create new event
-        await createEvent.mutateAsync(eventData);
-        
-        toast({
-          title: "Event created",
-          description: "Your event has been created successfully"
-        });
-      }
-      
+    // Shared success handler
+    const onSuccessHandler = () => {
       // Invalidate calendar queries to refresh data
       queryClient.invalidateQueries({
         queryKey: ['/api/events']
       });
       
+      setIsSubmitting(false);
       onClose();
-    } catch (error) {
+    };
+    
+    // Shared error handler
+    const onErrorHandler = (error: Error) => {
       console.error('Error saving event:', error);
       toast({
         title: "Error",
         description: "There was an error saving your event",
         variant: "destructive"
       });
-    } finally {
       setIsSubmitting(false);
+    };
+    
+    if (event) {
+      // Update existing event
+      updateEvent({
+        id: event.id,
+        ...eventData
+      }, {
+        onSuccess: () => {
+          toast({
+            title: "Event updated",
+            description: "Your event has been updated successfully"
+          });
+          onSuccessHandler();
+        },
+        onError: onErrorHandler
+      });
+    } else {
+      // Create new event
+      createEvent(eventData, {
+        onSuccess: () => {
+          toast({
+            title: "Event created",
+            description: "Your event has been created successfully"
+          });
+          onSuccessHandler();
+        },
+        onError: onErrorHandler
+      });
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!event) return;
     
     setIsDeleting(true);
     
-    try {
-      await deleteEvent.mutateAsync(event.id);
-      
-      toast({
-        title: "Event deleted",
-        description: "Your event has been deleted successfully"
-      });
-      
-      // Invalidate calendar queries to refresh data
-      queryClient.invalidateQueries({
-        queryKey: ['/api/events']
-      });
-      
-      onClose();
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      toast({
-        title: "Error",
-        description: "There was an error deleting your event",
-        variant: "destructive"
-      });
-    } finally {
-      setIsDeleting(false);
-    }
+    deleteEvent(event.id, {
+      onSuccess: () => {
+        toast({
+          title: "Event deleted",
+          description: "Your event has been deleted successfully"
+        });
+        
+        // Invalidate calendar queries to refresh data
+        queryClient.invalidateQueries({
+          queryKey: ['/api/events']
+        });
+        
+        onClose();
+      },
+      onError: (error: Error) => {
+        console.error('Error deleting event:', error);
+        toast({
+          title: "Error",
+          description: "There was an error deleting your event",
+          variant: "destructive"
+        });
+        setIsDeleting(false);
+      }
+    });
   };
 
   return (
@@ -411,8 +423,8 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
               </SelectTrigger>
               <SelectContent className="max-h-80">
                 {getTimezones().map(tz => (
-                  <SelectItem key={tz} value={tz}>
-                    {tz}
+                  <SelectItem key={tz.value} value={tz.value}>
+                    {tz.label}
                   </SelectItem>
                 ))}
               </SelectContent>
