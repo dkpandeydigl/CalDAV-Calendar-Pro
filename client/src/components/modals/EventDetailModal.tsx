@@ -10,6 +10,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
 
+// Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
+// since they come from dynamic sources. Instead we'll do runtime checks.
+
 interface EventDetailModalProps {
   open: boolean;
   event: Event | null;
@@ -89,10 +92,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
   
   // Check if this event is from a shared calendar with edit permissions
+  // Use the currentUser ID for proper cache key
+  const currentUser = queryClient.getQueryData<any>(['/api/user']);
+  const currentUserId = currentUser?.id;
+  
+  // Get shared calendars from the cache using proper query key with user ID
+  const sharedCalendars = queryClient.getQueryData<any[]>(['/api/shared-calendars', currentUserId]);
+  
   const isFromSharedCalendarWithEditPermission = 
     calendarMetadata?.isShared === true && 
     event.calendarId && 
-    queryClient.getQueryData<any[]>(['/api/shared-calendars'])?.some?.(
+    sharedCalendars?.some?.(
       cal => cal.id === event.calendarId && cal.permission === 'edit'
     );
   
@@ -260,7 +270,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </div>
             )}
             
-            {event.description && (
+            {event.description && typeof event.description === 'string' && (
               <div>
                 <div className="text-sm font-medium mb-1">Description</div>
                 <div className="text-sm p-3 bg-neutral-100 rounded-md">
@@ -269,43 +279,55 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </div>
             )}
             
-            {/* Attendees section */}
-            {event.attendees && Array.isArray(event.attendees) && (event.attendees as string[]).length > 0 && (
-              <div>
-                <div className="text-sm font-medium mb-1">Attendees</div>
-                <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                  <ul className="space-y-1">
-                    {(event.attendees as string[])
-                      .filter(Boolean)
-                      .map((attendee, index) => (
-                        <li key={index} className="flex items-center">
-                          <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
-                          {String(attendee)}
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              </div>
-            )}
+            {/* Attendees section - handle safely with runtime checks */}
+            {(() => {
+              const attendees = event.attendees as unknown;
+              if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+                return (
+                  <div>
+                    <div className="text-sm font-medium mb-1">Attendees</div>
+                    <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                      <ul className="space-y-1">
+                        {attendees
+                          .filter(Boolean)
+                          .map((attendee, index) => (
+                            <li key={index} className="flex items-center">
+                              <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
+                              {String(attendee)}
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             
-            {/* Resources section */}
-            {event.resources && Array.isArray(event.resources) && (event.resources as string[]).length > 0 && (
-              <div>
-                <div className="text-sm font-medium mb-1">Resources</div>
-                <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                  <ul className="space-y-1">
-                    {(event.resources as string[])
-                      .filter(Boolean)
-                      .map((resource, index) => (
-                        <li key={index} className="flex items-center">
-                          <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
-                          {String(resource)}
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              </div>
-            )}
+            {/* Resources section - handle safely with runtime checks */}
+            {(() => {
+              const resources = event.resources as unknown;
+              if (resources && Array.isArray(resources) && resources.length > 0) {
+                return (
+                  <div>
+                    <div className="text-sm font-medium mb-1">Resources</div>
+                    <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                      <ul className="space-y-1">
+                        {resources
+                          .filter(Boolean)
+                          .map((resource, index) => (
+                            <li key={index} className="flex items-center">
+                              <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
+                              {String(resource)}
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
           
           <DialogFooter className="flex justify-between space-x-2">
