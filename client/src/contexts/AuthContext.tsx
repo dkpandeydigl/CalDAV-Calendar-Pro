@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 
 // Define the user type
 export interface User {
@@ -44,17 +44,46 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Update user state when data changes
   useEffect(() => {
     if (data) {
+      // User logged in
       setUser(data);
+      
+      // When user changes, force a refresh of user-specific data
+      // This ensures the new user doesn't see the previous user's data
+      console.log(`User authenticated: ${data.username} (ID: ${data.id})`);
+      
+      // Invalidate shared calendars query to trigger a fresh fetch for the new user
+      // Use the new user ID in the query key
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/shared-calendars', data.id] 
+      });
+      
+      // Also invalidate other user-specific queries as needed
+      queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
     } else if (isError) {
+      // User logged out or auth error
       setUser(null);
+      
+      // Clear shared calendars data on logout to prevent data leak to next user
+      queryClient.setQueryData(['/api/shared-calendars'], []);
     }
   }, [data, isError]);
 
   // Logout function
   const logout = async () => {
     try {
+      // Clear all shared calendars from cache BEFORE logout
+      console.log('Clearing shared calendars from cache for user switch');
+      queryClient.setQueryData(['/api/shared-calendars'], []);
+      queryClient.removeQueries({ queryKey: ['/api/shared-calendars'] });
+      
+      // Now proceed with logout
       await apiRequest('POST', '/api/logout');
       setUser(null);
+      
+      // Clear ALL user-specific queries from cache
+      queryClient.removeQueries();
+      
       // Force refetch to update auth state
       refetch();
     } catch (error) {

@@ -21,11 +21,13 @@ export const useSharedCalendars = () => {
   const currentUserId = currentUser?.id;
   
   const sharedCalendarsQuery = useQuery<SharedCalendar[]>({
-    queryKey: ['/api/shared-calendars'],
+    queryKey: ['/api/shared-calendars', currentUserId], // Include user ID in query key for proper cache management
+    // ONLY enable query when we have a user ID to prevent cache from showing wrong data on login/logout
+    enabled: !!currentUserId,
     // Add explicit debug logging for request and response
     queryFn: async ({ queryKey }) => {
       const url = queryKey[0] as string;
-      console.log(`[DEBUG] Making API request to ${url}`);
+      console.log(`[DEBUG] Making shared calendars API request for user ID: ${currentUserId}`);
       
       try {
         // Make the API request
@@ -92,7 +94,9 @@ export const useSharedCalendars = () => {
   // Toggle the visibility (enabled status) of a shared calendar locally
   // without making a server API call
   const toggleCalendarVisibility = (calendarId: number, enabled: boolean) => {
-    const currentData = queryClient.getQueryData<SharedCalendar[]>(['/api/shared-calendars']);
+    // Use the queryKey that includes user ID to ensure we're updating the right cache entry
+    const queryKey = ['/api/shared-calendars', currentUserId];
+    const currentData = queryClient.getQueryData<SharedCalendar[]>(queryKey);
     
     if (!currentData) return;
     
@@ -100,8 +104,8 @@ export const useSharedCalendars = () => {
       calendar.id === calendarId ? { ...calendar, enabled } : calendar
     );
     
-    // Update the shared calendars data in cache
-    queryClient.setQueryData(['/api/shared-calendars'], updatedData);
+    // Update the shared calendars data in cache with proper query key
+    queryClient.setQueryData(queryKey, updatedData);
     
     // Since the enabled status affects which events are displayed,
     // we need to invalidate the events query to trigger a re-fetch
@@ -118,23 +122,26 @@ export const useSharedCalendars = () => {
       return calendarId;
     },
     onMutate: async (calendarId) => {
+      // Use proper query key with user ID
+      const queryKey = ['/api/shared-calendars', currentUserId];
+      
       // Cancel any outgoing refetches 
-      await queryClient.cancelQueries({ queryKey: ['/api/shared-calendars'] });
+      await queryClient.cancelQueries({ queryKey });
       
       // Snapshot the previous value
-      const previousSharedCalendars = queryClient.getQueryData<SharedCalendar[]>(['/api/shared-calendars']);
+      const previousSharedCalendars = queryClient.getQueryData<SharedCalendar[]>(queryKey);
       
       // Remove the calendar from the cache immediately
       if (previousSharedCalendars) {
         const removedCalendar = previousSharedCalendars.find(cal => cal.id === calendarId);
         const updatedCalendars = previousSharedCalendars.filter(cal => cal.id !== calendarId);
         
-        queryClient.setQueryData(['/api/shared-calendars'], updatedCalendars);
+        queryClient.setQueryData(queryKey, updatedCalendars);
         
         // Also update events query to reflect the change
         queryClient.invalidateQueries({ queryKey: ['/api/events'] });
         
-        return { previousSharedCalendars, removedCalendar };
+        return { previousSharedCalendars, removedCalendar, queryKey };
       }
       
       return { previousSharedCalendars };
@@ -148,8 +155,9 @@ export const useSharedCalendars = () => {
     },
     onError: (error, calendarId, context) => {
       // If the mutation fails, use the context we saved to roll back
-      if (context?.previousSharedCalendars) {
-        queryClient.setQueryData(['/api/shared-calendars'], context.previousSharedCalendars);
+      if (context?.previousSharedCalendars && context?.queryKey) {
+        // Use the saved query key for rollback to ensure we're updating the correct cache entry
+        queryClient.setQueryData(context.queryKey, context.previousSharedCalendars);
       }
       
       console.error('Error unsharing calendar:', error);
@@ -161,7 +169,10 @@ export const useSharedCalendars = () => {
     },
     onSettled: () => {
       // Refetch after error or success to ensure server state
-      queryClient.invalidateQueries({ queryKey: ['/api/shared-calendars'] });
+      // Use proper query key pattern with user ID
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/shared-calendars', currentUserId] 
+      });
     }
   });
   
@@ -178,11 +189,14 @@ export const useSharedCalendars = () => {
       return calendars;
     },
     onMutate: async (calendarsToRemove) => {
+      // Use proper query key with user ID
+      const queryKey = ['/api/shared-calendars', currentUserId];
+      
       // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['/api/shared-calendars'] });
+      await queryClient.cancelQueries({ queryKey });
       
       // Snapshot the previous value
-      const previousSharedCalendars = queryClient.getQueryData<SharedCalendar[]>(['/api/shared-calendars']);
+      const previousSharedCalendars = queryClient.getQueryData<SharedCalendar[]>(queryKey);
       
       // Get the owner email from the first calendar (they all have the same owner)
       const ownerEmail = calendarsToRemove[0]?.ownerEmail;
@@ -192,12 +206,12 @@ export const useSharedCalendars = () => {
         const calendarIdsToRemove = new Set(calendarsToRemove.map(cal => cal.id));
         const updatedCalendars = previousSharedCalendars.filter(cal => !calendarIdsToRemove.has(cal.id));
         
-        queryClient.setQueryData(['/api/shared-calendars'], updatedCalendars);
+        queryClient.setQueryData(queryKey, updatedCalendars);
         
         // Also update events query to reflect the change
         queryClient.invalidateQueries({ queryKey: ['/api/events'] });
         
-        return { previousSharedCalendars, ownerEmail };
+        return { previousSharedCalendars, ownerEmail, queryKey };
       }
       
       return { previousSharedCalendars };
@@ -212,8 +226,9 @@ export const useSharedCalendars = () => {
     },
     onError: (error, _, context) => {
       // If the mutation fails, use the context we saved to roll back
-      if (context?.previousSharedCalendars) {
-        queryClient.setQueryData(['/api/shared-calendars'], context.previousSharedCalendars);
+      if (context?.previousSharedCalendars && context?.queryKey) {
+        // Use the saved query key for rollback to ensure we're updating the correct cache entry
+        queryClient.setQueryData(context.queryKey, context.previousSharedCalendars);
       }
       
       console.error('Error unsharing calendars:', error);
@@ -225,7 +240,10 @@ export const useSharedCalendars = () => {
     },
     onSettled: () => {
       // Refetch after error or success to ensure server state
-      queryClient.invalidateQueries({ queryKey: ['/api/shared-calendars'] });
+      // Use proper query key pattern with user ID
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/shared-calendars', currentUserId] 
+      });
     }
   });
 
