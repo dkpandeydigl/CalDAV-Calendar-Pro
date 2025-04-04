@@ -372,6 +372,15 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       timezone,
       allDay,
       recurrenceRule,
+      // Add missing properties required by the schema
+      url: null,
+      attendees: null,
+      resources: null,
+      busyStatus: isBusy ? 'busy' : 'free',
+      etag: null,
+      syncStatus: 'pending',
+      syncError: null,
+      lastSyncAttempt: new Date(),
       rawData: {
         attendees: attendeesString,
         isBusy

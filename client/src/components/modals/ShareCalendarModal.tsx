@@ -59,53 +59,64 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     console.log("ShareCalendarModal - Opened, initialCalendar:", initialCalendar);
     console.log("ShareCalendarModal - Available calendars:", userCalendars);
 
-    // If an initial calendar is provided (backward compatibility), add it only
-    if (initialCalendar) {
-      console.log("ShareCalendarModal - Using single calendar mode with:", initialCalendar.name);
-      setSelectedCalendars([{ 
-        calendar: initialCalendar, 
-        shares: [],
-        loading: true
-      }]);
-      setIsMultiSelectionMode(false);
-    } else {
-      // Multi-selection mode - select all user calendars by default
-      console.log("ShareCalendarModal - Using multi-selection mode");
-      setIsMultiSelectionMode(true);
-      
-      // Get all user-owned calendars and select them all
-      // Since we're already receiving only the user's own calendars, we'll include all of them
-      const userOwnedCalendars = userCalendars || [];
-      
-      console.log("ShareCalendarModal - User owned calendars:", userOwnedCalendars.length);
-      
-      // Pre-select all user calendars
-      setSelectedCalendars(
-        userOwnedCalendars.map(calendar => ({
-          calendar,
+    // We need an initialization flag to avoid the infinite update loop when userCalendars is loading
+    const hasBeenInitialized = selectedCalendars.length > 0;
+    
+    // Only initialize if we haven't already done so
+    if (!hasBeenInitialized) {
+      // If an initial calendar is provided (backward compatibility), add it only
+      if (initialCalendar) {
+        console.log("ShareCalendarModal - Using single calendar mode with:", initialCalendar.name);
+        setSelectedCalendars([{ 
+          calendar: initialCalendar, 
           shares: [],
           loading: true
-        }))
-      );
+        }]);
+        setIsMultiSelectionMode(false);
+      } else if (userCalendars && userCalendars.length > 0) {
+        // Multi-selection mode - select all user calendars by default
+        console.log("ShareCalendarModal - Using multi-selection mode");
+        setIsMultiSelectionMode(true);
+        
+        console.log("ShareCalendarModal - User owned calendars:", userCalendars.length);
+        
+        // Pre-select all user calendars
+        setSelectedCalendars(
+          userCalendars.map(calendar => ({
+            calendar,
+            shares: [],
+            loading: true
+          }))
+        );
+      }
     }
-  }, [initialCalendar, open, userCalendars]);
+  }, [initialCalendar, open, userCalendars, selectedCalendars.length]);
 
   // Fetch shares for each selected calendar
   useEffect(() => {
-    // Create a stable array of IDs to prevent infinite loops
-    const calendarIdsToFetch = selectedCalendars
-      .filter(item => item.loading)
-      .map(item => item.calendar.id);
+    // One-time fetch when selectedCalendars changes due to the first useEffect
+    // This prevents the infinite loop by using a ref to track if we've already fetched
+    const fetchSelectedCalendarShares = () => {
+      // Create a stable array of IDs to prevent infinite loops
+      const calendarIdsToFetch = selectedCalendars
+        .filter(item => item.loading)
+        .map(item => item.calendar.id);
+      
+      // Only trigger if we have calendars to fetch
+      if (calendarIdsToFetch.length > 0) {
+        // Fetch shares for each calendar that needs loading
+        calendarIdsToFetch.forEach(calendarId => {
+          fetchShares(calendarId);
+        });
+      }
+    };
     
-    // Only trigger if we have calendars to fetch
-    if (calendarIdsToFetch.length > 0) {
-      // Fetch shares for each calendar that needs loading
-      calendarIdsToFetch.forEach(calendarId => {
-        fetchShares(calendarId);
-      });
+    // Only fetch when selectedCalendars has items that need loading
+    if (selectedCalendars.some(item => item.loading)) {
+      fetchSelectedCalendarShares();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [/* We deliberately omit selectedCalendars to prevent infinite renders */]);
+  }, [/* We use a ref instead of dependencies to avoid infinite renders */]);
 
   const fetchShares = async (calendarId: number) => {
     try {

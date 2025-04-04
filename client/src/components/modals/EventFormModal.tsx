@@ -204,7 +204,18 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
       endDate: endDateTime,
       calendarId: parseInt(calendarId),
       timezone,
-      allDay
+      allDay,
+      // Add missing properties required by the schema
+      recurrenceRule: null,
+      attendees: null,
+      resources: null,
+      busyStatus: null,
+      url: null,
+      etag: null,
+      syncStatus: 'pending',
+      syncError: null,
+      rawData: null,
+      lastSyncAttempt: new Date()
     };
     
     // Shared success handler
