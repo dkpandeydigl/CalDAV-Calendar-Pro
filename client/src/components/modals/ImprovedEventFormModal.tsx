@@ -529,13 +529,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           <TabsList className="mb-6 grid grid-cols-4 gap-2 bg-transparent p-0">
             <TabsTrigger 
               value="basic" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
+              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
               <Calendar className="h-4 w-4" />
               <span>Basic</span>
             </TabsTrigger>
             <TabsTrigger 
               value="attendees" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
+              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
               <Users className="h-4 w-4" />
               <span>Attendees</span>
               {attendees.length > 0 && (
@@ -544,7 +544,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             </TabsTrigger>
             <TabsTrigger 
               value="recurrence" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
+              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
               <Repeat className="h-4 w-4" />
               <span>Recurrence</span>
               {recurrence.pattern !== 'None' && (
@@ -553,52 +553,53 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             </TabsTrigger>
             <TabsTrigger 
               value="more" 
-              className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
+              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
               <FileText className="h-4 w-4" />
               <span>More</span>
             </TabsTrigger>
           </TabsList>
           
           <ScrollArea className="flex-1 overflow-auto pr-3">
-            <TabsContent value="basic" className="mt-0 space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center">
-                  <Label htmlFor="title" className="sr-only">Title *</Label>
-                  <Input
-                    id="title"
-                    ref={titleInputRef}
-                    value={title}
-                    onChange={e => setTitle(e.target.value)}
-                    placeholder="Event Title"
-                    className={`text-lg font-medium ${errors.title ? 'border-red-500' : ''}`}
-                  />
+            <div className="event-form-tabs-content">
+              <TabsContent value="basic" className="mt-0 space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <Label htmlFor="title" className="sr-only">Title *</Label>
+                    <Input
+                      id="title"
+                      ref={titleInputRef}
+                      value={title}
+                      onChange={e => setTitle(e.target.value)}
+                      placeholder="Event Title"
+                      className={`text-lg font-medium ${errors.title ? 'border-red-500' : ''}`}
+                    />
+                  </div>
+                  {errors.title && (
+                    <p className="text-red-500 text-xs mt-1">{errors.title}</p>
+                  )}
                 </div>
-                {errors.title && (
-                  <p className="text-red-500 text-xs mt-1">{errors.title}</p>
-                )}
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="calendar">Calendar *</Label>
-                <Select value={calendarId} onValueChange={setCalendarId}>
-                  <SelectTrigger type="button" className={errors.calendarId ? 'border-red-500' : ''}>
-                    <SelectValue placeholder="Select a calendar" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {calendars.map(calendar => (
-                      <SelectItem key={calendar.id} value={calendar.id.toString()}>
-                        <div className="flex items-center gap-2">
-                          <div 
-                            className="w-3 h-3 rounded-full" 
-                            style={{ backgroundColor: calendar.color }}
-                          />
-                          {calendar.name}
-                          {calendar.isPrimary && (
-                            <span className="text-xs bg-muted px-1 py-0.5 rounded">Primary</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
+                
+                <div className="space-y-2">
+                  <Label htmlFor="calendar">Calendar *</Label>
+                  <Select value={calendarId} onValueChange={setCalendarId}>
+                    <SelectTrigger type="button" className={errors.calendarId ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="Select a calendar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {calendars.map(calendar => (
+                        <SelectItem key={calendar.id} value={calendar.id.toString()}>
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: calendar.color }}
+                            />
+                            {calendar.name}
+                            {calendar.isPrimary && (
+                              <span className="text-xs bg-muted px-1 py-0.5 rounded">Primary</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
                     {editableSharedCalendars.length > 0 && (
                       <>
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -1089,6 +1090,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 </div>
               </div>
             </TabsContent>
+            </div>
           </ScrollArea>
         </Tabs>
         
