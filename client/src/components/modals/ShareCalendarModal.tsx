@@ -56,17 +56,13 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       return;
     }
 
-    console.log("ShareCalendarModal - Opened, initialCalendar:", initialCalendar);
-    console.log("ShareCalendarModal - Available calendars:", userCalendars);
-
-    // We need an initialization flag to avoid the infinite update loop when userCalendars is loading
-    const hasBeenInitialized = selectedCalendars.length > 0;
-    
-    // Only initialize if we haven't already done so
-    if (!hasBeenInitialized) {
+    // We need to initialize only when:
+    // 1. The modal is open
+    // 2. We have no selected calendars
+    // 3. Either we have an initial calendar or userCalendars are loaded
+    if (selectedCalendars.length === 0) {
       // If an initial calendar is provided (backward compatibility), add it only
       if (initialCalendar) {
-        console.log("ShareCalendarModal - Using single calendar mode with:", initialCalendar.name);
         setSelectedCalendars([{ 
           calendar: initialCalendar, 
           shares: [],
@@ -75,10 +71,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         setIsMultiSelectionMode(false);
       } else if (userCalendars && userCalendars.length > 0) {
         // Multi-selection mode - select all user calendars by default
-        console.log("ShareCalendarModal - Using multi-selection mode");
         setIsMultiSelectionMode(true);
-        
-        console.log("ShareCalendarModal - User owned calendars:", userCalendars.length);
         
         // Pre-select all user calendars
         setSelectedCalendars(
@@ -94,8 +87,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
   // Fetch shares for each selected calendar
   useEffect(() => {
-    // One-time fetch when selectedCalendars changes due to the first useEffect
-    // This prevents the infinite loop by using a ref to track if we've already fetched
+    // One-time fetch when selectedCalendars changes
     const fetchSelectedCalendarShares = () => {
       // Create a stable array of IDs to prevent infinite loops
       const calendarIdsToFetch = selectedCalendars
@@ -115,8 +107,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     if (selectedCalendars.some(item => item.loading)) {
       fetchSelectedCalendarShares();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [/* We use a ref instead of dependencies to avoid infinite renders */]);
+  }, [selectedCalendars]);
 
   const fetchShares = async (calendarId: number) => {
     try {
