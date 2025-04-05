@@ -422,22 +422,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     // Add attendees if provided
-    if (event.attendees && event.attendees.length > 0) {
-      event.attendees.forEach(attendee => {
-        // Format email correctly for iCalendar
-        let formattedAttendee = attendee;
-        if (attendee.includes('@')) {
-          formattedAttendee = `mailto:${attendee}`;
+    if (event.attendees) {
+      console.log("Processing attendees:", event.attendees);
+      
+      // Ensure attendees is an array
+      let attendeesList: any[] = [];
+      
+      // Handle string format (JSON string)
+      if (typeof event.attendees === 'string') {
+        try {
+          // Parse JSON string to array
+          const parsed = JSON.parse(event.attendees);
+          if (Array.isArray(parsed)) {
+            attendeesList = parsed;
+            console.log("Successfully parsed attendees from JSON string:", attendeesList);
+          } else {
+            // Single object in JSON string
+            attendeesList = [parsed];
+            console.log("Parsed single attendee from JSON string:", attendeesList);
+          }
+        } catch (e) {
+          console.warn("Failed to parse attendees JSON string:", e);
+          // Treat as a single string attendee as fallback
+          attendeesList = [event.attendees];
         }
-        eventComponents.push(`ATTENDEE;CN=${attendee};ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
-      });
+      } 
+      // Handle already parsed array
+      else if (Array.isArray(event.attendees)) {
+        attendeesList = event.attendees;
+        console.log("Using existing attendees array:", attendeesList);
+      }
+      // Handle other formats (single item)
+      else if (typeof event.attendees === 'object' && event.attendees !== null) {
+        attendeesList = [event.attendees];
+        console.log("Using single attendee object:", attendeesList);
+      }
+      
+      // Process each attendee if we have any
+      if (attendeesList && attendeesList.length > 0) {
+        for (let i = 0; i < attendeesList.length; i++) {
+          const attendeeItem = attendeesList[i];
+          try {
+            // Object format with email and role
+            if (typeof attendeeItem === 'object' && attendeeItem !== null && 'email' in attendeeItem) {
+              const attendee = attendeeItem as { email: string, role?: string };
+              // Ensure mailto: prefix
+              const formattedAttendee = `mailto:${attendee.email}`;
+              // Map role or use default
+              const role = attendee.role === 'Chairman' ? 'CHAIR' :
+                           attendee.role === 'Secretary' ? 'OPT-PARTICIPANT' : 'REQ-PARTICIPANT';
+              
+              eventComponents.push(`ATTENDEE;CN=${attendee.email};ROLE=${role}:${formattedAttendee}`);
+            } 
+            // Simple string format (just email)
+            else if (typeof attendeeItem === 'string') {
+              let formattedAttendee = attendeeItem;
+              if (attendeeItem.includes('@')) {
+                formattedAttendee = `mailto:${attendeeItem}`;
+              }
+              eventComponents.push(`ATTENDEE;CN=${attendeeItem};ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
+            }
+          } catch (error) {
+            console.error('Error processing attendee:', error, attendeeItem);
+          }
+        }
+      }
     }
     
     // Add resources if provided
-    if (event.resources && event.resources.length > 0) {
-      event.resources.forEach(resource => {
-        eventComponents.push(`RESOURCES:${resource}`);
-      });
+    if (event.resources) {
+      console.log("Processing resources:", event.resources);
+      
+      // Ensure resources is an array
+      let resourcesList: any[] = [];
+      
+      // Handle string format (JSON string)
+      if (typeof event.resources === 'string') {
+        try {
+          // Parse JSON string to array
+          const parsed = JSON.parse(event.resources);
+          if (Array.isArray(parsed)) {
+            resourcesList = parsed;
+            console.log("Successfully parsed resources from JSON string:", resourcesList);
+          } else {
+            // Single item in JSON string
+            resourcesList = [parsed];
+            console.log("Parsed single resource from JSON string:", resourcesList);
+          }
+        } catch (e) {
+          console.warn("Failed to parse resources JSON string:", e);
+          // Treat as a single string resource as fallback
+          resourcesList = [event.resources];
+        }
+      } 
+      // Handle already parsed array
+      else if (Array.isArray(event.resources)) {
+        resourcesList = event.resources;
+        console.log("Using existing resources array:", resourcesList);
+      }
+      // Handle other formats (single item)
+      else if (typeof event.resources === 'object' && event.resources !== null) {
+        resourcesList = [event.resources];
+        console.log("Using single resource object:", resourcesList);
+      }
+      
+      // Process each resource if we have any
+      if (resourcesList && resourcesList.length > 0) {
+        for (let i = 0; i < resourcesList.length; i++) {
+          const resource = resourcesList[i];
+          if (resource) {  // Check for null/undefined
+            const resourceStr = typeof resource === 'string' ? resource : String(resource);
+            eventComponents.push(`RESOURCES:${resourceStr}`);
+            console.log("Added resource:", resourceStr);
+          }
+        }
+      }
     }
     
     // Add standard properties

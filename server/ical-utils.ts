@@ -270,167 +270,229 @@ export function generateThunderbirdCompatibleICS(
   }
   
   // Add attendees if provided
-  if (event.attendees && event.attendees.length > 0) {
+  if (event.attendees) {
     console.log("Processing attendees:", event.attendees);
     
-    // First, try to parse attendees if they're in string format
-    let attendeesList = event.attendees;
+    // Ensure attendees is an array
+    let attendeesList: any[] = [];
     
-    if (attendeesList.length === 1 && typeof attendeesList[0] === 'string') {
-      // Check if it's a JSON string array
+    // Handle string format (JSON string)
+    if (typeof event.attendees === 'string') {
       try {
-        if (attendeesList[0].startsWith('[') && attendeesList[0].endsWith(']')) {
-          const parsedAttendees = JSON.parse(attendeesList[0]);
-          if (Array.isArray(parsedAttendees)) {
-            attendeesList = parsedAttendees;
-            console.log("Successfully parsed attendees JSON array:", attendeesList);
-          }
+        // Parse JSON string to array
+        const parsed = JSON.parse(event.attendees);
+        if (Array.isArray(parsed)) {
+          attendeesList = parsed;
+          console.log("Successfully parsed attendees from JSON string:", attendeesList);
+        } else {
+          // Single object in JSON string
+          attendeesList = [parsed];
+          console.log("Parsed single attendee from JSON string:", attendeesList);
         }
       } catch (e) {
-        console.warn("Failed to parse attendees as JSON:", e);
+        console.warn("Failed to parse attendees JSON string:", e);
+        // Treat as a single string attendee as fallback
+        attendeesList = [event.attendees];
       }
+    } 
+    // Handle already parsed array
+    else if (Array.isArray(event.attendees)) {
+      attendeesList = event.attendees;
+      console.log("Using existing attendees array:", attendeesList);
+    }
+    // Handle other formats (single item)
+    else if (typeof event.attendees === 'object' && event.attendees !== null) {
+      attendeesList = [event.attendees];
+      console.log("Using single attendee object:", attendeesList);
     }
     
-    // Process each attendee
-    attendeesList.forEach(attendeeItem => {
-      try {
-        console.log("Processing attendee item:", attendeeItem);
-        
-        // Handle both string and object formats
-        if (typeof attendeeItem === 'string') {
-          // Check if it might be a stringified JSON object
-          if (attendeeItem.startsWith('{') && attendeeItem.endsWith('}')) {
-            try {
-              const parsedAttendee = JSON.parse(attendeeItem);
-              if (parsedAttendee && parsedAttendee.email) {
-                // It's a valid JSON object with email property, use that
-                const email = parsedAttendee.email;
-                const role = parsedAttendee.role || 'REQ-PARTICIPANT';
-                const formattedAttendee = `mailto:${email}`;
-                
-                // Map our role types to iCalendar role types
-                let icalRole = 'REQ-PARTICIPANT';
-                
-                switch (role) {
-                  case 'Chairman':
-                    icalRole = 'CHAIR';
-                    break;
-                  case 'Secretary':
-                    icalRole = 'OPT-PARTICIPANT'; // Not perfect match but closest in iCal
-                    break;
-                  case 'Member':
-                  default:
-                    icalRole = 'REQ-PARTICIPANT';
-                }
-                
-                // Add attendee with proper role and display name
-                eventComponents.push(`ATTENDEE;CN=${email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=${icalRole}:${formattedAttendee}`);
-                console.log(`Added attendee with role ${icalRole}:`, email);
-                return; // Continue to next attendee
-              }
-            } catch (parseError) {
-              console.warn("Failed to parse attendee as JSON object:", parseError);
-              // Continue with string processing
-            }
-          }
-          
-          // Simple string format (just email)
-          let email = attendeeItem;
-          let formattedAttendee = email;
-          
-          // Ensure mailto: prefix for emails
-          if (email.includes('@')) {
-            formattedAttendee = `mailto:${email}`;
-          }
-          
-          // Add as regular participant
-          eventComponents.push(`ATTENDEE;CN=${email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
-          console.log("Added attendee as string:", email);
-        } 
-        else if (typeof attendeeItem === 'object' && attendeeItem !== null) {
-          // Object format with email and role
-          const attendee = attendeeItem as { email: string, role?: string };
-          
-          if (!attendee.email) {
-            console.warn('Attendee object missing email:', attendeeItem);
-            return; // Skip this attendee
-          }
-          
-          // Ensure mailto: prefix
-          const formattedAttendee = `mailto:${attendee.email}`;
-          
-          // Map our role types to iCalendar role types
-          let icalRole = 'REQ-PARTICIPANT';
-          
-          if (attendee.role) {
-            switch (attendee.role) {
-              case 'Chairman':
-                icalRole = 'CHAIR';
-                break;
-              case 'Secretary':
-                icalRole = 'OPT-PARTICIPANT'; // Not perfect match but closest in iCal
-                break;
-              case 'Member':
-              default:
-                icalRole = 'REQ-PARTICIPANT';
-            }
-          }
-          
-          // Add attendee with proper role and RSVPs enabled
-          eventComponents.push(`ATTENDEE;CN=${attendee.email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=${icalRole}:${formattedAttendee}`);
-          console.log(`Added attendee with role ${icalRole}:`, attendee.email);
-        }
-      } catch (error) {
-        console.error('Error processing attendee:', error, attendeeItem);
-      }
-    });
-    
-    // Add organizer as well (set to the first attendee with CHAIR role, or the first attendee)
-    try {
-      // Find chairman first
-      let organizer: string | null = null;
-      
-      // Type-safe iteration
+    // Ensure we have attendees to process
+    if (attendeesList && attendeesList.length > 0) {
+      // Process each attendee
       for (let i = 0; i < attendeesList.length; i++) {
-        const item = attendeesList[i];
-        if (typeof item === 'object' && item !== null) {
-          const typedItem = item as { email?: string, role?: string };
-          if (typedItem.role === 'Chairman' && typedItem.email) {
-            organizer = typedItem.email;
-            break;
+        const attendeeItem = attendeesList[i];
+        try {
+          console.log("Processing attendee item:", attendeeItem);
+          
+          // Handle string format
+          if (typeof attendeeItem === 'string') {
+            // Check if it might be a stringified JSON object
+            if (attendeeItem.startsWith('{') && attendeeItem.endsWith('}')) {
+              try {
+                const parsedAttendee = JSON.parse(attendeeItem);
+                if (parsedAttendee && parsedAttendee.email) {
+                  // It's a valid JSON object with email property, use that
+                  const email = parsedAttendee.email;
+                  const role = parsedAttendee.role || 'REQ-PARTICIPANT';
+                  const formattedAttendee = `mailto:${email}`;
+                  
+                  // Map our role types to iCalendar role types
+                  let icalRole = 'REQ-PARTICIPANT';
+                  
+                  switch (role) {
+                    case 'Chairman':
+                      icalRole = 'CHAIR';
+                      break;
+                    case 'Secretary':
+                      icalRole = 'OPT-PARTICIPANT'; // Not perfect match but closest in iCal
+                      break;
+                    case 'Member':
+                    default:
+                      icalRole = 'REQ-PARTICIPANT';
+                  }
+                  
+                  // Add attendee with proper role and display name
+                  eventComponents.push(`ATTENDEE;CN=${email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=${icalRole}:${formattedAttendee}`);
+                  console.log(`Added attendee with role ${icalRole}:`, email);
+                  continue; // Process next attendee
+                }
+              } catch (parseError) {
+                console.warn("Failed to parse attendee as JSON object:", parseError);
+                // Continue with string processing
+              }
+            }
+            
+            // Simple string format (just email)
+            let email = attendeeItem;
+            let formattedAttendee = email;
+            
+            // Ensure mailto: prefix for emails
+            if (email.includes('@')) {
+              formattedAttendee = `mailto:${email}`;
+            }
+            
+            // Add as regular participant
+            eventComponents.push(`ATTENDEE;CN=${email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
+            console.log("Added attendee as string:", email);
+          } 
+          else if (typeof attendeeItem === 'object' && attendeeItem !== null) {
+            // Object format with email and role
+            const attendee = attendeeItem as { email: string, role?: string, id?: string };
+            
+            if (!attendee.email) {
+              console.warn('Attendee object missing email:', attendeeItem);
+              continue; // Skip this attendee
+            }
+            
+            // Ensure mailto: prefix
+            const formattedAttendee = `mailto:${attendee.email}`;
+            
+            // Map our role types to iCalendar role types
+            let icalRole = 'REQ-PARTICIPANT';
+            
+            if (attendee.role) {
+              switch (attendee.role) {
+                case 'Chairman':
+                  icalRole = 'CHAIR';
+                  break;
+                case 'Secretary':
+                  icalRole = 'OPT-PARTICIPANT'; // Not perfect match but closest in iCal
+                  break;
+                case 'Member':
+                default:
+                  icalRole = 'REQ-PARTICIPANT';
+              }
+            }
+            
+            // Add attendee with proper role and RSVPs enabled
+            eventComponents.push(`ATTENDEE;CN=${attendee.email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=${icalRole}:${formattedAttendee}`);
+            console.log(`Added attendee with role ${icalRole}:`, attendee.email);
           }
+        } catch (error) {
+          console.error('Error processing attendee:', error, attendeeItem);
         }
       }
       
-      // If no chairman found, use first attendee
-      if (!organizer) {
-        const firstAttendee = attendeesList[0];
-        if (typeof firstAttendee === 'string') {
-          if (firstAttendee.includes('@')) {
-            organizer = firstAttendee;
-          }
-        } else if (typeof firstAttendee === 'object' && firstAttendee !== null) {
-          const typedAttendee = firstAttendee as { email?: string };
-          if (typedAttendee.email) {
-            organizer = typedAttendee.email;
+      // Add organizer as well (set to the first attendee with CHAIR role, or the first attendee)
+      try {
+        // Find chairman first
+        let organizer: string | null = null;
+        
+        // Type-safe iteration
+        for (let i = 0; i < attendeesList.length; i++) {
+          const item = attendeesList[i];
+          if (typeof item === 'object' && item !== null) {
+            const typedItem = item as { email?: string, role?: string };
+            if (typedItem.role === 'Chairman' && typedItem.email) {
+              organizer = typedItem.email;
+              break;
+            }
           }
         }
+        
+        // If no chairman found, use first attendee
+        if (!organizer && attendeesList.length > 0) {
+          const firstAttendee = attendeesList[0];
+          if (typeof firstAttendee === 'string') {
+            if (firstAttendee.includes('@')) {
+              organizer = firstAttendee;
+            }
+          } else if (typeof firstAttendee === 'object' && firstAttendee !== null) {
+            const typedAttendee = firstAttendee as { email?: string };
+            if (typedAttendee.email) {
+              organizer = typedAttendee.email;
+            }
+          }
+        }
+        
+        if (organizer) {
+          eventComponents.push(`ORGANIZER;CN=${organizer}:mailto:${organizer}`);
+          console.log("Added organizer:", organizer);
+        }
+      } catch (e) {
+        console.error("Error setting organizer:", e);
       }
-      
-      if (organizer) {
-        eventComponents.push(`ORGANIZER;CN=${organizer}:mailto:${organizer}`);
-        console.log("Added organizer:", organizer);
-      }
-    } catch (e) {
-      console.error("Error setting organizer:", e);
     }
   }
   
   // Add resources if provided
-  if (event.resources && event.resources.length > 0) {
-    event.resources.forEach(resource => {
-      eventComponents.push(`RESOURCES:${resource}`);
-    });
+  if (event.resources) {
+    console.log("Processing resources:", event.resources);
+    
+    // Ensure resources is an array
+    let resourcesList: any[] = [];
+    
+    // Handle string format (JSON string)
+    if (typeof event.resources === 'string') {
+      try {
+        // Parse JSON string to array
+        const parsed = JSON.parse(event.resources);
+        if (Array.isArray(parsed)) {
+          resourcesList = parsed;
+          console.log("Successfully parsed resources from JSON string:", resourcesList);
+        } else {
+          // Single item in JSON string
+          resourcesList = [parsed];
+          console.log("Parsed single resource from JSON string:", resourcesList);
+        }
+      } catch (e) {
+        console.warn("Failed to parse resources JSON string:", e);
+        // Treat as a single string resource as fallback
+        resourcesList = [event.resources];
+      }
+    } 
+    // Handle already parsed array
+    else if (Array.isArray(event.resources)) {
+      resourcesList = event.resources;
+      console.log("Using existing resources array:", resourcesList);
+    }
+    // Handle other formats (single item)
+    else if (typeof event.resources === 'object' && event.resources !== null) {
+      resourcesList = [event.resources];
+      console.log("Using single resource object:", resourcesList);
+    }
+    
+    // Process each resource if we have any
+    if (resourcesList && resourcesList.length > 0) {
+      for (let i = 0; i < resourcesList.length; i++) {
+        const resource = resourcesList[i];
+        if (resource) {  // Check for null/undefined
+          const resourceStr = typeof resource === 'string' ? resource : String(resource);
+          eventComponents.push(`RESOURCES:${resourceStr}`);
+          console.log("Added resource:", resourceStr);
+        }
+      }
+    }
   }
   
   // Add standard properties
