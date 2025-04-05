@@ -325,7 +325,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
           <div className="space-y-2">
             <Label htmlFor="calendar">Calendar *</Label>
             <Select value={calendarId} onValueChange={setCalendarId}>
-              <SelectTrigger>
+              <SelectTrigger type="button">
                 <SelectValue placeholder="Select a calendar" />
               </SelectTrigger>
               <SelectContent>
@@ -429,7 +429,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
           <div className="space-y-2">
             <Label htmlFor="timezone">Timezone</Label>
             <Select value={timezone} onValueChange={setTimezone}>
-              <SelectTrigger>
+              <SelectTrigger type="button">
                 <SelectValue placeholder="Select timezone" />
               </SelectTrigger>
               <SelectContent className="max-h-80">

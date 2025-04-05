@@ -105,6 +105,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
   const loadingCalendarIds = React.useRef(new Set<number>());
   const fetchedCalendarIds = React.useRef(new Set<number>());
   const calendarsToFetch = React.useRef<number[]>([]);
+  const authLoadingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
   // Effect to identify calendars needing loading
   useEffect(() => {
@@ -113,8 +114,27 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       loadingCalendarIds.current.clear();
       fetchedCalendarIds.current.clear();
       calendarsToFetch.current = [];
+      
+      // Clear any pending timeout
+      if (authLoadingTimeoutRef.current) {
+        clearTimeout(authLoadingTimeoutRef.current);
+        authLoadingTimeoutRef.current = null;
+      }
       return;
     }
+    
+    // Set a timeout to force loading state to complete if it takes too long
+    authLoadingTimeoutRef.current = setTimeout(() => {
+      console.log("Auth loading timeout - forcing UI to proceed with available permissions");
+      
+      // Force update any calendars that are still loading
+      setSelectedCalendars(prev => 
+        prev.map(item => item.loading ? { ...item, loading: false } : item)
+      );
+      
+      // Clear loading state
+      loadingCalendarIds.current.clear();
+    }, 2000); // 2 second timeout
     
     // Collect list of calendars that need fetching (avoids modifying state inside effect)
     const needFetching: number[] = [];
@@ -134,20 +154,38 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     
     // Store the list of calendars to fetch
     calendarsToFetch.current = needFetching;
-  }, [open]); // Only depend on modal open state to avoid infinite loops
+    
+    // Cleanup function
+    return () => {
+      if (authLoadingTimeoutRef.current) {
+        clearTimeout(authLoadingTimeoutRef.current);
+        authLoadingTimeoutRef.current = null;
+      }
+    };
+  }, [open, selectedCalendars]); // Include selectedCalendars in dependencies
   
   // Separate effect to handle the actual fetching
   useEffect(() => {
+    // Preserve reference stability for cleanup function
+    const fetchedIds = fetchedCalendarIds.current;
+    const loadingIds = loadingCalendarIds.current;
+    
     if (!open || calendarsToFetch.current.length === 0) return;
     
     // Copy the current fetch list and clear it
     const toFetch = [...calendarsToFetch.current];
     calendarsToFetch.current = [];
     
+    // Track fetch operations for cleanup
+    const fetchOperations: Promise<void>[] = [];
+    
     // Fetch each calendar's shares
     toFetch.forEach(calendarId => {
-      (async () => {
+      const fetchPromise = (async () => {
         try {
+          // Exit early if modal has closed during fetch
+          if (!open) return;
+          
           const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
           if (response.ok) {
             const data = await response.json();
@@ -177,11 +215,23 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           }
         } finally {
           // Mark as fetched and remove from loading
-          fetchedCalendarIds.current.add(calendarId);
-          loadingCalendarIds.current.delete(calendarId);
+          if (open) {
+            fetchedIds.add(calendarId);
+            loadingIds.delete(calendarId);
+          }
         }
       })();
+      
+      fetchOperations.push(fetchPromise);
     });
+    
+    // Cleanup function to abort any pending operations when component unmounts or effect re-runs
+    return () => {
+      // No need to handle the pending promises, just making sure refs are cleaned up
+      fetchedIds.clear();
+      loadingIds.clear();
+      calendarsToFetch.current = [];
+    };
   }, [open]); // Only refetch when modal opens/closes
 
   const fetchShares = async (calendarId: number) => {
@@ -438,6 +488,13 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     fetchedCalendarIds.current.clear();
     loadingCalendarIds.current.clear();
     calendarsToFetch.current = [];
+    
+    // Clear any pending timeout
+    if (authLoadingTimeoutRef.current) {
+      clearTimeout(authLoadingTimeoutRef.current);
+      authLoadingTimeoutRef.current = null;
+    }
+    
     onClose();
   };
   

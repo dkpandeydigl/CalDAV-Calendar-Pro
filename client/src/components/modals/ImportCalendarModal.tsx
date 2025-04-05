@@ -300,7 +300,7 @@ export default function ImportCalendarModal({
               <div className="mb-4">
                 <Label htmlFor="calendar-select">Select calendar to import into:</Label>
                 <Select value={selectedCalendarId} onValueChange={setSelectedCalendarId}>
-                  <SelectTrigger id="calendar-select" className="w-full">
+                  <SelectTrigger id="calendar-select" className="w-full" type="button">
                     <SelectValue placeholder="Select a calendar" />
                   </SelectTrigger>
                   <SelectContent>
