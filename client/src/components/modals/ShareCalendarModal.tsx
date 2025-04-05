@@ -83,38 +83,62 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         );
       }
     }
-  }, [initialCalendar, open, userCalendars, selectedCalendars.length]);
+  }, [initialCalendar, open, userCalendars]);
 
-  // Fetch shares for each selected calendar
+  // Use a ref to prevent fetching the same calendars multiple times
+  const fetchedCalendarIds = React.useRef(new Set<number>());
+  
+  // Fetch shares for selected calendars that need loading
   useEffect(() => {
-    // One-time fetch when selectedCalendars changes
-    const fetchSelectedCalendarShares = async () => {
-      // Create a stable array of IDs to prevent infinite loops
-      const calendarIdsToFetch = selectedCalendars
-        .filter(item => item.loading)
-        .map(item => item.calendar.id);
-      
-      // Only trigger if we have calendars to fetch
-      if (calendarIdsToFetch.length > 0) {
-        // Mark all calendars as not loading first to prevent infinite loop
-        setSelectedCalendars(prev => prev.map(item => 
-          calendarIdsToFetch.includes(item.calendar.id) 
-            ? { ...item, loading: false } 
-            : item
-        ));
-        
-        // Fetch shares for each calendar that needs loading
-        for (const calendarId of calendarIdsToFetch) {
-          await fetchShares(calendarId);
+    // Only run when modal is open
+    if (!open) return;
+    
+    // Get IDs of calendars that need loading and haven't been fetched yet
+    const calendarIdsToFetch = selectedCalendars
+      .filter(item => item.loading && !fetchedCalendarIds.current.has(item.calendar.id))
+      .map(item => item.calendar.id);
+    
+    // Only proceed if we have new calendars to fetch
+    if (calendarIdsToFetch.length === 0) return;
+    
+    // Mark these calendars as fetched to prevent refetch
+    calendarIdsToFetch.forEach(id => fetchedCalendarIds.current.add(id));
+    
+    // First mark them as not loading to prevent infinite loop
+    setSelectedCalendars(prev => prev.map(item => 
+      calendarIdsToFetch.includes(item.calendar.id) 
+        ? { ...item, loading: false } 
+        : item
+    ));
+    
+    // Then fetch each calendar's shares
+    const fetchShares = async () => {
+      for (const calendarId of calendarIdsToFetch) {
+        try {
+          const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
+          if (response.ok) {
+            const data = await response.json();
+            // Update the shares for this calendar
+            setSelectedCalendars(prev => prev.map(item => 
+              item.calendar.id === calendarId 
+                ? { ...item, shares: data, loading: false } 
+                : item
+            ));
+          }
+        } catch (error) {
+          console.error(`Error fetching calendar shares for calendar ${calendarId}:`, error);
+          // Mark as not loading even on error
+          setSelectedCalendars(prev => prev.map(item => 
+            item.calendar.id === calendarId 
+              ? { ...item, loading: false } 
+              : item
+          ));
         }
       }
     };
     
-    // Only fetch when selectedCalendars has items that need loading
-    if (selectedCalendars.some(item => item.loading)) {
-      fetchSelectedCalendarShares();
-    }
-  }, []);
+    fetchShares();
+  }, [open, selectedCalendars]);
 
   const fetchShares = async (calendarId: number) => {
     try {
@@ -345,8 +369,15 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
   const canShareWithServer = selectedCalendars.some(c => c.calendar.url);
 
+  // Custom close handler to properly clean up
+  const handleClose = () => {
+    // Reset the fetched calendar IDs set when closing
+    fetchedCalendarIds.current.clear();
+    onClose();
+  };
+  
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle>{getDialogTitle()}</DialogTitle>
@@ -581,7 +612,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           <Button 
             type="button" 
             variant="secondary" 
-            onClick={onClose}
+            onClick={handleClose}
           >
             Close
           </Button>
