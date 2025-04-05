@@ -88,7 +88,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
   // Fetch shares for each selected calendar
   useEffect(() => {
     // One-time fetch when selectedCalendars changes
-    const fetchSelectedCalendarShares = () => {
+    const fetchSelectedCalendarShares = async () => {
       // Create a stable array of IDs to prevent infinite loops
       const calendarIdsToFetch = selectedCalendars
         .filter(item => item.loading)
@@ -96,10 +96,17 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       
       // Only trigger if we have calendars to fetch
       if (calendarIdsToFetch.length > 0) {
+        // Mark all calendars as not loading first to prevent infinite loop
+        setSelectedCalendars(prev => prev.map(item => 
+          calendarIdsToFetch.includes(item.calendar.id) 
+            ? { ...item, loading: false } 
+            : item
+        ));
+        
         // Fetch shares for each calendar that needs loading
-        calendarIdsToFetch.forEach(calendarId => {
-          fetchShares(calendarId);
-        });
+        for (const calendarId of calendarIdsToFetch) {
+          await fetchShares(calendarId);
+        }
       }
     };
     
@@ -107,7 +114,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     if (selectedCalendars.some(item => item.loading)) {
       fetchSelectedCalendarShares();
     }
-  }, [selectedCalendars]);
+  }, []);
 
   const fetchShares = async (calendarId: number) => {
     try {

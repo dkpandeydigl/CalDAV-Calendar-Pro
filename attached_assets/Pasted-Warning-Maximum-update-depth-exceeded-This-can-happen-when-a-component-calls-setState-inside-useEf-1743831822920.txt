@@ -1,0 +1,29 @@
+Warning: Maximum update depth exceeded. This can happen when a component calls setState inside useEffect, but useEffect either doesn&#x27;t have a dependency array, or one of the dependencies changes on every render.
+    at ShareCalendarModal (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/components/modals/ShareCalendarModal.tsx:33:38)
+    at div
+    at CalendarContent (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/pages/Calendar.tsx:358:95)
+    at Calendar
+    at ProtectedRoute (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/lib/protected-route.tsx:22:14)
+    at Route (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=57de0546:323:16)
+    at Switch (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=57de0546:379:17)
+    at Router
+    at CalendarProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/contexts/CalendarContext.tsx:33:36)
+    at AuthProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/hooks/use-auth.tsx:26:32)
+    at QueryClientProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=57de0546:2805:3)
+    at App
+at ShareCalendarModal (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/components/modals/ShareCalendarModal.tsx:33:38)
+at div
+at CalendarContent (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/pages/Calendar.tsx:358:95)
+at Calendar
+at ProtectedRoute (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/lib/protected-route.tsx:22:14)
+at Route (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=57de0546:323:16)
+at Switch (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=57de0546:379:17)
+at Router
+at CalendarProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/contexts/CalendarContext.tsx:33:36)
+at AuthProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/hooks/use-auth.tsx:26:32)
+at QueryClientProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=57de0546:2805:3)
+at App
+at t.value (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:17465)
+at new t (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:12630)
+at t.value (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:32766)
+at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:34400

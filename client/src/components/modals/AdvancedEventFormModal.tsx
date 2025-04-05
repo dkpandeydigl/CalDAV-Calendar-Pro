@@ -557,16 +557,16 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         
         <Tabs defaultValue="basic" className="w-full" value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-4">
-            <TabsTrigger value="basic" className="flex items-center gap-1">
+            <TabsTrigger value="basic" className="flex items-center gap-1 cursor-pointer">
               <CalendarDays className="h-4 w-4" /> Basic Details
             </TabsTrigger>
-            <TabsTrigger value="attendees" className="flex items-center gap-1">
+            <TabsTrigger value="attendees" className="flex items-center gap-1 cursor-pointer">
               <Users className="h-4 w-4" /> Attendees
             </TabsTrigger>
-            <TabsTrigger value="recurrence" className="flex items-center gap-1">
+            <TabsTrigger value="recurrence" className="flex items-center gap-1 cursor-pointer">
               <Repeat className="h-4 w-4" /> Recurrence
             </TabsTrigger>
-            <TabsTrigger value="notes" className="flex items-center gap-1">
+            <TabsTrigger value="notes" className="flex items-center gap-1 cursor-pointer">
               <FileText className="h-4 w-4" /> Notes & Description
             </TabsTrigger>
           </TabsList>
@@ -582,14 +582,14 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   onChange={e => setTitle(e.target.value)}
                   placeholder="Event title"
                   required
-                  className="text-lg"
+                  className="text-lg cursor-text"
                 />
               </div>
               
               <div className="space-y-2">
                 <Label htmlFor="calendar">Calendar *</Label>
                 <Select value={calendarId} onValueChange={setCalendarId}>
-                  <SelectTrigger>
+                  <SelectTrigger className="cursor-pointer">
                     <SelectValue placeholder="Select a calendar" />
                   </SelectTrigger>
                   <SelectContent>
@@ -633,6 +633,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     value={location}
                     onChange={e => setLocation(e.target.value)}
                     placeholder="Add location"
+                    className="cursor-text"
                   />
                   <Button variant="outline" type="button" size="sm" className="shrink-0">
                     Add Venue
@@ -658,6 +659,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     value={startDate}
                     onChange={e => setStartDate(e.target.value)}
                     required
+                    className="cursor-text"
                   />
                 </div>
                 
@@ -710,7 +712,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <div className="space-y-2">
                 <Label htmlFor="timezone">Timezone</Label>
                 <Select value={timezone} onValueChange={setTimezone}>
-                  <SelectTrigger>
+                  <SelectTrigger className="cursor-pointer">
                     <SelectValue placeholder="Select timezone" />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
@@ -731,7 +733,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       value={isBusy ? "busy" : "free"} 
                       onValueChange={(v) => setIsBusy(v === "busy")}
                     >
-                      <SelectTrigger className="w-24">
+                      <SelectTrigger className="w-24 cursor-pointer">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -934,7 +936,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             dayOfMonth: parseInt(value)
                           })}
                         >
-                          <SelectTrigger id="day-of-month" className="w-24">
+                          <SelectTrigger id="day-of-month" className="w-24 cursor-pointer">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -961,7 +963,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 monthOfYear: parseInt(value)
                               })}
                             >
-                              <SelectTrigger id="month-of-year" className="w-32">
+                              <SelectTrigger id="month-of-year" className="w-32 cursor-pointer">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -990,7 +992,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 dayOfMonth: parseInt(value)
                               })}
                             >
-                              <SelectTrigger id="day-of-month-yearly" className="w-24">
+                              <SelectTrigger id="day-of-month-yearly" className="w-24 cursor-pointer">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
