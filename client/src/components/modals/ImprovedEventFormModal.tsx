@@ -24,7 +24,10 @@ import {
   Repeat, 
   MapPin, 
   FileText,
-  AlertCircle
+  AlertCircle,
+  Save,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -447,10 +450,17 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         
         // Toast is displayed by the mutation's onSuccess handler
       } else {
-        // For new events, we need to generate a unique ID
+        // For new events, we need to generate a unique ID and include all required fields
         const newEventData = {
           ...eventData,
           uid: `event-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          // Include mandatory fields with null/default values to match schema requirements
+          resources: null,
+          etag: null,
+          url: null,
+          rawData: null,
+          syncError: null,
+          lastSyncAttempt: null
         };
         
         // Create new event
@@ -507,32 +517,43 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     <Dialog open={open} onOpenChange={open => {
       if (!open) onClose();
     }}>
-      <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle>{event ? 'Edit Event' : 'Create Event'}</DialogTitle>
+      <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
+        <DialogHeader className="pb-4 border-b">
+          <DialogTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/80">
+            {event ? 'Edit Event' : 'Create Event'}
+          </DialogTitle>
+          <p className="text-muted-foreground text-sm mt-1">Fill in the details to schedule your event</p>
         </DialogHeader>
         
         <Tabs defaultValue="basic" value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="mb-4">
-            <TabsTrigger value="basic" className="flex items-center gap-1">
+          <TabsList className="mb-6 grid grid-cols-4 gap-2 bg-transparent p-0">
+            <TabsTrigger 
+              value="basic" 
+              className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
               <Calendar className="h-4 w-4" />
               <span>Basic</span>
             </TabsTrigger>
-            <TabsTrigger value="attendees" className="flex items-center gap-1">
+            <TabsTrigger 
+              value="attendees" 
+              className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
               <Users className="h-4 w-4" />
               <span>Attendees</span>
               {attendees.length > 0 && (
-                <Badge variant="secondary" className="ml-1">{attendees.length}</Badge>
+                <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">{attendees.length}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="recurrence" className="flex items-center gap-1">
+            <TabsTrigger 
+              value="recurrence" 
+              className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
               <Repeat className="h-4 w-4" />
               <span>Recurrence</span>
               {recurrence.pattern !== 'None' && (
-                <Badge variant="secondary" className="ml-1">!</Badge>
+                <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">!</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="more" className="flex items-center gap-1">
+            <TabsTrigger 
+              value="more" 
+              className="flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
               <FileText className="h-4 w-4" />
               <span>More</span>
             </TabsTrigger>
@@ -1071,7 +1092,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           </ScrollArea>
         </Tabs>
         
-        <DialogFooter className="flex items-center justify-between">
+        <DialogFooter className="flex items-center justify-between border-t pt-4 mt-4">
           <div>
             {event && (
               <Button
@@ -1079,17 +1100,23 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 onClick={handleDelete}
                 disabled={isDeleting || isSubmitting}
                 type="button"
+                className="flex items-center gap-2 shadow-sm transition-all hover:shadow-md hover:bg-destructive/90"
               >
-                {isDeleting ? 'Deleting...' : 'Delete'}
+                {isDeleting ? 
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                  <Trash2 className="h-4 w-4 mr-1" />
+                }
+                {isDeleting ? 'Deleting...' : 'Delete Event'}
               </Button>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <Button
               variant="outline"
               onClick={onClose}
               disabled={isSubmitting || isDeleting}
               type="button"
+              className="border border-primary/20 hover:bg-primary/5 transition-all"
             >
               Cancel
             </Button>
@@ -1097,10 +1124,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               onClick={handleSubmit}
               disabled={isSubmitting || isDeleting}
               type="button"
+              className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-sm hover:shadow-md transition-all min-w-[120px] justify-center"
             >
+              {isSubmitting ? 
+                <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                <Save className="h-4 w-4 mr-1" />
+              }
               {isSubmitting
                 ? (event ? 'Updating...' : 'Creating...')
-                : (event ? 'Update' : 'Create')}
+                : (event ? 'Update Event' : 'Create Event')}
             </Button>
           </div>
         </DialogFooter>
