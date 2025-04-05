@@ -143,21 +143,52 @@ export function generateThunderbirdCompatibleICS(
   
   // Add recurrence rule if provided
   if (event.recurrenceRule) {
-    try {
-      // Define the recurrence rule type for better type checking
-      interface RecurrenceRule {
-        pattern: string;
-        interval?: number;
-        weekdays?: string[];
-        endType?: string;
-        occurrences?: number;
-        untilDate?: string;
+    // Define the recurrence rule type for better type checking
+    interface RecurrenceRule {
+      pattern: string;
+      interval?: number;
+      weekdays?: string[];
+      endType?: string;
+      occurrences?: number;
+      untilDate?: string;
+    }
+    
+    // Process recurrence rule based on its type
+    const processRecurrenceRule = () => {
+      // Check if it's already a formatted RRULE string
+      if (typeof event.recurrenceRule === 'string' && event.recurrenceRule.startsWith('RRULE:')) {
+        eventComponents.push(event.recurrenceRule);
+        console.log("Using existing RRULE string:", event.recurrenceRule);
+        return; // Done with recurrence processing
       }
       
-      // Try to parse the recurrence rule as JSON if it's a string
-      const rule: RecurrenceRule = typeof event.recurrenceRule === 'string' 
-        ? JSON.parse(event.recurrenceRule) 
-        : event.recurrenceRule;
+      // Try to get rule object from various formats
+      let rule: RecurrenceRule | null = null;
+      
+      if (typeof event.recurrenceRule === 'string') {
+        try {
+          // Try to parse as JSON
+          rule = JSON.parse(event.recurrenceRule);
+        } catch (e) {
+          // If not valid JSON, just use as plain text with RRULE: prefix
+          if (event.recurrenceRule && !event.recurrenceRule.startsWith('RRULE:')) {
+            eventComponents.push(`RRULE:${event.recurrenceRule}`);
+          }
+          return; // Done with recurrence processing
+        }
+      } else if (event.recurrenceRule && typeof event.recurrenceRule === 'object') {
+        // It's already an object
+        rule = event.recurrenceRule as unknown as RecurrenceRule;
+      }
+      
+      // If we don't have a valid rule object, log warning and return
+      if (!rule || !rule.pattern) {
+        console.warn("Invalid recurrence rule format:", 
+          JSON.stringify(event.recurrenceRule || ''));
+        return;
+      }
+      
+      console.log("Generating RRULE from object:", rule);
       
       // Convert our rule format to iCalendar RRULE format
       let rruleString = 'RRULE:FREQ=';
@@ -211,16 +242,27 @@ export function generateThunderbirdCompatibleICS(
       if (rule.endType === 'After' && rule.occurrences) {
         rruleString += `;COUNT=${rule.occurrences}`;
       } else if (rule.endType === 'Until' && rule.untilDate) {
-        // Convert date to RRULE format (YYYYMMDD)
-        const untilDate = new Date(rule.untilDate);
-        const formattedUntil = untilDate.toISOString().slice(0, 10).replace(/-/g, '');
-        rruleString += `;UNTIL=${formattedUntil}`;
+        try {
+          // Format the date as required for UNTIL (YYYYMMDDTHHMMSSZ)
+          const untilDate = new Date(rule.untilDate);
+          // Make sure it's UTC
+          const formattedUntil = untilDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+          rruleString += `;UNTIL=${formattedUntil}`;
+        } catch (e) {
+          console.error("Error formatting UNTIL date:", e);
+        }
       }
       
+      console.log("Generated RRULE:", rruleString);
       eventComponents.push(rruleString);
+    };
+    
+    // Execute the recurrence rule processing with error handling
+    try {
+      processRecurrenceRule();
     } catch (error) {
-      console.error('Error parsing recurrence rule:', error);
-      // If we can't parse it as JSON or encounter another error, try using it directly (fallback)
+      console.error('Error processing recurrence rule:', error);
+      // Final fallback - just to be safe
       if (typeof event.recurrenceRule === 'string' && event.recurrenceRule.startsWith('RRULE:')) {
         eventComponents.push(event.recurrenceRule);
       }
@@ -229,11 +271,69 @@ export function generateThunderbirdCompatibleICS(
   
   // Add attendees if provided
   if (event.attendees && event.attendees.length > 0) {
-    // Process each attendee
-    event.attendees.forEach(attendeeItem => {
+    console.log("Processing attendees:", event.attendees);
+    
+    // First, try to parse attendees if they're in string format
+    let attendeesList = event.attendees;
+    
+    if (attendeesList.length === 1 && typeof attendeesList[0] === 'string') {
+      // Check if it's a JSON string array
       try {
+        if (attendeesList[0].startsWith('[') && attendeesList[0].endsWith(']')) {
+          const parsedAttendees = JSON.parse(attendeesList[0]);
+          if (Array.isArray(parsedAttendees)) {
+            attendeesList = parsedAttendees;
+            console.log("Successfully parsed attendees JSON array:", attendeesList);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to parse attendees as JSON:", e);
+      }
+    }
+    
+    // Process each attendee
+    attendeesList.forEach(attendeeItem => {
+      try {
+        console.log("Processing attendee item:", attendeeItem);
+        
         // Handle both string and object formats
         if (typeof attendeeItem === 'string') {
+          // Check if it might be a stringified JSON object
+          if (attendeeItem.startsWith('{') && attendeeItem.endsWith('}')) {
+            try {
+              const parsedAttendee = JSON.parse(attendeeItem);
+              if (parsedAttendee && parsedAttendee.email) {
+                // It's a valid JSON object with email property, use that
+                const email = parsedAttendee.email;
+                const role = parsedAttendee.role || 'REQ-PARTICIPANT';
+                const formattedAttendee = `mailto:${email}`;
+                
+                // Map our role types to iCalendar role types
+                let icalRole = 'REQ-PARTICIPANT';
+                
+                switch (role) {
+                  case 'Chairman':
+                    icalRole = 'CHAIR';
+                    break;
+                  case 'Secretary':
+                    icalRole = 'OPT-PARTICIPANT'; // Not perfect match but closest in iCal
+                    break;
+                  case 'Member':
+                  default:
+                    icalRole = 'REQ-PARTICIPANT';
+                }
+                
+                // Add attendee with proper role and display name
+                eventComponents.push(`ATTENDEE;CN=${email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=${icalRole}:${formattedAttendee}`);
+                console.log(`Added attendee with role ${icalRole}:`, email);
+                return; // Continue to next attendee
+              }
+            } catch (parseError) {
+              console.warn("Failed to parse attendee as JSON object:", parseError);
+              // Continue with string processing
+            }
+          }
+          
           // Simple string format (just email)
           let email = attendeeItem;
           let formattedAttendee = email;
@@ -244,7 +344,8 @@ export function generateThunderbirdCompatibleICS(
           }
           
           // Add as regular participant
-          eventComponents.push(`ATTENDEE;CN=${email};ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
+          eventComponents.push(`ATTENDEE;CN=${email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
+          console.log("Added attendee as string:", email);
         } 
         else if (typeof attendeeItem === 'object' && attendeeItem !== null) {
           // Object format with email and role
@@ -275,13 +376,54 @@ export function generateThunderbirdCompatibleICS(
             }
           }
           
-          // Add attendee with proper role
-          eventComponents.push(`ATTENDEE;CN=${attendee.email};ROLE=${icalRole}:${formattedAttendee}`);
+          // Add attendee with proper role and RSVPs enabled
+          eventComponents.push(`ATTENDEE;CN=${attendee.email};PARTSTAT=NEEDS-ACTION;RSVP=TRUE;ROLE=${icalRole}:${formattedAttendee}`);
+          console.log(`Added attendee with role ${icalRole}:`, attendee.email);
         }
       } catch (error) {
         console.error('Error processing attendee:', error, attendeeItem);
       }
     });
+    
+    // Add organizer as well (set to the first attendee with CHAIR role, or the first attendee)
+    try {
+      // Find chairman first
+      let organizer: string | null = null;
+      
+      // Type-safe iteration
+      for (let i = 0; i < attendeesList.length; i++) {
+        const item = attendeesList[i];
+        if (typeof item === 'object' && item !== null) {
+          const typedItem = item as { email?: string, role?: string };
+          if (typedItem.role === 'Chairman' && typedItem.email) {
+            organizer = typedItem.email;
+            break;
+          }
+        }
+      }
+      
+      // If no chairman found, use first attendee
+      if (!organizer) {
+        const firstAttendee = attendeesList[0];
+        if (typeof firstAttendee === 'string') {
+          if (firstAttendee.includes('@')) {
+            organizer = firstAttendee;
+          }
+        } else if (typeof firstAttendee === 'object' && firstAttendee !== null) {
+          const typedAttendee = firstAttendee as { email?: string };
+          if (typedAttendee.email) {
+            organizer = typedAttendee.email;
+          }
+        }
+      }
+      
+      if (organizer) {
+        eventComponents.push(`ORGANIZER;CN=${organizer}:mailto:${organizer}`);
+        console.log("Added organizer:", organizer);
+      }
+    } catch (e) {
+      console.error("Error setting organizer:", e);
+    }
   }
   
   // Add resources if provided
