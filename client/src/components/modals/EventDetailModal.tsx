@@ -287,15 +287,43 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   <div>
                     <div className="text-sm font-medium mb-1">Attendees</div>
                     <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                      <ul className="space-y-1">
+                      <ul className="space-y-2">
                         {attendees
                           .filter(Boolean)
-                          .map((attendee, index) => (
-                            <li key={index} className="flex items-center">
-                              <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
-                              {String(attendee)}
-                            </li>
-                          ))}
+                          .map((attendee, index) => {
+                            // Handle both string and object formats
+                            if (typeof attendee === 'object' && attendee !== null) {
+                              // Object format with email and role
+                              const { email, role } = attendee as { email: string; role?: string };
+                              return (
+                                <li key={index} className="flex items-start">
+                                  <span className="material-icons text-neutral-500 mr-2 text-sm mt-0.5">person</span>
+                                  <div>
+                                    <div className="font-medium">{email}</div>
+                                    {role && (
+                                      <div className="text-xs text-muted-foreground">
+                                        <span className={`inline-block px-2 py-0.5 rounded ${
+                                          role === 'Chairman' ? 'bg-red-100 text-red-800' : 
+                                          role === 'Secretary' ? 'bg-blue-100 text-blue-800' : 
+                                          'bg-gray-100 text-gray-800'
+                                        }`}>
+                                          {role}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            } else {
+                              // Fallback for string format
+                              return (
+                                <li key={index} className="flex items-center">
+                                  <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
+                                  {String(attendee)}
+                                </li>
+                              );
+                            }
+                          })}
                       </ul>
                     </div>
                   </div>
