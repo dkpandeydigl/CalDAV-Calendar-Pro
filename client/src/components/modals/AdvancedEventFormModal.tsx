@@ -557,16 +557,16 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         
         <Tabs defaultValue="basic" className="w-full" value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-4">
-            <TabsTrigger value="basic" className="flex items-center gap-1 cursor-pointer">
+            <TabsTrigger value="basic" className="flex items-center gap-1">
               <CalendarDays className="h-4 w-4" /> Basic Details
             </TabsTrigger>
-            <TabsTrigger value="attendees" className="flex items-center gap-1 cursor-pointer">
+            <TabsTrigger value="attendees" className="flex items-center gap-1">
               <Users className="h-4 w-4" /> Attendees
             </TabsTrigger>
-            <TabsTrigger value="recurrence" className="flex items-center gap-1 cursor-pointer">
+            <TabsTrigger value="recurrence" className="flex items-center gap-1">
               <Repeat className="h-4 w-4" /> Recurrence
             </TabsTrigger>
-            <TabsTrigger value="notes" className="flex items-center gap-1 cursor-pointer">
+            <TabsTrigger value="notes" className="flex items-center gap-1">
               <FileText className="h-4 w-4" /> Notes & Description
             </TabsTrigger>
           </TabsList>
@@ -589,7 +589,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <div className="space-y-2">
                 <Label htmlFor="calendar">Calendar *</Label>
                 <Select value={calendarId} onValueChange={setCalendarId}>
-                  <SelectTrigger className="cursor-pointer">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select a calendar" />
                   </SelectTrigger>
                   <SelectContent>
@@ -711,7 +711,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <div className="space-y-2">
                 <Label htmlFor="timezone">Timezone</Label>
                 <Select value={timezone} onValueChange={setTimezone}>
-                  <SelectTrigger className="cursor-pointer">
+                  <SelectTrigger>
                     <SelectValue placeholder="Select timezone" />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
@@ -732,7 +732,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       value={isBusy ? "busy" : "free"} 
                       onValueChange={(v) => setIsBusy(v === "busy")}
                     >
-                      <SelectTrigger className="w-24 cursor-pointer">
+                      <SelectTrigger className="w-24">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -804,17 +804,17 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 value={attendee.role}
                                 onValueChange={(value: string) => handleChangeAttendeeRole(attendee.id, value as AttendeeRole)}
                               >
-                                <div className="flex items-center space-x-2 p-2 cursor-pointer hover:bg-muted rounded">
+                                <div className="flex items-center space-x-2 p-2 hover:bg-muted rounded">
                                   <RadioGroupItem value="Chairman" id={`chairman-${attendee.id}`} />
-                                  <Label htmlFor={`chairman-${attendee.id}`} className="cursor-pointer">Chairman</Label>
+                                  <Label htmlFor={`chairman-${attendee.id}`}>Chairman</Label>
                                 </div>
-                                <div className="flex items-center space-x-2 p-2 cursor-pointer hover:bg-muted rounded">
+                                <div className="flex items-center space-x-2 p-2 hover:bg-muted rounded">
                                   <RadioGroupItem value="Secretary" id={`secretary-${attendee.id}`} />
-                                  <Label htmlFor={`secretary-${attendee.id}`} className="cursor-pointer">Secretary</Label>
+                                  <Label htmlFor={`secretary-${attendee.id}`}>Secretary</Label>
                                 </div>
-                                <div className="flex items-center space-x-2 p-2 cursor-pointer hover:bg-muted rounded">
+                                <div className="flex items-center space-x-2 p-2 hover:bg-muted rounded">
                                   <RadioGroupItem value="Member" id={`member-${attendee.id}`} />
-                                  <Label htmlFor={`member-${attendee.id}`} className="cursor-pointer">Member</Label>
+                                  <Label htmlFor={`member-${attendee.id}`}>Member</Label>
                                 </div>
                               </RadioGroup>
                             </PopoverContent>
@@ -910,7 +910,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             <div 
                               key={day}
                               className={`
-                                px-3 py-1 rounded-full text-sm cursor-pointer border
+                                px-3 py-1 rounded-full text-sm border
                                 ${(recurrence.weekdays || []).includes(day) 
                                   ? 'bg-primary text-primary-foreground border-primary' 
                                   : 'bg-background border-border hover:bg-muted'}
@@ -935,7 +935,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             dayOfMonth: parseInt(value)
                           })}
                         >
-                          <SelectTrigger id="day-of-month" className="w-24 cursor-pointer">
+                          <SelectTrigger id="day-of-month" className="w-24">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -962,7 +962,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 monthOfYear: parseInt(value)
                               })}
                             >
-                              <SelectTrigger id="month-of-year" className="w-32 cursor-pointer">
+                              <SelectTrigger id="month-of-year" className="w-32">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -991,7 +991,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 dayOfMonth: parseInt(value)
                               })}
                             >
-                              <SelectTrigger id="day-of-month-yearly" className="w-24 cursor-pointer">
+                              <SelectTrigger id="day-of-month-yearly" className="w-24">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -1104,7 +1104,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           {templates.map(template => (
                             <div
                               key={template.id}
-                              className={`p-2 rounded cursor-pointer border ${
+                              className={`p-2 rounded border ${
                                 selectedTemplate === template.id 
                                   ? 'border-primary bg-primary/10' 
                                   : 'border-border hover:bg-muted'

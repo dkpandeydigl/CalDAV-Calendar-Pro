@@ -312,26 +312,25 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
         
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="title" className="cursor-pointer">Title *</Label>
+            <Label htmlFor="title">Title *</Label>
             <Input
               id="title"
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder="Event title"
               required
-              className="cursor-text"
             />
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="calendar" className="cursor-pointer">Calendar *</Label>
+            <Label htmlFor="calendar">Calendar *</Label>
             <Select value={calendarId} onValueChange={setCalendarId}>
-              <SelectTrigger className="cursor-pointer">
+              <SelectTrigger>
                 <SelectValue placeholder="Select a calendar" />
               </SelectTrigger>
               <SelectContent>
                 {calendars.map(calendar => (
-                  <SelectItem key={calendar.id} value={calendar.id.toString()} className="cursor-pointer">
+                  <SelectItem key={calendar.id} value={calendar.id.toString()}>
                     <div className="flex items-center gap-2">
                       <div 
                         className="w-3 h-3 rounded-full" 
@@ -350,7 +349,7 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
                       Shared Calendars (Edit Permission)
                     </div>
                     {editableSharedCalendars.map(calendar => (
-                      <SelectItem key={calendar.id} value={calendar.id.toString()} className="cursor-pointer">
+                      <SelectItem key={calendar.id} value={calendar.id.toString()}>
                         <div className="flex items-center gap-2">
                           <div 
                             className="w-3 h-3 rounded-full" 
@@ -371,34 +370,31 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
               id="all-day"
               checked={allDay}
               onCheckedChange={setAllDay}
-              className="cursor-pointer"
             />
-            <Label htmlFor="all-day" className="cursor-pointer">All day event</Label>
+            <Label htmlFor="all-day">All day event</Label>
           </div>
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="start-date" className="cursor-pointer">Start Date *</Label>
+              <Label htmlFor="start-date">Start Date *</Label>
               <Input
                 id="start-date"
                 type="date"
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
                 required
-                className="cursor-pointer"
               />
             </div>
             
             {!allDay && (
               <div className="space-y-2">
-                <Label htmlFor="start-time" className="cursor-pointer">Start Time *</Label>
+                <Label htmlFor="start-time">Start Time *</Label>
                 <Input
                   id="start-time"
                   type="time"
                   value={startTime}
                   onChange={e => setStartTime(e.target.value)}
                   required
-                  className="cursor-pointer"
                 />
               </div>
             )}
@@ -406,41 +402,39 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
           
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="end-date" className="cursor-pointer">End Date *</Label>
+              <Label htmlFor="end-date">End Date *</Label>
               <Input
                 id="end-date"
                 type="date"
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
                 required
-                className="cursor-pointer"
               />
             </div>
             
             {!allDay && (
               <div className="space-y-2">
-                <Label htmlFor="end-time" className="cursor-pointer">End Time *</Label>
+                <Label htmlFor="end-time">End Time *</Label>
                 <Input
                   id="end-time"
                   type="time"
                   value={endTime}
                   onChange={e => setEndTime(e.target.value)}
                   required
-                  className="cursor-pointer"
                 />
               </div>
             )}
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="timezone" className="cursor-pointer">Timezone</Label>
+            <Label htmlFor="timezone">Timezone</Label>
             <Select value={timezone} onValueChange={setTimezone}>
-              <SelectTrigger className="cursor-pointer">
+              <SelectTrigger>
                 <SelectValue placeholder="Select timezone" />
               </SelectTrigger>
               <SelectContent className="max-h-80">
                 {getTimezones().map(tz => (
-                  <SelectItem key={tz.value} value={tz.value} className="cursor-pointer">
+                  <SelectItem key={tz.value} value={tz.value}>
                     {tz.label}
                   </SelectItem>
                 ))}
@@ -449,25 +443,23 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="location" className="cursor-pointer">Location</Label>
+            <Label htmlFor="location">Location</Label>
             <Input
               id="location"
               value={location}
               onChange={e => setLocation(e.target.value)}
               placeholder="Event location"
-              className="cursor-text"
             />
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="description" className="cursor-pointer">Description</Label>
+            <Label htmlFor="description">Description</Label>
             <Textarea
               id="description"
               value={description}
               onChange={e => setDescription(e.target.value)}
               placeholder="Event description"
               rows={4}
-              className="cursor-text"
             />
           </div>
         </div>
@@ -480,7 +472,6 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
                 onClick={handleDelete}
                 disabled={isDeleting || isSubmitting}
                 type="button"
-                className="cursor-pointer"
               >
                 {isDeleting ? 'Deleting...' : 'Delete'}
               </Button>
@@ -492,7 +483,6 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
               onClick={onClose}
               disabled={isSubmitting || isDeleting}
               type="button"
-              className="cursor-pointer"
             >
               Cancel
             </Button>
@@ -500,7 +490,6 @@ const EventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDa
               onClick={handleSubmit}
               disabled={isSubmitting || isDeleting}
               type="button"
-              className="cursor-pointer"
             >
               {isSubmitting
                 ? (event ? 'Updating...' : 'Creating...')
