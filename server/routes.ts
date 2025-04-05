@@ -2210,6 +2210,14 @@ END:VCALENDAR`
               // Prepare event for CalDAV format (iCalendar)
               // Use our Thunderbird-compatible iCalendar generator
               console.log("Using Thunderbird-compatible iCalendar format");
+              console.log("Event data for iCal generation:");
+              console.log("- Title:", eventData.title);
+              console.log("- UID:", eventData.uid);
+              console.log("- Start:", eventData.startDate);
+              console.log("- End:", eventData.endDate);
+              console.log("- Attendees:", JSON.stringify(eventData.attendees));
+              console.log("- RecurrenceRule:", JSON.stringify(eventData.recurrenceRule));
+              
               const icalEvent = generateThunderbirdCompatibleICS({
                 uid: eventData.uid,
                 title: eventData.title,
@@ -2224,6 +2232,15 @@ END:VCALENDAR`
                 recurrenceRule: eventData.recurrenceRule,
                 allDay: eventData.allDay
               });
+              
+              // Log the first 500 characters of the generated iCalendar data
+              console.log("Generated iCalendar data (first 500 chars):", icalEvent.substring(0, 500));
+              
+              // Check if RRULE and ATTENDEE properties are in the output
+              const hasRrule = icalEvent.includes("RRULE:");
+              const hasAttendees = icalEvent.includes("ATTENDEE;");
+              console.log("iCalendar contains RRULE:", hasRrule);
+              console.log("iCalendar contains ATTENDEE:", hasAttendees);
               
               console.log(`Creating event on CalDAV server for calendar URL: ${targetCalendarUrl}`);
               
