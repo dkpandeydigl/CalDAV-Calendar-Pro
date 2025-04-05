@@ -582,7 +582,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   onChange={e => setTitle(e.target.value)}
                   placeholder="Event title"
                   required
-                  className="text-lg cursor-text"
+                  className="text-lg"
                 />
               </div>
               
@@ -633,7 +633,6 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     value={location}
                     onChange={e => setLocation(e.target.value)}
                     placeholder="Add location"
-                    className="cursor-text"
                   />
                   <Button variant="outline" type="button" size="sm" className="shrink-0">
                     Add Venue
@@ -659,7 +658,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     value={startDate}
                     onChange={e => setStartDate(e.target.value)}
                     required
-                    className="cursor-text"
+
                   />
                 </div>
                 
