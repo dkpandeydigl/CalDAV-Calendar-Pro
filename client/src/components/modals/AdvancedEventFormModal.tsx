@@ -546,8 +546,16 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   };
 
   return (
-    <Dialog open={open} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh]">
+    <Dialog 
+      open={open} 
+      onOpenChange={open => !open && onClose()}
+      modal={true}
+    >
+      <DialogContent 
+        className="max-w-4xl max-h-[90vh] overflow-hidden"
+        onPointerDownOutside={e => e.preventDefault()} // Prevent clicks outside from dismissing
+        onInteractOutside={e => e.preventDefault()} // Prevent interaction outside
+      >
         <DialogHeader>
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             <Calendar className="h-5 w-5" />
@@ -571,7 +579,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             </TabsTrigger>
           </TabsList>
           
-          <ScrollArea className="h-[60vh] pr-4">
+          <ScrollArea className="h-[60vh] pr-4" type="always">
             {/* Basic Tab */}
             <TabsContent value="basic" className="space-y-4">
               <div className="space-y-2">
@@ -589,7 +597,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <div className="space-y-2">
                 <Label htmlFor="calendar">Calendar *</Label>
                 <Select value={calendarId} onValueChange={setCalendarId}>
-                  <SelectTrigger>
+                  <SelectTrigger type="button">
                     <SelectValue placeholder="Select a calendar" />
                   </SelectTrigger>
                   <SelectContent>
@@ -711,7 +719,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <div className="space-y-2">
                 <Label htmlFor="timezone">Timezone</Label>
                 <Select value={timezone} onValueChange={setTimezone}>
-                  <SelectTrigger>
+                  <SelectTrigger type="button">
                     <SelectValue placeholder="Select timezone" />
                   </SelectTrigger>
                   <SelectContent className="max-h-60">
@@ -732,7 +740,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       value={isBusy ? "busy" : "free"} 
                       onValueChange={(v) => setIsBusy(v === "busy")}
                     >
-                      <SelectTrigger className="w-24">
+                      <SelectTrigger type="button" className="w-24">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -797,9 +805,9 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         <div className="flex items-center gap-2">
                           <Popover>
                             <PopoverTrigger asChild>
-                              <Button variant="ghost" size="sm">Change Role</Button>
+                              <Button variant="ghost" size="sm" type="button">Change Role</Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-48 p-2">
+                            <PopoverContent className="w-48 p-2" sideOffset={5} align="center" side="right">
                               <RadioGroup
                                 value={attendee.role}
                                 onValueChange={(value: string) => handleChangeAttendeeRole(attendee.id, value as AttendeeRole)}
@@ -935,7 +943,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             dayOfMonth: parseInt(value)
                           })}
                         >
-                          <SelectTrigger id="day-of-month" className="w-24">
+                          <SelectTrigger type="button" id="day-of-month" className="w-24">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -962,7 +970,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 monthOfYear: parseInt(value)
                               })}
                             >
-                              <SelectTrigger id="month-of-year" className="w-32">
+                              <SelectTrigger type="button" id="month-of-year" className="w-32">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -991,7 +999,7 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 dayOfMonth: parseInt(value)
                               })}
                             >
-                              <SelectTrigger id="day-of-month-yearly" className="w-24">
+                              <SelectTrigger type="button" id="day-of-month-yearly" className="w-24">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -1092,12 +1100,12 @@ const AdvancedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   <Label htmlFor="description">Description</Label>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-8">
+                      <Button type="button" variant="outline" size="sm" className="h-8">
                         <FileText className="mr-2 h-4 w-4" /> 
                         Add from Template
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-80">
+                    <PopoverContent className="w-80" sideOffset={5} align="end">
                       <div className="space-y-2">
                         <h4 className="font-medium">Select Template</h4>
                         <div className="space-y-2">

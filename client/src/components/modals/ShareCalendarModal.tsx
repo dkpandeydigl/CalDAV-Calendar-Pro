@@ -88,63 +88,85 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
   // Use a ref to track which calendars need loading and prevent excessive rerenders
   const loadingCalendarIds = React.useRef(new Set<number>());
   const fetchedCalendarIds = React.useRef(new Set<number>());
+  const calendarsToFetch = React.useRef<number[]>([]);
   
-  // Effect to identify calendars needing loading and mark them
+  // Effect to identify calendars needing loading
   useEffect(() => {
     if (!open) {
       // Reset when modal closes
       loadingCalendarIds.current.clear();
       fetchedCalendarIds.current.clear();
+      calendarsToFetch.current = [];
       return;
     }
     
-    // Find calendars that need loading, haven't been loaded, and aren't in process
+    // Collect list of calendars that need fetching (avoids modifying state inside effect)
+    const needFetching: number[] = [];
+    
     selectedCalendars.forEach(item => {
       if (item.loading && 
           !fetchedCalendarIds.current.has(item.calendar.id) && 
           !loadingCalendarIds.current.has(item.calendar.id)) {
-        // Mark this calendar as in-process
-        loadingCalendarIds.current.add(item.calendar.id);
+            
+        // Add to our fetch queue
+        needFetching.push(item.calendar.id);
         
-        // Fetch data for this calendar
-        (async () => {
-          try {
-            const response = await apiRequest('GET', `/api/calendars/${item.calendar.id}/shares`);
-            if (response.ok) {
-              const data = await response.json();
-              
-              // Only update if modal is still open
-              if (open) {
-                setSelectedCalendars(prev => prev.map(c => 
-                  c.calendar.id === item.calendar.id 
-                    ? { ...c, shares: data, loading: false } 
-                    : c
-                ));
-              }
-            } else {
-              throw new Error(`Failed to fetch shares for calendar ${item.calendar.id}`);
-            }
-          } catch (error) {
-            console.error(`Error fetching calendar shares:`, error);
+        // Mark as loading so we don't try to fetch it again
+        loadingCalendarIds.current.add(item.calendar.id);
+      }
+    });
+    
+    // Store the list of calendars to fetch
+    calendarsToFetch.current = needFetching;
+  }, [open, selectedCalendars]); // Now we can depend on selectedCalendars safely
+  
+  // Separate effect to handle the actual fetching
+  useEffect(() => {
+    if (!open || calendarsToFetch.current.length === 0) return;
+    
+    // Copy the current fetch list and clear it
+    const toFetch = [...calendarsToFetch.current];
+    calendarsToFetch.current = [];
+    
+    // Fetch each calendar's shares
+    toFetch.forEach(calendarId => {
+      (async () => {
+        try {
+          const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
+          if (response.ok) {
+            const data = await response.json();
             
             // Only update if modal is still open
             if (open) {
-              // Mark as not loading on error
               setSelectedCalendars(prev => prev.map(c => 
-                c.calendar.id === item.calendar.id 
-                  ? { ...c, loading: false } 
+                c.calendar.id === calendarId
+                  ? { ...c, shares: data, loading: false } 
                   : c
               ));
             }
-          } finally {
-            // Mark as fetched and remove from loading
-            fetchedCalendarIds.current.add(item.calendar.id);
-            loadingCalendarIds.current.delete(item.calendar.id);
+          } else {
+            throw new Error(`Failed to fetch shares for calendar ${calendarId}`);
           }
-        })();
-      }
+        } catch (error) {
+          console.error(`Error fetching calendar shares:`, error);
+          
+          // Only update if modal is still open
+          if (open) {
+            // Mark as not loading on error
+            setSelectedCalendars(prev => prev.map(c => 
+              c.calendar.id === calendarId
+                ? { ...c, loading: false } 
+                : c
+            ));
+          }
+        } finally {
+          // Mark as fetched and remove from loading
+          fetchedCalendarIds.current.add(calendarId);
+          loadingCalendarIds.current.delete(calendarId);
+        }
+      })();
     });
-  }, [open]); // Only depend on modal open state
+  }, [open, calendarsToFetch.current.length]); // Only refetch when the fetch list changes
 
   const fetchShares = async (calendarId: number) => {
     try {
@@ -377,9 +399,10 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
   // Custom close handler to properly clean up
   const handleClose = () => {
-    // Reset the fetched and loading calendar IDs sets when closing
+    // Reset all refs when closing
     fetchedCalendarIds.current.clear();
     loadingCalendarIds.current.clear();
+    calendarsToFetch.current = [];
     onClose();
   };
   
@@ -503,7 +526,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                     value={permission}
                     onValueChange={(value: 'read' | 'write') => setPermission(value)}
                   >
-                    <SelectTrigger className="col-span-3">
+                    <SelectTrigger type="button" className="col-span-3">
                       <SelectValue placeholder="Select permission" />
                     </SelectTrigger>
                     <SelectContent>
@@ -574,7 +597,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                                 handleUpdatePermission(calendar.id, share.id, value)
                               }
                             >
-                              <SelectTrigger className="h-8 w-24">
+                              <SelectTrigger type="button" className="h-8 w-24">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
