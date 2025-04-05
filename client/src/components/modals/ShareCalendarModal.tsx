@@ -85,60 +85,66 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     }
   }, [initialCalendar, open, userCalendars]);
 
-  // Use a ref to prevent fetching the same calendars multiple times
+  // Use a ref to track which calendars need loading and prevent excessive rerenders
+  const loadingCalendarIds = React.useRef(new Set<number>());
   const fetchedCalendarIds = React.useRef(new Set<number>());
   
-  // Fetch shares for selected calendars that need loading
+  // Effect to identify calendars needing loading and mark them
   useEffect(() => {
-    // Only run when modal is open
-    if (!open) return;
+    if (!open) {
+      // Reset when modal closes
+      loadingCalendarIds.current.clear();
+      fetchedCalendarIds.current.clear();
+      return;
+    }
     
-    // Get IDs of calendars that need loading and haven't been fetched yet
-    const calendarIdsToFetch = selectedCalendars
-      .filter(item => item.loading && !fetchedCalendarIds.current.has(item.calendar.id))
-      .map(item => item.calendar.id);
-    
-    // Only proceed if we have new calendars to fetch
-    if (calendarIdsToFetch.length === 0) return;
-    
-    // Mark these calendars as fetched to prevent refetch
-    calendarIdsToFetch.forEach(id => fetchedCalendarIds.current.add(id));
-    
-    // First mark them as not loading to prevent infinite loop
-    setSelectedCalendars(prev => prev.map(item => 
-      calendarIdsToFetch.includes(item.calendar.id) 
-        ? { ...item, loading: false } 
-        : item
-    ));
-    
-    // Then fetch each calendar's shares
-    const fetchShares = async () => {
-      for (const calendarId of calendarIdsToFetch) {
-        try {
-          const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
-          if (response.ok) {
-            const data = await response.json();
-            // Update the shares for this calendar
-            setSelectedCalendars(prev => prev.map(item => 
-              item.calendar.id === calendarId 
-                ? { ...item, shares: data, loading: false } 
-                : item
-            ));
+    // Find calendars that need loading, haven't been loaded, and aren't in process
+    selectedCalendars.forEach(item => {
+      if (item.loading && 
+          !fetchedCalendarIds.current.has(item.calendar.id) && 
+          !loadingCalendarIds.current.has(item.calendar.id)) {
+        // Mark this calendar as in-process
+        loadingCalendarIds.current.add(item.calendar.id);
+        
+        // Fetch data for this calendar
+        (async () => {
+          try {
+            const response = await apiRequest('GET', `/api/calendars/${item.calendar.id}/shares`);
+            if (response.ok) {
+              const data = await response.json();
+              
+              // Only update if modal is still open
+              if (open) {
+                setSelectedCalendars(prev => prev.map(c => 
+                  c.calendar.id === item.calendar.id 
+                    ? { ...c, shares: data, loading: false } 
+                    : c
+                ));
+              }
+            } else {
+              throw new Error(`Failed to fetch shares for calendar ${item.calendar.id}`);
+            }
+          } catch (error) {
+            console.error(`Error fetching calendar shares:`, error);
+            
+            // Only update if modal is still open
+            if (open) {
+              // Mark as not loading on error
+              setSelectedCalendars(prev => prev.map(c => 
+                c.calendar.id === item.calendar.id 
+                  ? { ...c, loading: false } 
+                  : c
+              ));
+            }
+          } finally {
+            // Mark as fetched and remove from loading
+            fetchedCalendarIds.current.add(item.calendar.id);
+            loadingCalendarIds.current.delete(item.calendar.id);
           }
-        } catch (error) {
-          console.error(`Error fetching calendar shares for calendar ${calendarId}:`, error);
-          // Mark as not loading even on error
-          setSelectedCalendars(prev => prev.map(item => 
-            item.calendar.id === calendarId 
-              ? { ...item, loading: false } 
-              : item
-          ));
-        }
+        })();
       }
-    };
-    
-    fetchShares();
-  }, [open, selectedCalendars]);
+    });
+  }, [open]); // Only depend on modal open state
 
   const fetchShares = async (calendarId: number) => {
     try {
@@ -371,8 +377,9 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
   // Custom close handler to properly clean up
   const handleClose = () => {
-    // Reset the fetched calendar IDs set when closing
+    // Reset the fetched and loading calendar IDs sets when closing
     fetchedCalendarIds.current.clear();
+    loadingCalendarIds.current.clear();
     onClose();
   };
   
