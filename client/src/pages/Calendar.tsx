@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import CalendarHeader from '@/components/calendar/CalendarHeader';
 import CalendarSidebar from '@/components/calendar/CalendarSidebar';
 import CalendarGrid from '@/components/calendar/CalendarGrid';
-import EventFormModal from '@/components/modals/EventFormModal';
-import AdvancedEventFormModal from '@/components/modals/AdvancedEventFormModal';
+import ImprovedEventFormModal from '@/components/modals/ImprovedEventFormModal';
 import EventDetailModal from '@/components/modals/EventDetailModal';
 import ServerConnectionModal from '@/components/modals/ServerConnectionModal';
 import { SyncSettingsModal } from '@/components/modals/SyncSettingsModal';
@@ -439,7 +438,7 @@ function CalendarContent() {
       </div>
       
       {/* Modals */}
-      <AdvancedEventFormModal 
+      <ImprovedEventFormModal 
         open={eventFormOpen} 
         event={selectedEvent}
         selectedDate={!selectedEvent ? selectedDate : undefined} 
