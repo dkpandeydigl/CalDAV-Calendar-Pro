@@ -69,6 +69,13 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           loading: true
         }]);
         setIsMultiSelectionMode(false);
+        
+        // Trigger fetch for this calendar after state update
+        setTimeout(() => {
+          if (initialCalendar) {
+            requestSharesFetch(initialCalendar.id);
+          }
+        }, 0);
       } else if (userCalendars && userCalendars.length > 0) {
         // Multi-selection mode - select all user calendars by default
         setIsMultiSelectionMode(true);
@@ -81,6 +88,15 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
             loading: true
           }))
         );
+        
+        // Trigger fetch for all calendars after state update
+        setTimeout(() => {
+          if (userCalendars) {
+            userCalendars.forEach(calendar => {
+              requestSharesFetch(calendar.id);
+            });
+          }
+        }, 0);
       }
     }
   }, [initialCalendar, open, userCalendars]);
@@ -118,7 +134,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     
     // Store the list of calendars to fetch
     calendarsToFetch.current = needFetching;
-  }, [open, selectedCalendars]); // Now we can depend on selectedCalendars safely
+  }, [open]); // Only depend on modal open state to avoid infinite loops
   
   // Separate effect to handle the actual fetching
   useEffect(() => {
@@ -166,7 +182,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         }
       })();
     });
-  }, [open, calendarsToFetch.current.length]); // Only refetch when the fetch list changes
+  }, [open]); // Only refetch when modal opens/closes
 
   const fetchShares = async (calendarId: number) => {
     try {
@@ -198,6 +214,20 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     }
   };
 
+  // Request a fetch of calendar shares to avoid loop issues
+  const requestSharesFetch = (calendarId: number) => {
+    // Only request fetch if not already loaded or loading
+    if (!fetchedCalendarIds.current.has(calendarId) && 
+        !loadingCalendarIds.current.has(calendarId)) {
+      
+      // Mark this calendar as loading
+      loadingCalendarIds.current.add(calendarId);
+      
+      // Fetch data for this calendar using our existing fetch function
+      fetchShares(calendarId);
+    }
+  };
+
   // Toggle a calendar selection
   const toggleCalendarSelection = (calendar: Calendar) => {
     setSelectedCalendars(prev => {
@@ -208,8 +238,13 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         // Remove it
         return prev.filter(item => item.calendar.id !== calendar.id);
       } else {
-        // Add it
-        return [...prev, { calendar, shares: [], loading: true }];
+        // Add it and manually request a fetch afterwards
+        const result = [...prev, { calendar, shares: [], loading: true }];
+        
+        // Schedule a fetch after the state update completes
+        setTimeout(() => requestSharesFetch(calendar.id), 0);
+        
+        return result;
       }
     });
   };
@@ -483,6 +518,13 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                         loading: true
                       }))
                     );
+                    
+                    // Request fetches for all calendars after state update
+                    setTimeout(() => {
+                      allCalendars.forEach(calendar => {
+                        requestSharesFetch(calendar.id);
+                      });
+                    }, 0);
                   }}
                 >
                   <Check className="h-3.5 w-3.5" />
