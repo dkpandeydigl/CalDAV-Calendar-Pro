@@ -143,18 +143,144 @@ export function generateThunderbirdCompatibleICS(
   
   // Add recurrence rule if provided
   if (event.recurrenceRule) {
-    eventComponents.push(event.recurrenceRule);
+    try {
+      // Define the recurrence rule type for better type checking
+      interface RecurrenceRule {
+        pattern: string;
+        interval?: number;
+        weekdays?: string[];
+        endType?: string;
+        occurrences?: number;
+        untilDate?: string;
+      }
+      
+      // Try to parse the recurrence rule as JSON if it's a string
+      const rule: RecurrenceRule = typeof event.recurrenceRule === 'string' 
+        ? JSON.parse(event.recurrenceRule) 
+        : event.recurrenceRule;
+      
+      // Convert our rule format to iCalendar RRULE format
+      let rruleString = 'RRULE:FREQ=';
+      
+      // Map our pattern to iCalendar frequency
+      switch (rule.pattern) {
+        case 'Daily':
+          rruleString += 'DAILY';
+          break;
+        case 'Weekly':
+          rruleString += 'WEEKLY';
+          break;
+        case 'Monthly':
+          rruleString += 'MONTHLY';
+          break;
+        case 'Yearly':
+          rruleString += 'YEARLY';
+          break;
+        default:
+          rruleString += 'DAILY'; // Default to daily if not specified
+      }
+      
+      // Add interval if greater than 1
+      if (rule.interval && rule.interval > 1) {
+        rruleString += `;INTERVAL=${rule.interval}`;
+      }
+      
+      // Add weekdays for weekly recurrence
+      if (rule.weekdays && Array.isArray(rule.weekdays) && rule.weekdays.length > 0 && rule.pattern === 'Weekly') {
+        const dayMap: Record<string, string> = {
+          'Sunday': 'SU',
+          'Monday': 'MO',
+          'Tuesday': 'TU',
+          'Wednesday': 'WE',
+          'Thursday': 'TH',
+          'Friday': 'FR',
+          'Saturday': 'SA'
+        };
+        
+        const days = rule.weekdays
+          .map((day: string) => dayMap[day])
+          .filter(Boolean)
+          .join(',');
+        
+        if (days) {
+          rruleString += `;BYDAY=${days}`;
+        }
+      }
+      
+      // Add count for "After X occurrences" or until date for "Until date"
+      if (rule.endType === 'After' && rule.occurrences) {
+        rruleString += `;COUNT=${rule.occurrences}`;
+      } else if (rule.endType === 'Until' && rule.untilDate) {
+        // Convert date to RRULE format (YYYYMMDD)
+        const untilDate = new Date(rule.untilDate);
+        const formattedUntil = untilDate.toISOString().slice(0, 10).replace(/-/g, '');
+        rruleString += `;UNTIL=${formattedUntil}`;
+      }
+      
+      eventComponents.push(rruleString);
+    } catch (error) {
+      console.error('Error parsing recurrence rule:', error);
+      // If we can't parse it as JSON or encounter another error, try using it directly (fallback)
+      if (typeof event.recurrenceRule === 'string' && event.recurrenceRule.startsWith('RRULE:')) {
+        eventComponents.push(event.recurrenceRule);
+      }
+    }
   }
   
   // Add attendees if provided
   if (event.attendees && event.attendees.length > 0) {
-    event.attendees.forEach(attendee => {
-      // Format email correctly for iCalendar
-      let formattedAttendee = attendee;
-      if (attendee.includes('@')) {
-        formattedAttendee = `mailto:${attendee}`;
+    // Process each attendee
+    event.attendees.forEach(attendeeItem => {
+      try {
+        // Handle both string and object formats
+        if (typeof attendeeItem === 'string') {
+          // Simple string format (just email)
+          let email = attendeeItem;
+          let formattedAttendee = email;
+          
+          // Ensure mailto: prefix for emails
+          if (email.includes('@')) {
+            formattedAttendee = `mailto:${email}`;
+          }
+          
+          // Add as regular participant
+          eventComponents.push(`ATTENDEE;CN=${email};ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
+        } 
+        else if (typeof attendeeItem === 'object' && attendeeItem !== null) {
+          // Object format with email and role
+          const attendee = attendeeItem as { email: string, role?: string };
+          
+          if (!attendee.email) {
+            console.warn('Attendee object missing email:', attendeeItem);
+            return; // Skip this attendee
+          }
+          
+          // Ensure mailto: prefix
+          const formattedAttendee = `mailto:${attendee.email}`;
+          
+          // Map our role types to iCalendar role types
+          let icalRole = 'REQ-PARTICIPANT';
+          
+          if (attendee.role) {
+            switch (attendee.role) {
+              case 'Chairman':
+                icalRole = 'CHAIR';
+                break;
+              case 'Secretary':
+                icalRole = 'OPT-PARTICIPANT'; // Not perfect match but closest in iCal
+                break;
+              case 'Member':
+              default:
+                icalRole = 'REQ-PARTICIPANT';
+            }
+          }
+          
+          // Add attendee with proper role
+          eventComponents.push(`ATTENDEE;CN=${attendee.email};ROLE=${icalRole}:${formattedAttendee}`);
+        }
+      } catch (error) {
+        console.error('Error processing attendee:', error, attendeeItem);
       }
-      eventComponents.push(`ATTENDEE;CN=${attendee};ROLE=REQ-PARTICIPANT:${formattedAttendee}`);
     });
   }
   
