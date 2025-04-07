@@ -9,6 +9,8 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
+import { Download } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
@@ -166,6 +168,68 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       setIsDeleting(false);
       setDeleteDialogOpen(false);
       onClose();
+    }
+  };
+
+  // Handle event download
+  const [isDownloading, setIsDownloading] = useState(false);
+  
+  const handleDownload = async () => {
+    if (!event) return;
+    
+    try {
+      setIsDownloading(true);
+      
+      // Make a fetch request to the event export endpoint
+      const response = await fetch(`/api/events/${event.id}/export`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to download event');
+      }
+      
+      // Get the filename from the Content-Disposition header, or create a default one
+      let filename = `event_${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
+      const contentDisposition = response.headers.get('Content-Disposition');
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      // Create a blob and download it
+      const icsData = await response.text();
+      const blob = new Blob([icsData], { type: 'text/calendar' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+      
+      toast({
+        title: 'Download successful',
+        description: `Event "${event.title}" downloaded as .ics file.`,
+        variant: 'default',
+      });
+      
+      setIsDownloading(false);
+    } catch (error) {
+      console.error(`Error downloading event: ${(error as Error).message}`);
+      toast({
+        title: 'Download failed',
+        description: (error as Error).message || 'Unable to download event',
+        variant: 'destructive',
+      });
+      setIsDownloading(false);
     }
   };
   
@@ -360,28 +424,50 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           
           <DialogFooter className="flex justify-between space-x-2">
             <div className="flex space-x-2">
-              {!isUserLoading && effectiveCanEdit && (
+              {!isUserLoading && (
                 <>
-                  <Button 
-                    variant="outline" 
-                    className="border-red-200 text-red-600 hover:bg-red-50" 
-                    onClick={() => setDeleteDialogOpen(true)}
-                  >
-                    Delete
-                  </Button>
-                  <Button 
+                  {/* Download button visible to everyone */}
+                  <Button
                     variant="outline"
-                    onClick={onEdit}
+                    className="flex items-center border-blue-200 text-blue-600 hover:bg-blue-50"
+                    onClick={handleDownload}
+                    disabled={isDownloading}
                   >
-                    Edit
+                    {isDownloading ? (
+                      <div className="mr-1 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent border-blue-600"></div>
+                    ) : (
+                      <Download className="mr-1 h-4 w-4" />
+                    )}
+                    {isDownloading ? 'Downloading...' : 'Download ICS'}
                   </Button>
+                  
+                  {/* Edit and Delete buttons only for users with edit permissions */}
+                  {effectiveCanEdit && (
+                    <>
+                      <Button 
+                        variant="outline" 
+                        className="border-red-200 text-red-600 hover:bg-red-50" 
+                        onClick={() => setDeleteDialogOpen(true)}
+                      >
+                        Delete
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={onEdit}
+                      >
+                        Edit
+                      </Button>
+                    </>
+                  )}
                 </>
               )}
+              
               {isUserLoading && (
                 <div className="text-sm text-muted-foreground py-2">
                   Loading permission information...
                 </div>
               )}
+              
               {isAuthError && (
                 <div className="text-sm text-muted-foreground py-2 flex items-center">
                   <span className="material-icons text-amber-500 mr-1 text-sm">info</span>
