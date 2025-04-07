@@ -285,13 +285,10 @@ export class EmailService {
         {
           filename: `invitation-${data.uid}.ics`,
           content: icsData,
-          contentType: 'text/calendar'
+          contentType: 'text/calendar; method=REQUEST'
         }
-      ],
-      headers: {
-        'Content-Type': 'text/calendar; charset=UTF-8; method=REQUEST',
-        'Content-Transfer-Encoding': '7bit'
-      }
+      ]
+      // Removed the global headers that were causing the whole email to be treated as calendar data
     };
 
     // Send the email
