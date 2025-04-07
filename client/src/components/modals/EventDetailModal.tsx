@@ -9,8 +9,6 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { Download } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
@@ -38,7 +36,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // State hooks
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   
   // Add a timeout to prevent infinite loading state
@@ -109,7 +106,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       cal => cal.id === event.calendarId && cal.permission === 'edit'
     );
   
-  console.log(`User data not loaded yet, but calendar ${event.calendarId} exists - granting view permissions`);
   console.log(`Event ${event.id} permission check:`, {
     isUsersOwnCalendar,
     canEdit,
@@ -171,366 +167,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       setDeleteDialogOpen(false);
       onClose();
     }
-  };
-
-  // Handle event download
-  const handleDownload = async () => {
-    if (!event) return;
-    
-    try {
-      setIsDownloading(true);
-      
-      // Make a fetch request to the event export endpoint
-      const response = await fetch(`/api/events/${event.id}/export`);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to download event');
-      }
-      
-      // Get the filename from the Content-Disposition header, or create a default one
-      let filename = `event_${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
-      const contentDisposition = response.headers.get('Content-Disposition');
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-        if (filenameMatch && filenameMatch[1]) {
-          filename = filenameMatch[1];
-        }
-      }
-      
-      // Create a blob and download it
-      const icsData = await response.text();
-      const blob = new Blob([icsData], { type: 'text/calendar' });
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Clean up
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 100);
-      
-      toast({
-        title: 'Download successful',
-        description: `Event "${event.title}" downloaded as .ics file.`,
-        variant: 'default',
-      });
-      
-      setIsDownloading(false);
-    } catch (error) {
-      console.error(`Error downloading event: ${(error as Error).message}`);
-      toast({
-        title: 'Download failed',
-        description: (error as Error).message || 'Unable to download event',
-        variant: 'destructive',
-      });
-      setIsDownloading(false);
-    }
-  };
-  
-  // Parse recurrence rule from event
-  const getRecurrenceDisplay = () => {
-    // Check if raw data contains recurrence info
-    if (event.rawData && typeof event.rawData === 'string') {
-      try {
-        // Try to parse JSON if needed
-        let rawContent: string;
-        try {
-          rawContent = JSON.parse(event.rawData);
-        } catch {
-          rawContent = event.rawData;
-        }
-        
-        // Extract RRULE from the raw data
-        const rruleMatch = rawContent.match(/RRULE:([^\r\n]+)/);
-        if (rruleMatch && rruleMatch[1]) {
-          const rrule = rruleMatch[1];
-          
-          // Parse the RRULE
-          const freq = rrule.match(/FREQ=([^;]+)/)?.[1] || '';
-          const interval = rrule.match(/INTERVAL=([^;]+)/)?.[1] || '1';
-          const count = rrule.match(/COUNT=([^;]+)/)?.[1];
-          const until = rrule.match(/UNTIL=([^;]+)/)?.[1];
-          const byDay = rrule.match(/BYDAY=([^;]+)/)?.[1];
-          
-          let readableRule = '';
-          
-          // Convert FREQ to readable format
-          switch (freq) {
-            case 'DAILY':
-              readableRule = 'Daily';
-              break;
-            case 'WEEKLY':
-              readableRule = 'Weekly';
-              break;
-            case 'MONTHLY':
-              readableRule = 'Monthly';
-              break;
-            case 'YEARLY':
-              readableRule = 'Yearly';
-              break;
-            default:
-              readableRule = freq;
-          }
-          
-          // Add interval if not 1
-          if (interval !== '1') {
-            readableRule = `Every ${interval} ${readableRule.toLowerCase()}`;
-          }
-          
-          // Add weekdays for weekly recurrence
-          if (freq === 'WEEKLY' && byDay) {
-            const dayMap: Record<string, string> = {
-              'SU': 'Sun',
-              'MO': 'Mon',
-              'TU': 'Tue',
-              'WE': 'Wed',
-              'TH': 'Thu',
-              'FR': 'Fri',
-              'SA': 'Sat'
-            };
-            
-            const days = byDay.split(',')
-              .map(day => dayMap[day] || day)
-              .join(', ');
-            
-            readableRule += ` on ${days}`;
-          }
-          
-          // Add end condition
-          if (count) {
-            readableRule += `, ${count} times`;
-          } else if (until) {
-            try {
-              // Parse the UNTIL date
-              const untilDate = new Date(
-                parseInt(until.slice(0, 4)),   // Year
-                parseInt(until.slice(4, 6)) - 1, // Month (0-based)
-                parseInt(until.slice(6, 8))    // Day
-              );
-              readableRule += `, until ${untilDate.toLocaleDateString()}`;
-            } catch {
-              readableRule += `, until ${until}`;
-            }
-          }
-          
-          return (
-            <div className="text-xs mt-1 bg-purple-100 text-purple-800 px-2 py-1 rounded-full inline-block">
-              <span className="material-icons text-purple-800 mr-1 text-xs align-text-bottom">repeat</span>
-              {readableRule}
-            </div>
-          );
-        }
-      } catch (error) {
-        console.error('Error parsing recurrence rule:', error);
-      }
-    }
-    
-    // Fallback to recurrenceRule property if available
-    if (event.recurrenceRule) {
-      let rule: any;
-      
-      if (typeof event.recurrenceRule === 'string') {
-        try {
-          rule = JSON.parse(event.recurrenceRule);
-        } catch {
-          // If it's not JSON, but starts with RRULE:, extract the rule part
-          if (event.recurrenceRule.startsWith('RRULE:')) {
-            return (
-              <div className="text-xs mt-1 bg-purple-100 text-purple-800 px-2 py-1 rounded-full inline-block">
-                <span className="material-icons text-purple-800 mr-1 text-xs align-text-bottom">repeat</span>
-                Recurring Event
-              </div>
-            );
-          }
-          // Just use as is
-          return (
-            <div className="text-xs mt-1 bg-purple-100 text-purple-800 px-2 py-1 rounded-full inline-block">
-              <span className="material-icons text-purple-800 mr-1 text-xs align-text-bottom">repeat</span>
-              Repeats: {event.recurrenceRule}
-            </div>
-          );
-        }
-      } else {
-        rule = event.recurrenceRule;
-      }
-      
-      if (rule && rule.pattern) {
-        let description = `${rule.pattern}`;
-        
-        if (rule.interval && rule.interval > 1) {
-          description = `Every ${rule.interval} ${rule.pattern.toLowerCase()}s`;
-        }
-        
-        if (rule.weekdays && Array.isArray(rule.weekdays) && rule.weekdays.length > 0) {
-          description += ` on ${rule.weekdays.join(', ')}`;
-        }
-        
-        if (rule.endType === 'After' && rule.occurrences) {
-          description += `, ${rule.occurrences} times`;
-        } else if (rule.endType === 'Until' && rule.untilDate) {
-          const untilDate = new Date(rule.untilDate);
-          description += `, until ${untilDate.toLocaleDateString()}`;
-        }
-        
-        return (
-          <div className="text-xs mt-1 bg-purple-100 text-purple-800 px-2 py-1 rounded-full inline-block">
-            <span className="material-icons text-purple-800 mr-1 text-xs align-text-bottom">repeat</span>
-            {description}
-          </div>
-        );
-      }
-    }
-    
-    return null;
-  };
-  
-  // Parse attendees from event
-  const getAttendees = () => {
-    let attendees: any[] = [];
-    
-    // Try to extract attendees from raw data
-    if (event.rawData && typeof event.rawData === 'string') {
-      try {
-        let rawContent: string;
-        try {
-          rawContent = JSON.parse(event.rawData);
-        } catch {
-          rawContent = event.rawData;
-        }
-        
-        // Parse attendees from iCalendar format
-        if (rawContent.includes('ATTENDEE;') || rawContent.includes('ATTENDEE:')) {
-          const attendeeLines = rawContent.split('\r\n')
-            .filter(line => line.startsWith('ATTENDEE'));
-          
-          if (attendeeLines && attendeeLines.length > 0) {
-            attendees = attendeeLines.map(line => {
-              // Extract email part
-              const emailMatch = line.match(/mailto:([^\r\n]+)$/);
-              const email = emailMatch ? emailMatch[1] : '';
-              
-              // Check for role within the line
-              const rolePart = line.includes('ROLE=') ? 
-                line.match(/ROLE=([^;:]+)/) : null;
-              let role = 'Member';
-              
-              if (rolePart && rolePart[1]) {
-                if (rolePart[1] === 'CHAIR') role = 'Chairman';
-                else if (rolePart[1] === 'OPT-PARTICIPANT') role = 'Secretary';
-              }
-              
-              return { email, role };
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error parsing attendees from raw data:', error);
-      }
-    }
-    
-    // If no attendees from raw data, try from event.attendees
-    if (attendees.length === 0 && event.attendees) {
-      let eventAttendees: any[] = [];
-      
-      if (typeof event.attendees === 'string') {
-        try {
-          // Try to parse JSON string
-          const parsed = JSON.parse(event.attendees);
-          eventAttendees = Array.isArray(parsed) ? parsed : [parsed];
-        } catch {
-          // Treat as a single string
-          eventAttendees = [event.attendees];
-        }
-      } else if (Array.isArray(event.attendees)) {
-        eventAttendees = event.attendees;
-      } else if (event.attendees && typeof event.attendees === 'object') {
-        eventAttendees = [event.attendees];
-      }
-      
-      attendees = eventAttendees;
-    }
-    
-    // If we have attendees, render them
-    if (attendees && attendees.length > 0) {
-      return (
-        <div>
-          <div className="text-sm font-medium mb-1">Attendees</div>
-          <div className="text-sm p-3 bg-neutral-100 rounded-md">
-            <ul className="space-y-2">
-              {attendees
-                .filter(Boolean)
-                .map((attendee, index) => {
-                  // Handle both string and object formats
-                  if (typeof attendee === 'object' && attendee !== null) {
-                    // Object format with email and role
-                    const { email, role } = attendee as { email: string; role?: string };
-                    return (
-                      <li key={index} className="flex items-start">
-                        <span className="material-icons text-neutral-500 mr-2 text-sm mt-0.5">person</span>
-                        <div>
-                          <div className="font-medium">{email}</div>
-                          {role && (
-                            <div className="text-xs text-muted-foreground">
-                              <span className={`inline-block px-2 py-0.5 rounded ${
-                                role === 'Chairman' ? 'bg-red-100 text-red-800' : 
-                                role === 'Secretary' ? 'bg-blue-100 text-blue-800' : 
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {role}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  } else {
-                    // Fallback for string format
-                    return (
-                      <li key={index} className="flex items-center">
-                        <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
-                        {String(attendee)}
-                      </li>
-                    );
-                  }
-                })}
-            </ul>
-          </div>
-        </div>
-      );
-    }
-    
-    return null;
-  };
-  
-  // Get resources from event
-  const getResources = () => {
-    const resources = event.resources as unknown;
-    if (resources && Array.isArray(resources) && resources.length > 0) {
-      return (
-        <div>
-          <div className="text-sm font-medium mb-1">Resources</div>
-          <div className="text-sm p-3 bg-neutral-100 rounded-md">
-            <ul className="space-y-1">
-              {resources
-                .filter(Boolean)
-                .map((resource, index) => (
-                  <li key={index} className="flex items-center">
-                    <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
-                    {String(resource)}
-                  </li>
-                ))}
-            </ul>
-          </div>
-        </div>
-      );
-    }
-    return null;
   };
   
   return (
@@ -624,9 +260,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     : formatEventTimeRange(startDate, endDate)}
                   {' '}({event.timezone})
                 </div>
-                
-                {/* Display recurrence information */}
-                {getRecurrenceDisplay()}
               </div>
             </div>
             
@@ -646,59 +279,109 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </div>
             )}
             
-            {/* Attendees section */}
-            {getAttendees()}
+            {/* Attendees section - handle safely with runtime checks */}
+            {(() => {
+              const attendees = event.attendees as unknown;
+              if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+                return (
+                  <div>
+                    <div className="text-sm font-medium mb-1">Attendees</div>
+                    <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                      <ul className="space-y-2">
+                        {attendees
+                          .filter(Boolean)
+                          .map((attendee, index) => {
+                            // Handle both string and object formats
+                            if (typeof attendee === 'object' && attendee !== null) {
+                              // Object format with email and role
+                              const { email, role } = attendee as { email: string; role?: string };
+                              return (
+                                <li key={index} className="flex items-start">
+                                  <span className="material-icons text-neutral-500 mr-2 text-sm mt-0.5">person</span>
+                                  <div>
+                                    <div className="font-medium">{email}</div>
+                                    {role && (
+                                      <div className="text-xs text-muted-foreground">
+                                        <span className={`inline-block px-2 py-0.5 rounded ${
+                                          role === 'Chairman' ? 'bg-red-100 text-red-800' : 
+                                          role === 'Secretary' ? 'bg-blue-100 text-blue-800' : 
+                                          'bg-gray-100 text-gray-800'
+                                        }`}>
+                                          {role}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            } else {
+                              // Fallback for string format
+                              return (
+                                <li key={index} className="flex items-center">
+                                  <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
+                                  {String(attendee)}
+                                </li>
+                              );
+                            }
+                          })}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             
-            {/* Resources section */}
-            {getResources()}
+            {/* Resources section - handle safely with runtime checks */}
+            {(() => {
+              const resources = event.resources as unknown;
+              if (resources && Array.isArray(resources) && resources.length > 0) {
+                return (
+                  <div>
+                    <div className="text-sm font-medium mb-1">Resources</div>
+                    <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                      <ul className="space-y-1">
+                        {resources
+                          .filter(Boolean)
+                          .map((resource, index) => (
+                            <li key={index} className="flex items-center">
+                              <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
+                              {String(resource)}
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
           
           <DialogFooter className="flex justify-between space-x-2">
             <div className="flex space-x-2">
-              {!isUserLoading && (
+              {!isUserLoading && effectiveCanEdit && (
                 <>
-                  {/* Download button visible to everyone */}
-                  <Button
-                    variant="outline"
-                    className="flex items-center border-blue-200 text-blue-600 hover:bg-blue-50"
-                    onClick={handleDownload}
-                    disabled={isDownloading}
+                  <Button 
+                    variant="outline" 
+                    className="border-red-200 text-red-600 hover:bg-red-50" 
+                    onClick={() => setDeleteDialogOpen(true)}
                   >
-                    {isDownloading ? (
-                      <div className="mr-1 h-4 w-4 animate-spin rounded-full border-2 border-b-transparent border-blue-600"></div>
-                    ) : (
-                      <Download className="mr-1 h-4 w-4" />
-                    )}
-                    {isDownloading ? 'Downloading...' : 'Download ICS'}
+                    Delete
                   </Button>
-                  
-                  {/* Edit and Delete buttons only for users with edit permissions */}
-                  {effectiveCanEdit && (
-                    <>
-                      <Button 
-                        variant="outline" 
-                        className="border-red-200 text-red-600 hover:bg-red-50" 
-                        onClick={() => setDeleteDialogOpen(true)}
-                      >
-                        Delete
-                      </Button>
-                      <Button 
-                        variant="outline"
-                        onClick={onEdit}
-                      >
-                        Edit
-                      </Button>
-                    </>
-                  )}
+                  <Button 
+                    variant="outline"
+                    onClick={onEdit}
+                  >
+                    Edit
+                  </Button>
                 </>
               )}
-              
               {isUserLoading && (
                 <div className="text-sm text-muted-foreground py-2">
                   Loading permission information...
                 </div>
               )}
-              
               {isAuthError && (
                 <div className="text-sm text-muted-foreground py-2 flex items-center">
                   <span className="material-icons text-amber-500 mr-1 text-sm">info</span>
