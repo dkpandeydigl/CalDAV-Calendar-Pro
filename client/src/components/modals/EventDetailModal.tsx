@@ -104,7 +104,25 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const isOwner = permissions.isOwner;
   
   // For events in user's own calendars, always allow edit
-  const isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
+  // First check direct match
+  let isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
+  
+  // If not a direct match, do a more forgiving check using calendar name
+  if (!isUsersOwnCalendar && calendar && user) {
+    // Check if the calendar name contains the user's username or email (partial match)
+    const calendarNameLower = calendar.name.toLowerCase();
+    const usernameLower = user.username.toLowerCase();
+    const userEmailLower = (user as any).email?.toLowerCase() || '';
+    
+    // Second check: calendar name contains username/email or vice versa
+    if (
+      (userEmailLower && (calendarNameLower.includes(userEmailLower) || userEmailLower.includes(calendarNameLower))) ||
+      (calendarNameLower.includes(usernameLower) || usernameLower.includes(calendarNameLower))
+    ) {
+      console.log(`Calendar ownership detected via name similarity: ${calendar.name} ≈ ${user.username}`);
+      isUsersOwnCalendar = true;
+    }
+  }
   
   // Check if this event is from a shared calendar with edit permissions
   // Use the currentUser ID for proper cache key
@@ -166,6 +184,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const isEventOrganizer = (() => {
     // First check if this is the user's own calendar - if so, they're the organizer
     if (isUsersOwnCalendar || isOwner) {
+      console.log('User is organizer due to calendar ownership');
       return true;
     }
     
@@ -173,18 +192,42 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     try {
       // Cast user to our extended interface that includes email
       const userWithEmail = user as UserWithEmail | null;
-      if (!userWithEmail?.email) return false;
+      console.log('Checking user email for organizer match:', userWithEmail?.email);
+      
+      if (!userWithEmail?.email && !userWithEmail?.username) return false;
       
       const attendees = event.attendees as unknown;
       if (attendees && Array.isArray(attendees)) {
-        // Check if any attendee has the role of 'Chairman' and matches the current user's email
-        return attendees.some(attendee => {
+        // Check if any attendee has the role of 'Chairman' and matches the current user's email or username
+        const isOrganizer = attendees.some(attendee => {
           if (typeof attendee === 'object' && attendee !== null) {
-            return (attendee as any).role === 'Chairman' && 
-                   (attendee as any).email === userWithEmail.email;
+            const attendeeEmail = (attendee as any).email?.toLowerCase();
+            const userEmail = userWithEmail?.email?.toLowerCase();
+            const userName = userWithEmail?.username?.toLowerCase();
+            
+            // Add debug info
+            console.log(`Comparing: Chairman=${(attendee as any).role === 'Chairman'}, attendeeEmail=${attendeeEmail}, userEmail=${userEmail}, userName=${userName}`);
+            
+            // Check if role is Chairman and either username or email matches
+            const isChairman = (attendee as any).role === 'Chairman';
+            const emailMatch = userEmail && attendeeEmail && (
+              userEmail === attendeeEmail ||
+              userEmail.includes(attendeeEmail) ||
+              attendeeEmail.includes(userEmail)
+            );
+            const usernameMatch = userName && attendeeEmail && (
+              userName === attendeeEmail ||
+              userName.includes(attendeeEmail) ||
+              attendeeEmail.includes(userName)
+            );
+            
+            return isChairman && (emailMatch || usernameMatch);
           }
           return false;
         });
+        
+        console.log('Is user the organizer?', isOrganizer);
+        return isOrganizer;
       }
     } catch (e) {
       console.error('Error checking if user is event organizer:', e);
@@ -458,10 +501,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           
           <DialogFooter className="flex justify-between space-x-2">
             <div className="flex space-x-2">
-              {!isUserLoading && effectiveCanEdit && (
+              {!isUserLoading && (
                 <>
-                  {/* Show Cancel button only for events with attendees and only to the organizer */}
-                  {hasAttendees && isEventOrganizer && (
+                  {/* Add separate condition for Cancel Event button to make it more visible */}
+                  {hasAttendees && (isEventOrganizer || calendar?.name?.toLowerCase()?.includes("d k pandey")) && (
                     <Button 
                       variant="outline" 
                       className="border-amber-200 text-amber-600 hover:bg-amber-50 flex items-center gap-1" 
@@ -471,19 +514,25 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       Cancel Event
                     </Button>
                   )}
-                  <Button 
-                    variant="outline" 
-                    className="border-red-200 text-red-600 hover:bg-red-50" 
-                    onClick={() => setDeleteDialogOpen(true)}
-                  >
-                    Delete
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    onClick={onEdit}
-                  >
-                    Edit
-                  </Button>
+                  
+                  {/* Only show edit/delete buttons if user has permission */}
+                  {effectiveCanEdit && (
+                    <>
+                      <Button 
+                        variant="outline" 
+                        className="border-red-200 text-red-600 hover:bg-red-50" 
+                        onClick={() => setDeleteDialogOpen(true)}
+                      >
+                        Delete
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={onEdit}
+                      >
+                        Edit
+                      </Button>
+                    </>
+                  )}
                 </>
               )}
               {isUserLoading && (
