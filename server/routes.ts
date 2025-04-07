@@ -3496,12 +3496,66 @@ END:VCALENDAR`;
         return res.status(500).json({ message: "Failed to delete event from database" });
       }
       
-      res.status(204).send();
+      // Return a more detailed response that includes the sync status
+      // This allows the client to know whether the event was only deleted locally or also on the server
+      
+      // Get the most recent server connection info
+      const connection = await storage.getServerConnection(userId);
+      
+      // Determine sync status based on eventToDelete status and other factors
+      let syncAttempted = false;
+      let syncSucceeded = false;
+      let syncErrorMsg = null;
+      let noConnection = false;
+      
+      // If the event had a URL, we attempted to sync
+      if (eventToDelete && eventToDelete.url) {
+        syncAttempted = true;
+        
+        // Look at the sync status before deletion
+        if (eventToDelete.syncStatus === 'synced') {
+          syncSucceeded = true;
+        } else if (eventToDelete.syncStatus === 'sync_failed' || eventToDelete.syncStatus === 'error') {
+          syncSucceeded = false;
+          syncErrorMsg = eventToDelete.syncError || "Sync failed before deletion";
+        }
+        
+        // Check connection status
+        if (!connection || connection.status !== 'connected') {
+          noConnection = true;
+          syncSucceeded = false;
+          if (!syncErrorMsg) {
+            syncErrorMsg = "No active server connection";
+          }
+        }
+      }
+      
+      const response = {
+        success: true,
+        id: eventId,
+        message: "Event deleted successfully",
+        sync: {
+          attempted: syncAttempted,
+          succeeded: syncSucceeded,
+          noConnection: noConnection,
+          error: syncErrorMsg
+        }
+      };
+      
+      // Return status 200 with details instead of 204 empty response
+      res.status(200).json(response);
     } catch (err) {
       console.error("Error deleting event:", err);
       res.status(500).json({ 
         message: "Failed to delete event", 
-        details: (err as Error).message
+        details: (err as Error).message,
+        success: false,
+        sync: {
+          attempted: false,
+          succeeded: false,
+          noConnection: false,
+          error: `Server error: ${(err as Error).message}`
+        }
       });
     }
   });
@@ -4848,7 +4902,13 @@ END:VCALENDAR`;
         return res.status(202).json({ 
           message: "Changes saved locally but not synced to server (not authenticated)",
           synced: false,
-          requiresAuth: true
+          requiresAuth: true,
+          sync: {
+            attempted: false,
+            succeeded: false,
+            noConnection: false,
+            error: "Authentication required to sync with server"
+          }
         });
       }
       
@@ -4864,7 +4924,28 @@ END:VCALENDAR`;
         return res.status(202).json({ 
           message: "Changes saved locally but not synced (no server connection configured)",
           synced: false,
-          requiresConnection: true
+          requiresConnection: true,
+          sync: {
+            attempted: false,
+            succeeded: false,
+            noConnection: true,
+            error: "Server connection required to sync with CalDAV server"
+          }
+        });
+      }
+      
+      // Check connection status
+      if (connection.status !== 'connected') {
+        return res.status(202).json({ 
+          message: "Changes saved locally but not synced (server connection not active)",
+          synced: false,
+          requiresConnection: true,
+          sync: {
+            attempted: false,
+            succeeded: false,
+            noConnection: true,
+            error: "Server connection is not active"
+          }
         });
       }
 
@@ -4876,14 +4957,26 @@ END:VCALENDAR`;
           message: "Sync triggered successfully", 
           calendarId, 
           forceRefresh,
-          synced: true
+          synced: true,
+          sync: {
+            attempted: true,
+            succeeded: true,
+            noConnection: false,
+            error: null
+          }
         });
       } else {
         // Still return 202 (Accepted) for errors since the local operation succeeded
         res.status(202).json({ 
           message: "Changes saved locally but sync with server failed",
           synced: false,
-          error: "Failed to trigger sync job"
+          error: "Failed to trigger sync job",
+          sync: {
+            attempted: true,
+            succeeded: false,
+            noConnection: false,
+            error: "Unable to synchronize with CalDAV server"
+          }
         });
       }
     } catch (err) {
@@ -4892,7 +4985,13 @@ END:VCALENDAR`;
       res.status(202).json({ 
         message: "Changes saved locally but sync with server failed",
         synced: false,
-        error: err instanceof Error ? err.message : String(err)
+        error: err instanceof Error ? err.message : String(err),
+        sync: {
+          attempted: true,
+          succeeded: false,
+          noConnection: false,
+          error: err instanceof Error ? err.message : String(err)
+        }
       });
     }
   });

@@ -643,17 +643,40 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     allQueryKeys?: QueryKey[];
   };
 
-  const deleteEventMutation = useMutation<{success: boolean, id: number, message?: string}, Error, number, DeleteMutationContext>({
+  type DeleteResponse = {
+    success: boolean, 
+    id: number, 
+    message?: string,
+    sync?: {
+      attempted: boolean,
+      succeeded: boolean,
+      noConnection: boolean,
+      error: string | null
+    }
+  };
+  
+  const deleteEventMutation = useMutation<DeleteResponse, Error, number, DeleteMutationContext>({
     mutationFn: async (id: number) => {
       console.log(`Deleting event with ID ${id}`);
       try {
         const res = await apiRequest('DELETE', `/api/events/${id}`);
         
-        // Consider both 204 and 404 as success cases for deletion
-        // - 204: Standard success for deletion
-        // - 404: Event already gone, which achieves the same end goal
-        if (res.status === 204 || res.status === 404) {
-          console.log(`Successfully deleted event with ID ${id} (status: ${res.status})`);
+        // Check for 200 status with our new enhanced response format
+        if (res.status === 200) {
+          // Parse the JSON response to get the sync status details
+          try {
+            const data = await res.json();
+            console.log(`Successfully deleted event with ID ${id}, response:`, data);
+            return data; // This will include the sync metadata and status
+          } catch (e) {
+            console.warn("Could not parse JSON response from successful delete:", e);
+            return { success: true, id };
+          }
+        }
+        
+        // Continue to handle legacy 204/404 status codes
+        else if (res.status === 204 || res.status === 404) {
+          console.log(`Successfully deleted event with ID ${id} (legacy status: ${res.status})`);
           return { success: true, id };
         }
         
@@ -751,11 +774,45 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         );
       }
       
-      // Show success toast
-      toast({
-        title: "Event Deleted",
-        description: "Event has been deleted successfully."
-      });
+      // Show customized toast based on sync status
+      if (result.sync) {
+        // Sync was attempted but failed due to connection issues
+        if (result.sync.attempted && !result.sync.succeeded && result.sync.noConnection) {
+          toast({
+            title: "Event Deleted Locally",
+            description: "The event was deleted from your local calendar but couldn't be removed from the server because no connection is configured. The change will sync when you set up server connectivity.",
+            variant: "default"
+          });
+        }
+        // Sync was attempted but failed due to other errors
+        else if (result.sync.attempted && !result.sync.succeeded && result.sync.error) {
+          toast({
+            title: "Event Deleted Locally",
+            description: `The event was deleted from your local calendar but couldn't be removed from the server: ${result.sync.error}`,
+            variant: "default"
+          });
+        }
+        // Sync was attempted and succeeded
+        else if (result.sync.attempted && result.sync.succeeded) {
+          toast({
+            title: "Event Deleted",
+            description: "The event was successfully deleted from both your local calendar and the server."
+          });
+        }
+        // Sync was not attempted (likely because it's a local-only event)
+        else if (!result.sync.attempted) {
+          toast({
+            title: "Event Deleted",
+            description: "The event was successfully deleted."
+          });
+        }
+      } else {
+        // Default success message if sync info isn't available
+        toast({
+          title: "Event Deleted",
+          description: "Event has been deleted successfully."
+        });
+      }
       
       // Force an immediate invalidation to trigger a fresh fetch from the server
       // This ensures the UI is in sync with the server
@@ -811,8 +868,16 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
               // the event was deleted locally but not synced to the server
               console.log('Sync status after deletion:', syncResult);
               
-              // If the response has requiresAuth or requiresConnection, we show a more specific message
-              if (syncResult.requiresAuth) {
+              // Check if we have the enhanced response format from our API
+              if (result && result.sync) {
+                console.log('Enhanced sync response details:', result.sync);
+                
+                // We already showed a toast message based on the delete API response
+              // so we don't need to show another one here based on the sync results
+              console.log('Using sync information from original delete response', result.sync);
+              } 
+              // Fall back to the sync API response format if we don't have the enhanced format
+              else if (syncResult.requiresAuth) {
                 toast({
                   title: "Event Deleted Locally",
                   description: "Event deleted from your local calendar. Sign in to sync with server.",
