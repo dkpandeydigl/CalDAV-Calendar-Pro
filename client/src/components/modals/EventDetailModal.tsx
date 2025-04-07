@@ -14,6 +14,16 @@ import { MailCheck, AlertTriangle } from 'lucide-react';
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
 
+// Define a User interface that matches the schema with email
+// Based on shared/schema.ts where email is text("email") (optional)
+interface UserWithEmail {
+  id: number;
+  username: string;
+  password: string;
+  preferredTimezone: string;
+  email: string | null;
+}
+
 interface EventDetailModalProps {
   open: boolean;
   event: Event | null;
@@ -150,6 +160,37 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const hasAttendees = (() => {
     const attendees = event.attendees as unknown;
     return attendees && Array.isArray(attendees) && attendees.length > 0;
+  })();
+  
+  // Determine if the current user is the organizer of this event
+  const isEventOrganizer = (() => {
+    // First check if this is the user's own calendar - if so, they're the organizer
+    if (isUsersOwnCalendar || isOwner) {
+      return true;
+    }
+    
+    // Examine attendees to find if current user is the organizer
+    try {
+      // Cast user to our extended interface that includes email
+      const userWithEmail = user as UserWithEmail | null;
+      if (!userWithEmail?.email) return false;
+      
+      const attendees = event.attendees as unknown;
+      if (attendees && Array.isArray(attendees)) {
+        // Check if any attendee has the role of 'Chairman' and matches the current user's email
+        return attendees.some(attendee => {
+          if (typeof attendee === 'object' && attendee !== null) {
+            return (attendee as any).role === 'Chairman' && 
+                   (attendee as any).email === userWithEmail.email;
+          }
+          return false;
+        });
+      }
+    } catch (e) {
+      console.error('Error checking if user is event organizer:', e);
+    }
+    
+    return false;
   })();
   
   // Handle delete event
@@ -419,8 +460,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex space-x-2">
               {!isUserLoading && effectiveCanEdit && (
                 <>
-                  {/* Show Cancel button only for events with attendees */}
-                  {hasAttendees && (
+                  {/* Show Cancel button only for events with attendees and only to the organizer */}
+                  {hasAttendees && isEventOrganizer && (
                     <Button 
                       variant="outline" 
                       className="border-amber-200 text-amber-600 hover:bg-amber-50 flex items-center gap-1" 
