@@ -1151,6 +1151,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       isLoading={isEmailPreviewLoading}
                       error={previewError}
                       html={previewData?.html || null}
+                      showSendButton={attendees.length > 0}
+                      onSend={() => {
+                        // Just let the user know that emails will be sent when the event is created
+                        toast({
+                          title: "Email invitations ready",
+                          description: "Invitations will be sent automatically when you create this event.",
+                          variant: "default"
+                        });
+                      }}
                       onRefresh={() => {
                         if (title && startDate && endDate) {
                           const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
