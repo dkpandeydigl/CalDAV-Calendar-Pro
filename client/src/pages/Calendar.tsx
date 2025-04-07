@@ -281,11 +281,6 @@ function CalendarContent() {
   
   const { events, isLoading, refetch } = useCalendarEvents(viewStartDate, viewEndDate);
   
-  // Refetch events when view dates change
-  useEffect(() => {
-    refetch();
-  }, [viewStartDate, viewEndDate, refetch]);
-  
   // Server connection status is managed by the useServerConnection hook
   
   // Add event listeners for export and import calendar buttons

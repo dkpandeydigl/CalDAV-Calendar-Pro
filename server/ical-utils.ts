@@ -207,9 +207,6 @@ export function generateThunderbirdCompatibleICS(
         case 'Yearly':
           rruleString += 'YEARLY';
           break;
-        case 'None':
-          // No recurrence, don't add any RRULE
-          return; // Exit early
         default:
           rruleString += 'DAILY'; // Default to daily if not specified
       }
