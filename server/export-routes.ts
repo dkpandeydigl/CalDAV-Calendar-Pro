@@ -57,7 +57,35 @@ export function registerExportRoutes(app: Express) {
         return res.status(404).json({ message: 'Calendar not found' });
       }
       
-      // Generate iCalendar content for this single event
+      // Check if raw_data exists and is a valid iCalendar
+      if (event.rawData && typeof event.rawData === 'string') {
+        try {
+          // Try to parse the rawData (it might be JSON stringified)
+          let rawDataContent: string;
+          try {
+            rawDataContent = JSON.parse(event.rawData);
+          } catch (e) {
+            // If it's not valid JSON, use it as is
+            rawDataContent = event.rawData;
+          }
+          
+          // Check if it's a valid iCalendar
+          if (rawDataContent.startsWith('BEGIN:VCALENDAR') && 
+              rawDataContent.includes('BEGIN:VEVENT') &&
+              rawDataContent.includes('END:VEVENT') && 
+              rawDataContent.includes('END:VCALENDAR')) {
+                
+            console.log('Using raw iCalendar data for export');
+            // Use the raw data directly, which preserves all properties including RRULE and ATTENDEE
+            return res.send(rawDataContent);
+          }
+        } catch (e) {
+          console.error('Error parsing raw data:', e);
+        }
+      }
+      
+      // Fallback to generating iCalendar content if raw_data can't be used
+      console.log('Generating new iCalendar data for export');
       const now = formatICALDate(new Date());
       const safeUid = event.uid.includes('@') ? event.uid : `${event.uid}@caldavclient.local`;
       const startDate = formatICALDate(new Date(event.startDate));
