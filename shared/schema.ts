@@ -99,6 +99,8 @@ export const events = pgTable("events", {
   syncStatus: text("sync_status").default("local").notNull(), // Values: 'local', 'synced', 'sync_failed', 'syncing'
   syncError: text("sync_error"), // Error message if sync failed
   lastSyncAttempt: timestamp("last_sync_attempt"), // When we last tried to sync
+  emailSent: text("email_sent"), // Values: 'sent', 'failed', 'not_sent', null (if no attendees)
+  emailError: text("email_error"), // Error message if email sending failed
 });
 
 export const insertEventSchema = createInsertSchema(events).pick({
@@ -121,6 +123,8 @@ export const insertEventSchema = createInsertSchema(events).pick({
   syncStatus: true,
   syncError: true,
   lastSyncAttempt: true,
+  emailSent: true,
+  emailError: true,
 });
 
 export type InsertEvent = z.infer<typeof insertEventSchema>;

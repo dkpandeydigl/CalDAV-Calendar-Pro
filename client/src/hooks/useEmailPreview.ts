@@ -16,11 +16,18 @@ interface EmailPreviewData {
   startDate: Date;
   endDate: Date;
   attendees: Attendee[];
+  eventId?: number; // Optional event ID if sending emails for an existing event
 }
 
 interface EmailPreviewResponse {
   html: string;
   ics: string;
+}
+
+interface SendEmailResponse {
+  success: boolean;
+  message: string;
+  details?: any;
 }
 
 export function useEmailPreview() {
@@ -72,11 +79,45 @@ export function useEmailPreview() {
     setPreviewError(null);
   };
   
+  // Add a mutation for sending emails directly
+  const sendEmailMutation = useMutation({
+    mutationFn: async (data: EmailPreviewData) => {
+      // Format the dates as ISO strings for the API
+      const formattedData = {
+        ...data,
+        startDate: data.startDate instanceof Date ? data.startDate.toISOString() : data.startDate,
+        endDate: data.endDate instanceof Date ? data.endDate.toISOString() : data.endDate,
+      };
+      
+      const response = await apiRequest('POST', '/api/send-email', formattedData);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to send email');
+      }
+      
+      return await response.json() as SendEmailResponse;
+    }
+  });
+  
+  // Function to trigger email sending
+  const sendEmail = (data: EmailPreviewData) => {
+    // Validate required fields
+    if (!data.title || !data.startDate || !data.endDate || !data.attendees || data.attendees.length === 0) {
+      return Promise.reject(new Error('Required fields missing for sending email'));
+    }
+    
+    // Send email
+    return sendEmailMutation.mutateAsync(data);
+  };
+  
   return {
     previewData,
     previewError,
     isLoading: emailPreviewMutation.isPending,
+    isSending: sendEmailMutation.isPending,
     generatePreview,
-    clearPreview
+    clearPreview,
+    sendEmail
   };
 }

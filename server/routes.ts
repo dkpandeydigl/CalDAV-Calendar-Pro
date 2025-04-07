@@ -2729,6 +2729,87 @@ END:VCALENDAR`
         }
       }
       
+      // Send email invitations if there are attendees
+      if (eventData.attendees && Array.isArray(eventData.attendees) && eventData.attendees.length > 0) {
+        try {
+          console.log(`Sending email invitations to ${eventData.attendees.length} attendees for event "${eventData.title}"`);
+          
+          // Get the user for organizer information
+          const user = await storage.getUser(userId);
+          
+          if (!user || !user.email) {
+            console.error('Cannot send invitations: User or email not found');
+          } else {
+            // Generate iCalendar data if needed
+            const icsData = generateThunderbirdCompatibleICS({
+              uid: newEvent.uid,
+              title: newEvent.title,
+              startDate: newEvent.startDate,
+              endDate: newEvent.endDate,
+              description: newEvent.description,
+              location: newEvent.location,
+              attendees: newEvent.attendees,
+              resources: newEvent.resources,
+              busyStatus: newEvent.busyStatus,
+              recurrenceRule: newEvent.recurrenceRule,
+              allDay: newEvent.allDay
+            });
+            
+            // Initialize the email service for this user
+            await emailService.initialize(userId);
+            
+            // Prepare attendee list in the format expected by email service
+            let attendeesList: { id: string; email: string; name?: string; role: string; }[] = [];
+            
+            // Handle different formats of attendees data
+            if (typeof newEvent.attendees === 'string') {
+              try {
+                const parsedAttendees = JSON.parse(newEvent.attendees);
+                attendeesList = Array.isArray(parsedAttendees) ? parsedAttendees : [parsedAttendees];
+              } catch (e) {
+                console.warn('Failed to parse attendees JSON string:', e);
+              }
+            } else if (Array.isArray(newEvent.attendees)) {
+              attendeesList = newEvent.attendees;
+            }
+            
+            // Send the invitations
+            const result = await emailService.sendEventInvitation(userId, {
+              eventId: newEvent.id,
+              uid: newEvent.uid,
+              title: newEvent.title,
+              description: newEvent.description,
+              location: newEvent.location,
+              startDate: newEvent.startDate,
+              endDate: newEvent.endDate,
+              organizer: {
+                email: user.email,
+                name: user.username
+              },
+              attendees: attendeesList,
+              icsData: icsData
+            });
+            
+            console.log(`Email invitation result:`, result);
+            
+            // Store the email sending status in the event
+            await storage.updateEvent(newEvent.id, {
+              emailSent: result.success ? 'sent' : 'failed',
+              emailError: result.success ? null : result.message
+            });
+          }
+        } catch (emailError) {
+          console.error('Error sending email invitations:', emailError);
+          // Update the event with the email sending error
+          await storage.updateEvent(newEvent.id, {
+            emailSent: 'failed',
+            emailError: (emailError as Error).message
+          });
+        }
+      } else {
+        console.log('No attendees found for event, skipping email invitations');
+      }
+      
       res.status(201).json(newEvent);
     } catch (err) {
       console.error("Error creating event:", err);
@@ -5224,6 +5305,47 @@ END:VCALENDAR`;
     }
   });
   
+  // Send a test email to a specific recipient
+  app.post("/api/smtp-config/test-to", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as Express.User).id;
+      
+      // Get recipient email from request body
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({
+          message: "Recipient email address is required"
+        });
+      }
+      
+      // Import email service
+      const { emailService } = await import('./email-service');
+      
+      // Initialize with the user's SMTP configuration
+      const initialized = await emailService.initialize(userId);
+      
+      if (!initialized) {
+        return res.status(404).json({ 
+          message: "SMTP configuration not found or invalid"
+        });
+      }
+      
+      // Send test email
+      const result = await emailService.sendTestEmail(email);
+      
+      res.status(200).json({ 
+        message: `Test email sent successfully to ${email}`,
+        details: result
+      });
+    } catch (error) {
+      console.error("Error testing SMTP configuration:", error);
+      res.status(500).json({ 
+        message: "Failed to send test email", 
+        error: (error as Error).message 
+      });
+    }
+  });
+  
   // Generate email preview for an event invitation
   app.post("/api/email-preview", isAuthenticated, async (req, res) => {
     try {
@@ -5332,6 +5454,144 @@ END:VCALENDAR`;
       console.error("Error generating email preview:", error);
       res.status(500).json({ 
         message: "Failed to generate email preview", 
+        error: (error as Error).message 
+      });
+    }
+  });
+
+  // Send email invitations endpoint
+  app.post("/api/send-email", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as Express.User).id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.email) {
+        return res.status(400).json({ 
+          message: "User email not available. Please update your profile with a valid email."
+        });
+      }
+      
+      // Get the event data from the request
+      const { 
+        eventId,
+        title, 
+        description, 
+        location, 
+        startDate, 
+        endDate, 
+        attendees 
+      } = req.body;
+      
+      // Validate required fields
+      if (!title || !startDate || !endDate || !attendees) {
+        return res.status(400).json({
+          message: "Missing required fields (title, startDate, endDate, attendees)"
+        });
+      }
+      
+      // Parse the attendees if they're sent as a string
+      let parsedAttendees;
+      try {
+        parsedAttendees = typeof attendees === 'string' ? JSON.parse(attendees) : attendees;
+        if (!Array.isArray(parsedAttendees)) {
+          throw new Error("Attendees must be an array");
+        }
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid attendees format",
+          error: (error instanceof Error) ? error.message : String(error)
+        });
+      }
+      
+      // Import email service
+      const { emailService } = await import('./email-service');
+      
+      // Initialize with the user's SMTP configuration
+      const initialized = await emailService.initialize(userId);
+      
+      if (!initialized) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to initialize email service. Please check your SMTP configuration."
+        });
+      }
+      
+      // Format the dates to make them valid Date objects
+      let parsedStartDate, parsedEndDate;
+      try {
+        parsedStartDate = new Date(startDate);
+        parsedEndDate = new Date(endDate);
+        
+        if (isNaN(parsedStartDate.getTime()) || isNaN(parsedEndDate.getTime())) {
+          throw new Error("Invalid date format");
+        }
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid date format",
+          error: (error instanceof Error) ? error.message : String(error)
+        });
+      }
+      
+      // Use provided eventId or generate a unique ID for this event
+      const uid = eventId ? `event-${eventId}@caldav-app` : `manual-send-${Date.now()}@caldav-app`;
+      
+      // If this is for an existing event, update the emailSent status
+      if (eventId) {
+        try {
+          const event = await storage.getEvent(eventId);
+          if (event) {
+            await storage.updateEvent(eventId, { 
+              emailSent: new Date(),
+              emailError: null
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to update email status for event ${eventId}:`, error);
+          // Continue anyway - we still want to try sending the email
+        }
+      }
+      
+      // Prepare the event invitation data
+      const invitationData = {
+        eventId: eventId || 0,
+        uid,
+        title,
+        description,
+        location,
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
+        organizer: {
+          email: user.email,
+          name: user.username || undefined
+        },
+        attendees: parsedAttendees.map((a: any) => ({
+          email: a.email,
+          name: a.name,
+          role: a.role || 'REQ-PARTICIPANT',
+          status: 'NEEDS-ACTION'
+        }))
+      };
+      
+      // Send the invitation emails
+      const result = await emailService.sendEventInvitation(userId, invitationData);
+      
+      // Update the event's email status if this is for an existing event
+      if (eventId && !result.success) {
+        try {
+          await storage.updateEvent(eventId, { 
+            emailError: result.message
+          });
+        } catch (error) {
+          console.error(`Failed to update email error for event ${eventId}:`, error);
+        }
+      }
+      
+      res.status(result.success ? 200 : 500).json(result);
+    } catch (error) {
+      console.error("Error sending email invitations:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to send email invitations", 
         error: (error as Error).message 
       });
     }

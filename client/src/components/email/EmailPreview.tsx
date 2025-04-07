@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator';
 
 interface EmailPreviewProps {
   isLoading: boolean;
+  isSending?: boolean;
   error: string | null;
   html: string | null;
   onRefresh: () => void;
@@ -16,6 +17,7 @@ interface EmailPreviewProps {
 
 const EmailPreview: React.FC<EmailPreviewProps> = ({
   isLoading,
+  isSending = false,
   error,
   html,
   onRefresh,
@@ -92,9 +94,20 @@ const EmailPreview: React.FC<EmailPreviewProps> = ({
               size="sm" 
               variant="default"
               onClick={onSend}
+              disabled={isSending}
+              className="min-w-[100px]"
             >
-              <Mail className="h-4 w-4 mr-2" />
-              Send Now
+              {isSending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Send Now
+                </>
+              )}
             </Button>
           )}
         </div>

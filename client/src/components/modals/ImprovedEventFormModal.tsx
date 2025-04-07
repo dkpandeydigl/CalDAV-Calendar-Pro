@@ -139,9 +139,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const { 
     previewData, 
     previewError, 
-    isLoading: isEmailPreviewLoading, 
+    isLoading: isEmailPreviewLoading,
+    isSending: isEmailSending, 
     generatePreview, 
-    clearPreview 
+    clearPreview,
+    sendEmail
   } = useEmailPreview();
   
   // Reset form when modal opens/closes or event changes
@@ -481,7 +483,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           url: null,
           rawData: null,
           syncError: null,
-          lastSyncAttempt: null
+          lastSyncAttempt: null,
+          emailSent: null,
+          emailError: null
         };
         
         // Create new event
@@ -1149,16 +1153,55 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     
                     <EmailPreview 
                       isLoading={isEmailPreviewLoading}
+                      isSending={isEmailSending}
                       error={previewError}
                       html={previewData?.html || null}
                       showSendButton={attendees.length > 0}
-                      onSend={() => {
-                        // Just let the user know that emails will be sent when the event is created
-                        toast({
-                          title: "Email invitations ready",
-                          description: "Invitations will be sent automatically when you create this event.",
-                          variant: "default"
-                        });
+                      onSend={async () => {
+                        if (!title || !startDate || !endDate || !attendees.length) {
+                          toast({
+                            title: "Missing information",
+                            description: "Please fill in all required event details and add attendees before sending invitations.",
+                            variant: "destructive"
+                          });
+                          return;
+                        }
+
+                        try {
+                          const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                          const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                          
+                          // For existing event, we pass the event ID
+                          const eventId = event ? event.id : undefined;
+                          
+                          // Send the email
+                          const result = await sendEmail({
+                            eventId,
+                            title,
+                            description,
+                            location,
+                            startDate: startDateTime,
+                            endDate: endDateTime,
+                            attendees
+                          });
+                          
+                          if (result.success) {
+                            toast({
+                              title: "Invitations sent!",
+                              description: `Successfully sent email invitations to ${attendees.length} attendee${attendees.length > 1 ? 's' : ''}.`,
+                              variant: "default"
+                            });
+                          } else {
+                            throw new Error(result.message || "Failed to send invitations");
+                          }
+                        } catch (error) {
+                          console.error("Failed to send invitations:", error);
+                          toast({
+                            title: "Failed to send invitations",
+                            description: error instanceof Error ? error.message : "An error occurred while sending invitations",
+                            variant: "destructive"
+                          });
+                        }
                       }}
                       onRefresh={() => {
                         if (title && startDate && endDate) {
