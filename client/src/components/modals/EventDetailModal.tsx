@@ -415,21 +415,30 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         </DialogContent>
       </Dialog>
       
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Event</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{event.title}"? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="pt-2 pb-4">
-            <p className="text-sm text-muted-foreground">
-              Date: {formatDayOfWeekDate(startDate)}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Time: {event.allDay ? 'All Day' : formatEventTimeRange(startDate, endDate)}
-            </p>
+      {/* Use a Dialog instead of AlertDialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-600 flex items-center gap-2">
+              <span className="material-icons text-red-500">warning</span>
+              Delete Event
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="mb-4">
+              <p className="text-lg font-medium mb-2">"{event.title}"</p>
+              <p className="mb-1">Are you sure you want to delete this event? This action cannot be undone.</p>
+            </div>
+            
+            <div className="text-sm bg-gray-50 p-3 rounded-md">
+              <p className="mb-1">
+                <span className="font-medium">Date:</span> {formatDayOfWeekDate(startDate)}
+              </p>
+              <p>
+                <span className="font-medium">Time:</span> {event.allDay ? 'All Day' : formatEventTimeRange(startDate, endDate)}
+              </p>
+            </div>
             
             {deleteError && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
@@ -440,18 +449,26 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </div>
             )}
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+          
+          <DialogFooter className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button 
               onClick={handleDelete}
               disabled={isDeleting}
-              className="bg-red-500 hover:bg-red-600 text-white"
+              variant="destructive"
+              className="bg-red-500 hover:bg-red-600"
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
