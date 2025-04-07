@@ -33,10 +33,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const { user, isLoading: isUserLoadingFromAuth } = useAuth();
   const queryClient = useQueryClient();
   
-  // State hooks
+  // State hooks - always place ALL hooks at the top level before any conditional logic
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   
   // Add a timeout to prevent infinite loading state
   useEffect(() => {
@@ -141,9 +142,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     endDate.setHours(endDate.getHours() + 1);
   }
   
-  // State for error display
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-
   // Handle delete event
   const handleDelete = async () => {
     if (!event) return;
