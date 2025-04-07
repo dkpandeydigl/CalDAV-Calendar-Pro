@@ -33,6 +33,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     queryKey: ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()],
     enabled: enabledCalendarIds.length > 0,
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty to handle user session expiry gracefully
+    refetchOnWindowFocus: true,
+    staleTime: 30000, // Consider data stale after 30 seconds
+    refetchInterval: 60000, // Refetch every minute to keep data fresh
   });
   
   // Filter events client-side to ensure we only show events from enabled calendars

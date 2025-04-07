@@ -233,7 +233,7 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
           
           // Generate the occurrences based on the pattern
           let currentDate = new Date(startRecurDate);
-          let count = 1; // Start at 1 because we already have the original event
+          let count = 0; // Start at 0 because we need exactly maxOccurrences instances
           
           while (count < maxOccurrences && currentDate < endRecurDate) {
             // Calculate the next occurrence based on the pattern
