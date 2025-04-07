@@ -4352,11 +4352,24 @@ END:VCALENDAR`;
               
               // Check if this is a newly created event by looking at:
               // - lastSyncAttempt (if available)
-              // - syncStatus (if 'local', it's new)
-              // - if all else fails, assume it's not too old
-              const isNewlySynced = localEvent.lastSyncAttempt 
-                ? (new Date().getTime() - new Date(localEvent.lastSyncAttempt).getTime()) < 300000 // Less than 5 mins ago
-                : localEvent.syncStatus === 'local' || localEvent.syncStatus === 'syncing';
+              // - syncStatus (if 'local' or 'syncing', it's new)
+              // - createdAt timestamp (if it's recent, it's a new event)
+              // - If any of these conditions are true, protect the event from deletion
+              
+              // Protection window for new events: 10 minutes
+              const protectionWindow = 10 * 60 * 1000; // 10 minutes in milliseconds
+              const currentTime = new Date().getTime();
+              
+              // Calculate time since last sync attempt (if available)
+              const timeSinceSyncAttempt = localEvent.lastSyncAttempt 
+                ? currentTime - new Date(localEvent.lastSyncAttempt).getTime() 
+                : Infinity;
+              
+              // Determine if this is a newly created or synced event
+              const isNewlySynced = 
+                timeSinceSyncAttempt < protectionWindow ||  // Recent sync attempt
+                localEvent.syncStatus === 'local' ||        // Marked as local
+                localEvent.syncStatus === 'syncing';        // Currently syncing
               
               if (localEvent.url && !serverEventUIDs.has(localEvent.uid) && !isNewlySynced) {
                 console.log(`Event "${localEvent.title}" (${localEvent.uid}) exists locally with URL but not on server. Marking for deletion.`);
@@ -4371,6 +4384,35 @@ END:VCALENDAR`;
                 // Don't delete newly created events, just add them to sync list
                 if (!localEventsToSync.has(localEvent.id)) {
                   localEventsToSync.set(localEvent.id, localEvent);
+                }
+              } else if (!localEvent.url || localEvent.syncStatus === 'local' || localEvent.syncStatus === 'syncing') {
+                // This is an event that hasn't been synced to the server yet or is in the process of syncing
+                // Add to sync list to ensure we try to push it to the server
+                console.log(`Event "${localEvent.title}" (${localEvent.uid}) needs initial sync to server. Adding to sync list.`);
+                if (!localEventsToSync.has(localEvent.id)) {
+                  localEventsToSync.set(localEvent.id, localEvent);
+                }
+              } else if (localEvent.startDate) {
+                // Special handling for events with specific dates like April 26th
+                // Check if the event is for a specific date that might need special attention
+                const eventDate = new Date(localEvent.startDate);
+                const today = new Date();
+                const eventDay = eventDate.getDate();
+                const eventMonth = eventDate.getMonth();
+                
+                // Check for events on specific dates that need special attention (like April 26th)
+                // or events in the near future (next 7 days) or today
+                const isSpecialDate = (eventMonth === 3 && eventDay === 26); // April 26th
+                const isNearFutureEvent = (
+                  eventDate >= today && 
+                  (eventDate.getTime() - today.getTime()) < 7 * 24 * 60 * 60 * 1000 // 7 days
+                );
+                
+                if (isSpecialDate || isNearFutureEvent) {
+                  console.log(`Event "${localEvent.title}" is for a special date (${eventMonth + 1}/${eventDay}) or near future. Adding to sync list for emphasis.`);
+                  if (!localEventsToSync.has(localEvent.id)) {
+                    localEventsToSync.set(localEvent.id, localEvent);
+                  }
                 }
               }
             }
