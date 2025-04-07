@@ -204,15 +204,40 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
                 })
               });
               
-              if (!syncResponse.ok) {
-                throw new Error(`Sync failed with status: ${syncResponse.status}`);
-              }
-              
               const syncResult = await syncResponse.json();
-              console.log('Immediate sync completed successfully:', syncResult);
               
-              // After successful sync, refresh the events list
-              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              // Check if sync was successful based on the new response format
+              if (syncResponse.ok && syncResult.synced === true) {
+                console.log('Immediate sync completed successfully after creation:', syncResult);
+                
+                // After successful sync, refresh the events list
+                queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              } else {
+                // Not a critical error - we handle 202 status codes here which mean
+                // the event was created locally but not synced to the server
+                console.log('Sync status after creation:', syncResult);
+                
+                // We provide a more specific message based on the response type
+                if (syncResult.requiresAuth) {
+                  toast({
+                    title: "Event Created Locally",
+                    description: "Event created in your local calendar. Sign in to sync with server.",
+                    variant: "default"
+                  });
+                } else if (syncResult.requiresConnection) {
+                  toast({
+                    title: "Event Created Locally",
+                    description: "Event created in your local calendar. Configure a server connection to sync.",
+                    variant: "default"
+                  });
+                } else {
+                  toast({
+                    title: "Event Created Locally",
+                    description: "Event created in your local calendar, but sync with server failed. Will retry automatically.",
+                    variant: "default"
+                  });
+                }
+              }
             } catch (error) {
               console.error('Error during immediate sync:', error);
               // Still show the event locally even if sync failed
@@ -510,15 +535,40 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
               })
             });
             
-            if (!syncResponse.ok) {
-              throw new Error(`Sync failed with status: ${syncResponse.status}`);
-            }
-            
             const syncResult = await syncResponse.json();
-            console.log('Immediate sync completed successfully after update:', syncResult);
             
-            // After successful sync, refresh the events list
-            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            // Check if sync was successful based on the new response format
+            if (syncResponse.ok && syncResult.synced === true) {
+              console.log('Immediate sync completed successfully after update:', syncResult);
+              
+              // After successful sync, refresh the events list
+              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            } else {
+              // Not a critical error - we handle 202 status codes here which mean
+              // the event was updated locally but not synced to the server
+              console.log('Sync status after update:', syncResult);
+              
+              // If the response has requiresAuth or requiresConnection, we show a more specific message
+              if (syncResult.requiresAuth) {
+                toast({
+                  title: "Event Updated Locally",
+                  description: "Event updated in your local calendar. Sign in to sync with server.",
+                  variant: "default"
+                });
+              } else if (syncResult.requiresConnection) {
+                toast({
+                  title: "Event Updated Locally",
+                  description: "Event updated in your local calendar. Configure a server connection to sync.",
+                  variant: "default"
+                });
+              } else {
+                toast({
+                  title: "Event Updated Locally",
+                  description: "Event updated in your local calendar, but sync with server failed. Will retry automatically.",
+                  variant: "default"
+                });
+              }
+            }
           } catch (error) {
             console.error('Error during immediate sync after update:', error);
             // Still show the event updated locally even if sync failed
@@ -748,20 +798,45 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
               })
             });
             
-            if (!syncResponse.ok) {
-              throw new Error(`Sync failed with status: ${syncResponse.status}`);
-            }
-            
             const syncResult = await syncResponse.json();
-            console.log('Immediate sync completed successfully after deletion:', syncResult);
             
-            // After successful sync, refresh the events list
-            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            // Check if sync was successful based on the new response format
+            if (syncResponse.ok && syncResult.synced === true) {
+              console.log('Immediate sync completed successfully after deletion:', syncResult);
+              
+              // After successful sync, refresh the events list
+              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            } else {
+              // Not a critical error - we handle 202 status codes here which mean
+              // the event was deleted locally but not synced to the server
+              console.log('Sync status after deletion:', syncResult);
+              
+              // If the response has requiresAuth or requiresConnection, we show a more specific message
+              if (syncResult.requiresAuth) {
+                toast({
+                  title: "Event Deleted Locally",
+                  description: "Event deleted from your local calendar. Sign in to sync with server.",
+                  variant: "default"
+                });
+              } else if (syncResult.requiresConnection) {
+                toast({
+                  title: "Event Deleted Locally",
+                  description: "Event deleted from your local calendar. Configure a server connection to sync.",
+                  variant: "default"
+                });
+              } else {
+                toast({
+                  title: "Event Deleted Locally",
+                  description: "Event deleted from your local calendar, but sync with server failed. Will retry automatically.",
+                  variant: "default"
+                });
+              }
+            }
           } catch (error) {
             console.error('Error during immediate sync after deletion:', error);
             toast({
               title: "Event Deleted",
-              description: "Event deleted locally, but sync with server failed. Will retry automatically.",
+              description: "Event deleted from your local calendar, but sync with server failed. Will retry automatically.",
               variant: "default"
             });
           }

@@ -4839,26 +4839,61 @@ END:VCALENDAR`;
     }
   });
   
-  // Sync immediately
-  app.post("/api/sync/now", isAuthenticated, async (req, res) => {
+  // Sync immediately - note: we don't use isAuthenticated middleware here to handle unauthenticated cases gracefully
+  app.post("/api/sync/now", async (req, res) => {
     try {
-      const userId = req.user!.id;
+      // Check if user is authenticated
+      if (!req.isAuthenticated() || !req.user) {
+        // Return a more helpful response than a 401 error
+        return res.status(202).json({ 
+          message: "Changes saved locally but not synced to server (not authenticated)",
+          synced: false,
+          requiresAuth: true
+        });
+      }
+      
+      const userId = req.user.id;
       const forceRefresh = req.body.forceRefresh === true;
       const calendarId = req.body.calendarId ? parseInt(req.body.calendarId) : null;
       
       console.log(`Immediate sync requested for userId=${userId}, calendarId=${calendarId}, forceRefresh=${forceRefresh}`);
       
+      // Check if user has a server connection configured
+      const connection = await storage.getServerConnection(userId);
+      if (!connection) {
+        return res.status(202).json({ 
+          message: "Changes saved locally but not synced (no server connection configured)",
+          synced: false,
+          requiresConnection: true
+        });
+      }
+
       // This will trigger a sync right away with the specified options
       const success = await syncService.syncNow(userId, { forceRefresh, calendarId });
       
       if (success) {
-        res.json({ message: "Sync triggered successfully", calendarId, forceRefresh });
+        res.json({ 
+          message: "Sync triggered successfully", 
+          calendarId, 
+          forceRefresh,
+          synced: true
+        });
       } else {
-        res.status(500).json({ message: "Failed to trigger sync" });
+        // Still return 202 (Accepted) for errors since the local operation succeeded
+        res.status(202).json({ 
+          message: "Changes saved locally but sync with server failed",
+          synced: false,
+          error: "Failed to trigger sync job"
+        });
       }
     } catch (err) {
       console.error("Error triggering sync:", err);
-      res.status(500).json({ message: "Failed to trigger sync", error: err instanceof Error ? err.message : String(err) });
+      // Still return 202 (Accepted) for errors since the local operation succeeded
+      res.status(202).json({ 
+        message: "Changes saved locally but sync with server failed",
+        synced: false,
+        error: err instanceof Error ? err.message : String(err)
+      });
     }
   });
   
