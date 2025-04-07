@@ -152,7 +152,14 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
             untilDate = recurrenceObj.untilDate;
           } else if (typeof event.recurrenceRule === 'string') {
             // It might be in RRULE:FREQ=WEEKLY;INTERVAL=1;... format
-            const rrule = event.recurrenceRule as string;
+            let rrule = event.recurrenceRule as string;
+            
+            // Remove the "RRULE:" prefix if present
+            if (rrule.startsWith('RRULE:')) {
+              rrule = rrule.substring(6);
+            }
+            
+            console.log(`Parsing RRULE string: ${rrule}`);
             
             // Extract pattern (frequency)
             const freqMatch = rrule.match(/FREQ=([^;]+)/);
@@ -162,12 +169,15 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
               else if (freq === 'WEEKLY') pattern = 'Weekly';
               else if (freq === 'MONTHLY') pattern = 'Monthly';
               else if (freq === 'YEARLY') pattern = 'Yearly';
+              
+              console.log(`Extracted frequency: ${freq} -> ${pattern}`);
             }
             
             // Extract interval
             const intervalMatch = rrule.match(/INTERVAL=(\d+)/);
             if (intervalMatch && intervalMatch[1]) {
               interval = parseInt(intervalMatch[1], 10) || 1;
+              console.log(`Extracted interval: ${interval}`);
             }
             
             // Extract weekdays
@@ -184,6 +194,7 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
                 'SA': 'Saturday'
               };
               weekdays = dayAbbrs.map(abbr => dayMap[abbr] || '').filter(day => day !== '');
+              console.log(`Extracted weekdays: ${dayAbbrs.join(',')} -> ${weekdays.join(',')}`);
             }
             
             // Extract count (occurrences)
@@ -256,22 +267,28 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
                   const selectedDays = weekdays.map((day: string) => dayMap[day as keyof typeof dayMap]).sort();
                   
                   // Find the next day that matches one of our selected days
-                  let found = false;
-                  let testDate = new Date(nextDate);
-                  testDate.setDate(testDate.getDate() + 1); // Start from tomorrow
+                  // First, add the interval weeks to the current date
+                  let nextWeekDate = new Date(nextDate);
+                  nextWeekDate.setDate(nextWeekDate.getDate() + (7 * interval));
                   
-                  while (!found && testDate < endRecurDate) {
+                  // Find the matching weekday in the next interval period
+                  let found = false;
+                  let testDate = new Date(nextWeekDate);
+                  // Get the start of the week (Sunday)
+                  testDate.setDate(testDate.getDate() - testDate.getDay());
+                  
+                  // Check each day in the next week for a matching weekday
+                  for (let i = 0; i < 7 && !found; i++) {
                     if (selectedDays.includes(testDate.getDay())) {
                       nextDate = new Date(testDate);
                       found = true;
-                    } else {
-                      testDate.setDate(testDate.getDate() + 1);
                     }
+                    testDate.setDate(testDate.getDate() + 1);
                   }
                   
-                  // If we didn't find a matching day, go to next week
+                  // If we still didn't find a matching day, just use the next interval week
                   if (!found) {
-                    nextDate.setDate(nextDate.getDate() + (7 * interval));
+                    nextDate = nextWeekDate;
                   }
                 } else {
                   // Simple weekly interval
