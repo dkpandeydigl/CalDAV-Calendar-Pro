@@ -2,7 +2,8 @@ import session from "express-session";
 import { 
   Calendar, Event, InsertCalendar, InsertEvent, InsertServerConnection, 
   InsertUser, ServerConnection, User, CalendarSharing, InsertCalendarSharing,
-  users, calendars, events, serverConnections, calendarSharing
+  SmtpConfig, InsertSmtpConfig,
+  users, calendars, events, serverConnections, calendarSharing, smtpConfigurations
 } from "@shared/schema";
 import { createId } from '@paralleldrive/cuid2';
 import { neon, neonConfig } from '@neondatabase/serverless';
@@ -604,6 +605,53 @@ export class DatabaseStorage implements IStorage {
   async deleteServerConnection(id: number): Promise<boolean> {
     const result = await db.delete(serverConnections)
       .where(eq(serverConnections.id, id))
+      .returning();
+    
+    return result.length > 0;
+  }
+  
+  // SMTP configuration methods
+  async getSmtpConfig(userId: number): Promise<SmtpConfig | undefined> {
+    const [config] = await db.select()
+      .from(smtpConfigurations)
+      .where(eq(smtpConfigurations.userId, userId));
+    
+    return config;
+  }
+  
+  async createSmtpConfig(insertConfig: InsertSmtpConfig): Promise<SmtpConfig> {
+    const now = new Date();
+    const configWithDates = {
+      ...insertConfig,
+      createdAt: now,
+      lastModified: now
+    };
+    
+    const [config] = await db.insert(smtpConfigurations)
+      .values(configWithDates)
+      .returning();
+    
+    return config;
+  }
+  
+  async updateSmtpConfig(id: number, configUpdate: Partial<SmtpConfig>): Promise<SmtpConfig | undefined> {
+    const now = new Date();
+    const updateData = {
+      ...configUpdate,
+      lastModified: now
+    };
+    
+    const [config] = await db.update(smtpConfigurations)
+      .set(updateData)
+      .where(eq(smtpConfigurations.id, id))
+      .returning();
+    
+    return config;
+  }
+  
+  async deleteSmtpConfig(id: number): Promise<boolean> {
+    const result = await db.delete(smtpConfigurations)
+      .where(eq(smtpConfigurations.id, id))
       .returning();
     
     return result.length > 0;

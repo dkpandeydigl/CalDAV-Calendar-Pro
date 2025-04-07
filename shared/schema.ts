@@ -152,3 +152,34 @@ export const insertServerConnectionSchema = createInsertSchema(serverConnections
 
 export type InsertServerConnection = z.infer<typeof insertServerConnectionSchema>;
 export type ServerConnection = typeof serverConnections.$inferSelect;
+
+// SMTP configuration for sending event invitations
+export const smtpConfigurations = pgTable("smtp_configurations", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  host: text("host").notNull(),
+  port: integer("port").notNull(),
+  secure: boolean("secure").default(true),
+  username: text("username").notNull(),
+  password: text("password").notNull(),
+  fromEmail: text("from_email").notNull(),
+  fromName: text("from_name"),
+  enabled: boolean("enabled").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastModified: timestamp("last_modified").defaultNow(),
+});
+
+export const insertSmtpConfigSchema = createInsertSchema(smtpConfigurations).pick({
+  userId: true,
+  host: true,
+  port: true,
+  secure: true,
+  username: true,
+  password: true,
+  fromEmail: true,
+  fromName: true,
+  enabled: true,
+});
+
+export type InsertSmtpConfig = z.infer<typeof insertSmtpConfigSchema>;
+export type SmtpConfig = typeof smtpConfigurations.$inferSelect;

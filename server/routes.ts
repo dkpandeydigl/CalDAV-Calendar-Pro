@@ -7,10 +7,12 @@ import {
   insertEventSchema, 
   insertServerConnectionSchema,
   insertUserSchema,
+  insertSmtpConfigSchema,
   User,
   serverConnections,
   CalendarSharing,
-  calendars
+  calendars,
+  smtpConfigurations
 } from "@shared/schema";
 import { db } from "./db";
 import { registerExportRoutes } from "./export-routes";
@@ -5002,6 +5004,226 @@ END:VCALENDAR`;
   // Register calendar import routes
   registerImportRoutes(app);
   
+  // SMTP Configuration routes
+  
+  // Get SMTP configuration for the authenticated user
+  app.get("/api/smtp-config", isAuthenticated, async (req, res) => {
+    try {
+      // Get userId from authenticated user
+      const userId = (req.user as Express.User).id;
+      
+      // Get SMTP configuration for the user
+      const smtpConfig = await storage.getSmtpConfig(userId);
+      
+      if (!smtpConfig) {
+        return res.status(404).json({ message: "SMTP configuration not found" });
+      }
+      
+      // Remove password for security
+      const sanitizedConfig = {
+        ...smtpConfig,
+        password: undefined
+      };
+      
+      res.status(200).json(sanitizedConfig);
+    } catch (error) {
+      console.error("Error fetching SMTP configuration:", error);
+      res.status(500).json({ message: "Error fetching SMTP configuration", error: (error as Error).message });
+    }
+  });
+  
+  // Create SMTP configuration for the authenticated user
+  app.post("/api/smtp-config", isAuthenticated, async (req, res) => {
+    try {
+      // Get userId from authenticated user
+      const userId = (req.user as Express.User).id;
+      const user = await storage.getUser(userId);
+      
+      // Check if user already has a configuration
+      const existingConfig = await storage.getSmtpConfig(userId);
+      if (existingConfig) {
+        return res.status(409).json({ 
+          message: "SMTP configuration already exists for this user. Use PUT to update." 
+        });
+      }
+      
+      // Set default values if not provided in request
+      const defaultSmtpSettings = {
+        host: 'smtps.xgen.in',
+        port: 465,
+        secure: true, // SSL/TLS
+        username: user?.email || '',
+        fromEmail: user?.email || '',
+        fromName: user?.username || undefined
+      };
+      
+      // Validate request body
+      try {
+        const configData = insertSmtpConfigSchema.parse({
+          ...defaultSmtpSettings,
+          ...req.body, // Provided values override defaults
+          userId      // Always use the authenticated user's ID
+        });
+        
+        // Create the SMTP configuration
+        const smtpConfig = await storage.createSmtpConfig(configData);
+        
+        // Remove password from response for security
+        const sanitizedConfig = {
+          ...smtpConfig,
+          password: undefined
+        };
+        
+        res.status(201).json(sanitizedConfig);
+      } catch (validationError) {
+        if (validationError instanceof ZodError) {
+          res.status(400).json({ message: "Invalid SMTP configuration data", errors: validationError.errors });
+        } else {
+          throw validationError;
+        }
+      }
+    } catch (error) {
+      console.error("Error creating SMTP configuration:", error);
+      res.status(500).json({ message: "Error creating SMTP configuration", error: (error as Error).message });
+    }
+  });
+  
+  // Update an existing SMTP configuration
+  app.put("/api/smtp-config/:id", isAuthenticated, async (req, res) => {
+    try {
+      const configId = parseInt(req.params.id);
+      const userId = (req.user as Express.User).id;
+      const user = await storage.getUser(userId);
+      
+      // Get the configuration to verify ownership
+      const existingConfig = await storage.getSmtpConfig(userId);
+      
+      if (!existingConfig) {
+        return res.status(404).json({ message: "SMTP configuration not found" });
+      }
+      
+      if (existingConfig.id !== configId) {
+        return res.status(403).json({ message: "You don't have permission to update this SMTP configuration" });
+      }
+      
+      // Validate request body
+      try {
+        // Only validate the fields being updated
+        // Apply updates but keep default values if they're not being changed
+        const configUpdate = {
+          ...req.body,
+          // If these fields aren't in the request body, keep the defaults
+          host: req.body.host || 'smtps.xgen.in',
+          port: req.body.port !== undefined ? req.body.port : 465,
+          secure: req.body.secure !== undefined ? req.body.secure : true,
+          
+          // For username and fromEmail, prefer user email if they exist
+          username: req.body.username || user?.email || existingConfig.username,
+          fromEmail: req.body.fromEmail || user?.email || existingConfig.fromEmail,
+          
+          // Always keep the same userId
+          userId  
+        };
+        
+        // Update the SMTP configuration
+        const updatedConfig = await storage.updateSmtpConfig(configId, configUpdate);
+        
+        if (!updatedConfig) {
+          return res.status(404).json({ message: "SMTP configuration not found" });
+        }
+        
+        // Remove password from response for security
+        const sanitizedConfig = {
+          ...updatedConfig,
+          password: undefined
+        };
+        
+        res.status(200).json(sanitizedConfig);
+      } catch (validationError) {
+        if (validationError instanceof ZodError) {
+          res.status(400).json({ message: "Invalid SMTP configuration data", errors: validationError.errors });
+        } else {
+          throw validationError;
+        }
+      }
+    } catch (error) {
+      console.error("Error updating SMTP configuration:", error);
+      res.status(500).json({ message: "Error updating SMTP configuration", error: (error as Error).message });
+    }
+  });
+  
+  // Delete an SMTP configuration
+  app.delete("/api/smtp-config/:id", isAuthenticated, async (req, res) => {
+    try {
+      const configId = parseInt(req.params.id);
+      const userId = (req.user as Express.User).id;
+      
+      // Get the configuration to verify ownership
+      const existingConfig = await storage.getSmtpConfig(userId);
+      
+      if (!existingConfig) {
+        return res.status(404).json({ message: "SMTP configuration not found" });
+      }
+      
+      if (existingConfig.id !== configId) {
+        return res.status(403).json({ message: "You don't have permission to delete this SMTP configuration" });
+      }
+      
+      // Delete the SMTP configuration
+      const deleted = await storage.deleteSmtpConfig(configId);
+      
+      if (!deleted) {
+        return res.status(404).json({ message: "SMTP configuration not found" });
+      }
+      
+      res.status(200).json({ message: "SMTP configuration deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting SMTP configuration:", error);
+      res.status(500).json({ message: "Error deleting SMTP configuration", error: (error as Error).message });
+    }
+  });
+  
+  // Test SMTP configuration endpoint
+  app.post("/api/smtp-config/test", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as Express.User).id;
+      
+      // Import email service
+      const { emailService } = await import('./email-service');
+      
+      // Initialize with the user's SMTP configuration
+      const initialized = await emailService.initialize(userId);
+      
+      if (!initialized) {
+        return res.status(404).json({ 
+          message: "SMTP configuration not found or invalid"
+        });
+      }
+      
+      // Send a test email to the user's own email
+      const user = await storage.getUser(userId);
+      if (!user?.email) {
+        return res.status(400).json({ 
+          message: "User email not available. Please update your profile with a valid email."
+        });
+      }
+      
+      // Send test email
+      const result = await emailService.sendTestEmail(user.email);
+      
+      res.status(200).json({ 
+        message: "Test email sent successfully",
+        details: result
+      });
+    } catch (error) {
+      console.error("Error testing SMTP configuration:", error);
+      res.status(500).json({ 
+        message: "Failed to send test email", 
+        error: (error as Error).message 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

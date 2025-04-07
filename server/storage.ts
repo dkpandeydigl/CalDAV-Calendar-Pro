@@ -3,7 +3,8 @@ import {
   calendars, type Calendar, type InsertCalendar,
   events, type Event, type InsertEvent,
   serverConnections, type ServerConnection, type InsertServerConnection,
-  calendarSharing, type CalendarSharing, type InsertCalendarSharing
+  calendarSharing, type CalendarSharing, type InsertCalendarSharing,
+  smtpConfigurations, type SmtpConfig, type InsertSmtpConfig
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 
@@ -54,6 +55,12 @@ export interface IStorage {
   ): Promise<ServerConnection | undefined>;
   deleteServerConnection(id: number): Promise<boolean>;
   
+  // SMTP configuration methods for sending event invitations
+  getSmtpConfig(userId: number): Promise<SmtpConfig | undefined>;
+  createSmtpConfig(config: InsertSmtpConfig): Promise<SmtpConfig>;
+  updateSmtpConfig(id: number, config: Partial<SmtpConfig>): Promise<SmtpConfig | undefined>;
+  deleteSmtpConfig(id: number): Promise<boolean>;
+  
   // Session store for authentication
   sessionStore: session.Store;
 }
@@ -64,12 +71,14 @@ export class MemStorage implements IStorage {
   private eventsMap: Map<number, Event>;
   private serverConnectionsMap: Map<number, ServerConnection>;
   private calendarSharingMap: Map<number, CalendarSharing>;
+  private smtpConfigMap: Map<number, SmtpConfig>;
   
   private userIdCounter: number;
   private calendarIdCounter: number;
   private eventIdCounter: number;
   private serverConnectionIdCounter: number;
   private calendarSharingIdCounter: number;
+  private smtpConfigIdCounter: number;
   
   // Initialize memory store for sessions
   public sessionStore: session.Store;
@@ -85,12 +94,14 @@ export class MemStorage implements IStorage {
     this.eventsMap = new Map();
     this.serverConnectionsMap = new Map();
     this.calendarSharingMap = new Map();
+    this.smtpConfigMap = new Map();
     
     this.userIdCounter = 1;
     this.calendarIdCounter = 1;
     this.eventIdCounter = 1;
     this.serverConnectionIdCounter = 1;
     this.calendarSharingIdCounter = 1;
+    this.smtpConfigIdCounter = 1;
     
     // Initialize the memory store for session management
     const MemoryStore = createMemoryStore(session);
@@ -569,6 +580,56 @@ export class MemStorage implements IStorage {
   
   async deleteServerConnection(id: number): Promise<boolean> {
     return this.serverConnectionsMap.delete(id);
+  }
+  
+  // SMTP configuration methods
+  async getSmtpConfig(userId: number): Promise<SmtpConfig | undefined> {
+    return Array.from(this.smtpConfigMap.values()).find(
+      (config) => config.userId === userId
+    );
+  }
+  
+  async createSmtpConfig(insertConfig: InsertSmtpConfig): Promise<SmtpConfig> {
+    const id = this.smtpConfigIdCounter++;
+    
+    // Create SMTP config with all required fields explicitly set
+    const now = new Date();
+    const config: SmtpConfig = {
+      id,
+      userId: insertConfig.userId,
+      host: insertConfig.host,
+      port: insertConfig.port,
+      secure: insertConfig.secure ?? true,
+      username: insertConfig.username,
+      password: insertConfig.password,
+      fromEmail: insertConfig.fromEmail,
+      fromName: insertConfig.fromName ?? null,
+      enabled: insertConfig.enabled ?? true,
+      createdAt: now,
+      lastModified: now
+    };
+    
+    this.smtpConfigMap.set(id, config);
+    return config;
+  }
+  
+  async updateSmtpConfig(id: number, configUpdate: Partial<SmtpConfig>): Promise<SmtpConfig | undefined> {
+    const config = this.smtpConfigMap.get(id);
+    if (!config) return undefined;
+    
+    const now = new Date();
+    const updatedConfig = { 
+      ...config, 
+      ...configUpdate,
+      lastModified: now
+    };
+    
+    this.smtpConfigMap.set(id, updatedConfig);
+    return updatedConfig;
+  }
+  
+  async deleteSmtpConfig(id: number): Promise<boolean> {
+    return this.smtpConfigMap.delete(id);
   }
 }
 

@@ -1,0 +1,72 @@
+Enhance the CalDAV client with a feature that previews an event before it's created when attendees are involved.
+
+🎯 Feature: Event Preview + Mail Option
+Implement the following functionality:
+
+Event Preview Page:
+
+When a user creates an event and adds one or more attendees, instead of immediately creating the event, show a preview screen.
+
+Display all event details: title, description, time, location, recurrence (if any), and a list of attendees with their roles.
+
+Provide two buttons:
+
+"Send Mail & Create Event"
+
+"Create Event Only"
+
+Send Mail & Create Event:
+
+If this option is selected:
+
+Send an email invitation to each attendee using an SMTP configuration provided by the user.
+
+Use the iCalendar .ics format in the email as a MIME attachment (content-type: text/calendar; method=REQUEST).
+
+The email should contain a readable invitation message and the .ics content for the calendar event.
+
+Then proceed to create the event on the CalDAV server using the PUT method as per the CalDAV standard.
+
+Create Event Only:
+
+Skip the email process.
+
+Proceed directly to event creation using CalDAV PUT.
+
+SMTP Config:
+
+Assume the user has provided SMTP configuration (host, port, username, password, from address) through a secure settings page or form.
+
+Use Node.js backend (or a backend proxy if running in Replit) to securely send the email using a package like nodemailer.
+
+Security:
+
+Do not expose SMTP credentials in frontend.
+
+Ensure SMTP calls are made from a secure backend function or API route (ExpressJS recommended).
+
+Optional Enhancements:
+
+Show a toast notification or modal once the mail is sent and the event is created.
+
+Add loading indicators for both sending mail and creating events.
+
+Log or display any SMTP or CalDAV errors in a user-friendly way.
+
+Component Design:
+
+EventPreviewPage: takes event object as props, renders a clean summary of the event, with two action buttons.
+
+sendMailToAttendees(event, smtpConfig): function (in backend) that builds the .ics, prepares the mail body, and sends it using nodemailer.
+
+createCalDAVEvent(event): function that handles the CalDAV PUT logic.
+
+Tech Stack:
+
+Frontend: ReactJS
+
+Backend (if needed): Node.js with Express
+
+Mail: Nodemailer (SMTP)
+
+Calendar Event Format: iCalendar VEVENT with attendees (ATTENDEE: lines)
