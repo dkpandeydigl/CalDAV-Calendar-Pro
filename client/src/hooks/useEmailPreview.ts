@@ -33,6 +33,7 @@ interface SendEmailResponse {
 export function useEmailPreview() {
   const [previewData, setPreviewData] = useState<EmailPreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [lastSendResult, setLastSendResult] = useState<SendEmailResponse | null>(null);
   
   const emailPreviewMutation = useMutation({
     mutationFn: async (data: EmailPreviewData) => {
@@ -70,6 +71,9 @@ export function useEmailPreview() {
       return;
     }
     
+    // Clear any previous send results when generating a new preview
+    setLastSendResult(null);
+    
     // Generate preview
     emailPreviewMutation.mutate(data);
   };
@@ -77,6 +81,7 @@ export function useEmailPreview() {
   const clearPreview = () => {
     setPreviewData(null);
     setPreviewError(null);
+    setLastSendResult(null);
   };
   
   // Add a mutation for sending emails directly
@@ -97,6 +102,17 @@ export function useEmailPreview() {
       }
       
       return await response.json() as SendEmailResponse;
+    },
+    onSuccess: (data) => {
+      console.log('Email sent successfully:', data);
+      setLastSendResult(data);
+    },
+    onError: (error) => {
+      console.error('Failed to send email:', error);
+      setLastSendResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'An unknown error occurred'
+      });
     }
   });
   
@@ -104,7 +120,12 @@ export function useEmailPreview() {
   const sendEmail = (data: EmailPreviewData) => {
     // Validate required fields
     if (!data.title || !data.startDate || !data.endDate || !data.attendees || data.attendees.length === 0) {
-      return Promise.reject(new Error('Required fields missing for sending email'));
+      const error = new Error('Required fields missing for sending email');
+      setLastSendResult({
+        success: false,
+        message: error.message
+      });
+      return Promise.reject(error);
     }
     
     // Send email
@@ -114,6 +135,7 @@ export function useEmailPreview() {
   return {
     previewData,
     previewError,
+    lastSendResult,
     isLoading: emailPreviewMutation.isPending,
     isSending: sendEmailMutation.isPending,
     generatePreview,

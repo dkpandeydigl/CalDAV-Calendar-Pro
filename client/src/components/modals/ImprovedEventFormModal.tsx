@@ -139,6 +139,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const { 
     previewData, 
     previewError, 
+    lastSendResult,
     isLoading: isEmailPreviewLoading,
     isSending: isEmailSending, 
     generatePreview, 
@@ -1157,6 +1158,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       error={previewError}
                       html={previewData?.html || null}
                       showSendButton={attendees.length > 0}
+                      lastSendResult={lastSendResult}
                       onSend={async () => {
                         if (!title || !startDate || !endDate || !attendees.length) {
                           toast({

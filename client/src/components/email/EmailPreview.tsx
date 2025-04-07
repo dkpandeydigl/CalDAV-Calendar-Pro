@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Loader2, AlertCircle, RefreshCw, Mail } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, Mail, CheckCircle } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 
 interface EmailPreviewProps {
@@ -13,6 +13,7 @@ interface EmailPreviewProps {
   onRefresh: () => void;
   onSend?: () => void;
   showSendButton?: boolean;
+  lastSendResult?: { success: boolean; message: string } | null;
 }
 
 const EmailPreview: React.FC<EmailPreviewProps> = ({
@@ -22,8 +23,23 @@ const EmailPreview: React.FC<EmailPreviewProps> = ({
   html,
   onRefresh,
   onSend,
-  showSendButton = false
+  showSendButton = false,
+  lastSendResult = null
 }) => {
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+
+  // Show success message when sending is complete and successful
+  React.useEffect(() => {
+    if (lastSendResult?.success && !isSending) {
+      setShowSuccessMessage(true);
+      // Auto-hide the success message after 5 seconds
+      const timer = setTimeout(() => {
+        setShowSuccessMessage(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [lastSendResult, isSending]);
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
@@ -94,13 +110,18 @@ const EmailPreview: React.FC<EmailPreviewProps> = ({
               size="sm" 
               variant="default"
               onClick={onSend}
-              disabled={isSending}
-              className="min-w-[100px]"
+              disabled={isSending || showSuccessMessage}
+              className={`min-w-[100px] ${showSuccessMessage ? "bg-green-600 hover:bg-green-700" : ""}`}
             >
               {isSending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Sending...
+                </>
+              ) : showSuccessMessage ? (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Sent!
                 </>
               ) : (
                 <>
@@ -112,6 +133,23 @@ const EmailPreview: React.FC<EmailPreviewProps> = ({
           )}
         </div>
       </div>
+      
+      {lastSendResult && (
+        <Alert 
+          variant={lastSendResult.success ? "default" : "destructive"}
+          className={`mb-4 ${lastSendResult.success ? "bg-green-50 border-green-200" : ""}`}
+        >
+          {lastSendResult.success ? (
+            <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+          ) : (
+            <AlertCircle className="h-4 w-4 mr-2" />
+          )}
+          <AlertTitle>{lastSendResult.success ? "Success" : "Failed to Send"}</AlertTitle>
+          <AlertDescription>
+            {lastSendResult.message}
+          </AlertDescription>
+        </Alert>
+      )}
       
       <Separator className="my-4" />
       
