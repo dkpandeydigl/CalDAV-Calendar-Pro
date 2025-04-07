@@ -38,6 +38,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // State hooks
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   
   // Add a timeout to prevent infinite loading state
@@ -172,8 +173,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   };
 
   // Handle event download
-  const [isDownloading, setIsDownloading] = useState(false);
-  
   const handleDownload = async () => {
     if (!event) return;
     
