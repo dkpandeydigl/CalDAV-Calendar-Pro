@@ -10,6 +10,15 @@ interface Attendee {
   status?: string;
 }
 
+interface Resource {
+  id: string;
+  subType: string;       // Conference Room, Projector, etc.
+  capacity?: number;     // Optional capacity (e.g., 10 people)
+  adminEmail: string;    // Email of resource administrator
+  adminName?: string;    // Name of resource administrator
+  remarks?: string;      // Optional remarks or notes
+}
+
 interface EventInvitationData {
   eventId: number;
   uid: string;
@@ -23,6 +32,7 @@ interface EventInvitationData {
     name?: string;
   };
   attendees: Attendee[];
+  resources?: Resource[]; // Optional resources array
   icsData?: string; // Optional pre-generated ICS data
   status?: string; // Optional status for events (e.g. 'CANCELLED')
 }
@@ -133,22 +143,42 @@ export class EmailService {
       // Generate ICS data if not provided
       const icsData = data.icsData || this.generateICSData(data);
 
+      // Prepare arrays to track results
+      let allResults: PromiseSettledResult<any>[] = [];
+      let allRecipients: string[] = [];
+      
       // Send email to each attendee
-      const sendPromises = data.attendees.map(attendee => {
-        return this.sendInvitationEmail(data, attendee, icsData);
-      });
+      if (data.attendees && data.attendees.length > 0) {
+        const attendeePromises = data.attendees.map(attendee => {
+          return this.sendInvitationEmail(data, attendee, icsData);
+        });
 
-      // Wait for all emails to be sent
-      const results = await Promise.allSettled(sendPromises);
+        // Wait for all attendee emails to be sent
+        const attendeeResults = await Promise.allSettled(attendeePromises);
+        allResults = [...allResults, ...attendeeResults];
+        allRecipients = [...allRecipients, ...data.attendees.map(a => a.email)];
+      }
+      
+      // Send email to each resource admin if resources are present
+      if (data.resources && data.resources.length > 0) {
+        const resourcePromises = data.resources.map(resource => {
+          return this.sendResourceBookingNotification(data, resource, icsData);
+        });
+
+        // Wait for all resource booking emails to be sent
+        const resourceResults = await Promise.allSettled(resourcePromises);
+        allResults = [...allResults, ...resourceResults];
+        allRecipients = [...allRecipients, ...data.resources.map(r => r.adminEmail)];
+      }
       
       // Count successful deliveries
-      const successful = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+      const successful = allResults.filter(r => r.status === 'fulfilled').length;
+      const failed = allResults.filter(r => r.status === 'rejected').length;
       
       // Detailed results for debugging
-      const detailedResults = results.map((result, index) => {
+      const detailedResults = allResults.map((result, index) => {
         return {
-          attendee: data.attendees[index].email,
+          recipient: allRecipients[index],
           success: result.status === 'fulfilled',
           details: result.status === 'rejected' ? (result as PromiseRejectedResult).reason : undefined
         };
@@ -157,14 +187,14 @@ export class EmailService {
       if (failed > 0) {
         return {
           success: successful > 0, // Consider partially successful if at least one email was sent
-          message: `Sent invitations to ${successful} out of ${data.attendees.length} attendees.`,
+          message: `Sent notifications to ${successful} out of ${allRecipients.length} recipients.`,
           details: detailedResults
         };
       }
 
       return {
         success: true,
-        message: `Successfully sent invitations to all ${successful} attendees.`,
+        message: `Successfully sent all ${successful} notifications.`,
         details: detailedResults
       };
     } catch (error) {
@@ -175,6 +205,158 @@ export class EmailService {
         details: error
       };
     }
+  }
+  
+  /**
+   * Send a resource booking notification to a resource administrator
+   * @param data Event data
+   * @param resource Resource information
+   * @param icsData The ICS calendar data
+   * @returns Promise resolving to the send info
+   */
+  private async sendResourceBookingNotification(
+    data: EventInvitationData,
+    resource: Resource,
+    icsData: string
+  ): Promise<nodemailer.SentMessageInfo> {
+    if (!this.transporter || !this.config) {
+      throw new Error('Email service not initialized');
+    }
+
+    const { startDate, endDate, title, description, location } = data;
+    
+    // Format the date for display in email
+    const dateFormat = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      timeZoneName: 'short'
+    });
+    
+    const formattedStart = dateFormat.format(startDate);
+    const formattedEnd = dateFormat.format(endDate);
+    
+    // Create a more readable display name for the resource admin
+    const adminName = resource.adminName || resource.adminEmail.split('@')[0];
+    
+    // Create the email content
+    const htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+          .header h2 { margin: 0; color: #333; }
+          .content { padding: 20px 15px; }
+          .event-details { margin-bottom: 20px; }
+          .detail-row { margin-bottom: 10px; }
+          .label { font-weight: bold; display: inline-block; width: 100px; }
+          .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+          .resource-details { background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 15px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Resource Booking Notification</h2>
+          </div>
+          <div class="content">
+            <p>Hello ${adminName},</p>
+            <p>The following event has reserved your resource:</p>
+            
+            <div class="event-details">
+              <div class="detail-row">
+                <span class="label">Event:</span> ${title}
+              </div>
+              ${description ? `
+              <div class="detail-row">
+                <span class="label">Description:</span> ${description}
+              </div>` : ''}
+              ${location ? `
+              <div class="detail-row">
+                <span class="label">Location:</span> ${location}
+              </div>` : ''}
+              <div class="detail-row">
+                <span class="label">Start:</span> ${formattedStart}
+              </div>
+              <div class="detail-row">
+                <span class="label">End:</span> ${formattedEnd}
+              </div>
+              <div class="detail-row">
+                <span class="label">Organizer:</span> ${data.organizer.name || data.organizer.email}
+              </div>
+            </div>
+            
+            <div class="resource-details">
+              <h3>Resource Information</h3>
+              <div class="detail-row">
+                <span class="label">Resource:</span> ${resource.subType}
+              </div>
+              ${resource.capacity !== undefined ? `
+              <div class="detail-row">
+                <span class="label">Capacity:</span> ${resource.capacity}
+              </div>` : ''}
+              ${resource.remarks ? `
+              <div class="detail-row">
+                <span class="label">Remarks:</span> ${resource.remarks}
+              </div>` : ''}
+            </div>
+            
+            <p>The event details are attached in an iCalendar file that you can import into your calendar application.</p>
+          </div>
+          <div class="footer">
+            <p>This notification was sent using CalDAV Calendar Application.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `;
+
+    const plainText = `Hello ${adminName},
+
+The following event has reserved your resource:
+
+Event: ${title}
+${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}
+Start: ${formattedStart}
+End: ${formattedEnd}
+Organizer: ${data.organizer.name || data.organizer.email}
+
+Resource Information:
+Resource: ${resource.subType}
+${resource.capacity !== undefined ? `Capacity: ${resource.capacity}\n` : ''}${resource.remarks ? `Remarks: ${resource.remarks}\n` : ''}
+
+The event details are attached in an iCalendar file that you can import into your calendar application.
+
+This notification was sent using CalDAV Calendar Application.`;
+
+    // Prepare the email
+    const mailOptions = {
+      from: {
+        name: this.config.fromName || 'Calendar Application',
+        address: this.config.fromEmail
+      },
+      to: resource.adminName 
+        ? `"${resource.adminName}" <${resource.adminEmail}>`
+        : resource.adminEmail,
+      subject: `Resource Booking Notification: ${title}`,
+      html: htmlContent,
+      text: plainText,
+      attachments: [
+        {
+          filename: `resource-booking-${data.uid}.ics`,
+          content: icsData,
+          contentType: 'text/calendar; method=REQUEST'
+        }
+      ]
+    };
+
+    // Send the email
+    return this.transporter.sendMail(mailOptions);
   }
 
   /**
@@ -681,7 +863,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
   }
 
   public generateICSData(data: EventInvitationData): string {
-    const { uid, title, description, location, startDate, endDate, organizer, attendees, status } = data;
+    const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status } = data;
     
     // Format dates for iCalendar
     const startDateStr = formatICALDate(startDate);
@@ -720,11 +902,40 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     // Add organizer
     icsContent.push(`ORGANIZER;CN=${organizer.name || organizer.email}:mailto:${organizer.email}`);
     
-    // Add attendees
+    // Add human attendees
     attendees.forEach(attendee => {
       let attendeeStr = `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=${attendee.role || 'REQ-PARTICIPANT'};PARTSTAT=${attendee.status || 'NEEDS-ACTION'};CN=${attendee.name || attendee.email}:mailto:${attendee.email}`;
       icsContent.push(attendeeStr);
     });
+    
+    // Add resource attendees if they exist
+    if (resources && Array.isArray(resources) && resources.length > 0) {
+      resources.forEach(resource => {
+        let resourceStr = `ATTENDEE;CUTYPE=RESOURCE;CN=${resource.subType};ROLE=NON-PARTICIPANT;RSVP=FALSE`;
+        
+        // Add capacity if specified
+        if (resource.capacity !== undefined) {
+          resourceStr += `;X-CAPACITY=${resource.capacity}`;
+        }
+        
+        // Add remarks if specified (properly escape for iCalendar format)
+        if (resource.remarks) {
+          // Escape special characters according to iCalendar spec
+          const escapedRemarks = resource.remarks
+            .replace(/\\/g, '\\\\')
+            .replace(/;/g, '\\;')
+            .replace(/,/g, '\\,')
+            .replace(/\n/g, '\\n');
+          
+          resourceStr += `;X-REMARKS="${escapedRemarks}"`;
+        }
+        
+        // Add the email as mailto
+        resourceStr += `:mailto:${resource.adminEmail}`;
+        
+        icsContent.push(resourceStr);
+      });
+    }
     
     // Close the event and calendar
     icsContent.push(

@@ -29,7 +29,8 @@ import {
   Trash2,
   Loader2,
   Mail,
-  RefreshCw
+  RefreshCw,
+  Package
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -42,6 +43,8 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import EmailPreview from '@/components/email/EmailPreview';
 import { useEmailPreview } from '@/hooks/useEmailPreview';
+import ResourceManager, { Resource } from '@/components/resources/ResourceManager';
+import { parseResourcesFromEvent } from '@/utils/resourceUtils';
 import type { Event } from '@shared/schema';
 
 interface EventFormModalProps {
@@ -114,6 +117,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [attendeeInput, setAttendeeInput] = useState('');
   const [attendeeRole, setAttendeeRole] = useState<AttendeeRole>('Member');
+  const [resources, setResources] = useState<Resource[]>([]);
   
   // Recurrence state
   const [recurrence, setRecurrence] = useState<RecurrenceConfig>({
@@ -307,6 +311,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     setAttendees([]);
     setAttendeeInput('');
     setAttendeeRole('Member');
+    setResources([]);
     setRecurrence({
       pattern: 'None',
       interval: 1,
@@ -407,7 +412,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         location,
         startDate: startDateTime,
         endDate: endDateTime,
-        attendees: updatedAttendees
+        attendees: updatedAttendees,
+        resources
       });
     }
   };
@@ -573,7 +579,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         </DialogHeader>
         
         <Tabs defaultValue="basic" value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="mb-6 grid grid-cols-5 gap-2 bg-transparent p-0">
+          <TabsList className="mb-6 grid grid-cols-6 gap-2 bg-transparent p-0">
             <TabsTrigger 
               value="basic" 
               className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
@@ -587,6 +593,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <span>Attendees</span>
               {attendees.length > 0 && (
                 <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">{attendees.length}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger 
+              value="resources" 
+              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
+              <Package className="h-4 w-4" />
+              <span>Resources</span>
+              {resources.length > 0 && (
+                <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">{resources.length}</Badge>
               )}
             </TabsTrigger>
             <TabsTrigger 
@@ -612,7 +627,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     location,
                     startDate: startDateTime,
                     endDate: endDateTime,
-                    attendees
+                    attendees,
+                    resources
                   });
                 }
               }}
@@ -925,6 +941,28 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               )}
             </TabsContent>
             
+            <TabsContent value="resources" className="mt-0 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="resources">Resources</Label>
+                <div className="text-sm text-muted-foreground mb-2">
+                  Add resources such as conference rooms, projectors, or other equipment to book for your event.
+                </div>
+                
+                <ResourceManager 
+                  resources={resources}
+                  onResourcesChange={setResources}
+                />
+              </div>
+              
+              {resources.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Package className="h-12 w-12 mx-auto opacity-20 mb-2" />
+                  <p>No resources added yet</p>
+                  <p className="text-sm">Add resources like rooms or equipment</p>
+                </div>
+              )}
+            </TabsContent>
+            
             <TabsContent value="recurrence" className="mt-0 space-y-4">
               <div className="space-y-4">
                 <div>
@@ -1151,7 +1189,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 location,
                                 startDate: startDateTime,
                                 endDate: endDateTime,
-                                attendees
+                                attendees,
+                                resources
                               });
                             } else {
                               toast({
@@ -1205,7 +1244,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             location,
                             startDate: startDateTime,
                             endDate: endDateTime,
-                            attendees
+                            attendees,
+                            resources
                           });
                           
                           if (result.success) {
@@ -1237,7 +1277,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             location,
                             startDate: startDateTime,
                             endDate: endDateTime,
-                            attendees
+                            attendees,
+                            resources
                           });
                         }
                       }}
@@ -1340,7 +1381,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     location,
                     startDate: startDateTime,
                     endDate: endDateTime,
-                    attendees
+                    attendees,
+                    resources
                   });
                   
                   // Send the email
@@ -1351,7 +1393,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       location,
                       startDate: startDateTime,
                       endDate: endDateTime,
-                      attendees
+                      attendees,
+                      resources
                     });
                     
                     // If email was sent successfully, create the event

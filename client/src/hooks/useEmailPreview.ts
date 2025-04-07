@@ -9,6 +9,15 @@ interface Attendee {
   role: string;
 }
 
+interface Resource {
+  id: string;
+  subType: string;
+  capacity?: number;
+  adminEmail: string;
+  adminName?: string;
+  remarks?: string;
+}
+
 interface EmailPreviewData {
   title: string;
   description?: string;
@@ -16,6 +25,7 @@ interface EmailPreviewData {
   startDate: Date;
   endDate: Date;
   attendees: Attendee[];
+  resources?: Resource[]; // Add resources to preview data
   eventId?: number; // Optional event ID if sending emails for an existing event
 }
 

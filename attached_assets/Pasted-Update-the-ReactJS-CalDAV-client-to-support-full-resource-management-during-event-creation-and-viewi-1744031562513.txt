@@ -1,0 +1,103 @@
+Update the ReactJS CalDAV client to support full resource management during event creation and viewing. This should follow iCalendar RFC 5545 and CalDAV protocols.
+
+🧩 Feature: Add & View Resources for Events (RFC/CalDAV Compliant)
+1. UI: Add Resource to Event
+On the event creation/edit screen, include a "Resources" section.
+
+When a user clicks “Add Resource”, show a form matching the attached screenshot UI:
+
+Inputs for:
+
+Resource Sub-Type: e.g., "Conference Room", "Projector"
+
+Capacity: e.g., 10
+
+Admin Email: email address of the resource admin
+
+Admin Name :
+
+Remarks: Optional text input
+
+Buttons: Save (adds to list), Reset (clears fields)
+
+Below form, list all added resources in a table with:
+
+Sub-Type, Capacity, Admin Email, Remarks, and Action (remove/edit)
+
+2. iCalendar Format on Save
+For each resource added, generate an ATTENDEE line in the .ics data like:
+
+ical
+ATTENDEE;CUTYPE=RESOURCE;CN=Conference Room A;ROLE=NON-PARTICIPANT;RSVP=FALSE:mailto:admin@example.com
+
+Include CN as the Sub-Type, mailto: from Admin Email.
+
+Add X-CAPACITY and X-REMARKS as custom X-params if needed:
+
+ical
+ATTENDEE;CUTYPE=RESOURCE;CN=Projector A;X-CAPACITY=10;X-REMARKS="Need HDMI cable":mailto:projector-admin@example.com
+Include these ATTENDEE entries in the VEVENT block when sending to the CalDAV server (via PUT method).
+
+3. Email Notification to Resource Admin
+After the event is created:
+
+For each resource with a valid Admin Email:
+
+Send an email with:
+
+Subject: "Resource Booking Notification: [Event Title]"
+
+Body:
+
+Hello [Admin Name],
+
+The following event has reserved your resource:
+
+Event: [Title]
+Time: [Start Date/Time] – [End Date/Time]
+Organizer: [Organizer Email]
+Resource: [Sub-Type]
+Capacity: [X]
+Remarks: [If any]
+
+Please take note or respond if needed.
+Include .ics as an attachment with METHOD:REQUEST.
+
+Use backend Node.js + nodemailer, with secure SMTP credentials (provided by user).
+
+4. Viewing Resource Info
+On event detail view:
+
+Parse the ATTENDEE lines with CUTYPE=RESOURCE.
+
+Display all resource information: Sub-Type (CN), Admin Email, Capacity, Remarks (from X-params).
+
+5. Backend Notes
+Event creation remains via CalDAV PUT to the server.
+
+Use a backend API to:
+
+Send emails via nodemailer
+
+Generate and attach .ics content with method REQUEST
+
+Never expose SMTP credentials on the frontend.
+
+🧱 Components To Implement
+<ResourceManager />: Modal or section for adding resources to the event.
+
+parseResourcesFromEvent(vevent): Extract and return resource details from ATTENDEE lines with CUTYPE=RESOURCE.
+
+sendResourceNotificationEmails(event, resources): Backend route for email dispatch.
+
+generateICSWithResources(event): Builds .ics with all ATTENDEE lines including resources.
+
+🛡️ Standards Compliance:
+Follows RFC 5545 (ATTENDEE, CN, CUTYPE, custom X- parameters)
+
+Uses CalDAV PUT method for event creation
+
+Sends email notifications with .ics using METHOD:REQUEST
+
+✅ Ensure proper error handling (e.g., failed email) and user feedback with modals or toasts.
+✅ Include loading indicators during event save + mail send.

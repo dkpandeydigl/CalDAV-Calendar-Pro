@@ -5366,7 +5366,8 @@ END:VCALENDAR`;
         location, 
         startDate, 
         endDate, 
-        attendees 
+        attendees,
+        resources 
       } = req.body;
       
       // Validate required fields
@@ -5438,7 +5439,8 @@ END:VCALENDAR`;
           name: a.name,
           role: a.role || 'REQ-PARTICIPANT',
           status: 'NEEDS-ACTION'
-        }))
+        })),
+        resources: parsedResources
       };
       
       // Call the method to generate email content without sending
@@ -5480,7 +5482,8 @@ END:VCALENDAR`;
         location, 
         startDate, 
         endDate, 
-        attendees 
+        attendees,
+        resources
       } = req.body;
       
       // Validate required fields
