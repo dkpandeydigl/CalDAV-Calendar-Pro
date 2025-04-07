@@ -382,11 +382,117 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
   }
 
   /**
+   * Generate an email preview for an event invitation
+   * @param data Event invitation data
+   * @returns HTML content for the email preview
+   */
+  public generateEmailPreview(data: EventInvitationData): string {
+    const { title, description, location, startDate, endDate, organizer, attendees } = data;
+    
+    // Format the date for display in email
+    const dateFormat = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      timeZoneName: 'short'
+    });
+    
+    const formattedStart = dateFormat.format(startDate);
+    const formattedEnd = dateFormat.format(endDate);
+    
+    // Create the email content similar to what we'd send
+    const htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+          .header h2 { margin: 0; color: #333; }
+          .content { padding: 20px 15px; }
+          .event-details { margin-bottom: 20px; }
+          .detail-row { margin-bottom: 10px; }
+          .label { font-weight: bold; display: inline-block; width: 100px; }
+          .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+          .preview-note { background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ffeeba; }
+          .attendees-list { margin-top: 15px; }
+          .attendee-item { margin-bottom: 5px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="preview-note">
+            <strong>Email Preview:</strong> This is how your invitation will appear to recipients. No emails have been sent yet.
+          </div>
+          
+          <div class="header">
+            <h2>Calendar Invitation</h2>
+          </div>
+          
+          <div class="content">
+            <p>Hello [Recipient],</p>
+            <p>You have been invited to the following event:</p>
+            
+            <div class="event-details">
+              <div class="detail-row">
+                <span class="label">Event:</span> ${title}
+              </div>
+              ${description ? `
+              <div class="detail-row">
+                <span class="label">Description:</span> ${description}
+              </div>` : ''}
+              ${location ? `
+              <div class="detail-row">
+                <span class="label">Location:</span> ${location}
+              </div>` : ''}
+              <div class="detail-row">
+                <span class="label">Start:</span> ${formattedStart}
+              </div>
+              <div class="detail-row">
+                <span class="label">End:</span> ${formattedEnd}
+              </div>
+              <div class="detail-row">
+                <span class="label">Organizer:</span> ${organizer.name || organizer.email}
+              </div>
+              
+              <div class="detail-row">
+                <span class="label">Attendees:</span> 
+                <div class="attendees-list">
+                  ${attendees.map(attendee => `
+                    <div class="attendee-item">
+                      ${attendee.name ? `${attendee.name} (${attendee.email})` : attendee.email} 
+                      - Role: ${attendee.role || 'Participant'}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+            
+            <p>The event details will be attached in an iCalendar file that recipients can import into their calendar application.</p>
+          </div>
+          
+          <div class="footer">
+            <p>This invitation will be sent using CalDAV Calendar Application.</p>
+            <p>SMTP Server: ${this.config?.host || 'No SMTP server configured'}</p>
+            <p>From: ${this.config?.fromName ? `${this.config.fromName} <${this.config.fromEmail}>` : this.config?.fromEmail || 'Email not configured'}</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `;
+    
+    return htmlContent;
+  }
+
+  /**
    * Generate ICS data for calendar invitations
    * @param data Event data
    * @returns ICS formatted string
    */
-  private generateICSData(data: EventInvitationData): string {
+  public generateICSData(data: EventInvitationData): string {
     const { uid, title, description, location, startDate, endDate, organizer, attendees } = data;
     
     // Format dates for iCalendar

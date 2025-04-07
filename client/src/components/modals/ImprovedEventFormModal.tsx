@@ -27,7 +27,9 @@ import {
   AlertCircle,
   Save,
   Trash2,
-  Loader2
+  Loader2,
+  Mail,
+  RefreshCw
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -38,6 +40,8 @@ import { format } from 'date-fns';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import EmailPreview from '@/components/email/EmailPreview';
+import { useEmailPreview } from '@/hooks/useEmailPreview';
 import type { Event } from '@shared/schema';
 
 interface EventFormModalProps {
@@ -130,6 +134,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
 
   // Week days for recurrence
   const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  
+  // Email preview state
+  const { 
+    previewData, 
+    previewError, 
+    isLoading: isEmailPreviewLoading, 
+    generatePreview, 
+    clearPreview 
+  } = useEmailPreview();
   
   // Reset form when modal opens/closes or event changes
   useEffect(() => {
@@ -534,7 +547,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         </DialogHeader>
         
         <Tabs defaultValue="basic" value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="mb-6 grid grid-cols-4 gap-2 bg-transparent p-0">
+          <TabsList className="mb-6 grid grid-cols-5 gap-2 bg-transparent p-0">
             <TabsTrigger 
               value="basic" 
               className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
@@ -557,6 +570,31 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <span>Recurrence</span>
               {recurrence.pattern !== 'None' && (
                 <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">!</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger 
+              value="emails" 
+              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2"
+              onClick={() => {
+                if (attendees.length > 0 && title && startDate && endDate) {
+                  const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                  const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                  
+                  generatePreview({
+                    title,
+                    description,
+                    location,
+                    startDate: startDateTime,
+                    endDate: endDateTime,
+                    attendees
+                  });
+                }
+              }}
+            >
+              <Mail className="h-4 w-4" />
+              <span>Emails</span>
+              {attendees.length > 0 && (
+                <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">{attendees.length}</Badge>
               )}
             </TabsTrigger>
             <TabsTrigger 
@@ -1055,6 +1093,80 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         </RadioGroup>
                       </div>
                     </div>
+                  </>
+                )}
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="emails" className="mt-0 space-y-4">
+              <div className="space-y-4">
+                {attendees.length === 0 ? (
+                  <Alert>
+                    <AlertDescription>
+                      Add attendees in the "Attendees" tab to enable email invitations. Email invitations will be sent to all attendees when the event is created.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-base font-medium">Invitation Emails</h3>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => {
+                            if (title && startDate && endDate) {
+                              const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                              const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                              
+                              generatePreview({
+                                title,
+                                description,
+                                location,
+                                startDate: startDateTime,
+                                endDate: endDateTime,
+                                attendees
+                              });
+                            } else {
+                              toast({
+                                title: "Required fields missing",
+                                description: "Please fill in at least title, start date, and end date to preview emails",
+                                variant: "destructive"
+                              });
+                            }
+                          }}
+                          className="flex items-center gap-1"
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                          Refresh Preview
+                        </Button>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Preview the email that will be sent to attendees when this event is created. 
+                        Each attendee will receive a personalized invitation with an iCalendar (.ics) attachment.
+                      </p>
+                    </div>
+                    
+                    <EmailPreview 
+                      isLoading={isEmailPreviewLoading}
+                      error={previewError}
+                      html={previewData?.html || null}
+                      onRefresh={() => {
+                        if (title && startDate && endDate) {
+                          const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                          const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                          
+                          generatePreview({
+                            title,
+                            description,
+                            location,
+                            startDate: startDateTime,
+                            endDate: endDateTime,
+                            attendees
+                          });
+                        }
+                      }}
+                    />
                   </>
                 )}
               </div>

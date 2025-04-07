@@ -5223,6 +5223,119 @@ END:VCALENDAR`;
       });
     }
   });
+  
+  // Generate email preview for an event invitation
+  app.post("/api/email-preview", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as Express.User).id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.email) {
+        return res.status(400).json({ 
+          message: "User email not available. Please update your profile with a valid email."
+        });
+      }
+      
+      // Get the event data from the request
+      const { 
+        title, 
+        description, 
+        location, 
+        startDate, 
+        endDate, 
+        attendees 
+      } = req.body;
+      
+      // Validate required fields
+      if (!title || !startDate || !endDate || !attendees) {
+        return res.status(400).json({
+          message: "Missing required fields (title, startDate, endDate, attendees)"
+        });
+      }
+      
+      // Parse the attendees if they're sent as a string
+      let parsedAttendees;
+      try {
+        parsedAttendees = typeof attendees === 'string' ? JSON.parse(attendees) : attendees;
+        if (!Array.isArray(parsedAttendees)) {
+          throw new Error("Attendees must be an array");
+        }
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid attendees format",
+          error: (error instanceof Error) ? error.message : String(error)
+        });
+      }
+      
+      // Import email service
+      const { emailService } = await import('./email-service');
+      
+      // Initialize with the user's SMTP configuration
+      const initialized = await emailService.initialize(userId);
+      
+      if (!initialized) {
+        // We'll still generate a preview even without valid SMTP config
+        console.log("No valid SMTP configuration, but generating preview anyway");
+      }
+      
+      // Format the dates to make them valid Date objects
+      let parsedStartDate, parsedEndDate;
+      try {
+        parsedStartDate = new Date(startDate);
+        parsedEndDate = new Date(endDate);
+        
+        if (isNaN(parsedStartDate.getTime()) || isNaN(parsedEndDate.getTime())) {
+          throw new Error("Invalid date format");
+        }
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid date format",
+          error: (error instanceof Error) ? error.message : String(error)
+        });
+      }
+      
+      // Generate a unique ID for this event
+      const uid = `preview-${Date.now()}@caldav-app`;
+      
+      // Prepare the event invitation data
+      const invitationData = {
+        eventId: 0, // This is just a preview, not a real event
+        uid,
+        title,
+        description,
+        location,
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
+        organizer: {
+          email: user.email,
+          name: user.username || undefined
+        },
+        attendees: parsedAttendees.map((a: any) => ({
+          email: a.email,
+          name: a.name,
+          role: a.role || 'REQ-PARTICIPANT',
+          status: 'NEEDS-ACTION'
+        }))
+      };
+      
+      // Call the method to generate email content without sending
+      const previewHtml = emailService.generateEmailPreview(invitationData);
+      
+      // Also generate the ICS data for reference
+      const icsData = emailService.generateICSData(invitationData);
+      
+      res.status(200).json({
+        html: previewHtml,
+        ics: icsData
+      });
+    } catch (error) {
+      console.error("Error generating email preview:", error);
+      res.status(500).json({ 
+        message: "Failed to generate email preview", 
+        error: (error as Error).message 
+      });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;
