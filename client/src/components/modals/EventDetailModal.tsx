@@ -141,15 +141,23 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     endDate.setHours(endDate.getHours() + 1);
   }
   
+  // State for error display
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   // Handle delete event
   const handleDelete = async () => {
     if (!event) return;
     
+    // Clear any previous errors
+    setDeleteError(null);
+    
     try {
       setIsDeleting(true);
-      deleteEvent(event.id);
       
-      // Force UI refresh
+      // Call the delete mutation
+      await deleteEvent(event.id);
+      
+      // Force UI refresh after successful deletion
       queryClient.invalidateQueries({ queryKey: ['/api/events'] });
       
       if (event.calendarId) {
@@ -158,14 +166,18 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         });
       }
       
+      // Close dialogs and cleanup
       setIsDeleting(false);
       setDeleteDialogOpen(false);
       onClose();
     } catch (error) {
       console.error(`Error during delete: ${(error as Error).message}`);
+      
+      // Show the error in the alert dialog
+      setDeleteError((error as Error).message || 'Failed to delete event');
       setIsDeleting(false);
-      setDeleteDialogOpen(false);
-      onClose();
+      
+      // We don't close dialogs on error so user can retry
     }
   };
   
@@ -406,19 +418,36 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       </Dialog>
       
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Event</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this event? This action cannot be undone.
+              Are you sure you want to delete "{event.title}"? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="pt-2 pb-4">
+            <p className="text-sm text-muted-foreground">
+              Date: {formatDayOfWeekDate(startDate)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Time: {event.allDay ? 'All Day' : formatEventTimeRange(startDate, endDate)}
+            </p>
+            
+            {deleteError && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-600 flex items-start">
+                  <span className="material-icons text-red-500 mr-1 text-sm">error</span>
+                  <span>Error: {deleteError}</span>
+                </p>
+              </div>
+            )}
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
               onClick={handleDelete}
               disabled={isDeleting}
-              className="bg-red-500 hover:bg-red-600"
+              className="bg-red-500 hover:bg-red-600 text-white"
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>
