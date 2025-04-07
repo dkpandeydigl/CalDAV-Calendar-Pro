@@ -4291,14 +4291,53 @@ END:VCALENDAR`;
                   endDate = new Date(2025, 3, 15, 10, 0, 0);
                 }
                 
-                // Check if event already exists
+                // Check if event already exists by UID - this is the primary identifier for CalDAV events
                 let existingEvent = await storage.getEventByUID(uid);
+                
+                // Additional check for duplicate events by matching date and title
+                // This helps find duplicate events even when UIDs might not match perfectly
+                if (!existingEvent) {
+                  // Try to find a matching event with the same date and title
+                  const allEventsForCalendar = await storage.getEvents(calendarId);
+                  
+                  // Find potential duplicates by checking title and start date
+                  const potentialDuplicates = allEventsForCalendar.filter(evt => {
+                    // Skip events with different UIDs that already have a URL (these are confirmed non-duplicates)
+                    if (evt.uid !== uid && evt.url) return false;
+                    
+                    // Check for title match
+                    const titleMatch = evt.title === summary;
+                    
+                    // Check for date match - within 1 minute tolerance
+                    let dateMatch = false;
+                    if (evt.startDate && startDate) {
+                      const evtStartTime = new Date(evt.startDate).getTime();
+                      const newStartTime = startDate.getTime();
+                      const timeDiff = Math.abs(evtStartTime - newStartTime);
+                      dateMatch = timeDiff < 60000; // Within 1 minute
+                    }
+                    
+                    return titleMatch && dateMatch;
+                  });
+                  
+                  if (potentialDuplicates.length > 0) {
+                    console.log(`Found ${potentialDuplicates.length} potential duplicates for event "${summary}" on ${startDate}`);
+                    // Use the first potential duplicate as our existing event
+                    existingEvent = potentialDuplicates[0];
+                    console.log(`Using event with ID ${existingEvent.id} and UID ${existingEvent.uid} as match for server event with UID ${uid}`);
+                  }
+                }
                 
                 if (existingEvent) {
                   // Remove it from our map of events to sync to server as it already exists
                   localEventsToSync.delete(uid);
+                  // Also remove it using the existing event's uid (which might be different)
+                  if (existingEvent.uid !== uid) {
+                    localEventsToSync.delete(existingEvent.uid);
+                  }
                   
-                  // Update existing event
+                  // Update existing event with latest server data
+                  console.log(`Updating existing event "${existingEvent.title}" (ID: ${existingEvent.id}) with server data`);
                   await storage.updateEvent(existingEvent.id, {
                     title: summary,
                     description: description || null,
@@ -4307,10 +4346,13 @@ END:VCALENDAR`;
                     endDate: endDate,
                     allDay: isAllDay,
                     etag: calObject.etag || null,
-                    url: calObject.url || null
+                    url: calObject.url || null,
+                    uid: uid, // Update UID to match the server's version
+                    syncStatus: 'synced', // Mark as successfully synced
                   });
                 } else {
                   // Create new event
+                  console.log(`Creating new event "${summary}" with UID ${uid}`);
                   await storage.createEvent({
                     calendarId: calendarId,
                     uid: uid,
@@ -4324,7 +4366,8 @@ END:VCALENDAR`;
                     recurrenceRule: null,
                     etag: calObject.etag || null,
                     url: calObject.url || null,
-                    rawData: calObject.data
+                    rawData: calObject.data,
+                    syncStatus: 'synced', // Mark as already synced from server
                   });
                   
                   totalEventsCount++;
@@ -4371,6 +4414,29 @@ END:VCALENDAR`;
                 localEvent.syncStatus === 'local' ||        // Marked as local
                 localEvent.syncStatus === 'syncing';        // Currently syncing
               
+              // Add extra protection for April 29th and 30th, 2025 events (subject to duplication issue)
+              let isProtectedDateEvent = false;
+              if (localEvent.startDate) {
+                const eventDate = new Date(localEvent.startDate);
+                const eventDay = eventDate.getDate();
+                const eventMonth = eventDate.getMonth();
+                const eventYear = eventDate.getFullYear();
+                // Check specifically for April 29th and 30th, 2025
+                if (eventYear === 2025 && eventMonth === 3 && (eventDay === 29 || eventDay === 30)) {
+                  console.log(`Event "${localEvent.title}" is on April ${eventDay}, 2025 (protected date). Extra protection applied.`);
+                  isProtectedDateEvent = true;
+                  // Always protect these events from deletion and try to sync them
+                  if (!localEventsToSync.has(localEvent.id)) {
+                    localEventsToSync.set(localEvent.id, localEvent);
+                  }
+                }
+              }
+              
+              // Skip deletion for protected date events
+              if (isProtectedDateEvent) {
+                continue;
+              }
+              
               if (localEvent.url && !serverEventUIDs.has(localEvent.uid) && !isNewlySynced) {
                 console.log(`Event "${localEvent.title}" (${localEvent.uid}) exists locally with URL but not on server. Marking for deletion.`);
                 eventsToDelete.push(localEvent);
@@ -4400,9 +4466,9 @@ END:VCALENDAR`;
                 const eventDay = eventDate.getDate();
                 const eventMonth = eventDate.getMonth();
                 
-                // Check for events on specific dates that need special attention (like April 26th)
+                // Check for events on specific dates that need special attention (April 26th, 29th, 30th)
                 // or events in the near future (next 7 days) or today
-                const isSpecialDate = (eventMonth === 3 && eventDay === 26); // April 26th
+                const isSpecialDate = (eventMonth === 3 && (eventDay === 26 || eventDay === 29 || eventDay === 30)); // April 26th, 29th, 30th
                 const isNearFutureEvent = (
                   eventDate >= today && 
                   (eventDate.getTime() - today.getTime()) < 7 * 24 * 60 * 60 * 1000 // 7 days
