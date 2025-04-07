@@ -2,6 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { syncService } from './sync-service';
+import { emailService } from './email-service';
 import { 
   insertCalendarSchema, 
   insertEventSchema, 
@@ -5593,6 +5594,165 @@ END:VCALENDAR`;
         success: false,
         message: "Failed to send email invitations", 
         error: (error as Error).message 
+      });
+    }
+  });
+
+  // Cancel event endpoint - sends cancellation emails to attendees and deletes the event from server
+  app.post('/api/cancel-event/:eventId', isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.id;
+      const eventId = parseInt(req.params.eventId);
+      
+      // Get the event from the database
+      const event = await storage.getEvent(eventId);
+      
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: 'Event not found'
+        });
+      }
+      
+      // Check if the user has permission to modify this event
+      const permissionCheck = await checkCalendarPermission(userId, event.calendarId, 'edit', req);
+      if (!permissionCheck.permitted) {
+        return res.status(403).json({
+          success: false,
+          message: permissionCheck.message || 'You do not have permission to cancel this event'
+        });
+      }
+      
+      // Parse attendees from JSON string
+      let attendees: any[] = [];
+      if (event.attendees) {
+        try {
+          attendees = JSON.parse(event.attendees as string);
+        } catch (error) {
+          console.error('Failed to parse attendees JSON:', error);
+        }
+      }
+      
+      // Check if the event has attendees
+      if (!attendees || attendees.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Event has no attendees to notify of cancellation'
+        });
+      }
+      
+      // Get user details for organizer info
+      const user = req.user!;
+      
+      // Prepare the cancellation data
+      const cancellationData = {
+        eventId: event.id,
+        uid: event.uid,
+        title: event.title,
+        description: event.description || undefined,
+        location: event.location || undefined,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        organizer: {
+          email: user.email || '',
+          name: user.username || undefined
+        },
+        attendees: attendees.map((a: any) => ({
+          email: a.email,
+          name: a.name,
+          role: a.role || 'REQ-PARTICIPANT',
+          status: 'NEEDS-ACTION'
+        })),
+        status: 'CANCELLED' // Mark the event as cancelled
+      };
+      
+      // Send cancellation emails
+      const emailResult = await emailService.sendEventCancellation(userId, cancellationData);
+      
+      if (!emailResult.success) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send cancellation emails. Event not deleted.',
+          details: emailResult.message
+        });
+      }
+      
+      // If emails sent successfully, delete the event from the CalDAV server
+      const serverConnection = await storage.getServerConnection(userId);
+      if (!serverConnection) {
+        return res.status(400).json({
+          success: false,
+          message: 'No server connection found for this user'
+        });
+      }
+      
+      try {
+        // Get the calendar containing this event
+        const calendar = await storage.getCalendar(event.calendarId);
+        if (!calendar) {
+          throw new Error('Calendar not found');
+        }
+        
+        // Lookup the calendar info on the server to get its path
+        const davResponse = await fetch(`${serverConnection.url}/caldav.php/`, {
+          method: 'PROPFIND',
+          headers: {
+            'Content-Type': 'application/xml',
+            'Depth': '1',
+            'Authorization': `Basic ${Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')}`
+          },
+          body: `<?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop>
+                    <D:resourcetype/>
+                    <D:displayname/>
+                  </D:prop>
+                </D:propfind>`
+        });
+        
+        if (!davResponse.ok) {
+          throw new Error(`Failed to lookup calendars on server: ${davResponse.status} ${davResponse.statusText}`);
+        }
+        
+        // Get the event's URL from the server for deletion
+        const deleteUrl = `${serverConnection.url}/caldav.php/${serverConnection.username}/${calendar.name}/${event.uid}.ics`;
+        
+        // Delete the event from the CalDAV server
+        const deleteResponse = await fetch(deleteUrl, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Basic ${Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')}`
+          }
+        });
+        
+        if (!deleteResponse.ok && deleteResponse.status !== 404) {
+          // If the DELETE fails for a reason other than the event not being found, return an error
+          throw new Error(`Failed to delete event from server: ${deleteResponse.status} ${deleteResponse.statusText}`);
+        }
+        
+        // If we got here, either the event was successfully deleted or wasn't on the server to begin with
+        // Now delete it from our local database
+        await storage.deleteEvent(eventId);
+        
+        // Return success
+        return res.status(200).json({
+          success: true,
+          message: 'Event canceled and attendees notified'
+        });
+      } catch (error) {
+        console.error('Error deleting event from CalDAV server:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Error deleting event from server',
+          details: (error as Error).message
+        });
+      }
+    } catch (error) {
+      console.error('Error canceling event:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'An error occurred while canceling the event',
+        details: (error as Error).message
       });
     }
   });

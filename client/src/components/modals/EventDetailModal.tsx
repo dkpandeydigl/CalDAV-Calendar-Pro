@@ -9,6 +9,7 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
+import { MailCheck, AlertTriangle } from 'lucide-react';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
@@ -28,16 +29,19 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
 }) => {
   // Hook calls - all must be at the top level
   const { calendars } = useCalendars();
-  const { deleteEvent } = useCalendarEvents();
+  const { deleteEvent, cancelEvent } = useCalendarEvents();
   const { getCalendarPermission } = useCalendarPermissions();
   const { user, isLoading: isUserLoadingFromAuth } = useAuth();
   const queryClient = useQueryClient();
   
   // State hooks - always place ALL hooks at the top level before any conditional logic
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   
   // Add a timeout to prevent infinite loading state
   useEffect(() => {
@@ -142,6 +146,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     endDate.setHours(endDate.getHours() + 1);
   }
   
+  // Check if event has attendees
+  const hasAttendees = (() => {
+    const attendees = event.attendees as unknown;
+    return attendees && Array.isArray(attendees) && attendees.length > 0;
+  })();
+  
   // Handle delete event
   const handleDelete = async () => {
     if (!event) return;
@@ -174,6 +184,43 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       // Show the error in the alert dialog
       setDeleteError((error as Error).message || 'Failed to delete event');
       setIsDeleting(false);
+      
+      // We don't close dialogs on error so user can retry
+    }
+  };
+  
+  // Handle cancel event with notifications
+  const handleCancel = async () => {
+    if (!event) return;
+    
+    // Clear any previous errors
+    setCancelError(null);
+    
+    try {
+      setIsCancelling(true);
+      
+      // Call the cancel mutation
+      await cancelEvent(event.id);
+      
+      // Force UI refresh after successful cancellation
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
+      if (event.calendarId) {
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/calendars', event.calendarId, 'events'] 
+        });
+      }
+      
+      // Close dialogs and cleanup
+      setIsCancelling(false);
+      setCancelDialogOpen(false);
+      onClose();
+    } catch (error) {
+      console.error(`Error during cancel: ${(error as Error).message}`);
+      
+      // Show the error in the dialog
+      setCancelError((error as Error).message || 'Failed to cancel event');
+      setIsCancelling(false);
       
       // We don't close dialogs on error so user can retry
     }
@@ -372,6 +419,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex space-x-2">
               {!isUserLoading && effectiveCanEdit && (
                 <>
+                  {/* Show Cancel button only for events with attendees */}
+                  {hasAttendees && (
+                    <Button 
+                      variant="outline" 
+                      className="border-amber-200 text-amber-600 hover:bg-amber-50 flex items-center gap-1" 
+                      onClick={() => setCancelDialogOpen(true)}
+                    >
+                      <MailCheck className="h-4 w-4" />
+                      Cancel Event
+                    </Button>
+                  )}
                   <Button 
                     variant="outline" 
                     className="border-red-200 text-red-600 hover:bg-red-50" 
@@ -465,6 +523,92 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               className="bg-red-500 hover:bg-red-600"
             >
               {isDeleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Cancel Event Dialog */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-amber-600 flex items-center gap-2">
+              <MailCheck className="h-5 w-5" />
+              Cancel Event with Notifications
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="mb-4">
+              <p className="text-lg font-medium mb-2">"{event.title}"</p>
+              <p className="mb-1 text-sm">
+                This will notify all attendees that the event has been cancelled and remove it from their calendars.
+              </p>
+              
+              {/* Show attendees */}
+              {(() => {
+                const attendees = event.attendees as unknown;
+                if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+                  return (
+                    <div className="mt-3">
+                      <p className="text-sm font-medium mb-1">Attendees to be notified:</p>
+                      <div className="text-sm p-3 bg-gray-50 rounded-md">
+                        <ul className="space-y-1 list-disc pl-5">
+                          {attendees
+                            .filter(Boolean)
+                            .map((attendee, index) => {
+                              if (typeof attendee === 'object' && attendee !== null) {
+                                return <li key={index}>{(attendee as any).email}</li>;
+                              } else {
+                                return <li key={index}>{String(attendee)}</li>;
+                              }
+                            })}
+                        </ul>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+            
+            <div className="text-sm bg-amber-50 p-3 rounded-md border border-amber-200">
+              <div className="flex items-start mb-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 mr-2 mt-0.5" />
+                <p className="text-amber-800">
+                  This action will send a cancellation email to all attendees and then delete the event.
+                </p>
+              </div>
+              <p className="text-xs text-amber-700">
+                The event will be marked as CANCELLED in their calendars.
+              </p>
+            </div>
+            
+            {cancelError && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-600 flex items-start">
+                  <span className="material-icons text-red-500 mr-1 text-sm">error</span>
+                  <span>Error: {cancelError}</span>
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setCancelDialogOpen(false)}
+              disabled={isCancelling}
+            >
+              Back
+            </Button>
+            <Button 
+              onClick={handleCancel}
+              disabled={isCancelling}
+              variant="default"
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              {isCancelling ? 'Sending Cancellations...' : 'Send Cancellation & Delete'}
             </Button>
           </DialogFooter>
         </DialogContent>

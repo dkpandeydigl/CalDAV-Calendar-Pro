@@ -24,6 +24,7 @@ interface EventInvitationData {
   };
   attendees: Attendee[];
   icsData?: string; // Optional pre-generated ICS data
+  status?: string; // Optional status for events (e.g. 'CANCELLED')
 }
 
 export class EmailService {
@@ -489,8 +490,198 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
    * @param data Event data
    * @returns ICS formatted string
    */
+  /**
+   * Send cancellation notices to all attendees for a cancelled event
+   * @param userId The user ID sending the cancellation
+   * @param data Event data with cancellation status
+   * @returns A result object with success status and details
+   */
+  async sendEventCancellation(
+    userId: number,
+    data: EventInvitationData
+  ): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      // Initialize email service if not already initialized
+      if (!this.transporter || !this.config || this.config.userId !== userId) {
+        const initSuccess = await this.initialize(userId);
+        if (!initSuccess) {
+          return {
+            success: false,
+            message: 'Failed to initialize email service. Please check your SMTP configuration.'
+          };
+        }
+      }
+
+      // Generate ICS data with CANCELLED status
+      const icsData = this.generateICSData(data);
+
+      // Send email to each attendee
+      const sendPromises = data.attendees.map(attendee => {
+        return this.sendCancellationEmail(data, attendee, icsData);
+      });
+
+      // Wait for all emails to be sent
+      const results = await Promise.allSettled(sendPromises);
+      
+      // Count successful deliveries
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+      
+      // Detailed results for debugging
+      const detailedResults = results.map((result, index) => {
+        return {
+          attendee: data.attendees[index].email,
+          success: result.status === 'fulfilled',
+          details: result.status === 'rejected' ? (result as PromiseRejectedResult).reason : undefined
+        };
+      });
+
+      if (failed > 0) {
+        return {
+          success: successful > 0, // Consider partially successful if at least one email was sent
+          message: `Sent cancellation notices to ${successful} out of ${data.attendees.length} attendees.`,
+          details: detailedResults
+        };
+      }
+
+      return {
+        success: true,
+        message: `Successfully sent cancellation notices to all ${successful} attendees.`,
+        details: detailedResults
+      };
+    } catch (error) {
+      console.error('Error sending event cancellations:', error);
+      return {
+        success: false,
+        message: `Failed to send cancellations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        details: error
+      };
+    }
+  }
+
+  /**
+   * Send a cancellation email to an attendee
+   * @param data Event data
+   * @param attendee Attendee information
+   * @param icsData The ICS calendar data with CANCEL method
+   * @returns Promise resolving to the send info
+   */
+  private async sendCancellationEmail(
+    data: EventInvitationData,
+    attendee: Attendee,
+    icsData: string
+  ): Promise<nodemailer.SentMessageInfo> {
+    if (!this.transporter || !this.config) {
+      throw new Error('Email service not initialized');
+    }
+
+    const { startDate, endDate, title, description, location } = data;
+    
+    // Format the date for display in email
+    const dateFormat = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      timeZoneName: 'short'
+    });
+    
+    const formattedStart = dateFormat.format(startDate);
+    const formattedEnd = dateFormat.format(endDate);
+    
+    // Create a more readable display name for the attendee
+    const attendeeName = attendee.name || attendee.email.split('@')[0];
+    
+    // Create the email content for cancellation
+    const htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+          .header h2 { margin: 0; color: #333; }
+          .content { padding: 20px 15px; }
+          .cancelled-banner { background-color: #ffeeee; color: #990000; padding: 10px; border-radius: 5px; margin-bottom: 20px; text-align: center; font-weight: bold; }
+          .event-details { margin-bottom: 20px; }
+          .detail-row { margin-bottom: 10px; }
+          .label { font-weight: bold; display: inline-block; width: 100px; }
+          .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Event Cancellation</h2>
+          </div>
+          <div class="content">
+            <div class="cancelled-banner">THIS EVENT HAS BEEN CANCELLED</div>
+            
+            <p>Hello ${attendeeName},</p>
+            <p>The following event has been <strong>cancelled</strong>:</p>
+            
+            <div class="event-details">
+              <div class="detail-row">
+                <span class="label">Event:</span> ${title}
+              </div>
+              ${description ? `
+              <div class="detail-row">
+                <span class="label">Description:</span> ${description}
+              </div>` : ''}
+              ${location ? `
+              <div class="detail-row">
+                <span class="label">Location:</span> ${location}
+              </div>` : ''}
+              <div class="detail-row">
+                <span class="label">Start:</span> ${formattedStart}
+              </div>
+              <div class="detail-row">
+                <span class="label">End:</span> ${formattedEnd}
+              </div>
+              <div class="detail-row">
+                <span class="label">Organizer:</span> ${data.organizer.name || data.organizer.email}
+              </div>
+            </div>
+            
+            <p>Your calendar will be updated automatically if you previously accepted this invitation.</p>
+          </div>
+          <div class="footer">
+            <p>This cancellation notice was sent using CalDAV Calendar Application.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `;
+
+    // Prepare the cancellation email
+    const mailOptions = {
+      from: {
+        name: this.config.fromName || 'Calendar Application',
+        address: this.config.fromEmail
+      },
+      to: attendee.name
+        ? `"${attendee.name}" <${attendee.email}>`
+        : attendee.email,
+      subject: `Cancelled: ${title}`,
+      html: htmlContent,
+      text: `CANCELLED EVENT\n\nHello ${attendeeName},\n\nThe following event has been CANCELLED:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer.name || data.organizer.email}\n\nYour calendar will be updated automatically if you previously accepted this invitation.\n\nThis cancellation notice was sent using CalDAV Calendar Application.`,
+      attachments: [
+        {
+          filename: `cancellation-${data.uid}.ics`,
+          content: icsData,
+          contentType: 'text/calendar; method=CANCEL'
+        }
+      ]
+    };
+
+    // Send the email
+    return this.transporter.sendMail(mailOptions);
+  }
+
   public generateICSData(data: EventInvitationData): string {
-    const { uid, title, description, location, startDate, endDate, organizer, attendees } = data;
+    const { uid, title, description, location, startDate, endDate, organizer, attendees, status } = data;
     
     // Format dates for iCalendar
     const startDateStr = formatICALDate(startDate);
@@ -506,7 +697,8 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       'VERSION:2.0',
       'PRODID:-//CalDAV Calendar Application//EN',
       'CALSCALE:GREGORIAN',
-      'METHOD:REQUEST',
+      // Use REQUEST method for invitations and CANCEL method for cancellations
+      `METHOD:${status === 'CANCELLED' ? 'CANCEL' : 'REQUEST'}`,
       'BEGIN:VEVENT',
       `UID:${eventId}`,
       `DTSTAMP:${now}`,
@@ -514,6 +706,12 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       `DTEND:${endDateStr}`,
       `SUMMARY:${title}`,
     ];
+    
+    // Add STATUS field for cancellations
+    if (status === 'CANCELLED') {
+      icsContent.push('STATUS:CANCELLED');
+      icsContent.push('TRANSP:TRANSPARENT');
+    }
     
     // Add optional fields if they exist
     if (description) icsContent.push(`DESCRIPTION:${description.replace(/\\n/g, '\\n')}`);

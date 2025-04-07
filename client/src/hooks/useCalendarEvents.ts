@@ -640,6 +640,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   type DeleteMutationContext = {
     previousEvents?: Event[];
     eventToDelete?: Event;
+    event?: Event;  // Added for the cancel event mutation
     allQueryKeys?: QueryKey[];
   };
 
@@ -956,6 +957,95 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     }
   });
 
+  // Add cancelEvent mutation for events with attendees
+  const cancelEventMutation = useMutation<DeleteResponse, Error, number, DeleteMutationContext>({
+    mutationFn: async (id: number) => {
+      console.log(`Canceling event with ID ${id}`);
+      try {
+        const res = await apiRequest('POST', `/api/cancel-event/${id}`);
+        
+        // Check for 200 status with our enhanced response format
+        if (res.status === 200) {
+          try {
+            const data = await res.json();
+            console.log(`Successfully canceled event with ID ${id}, response:`, data);
+            return data;
+          } catch (e) {
+            console.warn("Could not parse JSON response from successful cancellation:", e);
+            return { success: true, id };
+          }
+        }
+        
+        // For other status codes, try to get the error message
+        let errorMessage = `Server returned unexpected status: ${res.status}`;
+        try {
+          const data = await res.json();
+          if (data && data.message) {
+            errorMessage = data.message;
+          }
+        } catch (e) {
+          // If we can't parse JSON, use the default error message
+          console.warn("Could not parse error response as JSON");
+        }
+        
+        // Throw an error with the message so it's caught by the onError handler
+        throw new Error(errorMessage);
+      } catch (error) {
+        console.error("Error in cancel mutation:", error);
+        throw error;
+      }
+    },
+    onMutate: (eventId) => {
+      // Similar optimization as delete - keep track of the previous state
+      const previousEvents = queryClient.getQueryData<Event[]>(['/api/events']);
+      const event = previousEvents?.find(e => e.id === eventId);
+      
+      // Get all potentially affected query keys
+      const allQueryKeys = queryClient.getQueryCache().getAll().map(q => q.queryKey);
+      
+      return { previousEvents, event, allQueryKeys };
+    },
+    onSuccess: (data, eventId, context) => {
+      if (data.success) {
+        // Update the cache to remove the canceled event
+        queryClient.setQueryData<Event[]>(
+          ['/api/events'],
+          (oldEvents = []) => oldEvents.filter(e => e.id !== eventId)
+        );
+        
+        // If we have the event, update calendar-specific cache
+        if (context?.event?.calendarId) {
+          queryClient.setQueryData<Event[]>(
+            ['/api/calendars', context.event.calendarId, 'events'],
+            (oldEvents = []) => oldEvents.filter(e => e.id !== eventId)
+          );
+        }
+        
+        // Invalidate queries to ensure data is fresh
+        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+        
+        toast({
+          title: "Event Canceled",
+          description: "The event has been canceled and attendees have been notified.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error Canceling Event",
+          description: data.message || "Failed to cancel the event. Please try again."
+        });
+      }
+    },
+    onError: (error) => {
+      console.error("Error in cancelEvent:", error);
+      toast({
+        variant: "destructive",
+        title: "Error Canceling Event",
+        description: error.message || "Failed to cancel the event. Please try again."
+      });
+    }
+  });
+
   return {
     events: filteredEvents,
     isLoading: eventsQueries.isLoading,
@@ -963,6 +1053,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     refetch: eventsQueries.refetch,
     createEvent: createEventMutation.mutate,
     updateEvent: updateEventMutation.mutate,
-    deleteEvent: deleteEventMutation.mutate
+    deleteEvent: deleteEventMutation.mutate,
+    cancelEvent: cancelEventMutation.mutate
   };
 };
