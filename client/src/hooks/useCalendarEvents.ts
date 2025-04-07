@@ -182,29 +182,50 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
           });
           
-          // Trigger a manual sync with the server to ensure the event is pushed to the CalDAV server
+          // Trigger an immediate sync with the server to ensure the event is pushed to the CalDAV server
           // Use forceRefresh and full mode for immediate propagation to other clients
-          fetch('/api/sync?forceRefresh=true&mode=full', { method: 'POST', credentials: 'include' })
-            .then(response => {
-              if (response.ok) {
-                console.log('Manual sync triggered successfully after event creation');
-                return response.json();
-              } else {
-                console.warn('Failed to trigger manual sync after event creation');
-                throw new Error('Sync failed');
+          console.log('Triggering immediate sync for newly created event');
+          
+          const syncEvent = async () => {
+            try {
+              // First, make sure the event is properly saved in our local database
+              await queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              
+              // Then trigger an immediate sync with the CalDAV server
+              const syncResponse = await fetch('/api/sync/now', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                  forceRefresh: true,
+                  calendarId: serverEvent.calendarId
+                })
+              });
+              
+              if (!syncResponse.ok) {
+                throw new Error(`Sync failed with status: ${syncResponse.status}`);
               }
-            })
-            .then(data => {
-              console.log('Sync completed successfully:', data);
-              // After sync completes, refresh the events to show the latest state from server
-              setTimeout(() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-              }, 1000);
-            })
-            .catch(error => {
-              console.error('Error triggering manual sync:', error);
-            });
-        }, 500);
+              
+              const syncResult = await syncResponse.json();
+              console.log('Immediate sync completed successfully:', syncResult);
+              
+              // After successful sync, refresh the events list
+              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            } catch (error) {
+              console.error('Error during immediate sync:', error);
+              // Still show the event locally even if sync failed
+              toast({
+                title: "Event Created",
+                description: "Event created locally, but sync with server failed. Will retry automatically.",
+                variant: "default"
+              });
+            }
+          };
+          
+          syncEvent();
+        }, 100);
       }, 10); // tiny delay to ensure UI stays smooth
     },
     onError: (error, newEventData, context) => {
@@ -468,29 +489,49 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
         });
         
-        // Trigger a manual sync with the server to ensure updates are pushed to CalDAV
-        // Use forceRefresh and full mode for immediate propagation to other clients
-        fetch('/api/sync?forceRefresh=true&mode=full', { method: 'POST', credentials: 'include' })
-          .then(response => {
-            if (response.ok) {
-              console.log('Manual sync triggered successfully after event update');
-              return response.json();
-            } else {
-              console.warn('Failed to trigger manual sync after event update');
-              throw new Error('Sync failed');
+        // Trigger an immediate sync with the server to ensure the event update is pushed to the CalDAV server
+        console.log('Triggering immediate sync for updated event');
+        
+        const syncEvent = async () => {
+          try {
+            // First, make sure the event is properly saved in our local database
+            await queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            
+            // Then trigger an immediate sync with the CalDAV server
+            const syncResponse = await fetch('/api/sync/now', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                forceRefresh: true,
+                calendarId: serverEvent.calendarId
+              })
+            });
+            
+            if (!syncResponse.ok) {
+              throw new Error(`Sync failed with status: ${syncResponse.status}`);
             }
-          })
-          .then(data => {
-            console.log('Sync completed successfully after update:', data);
-            // After sync completes, refresh the events again to ensure all caches are up-to-date
-            setTimeout(() => {
-              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-            }, 1000);
-          })
-          .catch(error => {
-            console.error('Error triggering manual sync:', error);
-          });
-      }, 500);
+            
+            const syncResult = await syncResponse.json();
+            console.log('Immediate sync completed successfully after update:', syncResult);
+            
+            // After successful sync, refresh the events list
+            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+          } catch (error) {
+            console.error('Error during immediate sync after update:', error);
+            // Still show the event updated locally even if sync failed
+            toast({
+              title: "Event Updated",
+              description: "Event updated locally, but sync with server failed. Will retry automatically.",
+              variant: "default"
+            });
+          }
+        };
+        
+        syncEvent();
+      }, 100);
     },
     onError: (error: Error, variables: { id: number, data: Partial<Event> }, context: UpdateMutationContext | undefined) => {
       console.error(`Error updating event ${variables.id}:`, error);
@@ -685,28 +726,48 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           });
         }
         
-        // Trigger a manual sync with CalDAV server to ensure deletion is propagated
-        // Use forceRefresh and full mode for immediate propagation to other clients
-        fetch('/api/sync?forceRefresh=true&mode=full', { method: 'POST', credentials: 'include' })
-          .then(response => {
-            if (response.ok) {
-              console.log('Manual sync triggered successfully after event deletion');
-              return response.json();
-            } else {
-              console.warn('Failed to trigger manual sync after event deletion');
-              throw new Error('Sync failed');
+        // Trigger an immediate sync with the server to ensure the event deletion is pushed to the CalDAV server
+        console.log('Triggering immediate sync for deleted event');
+        
+        const syncEvent = async () => {
+          try {
+            // First, make sure the event is properly removed from our local database
+            await queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            
+            // Then trigger an immediate sync with the CalDAV server
+            const syncResponse = await fetch('/api/sync/now', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                forceRefresh: true,
+                // If we have the calendar ID from the deleted event, use it for targeted sync
+                calendarId: context?.eventToDelete?.calendarId
+              })
+            });
+            
+            if (!syncResponse.ok) {
+              throw new Error(`Sync failed with status: ${syncResponse.status}`);
             }
-          })
-          .then(data => {
-            console.log('Sync completed successfully after deletion:', data);
-            // After sync completes, refresh the events again to ensure all caches are up-to-date
-            setTimeout(() => {
-              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-            }, 1000);
-          })
-          .catch(error => {
-            console.error('Error triggering manual sync:', error);
-          });
+            
+            const syncResult = await syncResponse.json();
+            console.log('Immediate sync completed successfully after deletion:', syncResult);
+            
+            // After successful sync, refresh the events list
+            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+          } catch (error) {
+            console.error('Error during immediate sync after deletion:', error);
+            toast({
+              title: "Event Deleted",
+              description: "Event deleted locally, but sync with server failed. Will retry automatically.",
+              variant: "default"
+            });
+          }
+        };
+        
+        syncEvent();
       }, 50); // Very short delay to allow UI updates
     },
     // This happens if the server request fails

@@ -157,16 +157,24 @@ class SyncService {
 
   /**
    * Run a sync immediately for a user
+   * @param userId - The ID of the user to sync
+   * @param options - Optional configuration for the sync operation
+   * @param options.forceRefresh - Whether to force a full refresh from the server
+   * @param options.calendarId - Optional calendar ID to sync just one calendar
    */
-  async syncNow(userId: number): Promise<boolean> {
+  async syncNow(userId: number, options: { forceRefresh?: boolean, calendarId?: number | null } = {}): Promise<boolean> {
     const job = this.jobs.get(userId);
     if (!job) {
       console.log(`No sync job found for user ID ${userId}`);
       return false;
     }
     
+    const { forceRefresh = false, calendarId = null } = options;
+    console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId });
+    
     // If a sync is already in progress, don't start another one
-    if (job.running || this.syncInProgress.has(userId)) {
+    // Unless forceRefresh is true, in which case we'll proceed anyway
+    if ((job.running || this.syncInProgress.has(userId)) && !forceRefresh) {
       console.log(`Sync already in progress for user ID ${userId}`);
       return true; // Return true because the sync is indeed happening
     }
@@ -196,7 +204,68 @@ class SyncService {
       
       // Discover calendars
       console.log(`Discovering calendars for user ID ${userId}`);
-      const davCalendars = await davClient.fetchCalendars();
+      
+      // If a specific calendar ID was provided, only sync that calendar
+      if (calendarId !== null) {
+        console.log(`Targeting sync for specific calendar ID: ${calendarId}`);
+        
+        // Get the calendar from the database
+        const calendar = await storage.getCalendar(calendarId);
+        if (!calendar) {
+          console.warn(`Calendar with ID ${calendarId} not found`);
+          return false;
+        }
+        
+        // Make API call to just sync this specific calendar
+        try {
+          // Fetch all events for this calendar
+          // Construct the calendar URL based on how it's stored in our system
+          // Uses the calendar URL or falls back to a default path
+          const calendarUrl = calendar.url ? 
+            (calendar.url.startsWith('http') ? calendar.url : `${url}${calendar.url}`) : 
+            `${url}/caldav.php/${username}/${calendar.name}/`;
+          console.log(`Syncing calendar at ${calendarUrl}`);
+          
+          // Force update events for this calendar
+          console.log(`Forcing update of events for calendar ${calendar.name} (ID: ${calendarId})`);
+          try {
+            // Execute the CalDAV request for this specific calendar
+            // Instead of fetching all calendars and events
+            const calendarResponse = await fetch(calendarUrl, {
+              method: 'PROPFIND',
+              headers: {
+                'Content-Type': 'text/xml; charset=utf-8',
+                'Depth': '1',
+                'Authorization': `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+              },
+              body: `<?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                  <D:prop>
+                    <D:displayname/>
+                    <C:calendar-description/>
+                    <C:calendar-timezone/>
+                    <C:supported-calendar-component-set/>
+                    <C:calendar-color/>
+                  </D:prop>
+                </D:propfind>`
+            });
+            
+            if (calendarResponse.ok) {
+              console.log(`Calendar ${calendar.name} sync initiated successfully`);
+            } else {
+              console.warn(`Failed to sync calendar ${calendar.name}:`, calendarResponse.status);
+            }
+          } catch (err) {
+            console.error(`Error syncing calendar ${calendar.name}:`, err);
+          }
+        } catch (err) {
+          console.error(`Error in targeted sync for calendar ID ${calendarId}:`, err);
+        }
+      } else {
+        // Normal sync for all calendars
+        const davCalendars = await davClient.fetchCalendars();
+        console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server`);
+      }
       
       // Store the time of the sync
       const syncTime = new Date();

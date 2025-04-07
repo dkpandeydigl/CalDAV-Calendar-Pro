@@ -4626,18 +4626,22 @@ END:VCALENDAR`;
   app.post("/api/sync/now", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
+      const forceRefresh = req.body.forceRefresh === true;
+      const calendarId = req.body.calendarId ? parseInt(req.body.calendarId) : null;
       
-      // This will trigger a sync right away
-      const success = await syncService.syncNow(userId);
+      console.log(`Immediate sync requested for userId=${userId}, calendarId=${calendarId}, forceRefresh=${forceRefresh}`);
+      
+      // This will trigger a sync right away with the specified options
+      const success = await syncService.syncNow(userId, { forceRefresh, calendarId });
       
       if (success) {
-        res.json({ message: "Sync triggered successfully" });
+        res.json({ message: "Sync triggered successfully", calendarId, forceRefresh });
       } else {
         res.status(500).json({ message: "Failed to trigger sync" });
       }
     } catch (err) {
       console.error("Error triggering sync:", err);
-      res.status(500).json({ message: "Failed to trigger sync" });
+      res.status(500).json({ message: "Failed to trigger sync", error: err instanceof Error ? err.message : String(err) });
     }
   });
   
