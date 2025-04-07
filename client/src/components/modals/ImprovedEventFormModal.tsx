@@ -242,7 +242,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         if (selectedDate) {
           const date = new Date(selectedDate);
           if (!isNaN(date.getTime())) {
-            const formattedDate = date.toISOString().split('T')[0];
+            // Use local date format to avoid timezone offset issues
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            const formattedDate = `${year}-${month}-${day}`;
+            
+            console.log(`Selected date from calendar: ${date.toString()}`);
+            console.log(`Formatted as local date: ${formattedDate}`);
+            
             setStartDate(formattedDate);
             setEndDate(formattedDate);
             
