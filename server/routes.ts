@@ -4338,9 +4338,33 @@ END:VCALENDAR`;
             for (const localEvent of localEvents) {
               // Check if this event has a URL (meaning it was already synced with the server)
               // but is now missing from the server's event list (not in serverEventUIDs)
-              if (localEvent.url && !serverEventUIDs.has(localEvent.uid)) {
+              // Only consider deleting events that:
+              // 1. Have a URL (were previously synced to server)
+              // 2. Are not newly created (check the last sync attempt)
+              // 3. And don't exist on the server anymore
+              
+              // Check if this is a newly created event by looking at:
+              // - lastSyncAttempt (if available)
+              // - syncStatus (if 'local', it's new)
+              // - if all else fails, assume it's not too old
+              const isNewlySynced = localEvent.lastSyncAttempt 
+                ? (new Date().getTime() - new Date(localEvent.lastSyncAttempt).getTime()) < 300000 // Less than 5 mins ago
+                : localEvent.syncStatus === 'local' || localEvent.syncStatus === 'syncing';
+              
+              if (localEvent.url && !serverEventUIDs.has(localEvent.uid) && !isNewlySynced) {
                 console.log(`Event "${localEvent.title}" (${localEvent.uid}) exists locally with URL but not on server. Marking for deletion.`);
                 eventsToDelete.push(localEvent);
+              } else if (localEvent.url && !serverEventUIDs.has(localEvent.uid) && isNewlySynced) {
+                // Get time since last sync attempt if available
+                const timeSinceUpdate = localEvent.lastSyncAttempt 
+                  ? Math.round((new Date().getTime() - new Date(localEvent.lastSyncAttempt).getTime())/1000)
+                  : 'unknown';
+                
+                console.log(`Event "${localEvent.title}" (${localEvent.uid}) is newly synced (${timeSinceUpdate}s ago). Skipping deletion check.`);
+                // Don't delete newly created events, just add them to sync list
+                if (!localEventsToSync.has(localEvent.id)) {
+                  localEventsToSync.set(localEvent.id, localEvent);
+                }
               }
             }
             
