@@ -24,6 +24,13 @@ import { Strategy as LocalStrategy } from "passport-local";
 import bcrypt from "bcryptjs";
 import MemoryStoreFactory from "memorystore";
 
+// Extend the session interface to include our custom properties
+declare module "express-session" {
+  interface SessionData {
+    recentlyDeletedEvents?: number[];
+  }
+}
+
 // Define user type for Express
 declare global {
   namespace Express {

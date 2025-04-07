@@ -5,6 +5,7 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
+import { syncService } from "./sync-service";
 import { User as SelectUser } from "@shared/schema";
 import { DAVClient } from "tsdav";
 
@@ -200,8 +201,23 @@ export function setupAuth(app: Express) {
       }
 
       // Log in the new user
-      req.login(user, (err) => {
+      req.login(user, async (err) => {
         if (err) return next(err);
+        
+        try {
+          // Get the server connection to set up sync
+          const connection = await storage.getServerConnection(user.id);
+          
+          // Set up background sync for this user's session
+          if (connection) {
+            await syncService.setupSyncForUser(user.id, connection);
+            console.log(`Started sync service for new user ${user.username}`);
+          }
+        } catch (syncError) {
+          console.error("Error setting up sync service for new user:", syncError);
+          // Don't fail registration if sync setup fails
+        }
+        
         const { password, ...userWithoutPassword } = user;
         res.status(201).json(userWithoutPassword);
       });
@@ -268,8 +284,24 @@ export function setupAuth(app: Express) {
       }
       
       // Login and server connection successful
-      req.login(user, (err) => {
+      req.login(user, async (err) => {
         if (err) return next(err);
+        
+        try {
+          // Get the updated connection (after it was created/updated above)
+          const userId = (user as SelectUser).id;
+          const connection = await storage.getServerConnection(userId);
+          
+          // Set up background sync for this user's session
+          if (connection) {
+            await syncService.setupSyncForUser(userId, connection);
+            console.log(`Started sync service for user ${(user as SelectUser).username}`);
+          }
+        } catch (syncError) {
+          console.error("Error setting up sync service:", syncError);
+          // Don't fail the login if sync setup fails
+        }
+        
         const { password, ...userWithoutPassword } = user as Express.User;
         res.status(200).json(userWithoutPassword);
       });
@@ -277,8 +309,21 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
+    const userId = req.user?.id;
+    
+    req.logout(async (err) => {
       if (err) return next(err);
+      
+      // Handle sync service cleanup on logout
+      if (userId) {
+        try {
+          await syncService.handleUserLogout(userId);
+          console.log(`Updated sync service for user logout: ${userId}`);
+        } catch (syncError) {
+          console.error("Error handling sync service on logout:", syncError);
+        }
+      }
+      
       res.sendStatus(200);
     });
   });

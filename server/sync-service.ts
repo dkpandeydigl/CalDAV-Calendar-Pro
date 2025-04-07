@@ -11,11 +11,12 @@ interface SyncJob {
   lastSync: Date | null;
   stopRequested: boolean;
   autoSync: boolean;
+  sessionCount: number; // Count of active sessions for this user
 }
 
 /**
- * SyncService handles background synchronization of calendars for all users
- * It maintains a collection of sync jobs, one per user, and handles
+ * SyncService handles background synchronization of calendars for users with active sessions
+ * It maintains a collection of sync jobs, one per active user, and handles
  * scheduling, starting, stopping, and configuring synchronization
  */
 class SyncService {
@@ -25,7 +26,7 @@ class SyncService {
   private isInitialized = false;
 
   /**
-   * Initialize the sync service by loading all user connections from storage
+   * Initialize the sync service - doesn't start any background jobs automatically
    */
   async initialize() {
     if (this.isInitialized) {
@@ -34,22 +35,12 @@ class SyncService {
     }
 
     try {
-      console.log('Initializing SyncService...');
-      // Get all users from storage
-      const users = await storage.getAllUsers();
-      let setupCount = 0;
-
-      // For each user, check if they have a server connection and set up sync
-      for (const user of users) {
-        const connection = await storage.getServerConnection(user.id);
-        if (connection) {
-          await this.setupSyncForUser(user.id, connection);
-          setupCount++;
-        }
-      }
-
-      console.log(`SyncService initialized with ${setupCount} sync jobs`);
+      console.log('Initializing SyncService (session-based)...');
+      // We no longer initialize jobs for all users at startup
+      // Instead, jobs will be created when users log in
+      
       this.isInitialized = true;
+      console.log('SyncService initialized with session-based sync management');
     } catch (error) {
       console.error('Failed to initialize SyncService:', error);
     }
@@ -57,13 +48,20 @@ class SyncService {
 
   /**
    * Set up a sync job for a user with their server connection
+   * This should be called when a user logs in
    */
   async setupSyncForUser(userId: number, connection: ServerConnection) {
-    console.log(`Setting up sync for user ID ${userId}`);
+    console.log(`Setting up sync for user ID ${userId} (session-based)`);
     
-    // If there's already a job for this user, stop it
+    // Check if there's already a job for this user
     if (this.jobs.has(userId)) {
-      await this.stopSync(userId);
+      // Increment the session count
+      const existingJob = this.jobs.get(userId)!;
+      existingJob.sessionCount = (existingJob.sessionCount || 0) + 1;
+      console.log(`User ID ${userId} now has ${existingJob.sessionCount} active sessions`);
+      
+      // Job already exists, no need to start a new one
+      return true;
     }
     
     // Use the interval from the connection or default
@@ -79,15 +77,48 @@ class SyncService {
       running: false,
       lastSync: connection.lastSync ? new Date(connection.lastSync) : null,
       stopRequested: false,
-      autoSync
+      autoSync,
+      sessionCount: 1 // Initialize with 1 session
     };
     
     // Store the job
     this.jobs.set(userId, job);
     
+    // Log that we're starting sync for this user
+    console.log(`Starting sync for newly logged in user ID ${userId}`);
+    
     // Start sync if auto-sync is enabled
     if (autoSync) {
       this.startSync(userId);
+      
+      // Also trigger an immediate sync to get fresh data
+      this.syncNow(userId, { forceRefresh: true });
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Handle user logout - decrements session count and stops sync when no sessions remain
+   */
+  async handleUserLogout(userId: number) {
+    const job = this.jobs.get(userId);
+    if (!job) {
+      // No job for this user, nothing to do
+      return false;
+    }
+    
+    // Decrement the session count
+    job.sessionCount = Math.max(0, (job.sessionCount || 1) - 1);
+    console.log(`User ID ${userId} logged out, ${job.sessionCount} sessions remaining`);
+    
+    // If no more sessions, stop the sync job
+    if (job.sessionCount <= 0) {
+      console.log(`No more active sessions for user ID ${userId}, stopping sync job`);
+      await this.stopSync(userId);
+      
+      // Remove the job from the map
+      this.jobs.delete(userId);
     }
     
     return true;
