@@ -5623,18 +5623,42 @@ END:VCALENDAR`;
         });
       }
       
-      // Parse attendees from JSON string
-      let attendees: any[] = [];
+      // Process attendees from database
+      let attendeesList: any[] = [];
       if (event.attendees) {
-        try {
-          attendees = JSON.parse(event.attendees as string);
-        } catch (error) {
-          console.error('Failed to parse attendees JSON:', error);
+        // Handle string format (JSON string)
+        if (typeof event.attendees === 'string') {
+          try {
+            // Parse JSON string to array
+            const parsed = JSON.parse(event.attendees);
+            if (Array.isArray(parsed)) {
+              attendeesList = parsed;
+              console.log("Successfully parsed attendees from JSON string:", attendeesList);
+            } else {
+              // Single object in JSON string
+              attendeesList = [parsed];
+              console.log("Parsed single attendee from JSON string:", attendeesList);
+            }
+          } catch (e) {
+            console.warn("Failed to parse attendees JSON string:", e);
+            // Treat as a single string attendee as fallback
+            attendeesList = [event.attendees];
+          }
+        } 
+        // Handle already parsed array
+        else if (Array.isArray(event.attendees)) {
+          attendeesList = event.attendees;
+          console.log("Using existing attendees array:", attendeesList);
+        }
+        // Handle other formats (single item)
+        else if (typeof event.attendees === 'object' && event.attendees !== null) {
+          attendeesList = [event.attendees];
+          console.log("Using single attendee object:", attendeesList);
         }
       }
       
       // Check if the event has attendees
-      if (!attendees || attendees.length === 0) {
+      if (!attendeesList || attendeesList.length === 0) {
         return res.status(400).json({
           success: false,
           message: 'Event has no attendees to notify of cancellation'
@@ -5657,7 +5681,7 @@ END:VCALENDAR`;
           email: user.email || '',
           name: user.username || undefined
         },
-        attendees: attendees.map((a: any) => ({
+        attendees: attendeesList.map((a: any) => ({
           email: a.email,
           name: a.name,
           role: a.role || 'REQ-PARTICIPANT',
