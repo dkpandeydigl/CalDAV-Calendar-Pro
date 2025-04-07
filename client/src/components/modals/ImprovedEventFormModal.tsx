@@ -381,13 +381,34 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       role: attendeeRole
     };
     
-    setAttendees([...attendees, newAttendee]);
+    // Add the new attendee to the list
+    const updatedAttendees = [...attendees, newAttendee];
+    setAttendees(updatedAttendees);
     setAttendeeInput('');
     
     // Remove error if it exists
     if (errors.attendeeInput) {
       const { attendeeInput, ...rest } = errors;
       setErrors(rest);
+    }
+    
+    // If we have the required fields and an attendee was just added, automatically switch to the email preview tab
+    if (title && startDate && endDate) {
+      // Navigate to the email preview tab
+      setActiveTab('emails');
+      
+      // Generate the email preview
+      const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+      const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+      
+      generatePreview({
+        title,
+        description,
+        location,
+        startDate: startDateTime,
+        endDate: endDateTime,
+        attendees: updatedAttendees
+      });
     }
   };
   
@@ -1290,15 +1311,78 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             <Button
               variant="outline"
               onClick={onClose}
-              disabled={isSubmitting || isDeleting}
+              disabled={isSubmitting || isDeleting || isEmailSending}
               type="button"
               className="border border-primary/20 hover:bg-primary/5 transition-all"
             >
               Cancel
             </Button>
+            
+            {/* Only show Send Mail and Create button when: 
+                1. It's a new event (not editing)
+                2. There are attendees */}
+            {!event && attendees.length > 0 && (
+              <Button
+                onClick={async () => {
+                  if (!validateForm()) return;
+                  
+                  // First, make sure we're on the email tab to see the preview
+                  setActiveTab('emails');
+                  
+                  // Refresh preview
+                  const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                  const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                  
+                  // Generate the preview first
+                  await generatePreview({
+                    title,
+                    description,
+                    location,
+                    startDate: startDateTime,
+                    endDate: endDateTime,
+                    attendees
+                  });
+                  
+                  // Send the email
+                  try {
+                    await sendEmail({
+                      title,
+                      description,
+                      location,
+                      startDate: startDateTime,
+                      endDate: endDateTime,
+                      attendees
+                    });
+                    
+                    // If email was sent successfully, create the event
+                    await handleSubmit();
+                  } catch (error) {
+                    // Email sending failed, show an error toast but don't create the event
+                    toast({
+                      title: 'Email sending failed',
+                      description: 'The email could not be sent. Please check your SMTP settings.',
+                      variant: 'destructive'
+                    });
+                  }
+                }}
+                disabled={isSubmitting || isDeleting || isEmailSending}
+                type="button"
+                className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all min-w-[180px] justify-center text-white"
+              >
+                {isSubmitting || isEmailSending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  <Mail className="h-4 w-4 mr-1" />
+                )}
+                {isSubmitting || isEmailSending 
+                  ? 'Processing...' 
+                  : 'Send Mail and Create'}
+              </Button>
+            )}
+            
             <Button
               onClick={handleSubmit}
-              disabled={isSubmitting || isDeleting}
+              disabled={isSubmitting || isDeleting || isEmailSending}
               type="button"
               className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-sm hover:shadow-md transition-all min-w-[120px] justify-center"
             >
