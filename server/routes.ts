@@ -418,7 +418,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     // Add recurrence rule if provided
     if (event.recurrenceRule) {
-      eventComponents.push(event.recurrenceRule);
+      // Define the recurrence rule type for better type checking
+      interface RecurrenceRule {
+        pattern: string;
+        interval?: number;
+        weekdays?: string[];
+        endType?: string;
+        occurrences?: number;
+        untilDate?: string;
+      }
+      
+      // Process recurrence rule based on its type
+      const processRecurrenceRule = () => {
+        // Check if it's already a formatted RRULE string
+        if (typeof event.recurrenceRule === 'string' && event.recurrenceRule.startsWith('RRULE:')) {
+          eventComponents.push(event.recurrenceRule);
+          console.log("Using existing RRULE string:", event.recurrenceRule);
+          return; // Done with recurrence processing
+        }
+        
+        // Try to get rule object from various formats
+        let rule: RecurrenceRule | null = null;
+        
+        if (typeof event.recurrenceRule === 'string') {
+          try {
+            // Try to parse as JSON
+            rule = JSON.parse(event.recurrenceRule);
+          } catch (e) {
+            // If not valid JSON, just use as plain text with RRULE: prefix
+            if (event.recurrenceRule && !event.recurrenceRule.startsWith('RRULE:')) {
+              eventComponents.push(`RRULE:${event.recurrenceRule}`);
+            }
+            return; // Done with recurrence processing
+          }
+        } else if (event.recurrenceRule && typeof event.recurrenceRule === 'object') {
+          // It's already an object
+          rule = event.recurrenceRule as unknown as RecurrenceRule;
+        }
+        
+        // If we don't have a valid rule object, log warning and return
+        if (!rule || !rule.pattern) {
+          console.warn("Invalid recurrence rule format:", 
+            JSON.stringify(event.recurrenceRule || ''));
+          return;
+        }
+        
+        console.log("Generating RRULE from object:", rule);
+        
+        // Convert our rule format to iCalendar RRULE format
+        let rruleString = 'RRULE:FREQ=';
+        
+        // Map our pattern to iCalendar frequency
+        switch (rule.pattern) {
+          case 'Daily':
+            rruleString += 'DAILY';
+            break;
+          case 'Weekly':
+            rruleString += 'WEEKLY';
+            break;
+          case 'Monthly':
+            rruleString += 'MONTHLY';
+            break;
+          case 'Yearly':
+            rruleString += 'YEARLY';
+            break;
+          default:
+            rruleString += 'DAILY'; // Default to daily if not specified
+        }
+        
+        // Add interval if greater than 1
+        if (rule.interval && rule.interval > 1) {
+          rruleString += `;INTERVAL=${rule.interval}`;
+        }
+        
+        // Add weekdays for weekly recurrence
+        if (rule.weekdays && Array.isArray(rule.weekdays) && rule.weekdays.length > 0 && rule.pattern === 'Weekly') {
+          const dayMap: Record<string, string> = {
+            'Sunday': 'SU',
+            'Monday': 'MO',
+            'Tuesday': 'TU',
+            'Wednesday': 'WE',
+            'Thursday': 'TH',
+            'Friday': 'FR',
+            'Saturday': 'SA'
+          };
+          
+          const days = rule.weekdays
+            .map((day: string) => dayMap[day])
+            .filter(Boolean)
+            .join(',');
+          
+          if (days) {
+            rruleString += `;BYDAY=${days}`;
+          }
+        }
+        
+        // Add count for "After X occurrences" or until date for "Until date"
+        if (rule.endType === 'After' && rule.occurrences) {
+          rruleString += `;COUNT=${rule.occurrences}`;
+        } else if (rule.endType === 'Until' && rule.untilDate) {
+          try {
+            // Format the date as required for UNTIL (YYYYMMDDTHHMMSSZ)
+            const untilDate = new Date(rule.untilDate);
+            // Make sure it's UTC
+            const formattedUntil = untilDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            rruleString += `;UNTIL=${formattedUntil}`;
+          } catch (e) {
+            console.error("Error formatting UNTIL date:", e);
+          }
+        }
+        
+        console.log("Generated RRULE:", rruleString);
+        eventComponents.push(rruleString);
+      };
+      
+      // Execute the recurrence rule processing with error handling
+      try {
+        processRecurrenceRule();
+      } catch (error) {
+        console.error('Error processing recurrence rule:', error);
+        // Final fallback - just to be safe
+        if (typeof event.recurrenceRule === 'string' && event.recurrenceRule.startsWith('RRULE:')) {
+          eventComponents.push(event.recurrenceRule);
+        }
+      }
     }
     
     // Add attendees if provided
