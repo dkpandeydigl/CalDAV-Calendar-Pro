@@ -2308,9 +2308,18 @@ END:VCALENDAR`
             // For special dates, use more aggressive deduplication
             let key;
             if (isSpecialDate) {
-              // Round time to nearest 5 minutes for more flexible matching
-              const roundedTime = Math.round(startTime / (5 * 60 * 1000)) * (5 * 60 * 1000);
-              key = `${event.title}-${roundedTime}`;
+              // For resource events, use UID as the best deduplication key
+              if (event.uid && (
+                  (event.title && event.title.toLowerCase().includes('res')) ||
+                  (event.resources && Array.isArray(event.resources) && event.resources.length > 0))
+                ) {
+                key = event.uid;
+                console.log(`Using UID as key for server-side resource event: ${event.title}, UID=${event.uid}`);
+              } else {
+                // For other special date events, round time for more flexible matching
+                const roundedTime = Math.round(startTime / (5 * 60 * 1000)) * (5 * 60 * 1000);
+                key = `${event.title}-${roundedTime}`;
+              }
               
               // Log for debugging
               if (!seenEvents.has(key)) {

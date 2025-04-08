@@ -87,25 +87,31 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       // For special dates (April 29-30), use more aggressive deduplication
       let key;
       if (isApril2930) {
-        // For special dates, first try exact match by title
-        if (event.title && eventsByTitle.get(event.title)?.length === 1) {
-          // If there's only one event with this title, use the title as the key
-          key = event.title;
-        } else {
-          // Otherwise use rounded time for more flexible matching
-          const roundedTime = Math.round(startTime / (5 * 60 * 1000)) * (5 * 60 * 1000);
-          
-          // For these problem dates, match based on title and approximate time only
-          key = `${event.title}-${roundedTime}`;
-          
-          // Additional logging for duplicate detection
-          if (seenEvents.has(key)) {
-            const existing = seenEvents.get(key)!;
-            console.log(`Duplicate detected: "${event.title}" at ${new Date(event.startDate).toLocaleTimeString()}`);
-            console.log(`  Existing: ID=${existing.id} URL=${existing.url?.substring(0, 30) || 'none'}`);
-            console.log(`  Duplicate: ID=${event.id} URL=${event.url?.substring(0, 30) || 'none'}`);
-          }
+        // For April 30th events with resources, use UID as key if available to ensure uniqueness
+      if (event.uid && event.title && (event.title.toLowerCase().includes('res') || event.resources?.length)) {
+        // For resource events, use UID as the best deduplication key
+        key = event.uid;
+        console.log(`Using UID as key for resource event: ${event.title}, UID=${event.uid}`);
+      }
+      // For special dates, first try exact match by title for non-resource events
+      else if (event.title && eventsByTitle.get(event.title)?.length === 1) {
+        // If there's only one event with this title, use the title as the key
+        key = event.title;
+      } else {
+        // Otherwise use rounded time for more flexible matching
+        const roundedTime = Math.round(startTime / (5 * 60 * 1000)) * (5 * 60 * 1000);
+        
+        // For these problem dates, match based on title and approximate time only
+        key = `${event.title}-${roundedTime}`;
+        
+        // Additional logging for duplicate detection
+        if (seenEvents.has(key)) {
+          const existing = seenEvents.get(key)!;
+          console.log(`Duplicate detected: "${event.title}" at ${new Date(event.startDate).toLocaleTimeString()}`);
+          console.log(`  Existing: ID=${existing.id}, UID=${existing.uid || 'none'}`);
+          console.log(`  Duplicate: ID=${event.id}, UID=${event.uid || 'none'}`);
         }
+      }
       } else {
         // Regular key includes calendar ID for normal dates
         key = `${event.title}-${startTime}-${event.calendarId}`;

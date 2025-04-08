@@ -487,9 +487,26 @@ export function generateThunderbirdCompatibleICS(
       for (let i = 0; i < resourcesList.length; i++) {
         const resource = resourcesList[i];
         if (resource) {  // Check for null/undefined
-          const resourceStr = typeof resource === 'string' ? resource : String(resource);
-          eventComponents.push(`RESOURCES:${resourceStr}`);
-          console.log("Added resource:", resourceStr);
+          try {
+            // Format resource as ATTENDEE with CUTYPE=RESOURCE according to RFC 5545
+            // This makes the resource visible to other CalDAV clients
+            if (typeof resource === 'object' && resource.adminEmail) {
+              // Format the resource as an RFC 5545 compliant ATTENDEE with CUTYPE=RESOURCE
+              const resourceAttendee = `ATTENDEE;CUTYPE=RESOURCE;CN=${resource.subType || 'Resource'};ROLE=NON-PARTICIPANT;RSVP=FALSE` +
+                (resource.capacity !== undefined ? `;X-CAPACITY=${resource.capacity}` : '') +
+                (resource.remarks ? `;X-REMARKS="${resource.remarks.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')}"` : '') +
+                `:mailto:${resource.adminEmail}`;
+              
+              eventComponents.push(resourceAttendee);
+              console.log("Added resource as attendee:", resource.subType || 'Resource');
+            } else {
+              // Fallback for simple string resources (deprecated format)
+              const resourceStr = typeof resource === 'string' ? resource : String(resource);
+              console.log("Skipping non-compliant resource format:", resourceStr);
+            }
+          } catch (err) {
+            console.error("Error formatting resource:", err);
+          }
         }
       }
     }
