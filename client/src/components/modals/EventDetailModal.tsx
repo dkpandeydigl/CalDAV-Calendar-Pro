@@ -491,12 +491,41 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <ul className="space-y-1">
                         {resources
                           .filter(Boolean)
-                          .map((resource, index) => (
-                            <li key={index} className="flex items-center">
-                              <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
-                              {String(resource)}
-                            </li>
-                          ))}
+                          .map((resource: any, index) => {
+                            // Check if resource is an object with the expected properties
+                            const isResourceObject = resource && 
+                              typeof resource === 'object' && 
+                              'subType' in resource && 
+                              'adminEmail' in resource;
+                            
+                            if (isResourceObject) {
+                              return (
+                                <li key={index} className="flex items-start mb-2">
+                                  <span className="material-icons text-neutral-500 mr-2 text-sm mt-0.5">meeting_room</span>
+                                  <div>
+                                    <div className="font-medium">{resource.subType}</div>
+                                    {resource.capacity && (
+                                      <div className="text-xs text-neutral-600">Capacity: {resource.capacity}</div>
+                                    )}
+                                    <div className="text-xs text-neutral-600">
+                                      Administrator: {resource.adminName || resource.adminEmail}
+                                    </div>
+                                    {resource.remarks && (
+                                      <div className="text-xs text-neutral-600 italic mt-1">{resource.remarks}</div>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            } else {
+                              // Fallback for simple string or unknown format
+                              return (
+                                <li key={index} className="flex items-center">
+                                  <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
+                                  {String(resource)}
+                                </li>
+                              );
+                            }
+                          })}
                       </ul>
                     </div>
                   </div>
