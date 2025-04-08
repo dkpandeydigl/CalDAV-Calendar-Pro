@@ -1511,10 +1511,13 @@ END:VCALENDAR`
       console.log(`Proceeding with database deletion for calendar ${calendarId}`);
       
       // Delete the calendar (this will also delete all events)
-      const deleted = await storage.deleteCalendar(calendarId);
+      console.log(`Calling storage.deleteCalendar with ID ${calendarId}`);
+      const deleteResult = await storage.deleteCalendar(calendarId);
       
-      if (!deleted) {
-        console.error(`Database deletion failed for calendar ${calendarId}`);
+      console.log(`Delete operation result:`, deleteResult);
+      
+      if (!deleteResult.success) {
+        console.error(`Database deletion failed for calendar ${calendarId}: ${deleteResult.error}`);
         
         // If server deletion was successful but database deletion failed, we have an inconsistency
         if (serverDeletionResult.success) {
@@ -1522,21 +1525,29 @@ END:VCALENDAR`
           return res.status(500).json({ 
             message: "Calendar was deleted from the server but could not be removed from the database",
             serverDeletion: serverDeletionResult,
-            databaseDeletion: { success: false }
+            databaseDeletion: { 
+              success: false,
+              error: deleteResult.error,
+              details: deleteResult.details
+            }
           });
         }
         
         return res.status(500).json({ 
-          message: "Failed to delete calendar from database",
+          message: deleteResult.error || "Failed to delete calendar from database",
           serverDeletion: serverDeletionResult,
-          databaseDeletion: { success: false }
+          databaseDeletion: { 
+            success: false,
+            error: deleteResult.error,
+            details: deleteResult.details
+          }
         });
       }
       
       console.log(`Successfully deleted calendar ${calendarId} for user ${userId}`);
       
       // Return detailed success info
-      if (req.query.detailed === 'true') {
+      if (req.query.debug === 'true' || req.query.detailed === 'true') {
         return res.status(200).json({
           message: "Calendar deleted successfully",
           serverDeletion: serverDeletionResult,

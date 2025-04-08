@@ -27,7 +27,7 @@ export interface IStorage {
   getCalendar(id: number): Promise<Calendar | undefined>;
   createCalendar(calendar: InsertCalendar): Promise<Calendar>;
   updateCalendar(id: number, calendar: Partial<Calendar>): Promise<Calendar | undefined>;
-  deleteCalendar(id: number): Promise<boolean>;
+  deleteCalendar(id: number): Promise<{success: boolean, error?: string, details?: any}>;
   
   // Calendar sharing methods
   getCalendarSharing(calendarId: number): Promise<CalendarSharing[]>;
@@ -282,17 +282,40 @@ export class MemStorage implements IStorage {
     return updatedCalendar;
   }
   
-  async deleteCalendar(id: number): Promise<boolean> {
-    // Delete all events in this calendar first
-    await this.deleteEventsByCalendarId(id);
-    
-    // Delete all sharing records for this calendar
-    const sharingRecords = await this.getCalendarSharing(id);
-    for (const record of sharingRecords) {
-      await this.removeCalendarSharing(record.id);
+  async deleteCalendar(id: number): Promise<{success: boolean, error?: string, details?: any}> {
+    try {
+      // Check if calendar exists
+      if (!this.calendarsMap.has(id)) {
+        return {success: false, error: `Calendar ID ${id} not found`};
+      }
+      
+      // Delete all events in this calendar first
+      const eventsDeleted = await this.deleteEventsByCalendarId(id);
+      if (!eventsDeleted) {
+        return {success: false, error: "Failed to delete calendar events"};
+      }
+      
+      // Delete all sharing records for this calendar
+      const sharingRecords = await this.getCalendarSharing(id);
+      for (const record of sharingRecords) {
+        await this.removeCalendarSharing(record.id);
+      }
+      
+      // Finally delete the calendar
+      const deleted = this.calendarsMap.delete(id);
+      if (!deleted) {
+        return {success: false, error: "Failed to delete calendar"};
+      }
+      
+      return {success: true};
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        success: false, 
+        error: "Error during calendar deletion", 
+        details: errorMessage
+      };
     }
-    
-    return this.calendarsMap.delete(id);
   }
   
   // Calendar sharing methods

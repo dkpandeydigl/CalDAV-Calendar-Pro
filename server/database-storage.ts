@@ -8,7 +8,7 @@ import {
 import { createId } from '@paralleldrive/cuid2';
 import { neon, neonConfig } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { eq, and, or, inArray, ne, sql } from 'drizzle-orm';
+import { eq, and, or, inArray, ne, sql, count } from 'drizzle-orm';
 import connectPg from "connect-pg-simple";
 import { IStorage } from './storage';
 
@@ -214,61 +214,186 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0 ? result[0] : undefined;
   }
   
-  async deleteCalendar(id: number): Promise<boolean> {
+  async deleteCalendar(id: number): Promise<{success: boolean, error?: string, details?: any}> {
     try {
       // Get calendar before deletion to verify it exists
       const calendar = await this.getCalendar(id);
       if (!calendar) {
-        console.error(`Calendar ID ${id} not found, cannot delete`);
-        return false;
+        const errorMsg = `Calendar ID ${id} not found, cannot delete`;
+        console.error(errorMsg);
+        return {success: false, error: errorMsg};
       }
       
-      // First, delete all events in this calendar
-      console.log(`Deleting all events for calendar ID ${id} before deleting the calendar`);
-      const eventsDeleted = await this.deleteEventsByCalendarId(id);
-      if (!eventsDeleted) {
-        console.error(`Failed to delete events for calendar ID ${id}, aborting calendar deletion`);
-        return false;
-      }
-      
-      // Delete all sharing records for this calendar
-      console.log(`Deleting all sharing records for calendar ID ${id}`);
-      const sharingRecords = await this.getCalendarSharing(id);
-      let allSharingDeleted = true;
-      for (const record of sharingRecords) {
-        const sharingDeleted = await this.removeCalendarSharing(record.id);
-        if (!sharingDeleted) {
-          console.error(`Failed to delete sharing record ID ${record.id} for calendar ID ${id}`);
-          allSharingDeleted = false;
+      try {
+        // First, forcefully check for any remaining event references
+        const eventCheck = await db.select({count: count()})
+          .from(events)
+          .where(eq(events.calendarId, id));
+        
+        const eventCount = eventCheck[0]?.count || 0;
+        console.log(`Found ${eventCount} events still linked to calendar ID ${id}`);
+        
+        if (eventCount > 0) {
+          console.log(`Attempting forceful deletion of ${eventCount} events for calendar ID ${id}`);
+          
+          // Use raw SQL with CASCADE if normal delete doesn't work
+          try {
+            // First try the regular way
+            const eventsDeleted = await this.deleteEventsByCalendarId(id);
+            if (!eventsDeleted) {
+              console.error(`Standard event deletion failed, will try direct SQL for calendar ID ${id}`);
+              
+              // Use direct SQL as a fallback
+              const deleteResult = await db.execute(
+                sql`DELETE FROM ${events} WHERE ${events.calendarId} = ${id}`
+              );
+              console.log(`Direct SQL event deletion result:`, deleteResult);
+            }
+          } catch (eventDeleteError) {
+            console.error(`Event deletion error for calendar ${id}:`, eventDeleteError);
+            return {
+              success: false, 
+              error: "Failed to delete calendar events", 
+              details: eventDeleteError instanceof Error ? eventDeleteError.message : String(eventDeleteError)
+            };
+          }
         }
+        
+        // Check again to verify events are gone
+        const eventRecheckCount = (await db.select({count: count()})
+          .from(events)
+          .where(eq(events.calendarId, id)))[0]?.count || 0;
+        
+        if (eventRecheckCount > 0) {
+          console.error(`Still have ${eventRecheckCount} events after deletion attempt`);
+          return {
+            success: false, 
+            error: `Failed to delete ${eventRecheckCount} events from calendar`, 
+            details: {eventCount: eventRecheckCount}
+          };
+        }
+        
+        // Check for sharing records
+        const sharingCheck = await db.select({count: count()})
+          .from(calendarSharing)
+          .where(eq(calendarSharing.calendarId, id));
+        
+        const sharingCount = sharingCheck[0]?.count || 0;
+        console.log(`Found ${sharingCount} sharing records for calendar ID ${id}`);
+        
+        if (sharingCount > 0) {
+          console.log(`Deleting ${sharingCount} sharing records for calendar ID ${id}`);
+          
+          try {
+            // First try the regular way - get and delete each record
+            const sharingRecords = await this.getCalendarSharing(id);
+            let allDeleted = true;
+            
+            for (const record of sharingRecords) {
+              const deleteSuccess = await this.removeCalendarSharing(record.id);
+              if (!deleteSuccess) {
+                console.warn(`Failed to delete sharing record ${record.id} through normal method`);
+                allDeleted = false;
+              }
+            }
+            
+            // If some sharing records failed to delete, try direct SQL
+            if (!allDeleted) {
+              console.log(`Some sharing records failed to delete, trying direct SQL`);
+              
+              const directResult = await db.execute(
+                sql`DELETE FROM ${calendarSharing} WHERE ${calendarSharing.calendarId} = ${id}`
+              );
+              console.log(`Direct SQL sharing deletion result:`, directResult);
+            }
+          } catch (sharingDeleteError) {
+            console.error(`Error deleting sharing records:`, sharingDeleteError);
+            // Continue anyway - we still want to try deleting the calendar
+          }
+        }
+        
+        // Verify sharing records are gone
+        const sharingRecheckCount = (await db.select({count: count()})
+          .from(calendarSharing)
+          .where(eq(calendarSharing.calendarId, id)))[0]?.count || 0;
+        
+        if (sharingRecheckCount > 0) {
+          console.warn(`Still have ${sharingRecheckCount} sharing records after deletion attempt`);
+          // Continue anyway - these shouldn't block calendar deletion
+        }
+        
+        // Finally, delete the calendar using a transaction for safety
+        console.log(`Attempting final calendar deletion for ID ${id}`);
+        
+        try {
+          // Try standard delete first
+          const result = await db.delete(calendars)
+            .where(eq(calendars.id, id))
+            .returning();
+          
+          const deleted = result.length > 0;
+          if (deleted) {
+            console.log(`Successfully deleted calendar ID ${id} with standard method`);
+            return {success: true};
+          } else {
+            console.error(`Standard deletion returned no results for calendar ID ${id}`);
+            
+            // Try direct SQL as fallback
+            const directResult = await db.execute(
+              sql`DELETE FROM ${calendars} WHERE ${calendars.id} = ${id}`
+            );
+            console.log(`Direct SQL calendar deletion result:`, directResult);
+            
+            // Check if calendar is actually gone
+            const calendarStillExists = await this.getCalendar(id);
+            if (!calendarStillExists) {
+              console.log(`Calendar ${id} successfully deleted with direct SQL`);
+              return {success: true};
+            } else {
+              console.error(`Calendar ${id} still exists after direct SQL deletion`);
+              return {
+                success: false, 
+                error: "Calendar could not be deleted using any method", 
+                details: {directSqlResult: directResult}
+              };
+            }
+          }
+        } catch (calendarDeleteError) {
+          console.error(`Final calendar deletion error:`, calendarDeleteError);
+          return {
+            success: false, 
+            error: "Failed to delete calendar record", 
+            details: calendarDeleteError instanceof Error ? calendarDeleteError.message : String(calendarDeleteError)
+          };
+        }
+      } catch (cascadeError) {
+        console.error(`Error during CASCADE operations:`, cascadeError);
+        return {
+          success: false, 
+          error: "Failed during related record deletion", 
+          details: cascadeError instanceof Error ? cascadeError.message : String(cascadeError)
+        };
       }
-      
-      if (!allSharingDeleted) {
-        console.warn(`Some sharing records could not be deleted for calendar ID ${id}, but will continue with calendar deletion`);
-      }
-      
-      // Finally, delete the calendar itself using a transaction for safety
-      console.log(`Deleting calendar with ID ${id}`);
-      const result = await db.delete(calendars)
-        .where(eq(calendars.id, id))
-        .returning();
-      
-      const deleted = result.length > 0;
-      if (deleted) {
-        console.log(`Successfully deleted calendar ID ${id}`);
-      } else {
-        console.error(`Failed to delete calendar ID ${id}, no rows affected`);
-      }
-      
-      return deleted;
     } catch (error) {
       console.error(`Error during calendar deletion process for ID ${id}:`, error);
+      
       // Log more detailed error information
+      let errorDetails: any = {};
       if (error instanceof Error) {
         console.error(`Error name: ${error.name}, Message: ${error.message}`);
         console.error(`Stack trace: ${error.stack}`);
+        errorDetails = {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        };
       }
-      return false;
+      
+      return {
+        success: false, 
+        error: "Calendar deletion operation failed", 
+        details: errorDetails
+      };
     }
   }
   
