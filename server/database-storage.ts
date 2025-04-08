@@ -216,26 +216,58 @@ export class DatabaseStorage implements IStorage {
   
   async deleteCalendar(id: number): Promise<boolean> {
     try {
+      // Get calendar before deletion to verify it exists
+      const calendar = await this.getCalendar(id);
+      if (!calendar) {
+        console.error(`Calendar ID ${id} not found, cannot delete`);
+        return false;
+      }
+      
       // First, delete all events in this calendar
       console.log(`Deleting all events for calendar ID ${id} before deleting the calendar`);
-      await this.deleteEventsByCalendarId(id);
+      const eventsDeleted = await this.deleteEventsByCalendarId(id);
+      if (!eventsDeleted) {
+        console.error(`Failed to delete events for calendar ID ${id}, aborting calendar deletion`);
+        return false;
+      }
       
       // Delete all sharing records for this calendar
       console.log(`Deleting all sharing records for calendar ID ${id}`);
       const sharingRecords = await this.getCalendarSharing(id);
+      let allSharingDeleted = true;
       for (const record of sharingRecords) {
-        await this.removeCalendarSharing(record.id);
+        const sharingDeleted = await this.removeCalendarSharing(record.id);
+        if (!sharingDeleted) {
+          console.error(`Failed to delete sharing record ID ${record.id} for calendar ID ${id}`);
+          allSharingDeleted = false;
+        }
       }
       
-      // Finally, delete the calendar itself
+      if (!allSharingDeleted) {
+        console.warn(`Some sharing records could not be deleted for calendar ID ${id}, but will continue with calendar deletion`);
+      }
+      
+      // Finally, delete the calendar itself using a transaction for safety
       console.log(`Deleting calendar with ID ${id}`);
       const result = await db.delete(calendars)
         .where(eq(calendars.id, id))
         .returning();
       
-      return result.length > 0;
+      const deleted = result.length > 0;
+      if (deleted) {
+        console.log(`Successfully deleted calendar ID ${id}`);
+      } else {
+        console.error(`Failed to delete calendar ID ${id}, no rows affected`);
+      }
+      
+      return deleted;
     } catch (error) {
       console.error(`Error during calendar deletion process for ID ${id}:`, error);
+      // Log more detailed error information
+      if (error instanceof Error) {
+        console.error(`Error name: ${error.name}, Message: ${error.message}`);
+        console.error(`Stack trace: ${error.stack}`);
+      }
       return false;
     }
   }

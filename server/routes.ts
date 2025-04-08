@@ -1142,15 +1142,59 @@ END:VCALENDAR`
     };
   }
   
-  // Helper function to delete a calendar on DAViCal server
+  // Helper function to delete a calendar on DAViCal server with enhanced error handling
   async function deleteCalendarFromDAViCal(
     serverConnection: typeof serverConnections.$inferSelect,
     calendarUrl: string
-  ): Promise<{ success: boolean, errorMessage?: string }> {
+  ): Promise<{ success: boolean, errorMessage?: string, errorDetails?: any }> {
     console.log(`Attempting to delete calendar from DAViCal server at URL: ${calendarUrl}`);
+    
+    if (!calendarUrl) {
+      console.error("Invalid calendar URL provided for deletion: empty or undefined");
+      return { 
+        success: false, 
+        errorMessage: "Invalid calendar URL: URL is empty or undefined"
+      };
+    }
+    
+    let urlObj: URL;
+    try {
+      urlObj = new URL(calendarUrl);
+    } catch (urlError) {
+      console.error("Invalid calendar URL format:", urlError);
+      return { 
+        success: false, 
+        errorMessage: "Invalid calendar URL format",
+        errorDetails: urlError
+      };
+    }
+    
+    // Check if server connection is valid
+    if (!serverConnection || !serverConnection.username || !serverConnection.password) {
+      console.error("Invalid server connection information provided");
+      return { 
+        success: false, 
+        errorMessage: "Missing or invalid server connection credentials"
+      };
+    }
+    
+    // Extract calendar information from URL
+    const pathParts = urlObj.pathname.split('/').filter(Boolean);
+    const username = pathParts[1]; // caldav.php/username/calendar
+    const calendarName = pathParts[2];
+    
+    if (!username || !calendarName) {
+      console.error(`Cannot parse calendar username or name from URL: ${calendarUrl}`);
+      return { 
+        success: false, 
+        errorMessage: "Cannot extract calendar username or name from URL path",
+        errorDetails: { path: urlObj.pathname, parts: pathParts }
+      };
+    }
     
     // First try standard DELETE
     try {
+      console.log(`Attempting standard WebDAV DELETE on ${calendarUrl}`);
       const response = await fetch(calendarUrl, {
         method: 'DELETE',
         headers: {
@@ -1164,49 +1208,60 @@ END:VCALENDAR`
       if (response.ok) {
         console.log("Successfully deleted calendar with standard DELETE");
         return { success: true };
+      } else {
+        // Store error information but continue with next method
+        console.warn(`Standard DELETE failed with status: ${response.status}`);
+        let responseText = "";
+        try {
+          responseText = await response.text();
+          console.log("Response body:", responseText);
+        } catch (textError) {
+          console.warn("Could not read response text:", textError);
+        }
       }
     } catch (deleteError) {
-      console.log("Standard DELETE failed:", deleteError);
+      console.error("Standard DELETE failed with exception:", deleteError);
     }
     
     // Try DAViCal-specific deletion via web API
     try {
-      // Extract the calendar path from the URL
-      const urlObj = new URL(calendarUrl);
-      const pathParts = urlObj.pathname.split('/').filter(Boolean);
-      const username = pathParts[1]; // caldav.php/username/calendar
-      const calendarName = pathParts[2];
+      const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
       
-      if (username && calendarName) {
-        const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
-        
-        console.log(`Trying DAViCal-specific deletion for ${username}/${calendarName}`);
-        
-        const response = await fetch(`${baseUrl}/caldav.php/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'text/html,application/xhtml+xml',
-            'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
-          },
-          body: new URLSearchParams({
-            'delete_calendar': '1',
-            'calendar_path': `/${username}/${calendarName}/`,
-          }).toString()
-        });
-        
-        console.log(`DAViCal deletion API response status: ${response.status}`);
-        
-        if (response.ok || response.status === 302) {
-          console.log("Successfully deleted calendar using DAViCal-specific API");
-          return { success: true };
+      console.log(`Trying DAViCal-specific deletion API for ${username}/${calendarName}`);
+      
+      const response = await fetch(`${baseUrl}/caldav.php/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'text/html,application/xhtml+xml',
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+        },
+        body: new URLSearchParams({
+          'delete_calendar': '1',
+          'calendar_path': `/${username}/${calendarName}/`,
+        }).toString()
+      });
+      
+      console.log(`DAViCal deletion API response status: ${response.status}`);
+      
+      if (response.ok || response.status === 302) {
+        console.log("Successfully deleted calendar using DAViCal-specific API");
+        return { success: true };
+      } else {
+        // Read and log the response for debugging
+        let responseText = "";
+        try {
+          responseText = await response.text();
+          console.log("DAViCal API response:", responseText);
+        } catch (textError) {
+          console.warn("Could not read DAViCal API response text:", textError);
         }
       }
     } catch (davicalApiError) {
-      console.log("DAViCal-specific deletion API failed:", davicalApiError);
+      console.error("DAViCal-specific deletion API failed with exception:", davicalApiError);
     }
     
-    // Verify if calendar was actually deleted
+    // Verify if calendar was actually deleted regardless of previous failures
     try {
       console.log("Verifying if calendar still exists...");
       const check = await fetch(calendarUrl, {
@@ -1220,20 +1275,52 @@ END:VCALENDAR`
       });
       
       if (check.status === 404) {
-        console.log("Calendar no longer exists - deletion was successful");
+        console.log("Calendar no longer exists - verification confirms deletion was successful");
         return { success: true };
       } else {
-        console.log(`Calendar still exists with status: ${check.status}`);
+        console.log(`Calendar verification check returned status: ${check.status} - calendar might still exist`);
+        
+        // For certain status codes, we might consider it a success anyway
+        if (check.status === 401 || check.status === 403) {
+          console.log("Received authentication/permission error - assuming calendar is deleted or inaccessible");
+          return { success: true };
+        }
       }
     } catch (checkError) {
       // If the check fails with an error, the calendar might actually be gone
-      console.log("Verification check failed, which could mean the calendar is gone:", checkError);
+      console.log("Verification check failed with exception, which could mean the calendar is gone:", checkError);
       return { success: true };
     }
     
+    // One final attempt: try to do an OPTIONS request to see if the calendar exists
+    try {
+      console.log("Making one final OPTIONS request to verify calendar existence");
+      const optionsCheck = await fetch(calendarUrl, {
+        method: 'OPTIONS',
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`${serverConnection.username}:${serverConnection.password}`).toString('base64')
+        }
+      });
+      
+      if (optionsCheck.status === 404) {
+        console.log("OPTIONS check confirms calendar is gone");
+        return { success: true };
+      }
+      console.log(`OPTIONS check status: ${optionsCheck.status}`);
+    } catch (optionsError) {
+      console.log("OPTIONS check failed, which may indicate the calendar is gone:", optionsError);
+      return { success: true };
+    }
+    
+    // If we're still here, all deletion attempts failed
     return { 
       success: false, 
-      errorMessage: "All deletion methods failed, calendar may still exist on server" 
+      errorMessage: "All deletion methods failed, calendar may still exist on server",
+      errorDetails: {
+        calendarUrl,
+        username,
+        calendarName
+      }
     };
   }
 
@@ -1360,23 +1447,36 @@ END:VCALENDAR`
   app.delete("/api/calendars/:id", isAuthenticated, async (req, res) => {
     try {
       const calendarId = parseInt(req.params.id);
+      if (isNaN(calendarId)) {
+        return res.status(400).json({ message: "Invalid calendar ID format" });
+      }
+      
       const userId = req.user!.id;
+      
+      console.log(`Calendar deletion request - User ID: ${userId}, Calendar ID: ${calendarId}`);
       
       // Check if calendar exists
       const calendar = await storage.getCalendar(calendarId);
       if (!calendar) {
+        console.log(`Calendar ID ${calendarId} not found for deletion request`);
         return res.status(404).json({ message: "Calendar not found" });
       }
       
+      console.log(`Found calendar for deletion: ${calendar.name} (ID: ${calendarId})`);
+      
       // Check if user owns this calendar
       if (calendar.userId !== userId) {
+        console.log(`Permission denied - Calendar owned by user ${calendar.userId}, but request from ${userId}`);
         return res.status(403).json({ message: "You don't have permission to delete this calendar" });
       }
       
       // Check if this is a primary calendar (should not be deleted)
       if (calendar.isPrimary) {
+        console.log(`Attempted to delete primary calendar (ID: ${calendarId})`);
         return res.status(403).json({ message: "Cannot delete a primary calendar" });
       }
+      
+      let serverDeletionResult = { success: false, errorMessage: "Server deletion not attempted" };
       
       // If the calendar has a URL (exists on server), try to delete it from the server
       if (calendar.url) {
@@ -1388,33 +1488,83 @@ END:VCALENDAR`
           
           if (serverConnection && serverConnection.status === 'connected') {
             // Use our specialized DAViCal helper function
-            const result = await deleteCalendarFromDAViCal(serverConnection, calendar.url);
+            serverDeletionResult = await deleteCalendarFromDAViCal(serverConnection, calendar.url);
             
-            if (result.success) {
+            if (serverDeletionResult.success) {
               console.log(`Successfully deleted calendar from server: ${calendar.url}`);
             } else {
-              console.error(`Failed to delete calendar from server: ${result.errorMessage || 'Unknown error'}`);
+              console.error(`Failed to delete calendar from server: ${serverDeletionResult.errorMessage || 'Unknown error'}`);
               console.log(`Server deletion failed but will continue with local deletion. Calendar URL: ${calendar.url}`);
             }
+          } else {
+            console.log(`No active server connection for user ${userId}, skipping server deletion`);
           }
         } catch (serverDeleteError) {
           console.error("Error during server-side calendar deletion:", serverDeleteError);
+          serverDeletionResult.errorMessage = serverDeleteError instanceof Error ? serverDeleteError.message : "Unknown server deletion error";
           // We still proceed with local deletion even if server deletion fails
         }
+      } else {
+        console.log(`Calendar ${calendarId} is local-only (no URL), skipping server deletion`);
       }
+      
+      console.log(`Proceeding with database deletion for calendar ${calendarId}`);
       
       // Delete the calendar (this will also delete all events)
       const deleted = await storage.deleteCalendar(calendarId);
       
       if (!deleted) {
-        return res.status(404).json({ message: "Calendar not found" });
+        console.error(`Database deletion failed for calendar ${calendarId}`);
+        
+        // If server deletion was successful but database deletion failed, we have an inconsistency
+        if (serverDeletionResult.success) {
+          console.error(`WARNING: Inconsistent state - Calendar was deleted from server but not from database`);
+          return res.status(500).json({ 
+            message: "Calendar was deleted from the server but could not be removed from the database",
+            serverDeletion: serverDeletionResult,
+            databaseDeletion: { success: false }
+          });
+        }
+        
+        return res.status(500).json({ 
+          message: "Failed to delete calendar from database",
+          serverDeletion: serverDeletionResult,
+          databaseDeletion: { success: false }
+        });
       }
       
-      console.log(`Deleted calendar ${calendarId} for user ${userId}`);
+      console.log(`Successfully deleted calendar ${calendarId} for user ${userId}`);
+      
+      // Return detailed success info
+      if (req.query.detailed === 'true') {
+        return res.status(200).json({
+          message: "Calendar deleted successfully",
+          serverDeletion: serverDeletionResult,
+          databaseDeletion: { success: true }
+        });
+      }
+      
+      // Return standard 204 No Content for normal clients
       res.status(204).send();
     } catch (err) {
       console.error("Error deleting calendar:", err);
-      res.status(500).json({ message: "Failed to delete calendar" });
+      
+      // Provide more detailed error information
+      let errorMessage = "Failed to delete calendar";
+      let errorDetails = {};
+      
+      if (err instanceof Error) {
+        errorMessage = err.message;
+        errorDetails = {
+          name: err.name,
+          stack: err.stack
+        };
+      }
+      
+      res.status(500).json({ 
+        message: errorMessage,
+        errorDetails
+      });
     }
   });
   

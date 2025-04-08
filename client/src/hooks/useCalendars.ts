@@ -76,24 +76,60 @@ export const useCalendars = () => {
   });
 
   const deleteCalendarMutation = useMutation({
-    mutationFn: (id: number) => {
-      return apiRequest('DELETE', `/api/calendars/${id}`)
-        .then(res => {
-          if (res.status === 204) return true;
-          return res.json();
-        });
+    mutationFn: async (id: number) => {
+      try {
+        const res = await apiRequest('DELETE', `/api/calendars/${id}`);
+        if (res.status === 204) return true;
+        
+        // If it's not a 204 response, try to parse the JSON for detailed error message
+        const data = await res.json();
+        
+        // If the response is not successful, throw an error with the message
+        if (!res.ok) {
+          throw new Error(data.message || "Unknown error");
+        }
+        
+        return data;
+      } catch (error) {
+        console.error("Calendar deletion error:", error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
+      // Also invalidate events as they would be deleted with the calendar
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
       toast({
         title: "Calendar Deleted",
         description: "Calendar has been deleted successfully."
       });
     },
-    onError: (error) => {
+    onError: async (error) => {
+      // Try to extract the error message from the response
+      let errorMessage = "An error occurred while deleting the calendar.";
+      
+      try {
+        // If it's a response from our API, try to extract the error message
+        if (error instanceof Error && 'cause' in error) {
+          const response = error.cause as Response;
+          if (response && response.json) {
+            const data = await response.json();
+            errorMessage = data.message || errorMessage;
+          } else {
+            errorMessage = error.message || errorMessage;
+          }
+        } else {
+          errorMessage = error.message || errorMessage;
+        }
+      } catch (e) {
+        // If we can't parse the response, just use the original error message
+        errorMessage = error.message || errorMessage;
+      }
+      
       toast({
         title: "Failed to Delete Calendar",
-        description: error.message || "An error occurred while deleting the calendar.",
+        description: errorMessage,
         variant: "destructive"
       });
     }
