@@ -2536,6 +2536,7 @@ END:VCALENDAR`
               console.log("- Start:", eventData.startDate);
               console.log("- End:", eventData.endDate);
               console.log("- Attendees:", JSON.stringify(eventData.attendees));
+              console.log("- Resources:", JSON.stringify(eventData.resources));
               console.log("- RecurrenceRule:", JSON.stringify(eventData.recurrenceRule));
               
               const icalEvent = generateThunderbirdCompatibleICS({
@@ -2553,8 +2554,9 @@ END:VCALENDAR`
                 allDay: eventData.allDay
               });
               
-              // Log the first 500 characters of the generated iCalendar data
-              console.log("Generated iCalendar data (first 500 chars):", icalEvent.substring(0, 500));
+              // Log the full generated iCalendar data for debugging
+              console.log("Generated iCalendar data (FULL):");
+              console.log(icalEvent);
               
               // Check if RRULE and ATTENDEE properties are in the output
               const hasRrule = icalEvent.includes("RRULE:");
