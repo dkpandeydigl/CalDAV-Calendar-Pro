@@ -1345,9 +1345,25 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       resources
                     };
                     
-                    // Set the event data for later use and open the alert dialog
+                    // Set the event data for later use
                     setPreviewEventData(eventData);
-                    setAlertDialogOpen(true);
+                    
+                    // If already on the email preview tab, don't show the confirmation dialog
+                    if (activeTab === 'emails') {
+                      // User is already viewing the preview, send directly
+                      sendEmail(eventData).then(() => {
+                        handleSubmit();
+                      }).catch(error => {
+                        toast({
+                          title: 'Email sending failed',
+                          description: 'The email could not be sent. Please check your SMTP settings.',
+                          variant: 'destructive'
+                        });
+                      });
+                    } else {
+                      // Show confirmation dialog only if not on email preview tab
+                      setAlertDialogOpen(true);
+                    }
                   }}
                   disabled={isSubmitting || isDeleting || isEmailSending}
                   type="button"
