@@ -492,36 +492,61 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         {resources
                           .filter(Boolean)
                           .map((resource: any, index) => {
-                            // Check if resource is an object with the expected properties
-                            const isResourceObject = resource && 
-                              typeof resource === 'object' && 
-                              'subType' in resource && 
-                              'adminEmail' in resource;
-                            
-                            if (isResourceObject) {
-                              return (
-                                <li key={index} className="flex items-start mb-2">
-                                  <span className="material-icons text-neutral-500 mr-2 text-sm mt-0.5">meeting_room</span>
-                                  <div>
-                                    <div className="font-medium">{resource.subType}</div>
-                                    {resource.capacity && (
-                                      <div className="text-xs text-neutral-600">Capacity: {resource.capacity}</div>
-                                    )}
-                                    <div className="text-xs text-neutral-600">
-                                      Administrator: {resource.adminName || resource.adminEmail}
+                            try {
+                              // First check if we need to parse a JSON string
+                              let resourceObj = resource;
+                              
+                              // If resource is a string that looks like a JSON object, try to parse it
+                              if (typeof resource === 'string' && 
+                                  (resource.startsWith('{') || resource.startsWith('['))) {
+                                try {
+                                  resourceObj = JSON.parse(resource);
+                                } catch (e) {
+                                  console.warn('Failed to parse resource JSON:', e);
+                                }
+                              }
+                              
+                              // Check if resource is an object with the expected properties
+                              const isResourceObject = resourceObj && 
+                                typeof resourceObj === 'object' && 
+                                !Array.isArray(resourceObj) &&
+                                'subType' in resourceObj && 
+                                'adminEmail' in resourceObj;
+                              
+                              if (isResourceObject) {
+                                return (
+                                  <li key={index} className="flex items-start mb-2">
+                                    <span className="material-icons text-neutral-500 mr-2 text-sm mt-0.5">meeting_room</span>
+                                    <div>
+                                      <div className="font-medium">{resourceObj.subType}</div>
+                                      <div className="text-xs text-neutral-600">
+                                        Capacity: {resourceObj.capacity !== undefined ? resourceObj.capacity : 'Not specified'}
+                                      </div>
+                                      <div className="text-xs text-neutral-600">
+                                        Administrator: {resourceObj.adminName || resourceObj.adminEmail}
+                                      </div>
+                                      {resourceObj.remarks && (
+                                        <div className="text-xs text-neutral-600 italic mt-1">{resourceObj.remarks}</div>
+                                      )}
                                     </div>
-                                    {resource.remarks && (
-                                      <div className="text-xs text-neutral-600 italic mt-1">{resource.remarks}</div>
-                                    )}
-                                  </div>
-                                </li>
-                              );
-                            } else {
-                              // Fallback for simple string or unknown format
+                                  </li>
+                                );
+                              } else {
+                                // Fallback for simple string or unknown format
+                                console.warn('Resource not in expected format:', resourceObj);
+                                return (
+                                  <li key={index} className="flex items-center">
+                                    <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
+                                    {typeof resourceObj === 'object' ? 'Unknown resource format' : String(resourceObj)}
+                                  </li>
+                                );
+                              }
+                            } catch (error) {
+                              console.error('Error rendering resource:', error);
                               return (
                                 <li key={index} className="flex items-center">
-                                  <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
-                                  {String(resource)}
+                                  <span className="material-icons text-neutral-500 mr-2 text-sm">error</span>
+                                  Error displaying resource
                                 </li>
                               );
                             }
