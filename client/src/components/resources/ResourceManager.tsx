@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { PlusCircle, Trash2, Edit, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +42,20 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [currentResource, setCurrentResource] = useState<Resource | null>(null);
   
+  // Add refs for form fields
+  const subTypeRef = useRef<HTMLInputElement>(null);
+  const capacityRef = useRef<HTMLInputElement>(null);
+  const adminEmailRef = useRef<HTMLInputElement>(null);
+  const adminNameRef = useRef<HTMLInputElement>(null);
+  const remarksRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Refs for edit form
+  const editSubTypeRef = useRef<HTMLInputElement>(null);
+  const editCapacityRef = useRef<HTMLInputElement>(null);
+  const editAdminEmailRef = useRef<HTMLInputElement>(null);
+  const editAdminNameRef = useRef<HTMLInputElement>(null);
+  const editRemarksRef = useRef<HTMLTextAreaElement>(null);
+  
   function handleAddResource() {
     setCurrentResource(null);
     setIsAddDialogOpen(true);
@@ -55,6 +69,51 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
   function handleRemoveResource(resourceId: string) {
     const updatedResources = resources.filter(r => r.id !== resourceId);
     onResourcesChange(updatedResources);
+  }
+  
+  function handleAddResourceSubmit() {
+    // Validate required fields
+    if (!subTypeRef.current?.value || !adminEmailRef.current?.value) {
+      return; // Required fields missing
+    }
+    
+    // Add new resource
+    const resource: Resource = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      subType: subTypeRef.current.value,
+      capacity: capacityRef.current?.value ? parseInt(capacityRef.current.value, 10) : undefined,
+      adminEmail: adminEmailRef.current.value,
+      adminName: adminNameRef.current?.value || undefined,
+      remarks: remarksRef.current?.value || undefined,
+    };
+    
+    onResourcesChange([...resources, resource]);
+    setIsAddDialogOpen(false);
+  }
+  
+  function handleEditResourceSubmit() {
+    // Validate required fields
+    if (!editSubTypeRef.current?.value || !editAdminEmailRef.current?.value || !currentResource) {
+      return; // Required fields missing or no current resource
+    }
+    
+    // Edit existing resource
+    const updatedResources = resources.map(r => {
+      if (r.id === currentResource.id) {
+        return {
+          ...r,
+          subType: editSubTypeRef.current!.value,
+          capacity: editCapacityRef.current?.value ? parseInt(editCapacityRef.current.value, 10) : undefined,
+          adminEmail: editAdminEmailRef.current!.value,
+          adminName: editAdminNameRef.current?.value || undefined,
+          remarks: editRemarksRef.current?.value || undefined,
+        };
+      }
+      return r;
+    });
+    
+    onResourcesChange(updatedResources);
+    setIsEditDialogOpen(false);
   }
   
   function handleFormSubmit(formData: FormData, isEditing: boolean) {
@@ -76,7 +135,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
       onResourcesChange(updatedResources);
       setIsEditDialogOpen(false);
     } else {
-      // Add new resource
+      // Add new resource (fallback method)
       const resource: Resource = {
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
         subType: formData.get('subType') as string,
@@ -201,66 +260,71 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
             </DialogDescription>
           </DialogHeader>
           
-          <form action={(formData) => handleFormSubmit(formData, false)}>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="subType">Resource Type*</Label>
-                <Input
-                  id="subType"
-                  name="subType"
-                  placeholder="Conference Room, Projector, etc."
-                  required
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="capacity">Capacity</Label>
-                <Input
-                  id="capacity"
-                  name="capacity"
-                  type="number"
-                  placeholder="10"
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="adminEmail">Administrator Email*</Label>
-                <Input
-                  id="adminEmail"
-                  name="adminEmail"
-                  type="email"
-                  placeholder="admin@example.com"
-                  required
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="adminName">Administrator Name</Label>
-                <Input
-                  id="adminName"
-                  name="adminName"
-                  placeholder="John Doe"
-                />
-              </div>
-              
-              <div className="grid gap-2">
-                <Label htmlFor="remarks">Notes/Remarks</Label>
-                <Textarea
-                  id="remarks"
-                  name="remarks"
-                  placeholder="Any special requirements or notes about this resource..."
-                  rows={3}
-                />
-              </div>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="subType">Resource Type*</Label>
+              <Input
+                id="subType"
+                name="subType"
+                placeholder="Conference Room, Projector, etc."
+                required
+                ref={subTypeRef}
+              />
             </div>
             
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">Add Resource</Button>
-            </DialogFooter>
-          </form>
+            <div className="grid gap-2">
+              <Label htmlFor="capacity">Capacity</Label>
+              <Input
+                id="capacity"
+                name="capacity"
+                type="number"
+                placeholder="10"
+                ref={capacityRef}
+              />
+            </div>
+            
+            <div className="grid gap-2">
+              <Label htmlFor="adminEmail">Administrator Email*</Label>
+              <Input
+                id="adminEmail"
+                name="adminEmail"
+                type="email"
+                placeholder="admin@example.com"
+                required
+                ref={adminEmailRef}
+              />
+            </div>
+            
+            <div className="grid gap-2">
+              <Label htmlFor="adminName">Administrator Name</Label>
+              <Input
+                id="adminName"
+                name="adminName"
+                placeholder="John Doe"
+                ref={adminNameRef}
+              />
+            </div>
+            
+            <div className="grid gap-2">
+              <Label htmlFor="remarks">Notes/Remarks</Label>
+              <Textarea
+                id="remarks"
+                name="remarks"
+                placeholder="Any special requirements or notes about this resource..."
+                rows={3}
+                ref={remarksRef}
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleAddResourceSubmit}>
+              Add Resource
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       
@@ -275,7 +339,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
           </DialogHeader>
           
           {currentResource && (
-            <form action={(formData) => handleFormSubmit(formData, true)}>
+            <>
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="edit-subType">Resource Type*</Label>
@@ -284,6 +348,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
                     name="subType"
                     defaultValue={currentResource.subType}
                     required
+                    ref={editSubTypeRef}
                   />
                 </div>
                 
@@ -294,6 +359,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
                     name="capacity"
                     type="number"
                     defaultValue={currentResource.capacity}
+                    ref={editCapacityRef}
                   />
                 </div>
                 
@@ -305,6 +371,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
                     type="email"
                     defaultValue={currentResource.adminEmail}
                     required
+                    ref={editAdminEmailRef}
                   />
                 </div>
                 
@@ -314,6 +381,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
                     id="edit-adminName"
                     name="adminName"
                     defaultValue={currentResource.adminName}
+                    ref={editAdminNameRef}
                   />
                 </div>
                 
@@ -324,6 +392,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
                     name="remarks"
                     defaultValue={currentResource.remarks}
                     rows={3}
+                    ref={editRemarksRef}
                   />
                 </div>
               </div>
@@ -332,9 +401,11 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
                 <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit">Update Resource</Button>
+                <Button type="button" onClick={handleEditResourceSubmit}>
+                  Update Resource
+                </Button>
               </DialogFooter>
-            </form>
+            </>
           )}
         </DialogContent>
       </Dialog>
