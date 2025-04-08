@@ -167,7 +167,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     previewError, 
     lastSendResult,
     isLoading: isEmailPreviewLoading,
-    isSending: isEmailSending, 
+    isSending, 
     generatePreview, 
     clearPreview,
     sendEmail
@@ -1238,15 +1238,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 console.error('Failed to send email:', error);
                               }
                             }}
-                            disabled={isEmailSending || isSubmitting}
+                            disabled={isSending || isSubmitting}
                             className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
                           >
-                            {isEmailSending ? (
+                            {isSending ? (
                               <Loader2 className="h-4 w-4 animate-spin mr-1" />
                             ) : (
                               <Mail className="h-4 w-4 mr-1" />
                             )}
-                            {isEmailSending ? 'Sending...' : 'Send Email & Save Event'}
+                            {isSending ? 'Sending...' : 'Send Email & Save Event'}
                           </Button>
                         </div>
                       </div>
@@ -1270,7 +1270,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 <Button
                   variant="destructive"
                   onClick={handleDelete}
-                  disabled={isSubmitting || isDeleting || isEmailSending}
+                  disabled={isSubmitting || isDeleting || isSending}
                   className="flex items-center gap-2"
                 >
                   {isDeleting ? (
@@ -1308,16 +1308,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     // Show the confirmation dialog
                     setShowPreviewDialog(true);
                   }}
-                  disabled={isSubmitting || isDeleting || isEmailSending}
+                  disabled={isSubmitting || isDeleting || isSending}
                   type="button"
                   className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all min-w-[180px] justify-center text-white"
                 >
-                  {isSubmitting || isEmailSending ? (
+                  {isSubmitting || isSending ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-1" />
                   ) : (
                     <Mail className="h-4 w-4 mr-1" />
                   )}
-                  {isSubmitting || isEmailSending 
+                  {isSubmitting || isSending 
                     ? 'Processing...' 
                     : 'Send Mail and Create'}
                 </Button>
@@ -1325,7 +1325,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               
               <Button
                 onClick={handleSubmit}
-                disabled={isSubmitting || isDeleting || isEmailSending}
+                disabled={isSubmitting || isDeleting || isSending}
                 type="button"
                 className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-sm hover:shadow-md transition-all min-w-[120px] justify-center"
               >
@@ -1362,6 +1362,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   
                   // If email was sent successfully, create the event
                   await handleSubmit();
+                  
+                  // Success notification
+                  toast({
+                    title: 'Success',
+                    description: 'Email sent and event created successfully.',
+                    variant: 'default'
+                  });
                 } catch (error) {
                   // Email sending failed
                   toast({
@@ -1369,6 +1376,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     description: 'The email could not be sent. Please check your SMTP settings.',
                     variant: 'destructive'
                   });
+                } finally {
+                  setShowPreviewDialog(false);
                 }
               }}
             >
@@ -1383,6 +1392,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 // Generate preview
                 generatePreview(tempEventData);
+                
+                // Close the confirmation dialog
+                setShowPreviewDialog(false);
               }}
               className="bg-primary text-white hover:bg-primary/90"
             >
