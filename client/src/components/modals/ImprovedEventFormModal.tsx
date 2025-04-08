@@ -796,7 +796,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       </SelectTrigger>
                       <SelectContent>
                         {getTimezones().map(tz => (
-                          <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                          <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -860,7 +860,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       })}
                     >
                       <SelectTrigger id="repeat">
-                        <SelectValue />
+                        <SelectValue placeholder="Select recurrence pattern" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="None">Does not repeat</SelectItem>
@@ -1037,7 +1037,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         onValueChange={(value) => setAttendeeRole(value as AttendeeRole)}
                       >
                         <SelectTrigger id="attendeeRole">
-                          <SelectValue />
+                          <SelectValue placeholder="Select role" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Chairman">Chairman</SelectItem>
@@ -1098,7 +1098,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                   onValueChange={(value) => handleUpdateAttendeeRole(attendee.id, value as AttendeeRole)}
                                 >
                                   <SelectTrigger className="h-7 text-xs w-[110px]">
-                                    <SelectValue />
+                                    <SelectValue placeholder="Select role" />
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="Chairman">Chairman</SelectItem>
@@ -1127,7 +1127,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <TabsContent value="resources" className="space-y-6 mt-0">
                 <ResourceManager
                   resources={resources}
-                  setResources={setResources}
+                  onResourcesChange={setResources}
                 />
               </TabsContent>
               
@@ -1186,7 +1186,24 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       </div>
                     ) : previewData ? (
                       <div className="border rounded-md">
-                        <EmailPreview previewData={previewData} />
+                        <EmailPreview 
+                          isLoading={false}
+                          error={null}
+                          html={previewData?.html || null}
+                          onRefresh={() => {
+                            const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                            const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                            generatePreview({
+                              title,
+                              description,
+                              location,
+                              startDate: startDateTime,
+                              endDate: endDateTime,
+                              attendees,
+                              resources
+                            });
+                          }}
+                        />
                         
                         {lastSendResult && (
                           <Alert 
