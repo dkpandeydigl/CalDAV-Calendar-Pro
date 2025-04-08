@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -118,6 +119,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const [attendeeInput, setAttendeeInput] = useState('');
   const [attendeeRole, setAttendeeRole] = useState<AttendeeRole>('Member');
   const [resources, setResources] = useState<Resource[]>([]);
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [previewEventData, setPreviewEventData] = useState<any>(null);
   
   // Recurrence state
   const [recurrence, setRecurrence] = useState<RecurrenceConfig>({
@@ -577,827 +580,717 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   };
   
   return (
-    <Dialog open={open} onOpenChange={open => {
-      if (!open) onClose();
-    }}>
-      <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
-        <DialogHeader className="pb-4 border-b">
-          <DialogTitle className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/80">
-            {event ? 'Edit Event' : 'Create Event'}
-          </DialogTitle>
-          <p className="text-muted-foreground text-sm mt-1">Fill in the details to schedule your event</p>
-        </DialogHeader>
-        
-        <Tabs defaultValue="basic" value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="mb-6 grid grid-cols-6 gap-2 bg-transparent p-0">
-            <TabsTrigger 
-              value="basic" 
-              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
-              <Calendar className="h-4 w-4" />
-              <span>Basic</span>
-            </TabsTrigger>
-            <TabsTrigger 
-              value="attendees" 
-              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
-              <Users className="h-4 w-4" />
-              <span>Attendees</span>
-              {attendees.length > 0 && (
-                <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">{attendees.length}</Badge>
+    <>
+      <Dialog open={open} onOpenChange={open => {
+        if (!open) onClose();
+      }}>
+        <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
+          <DialogHeader className="pb-4 border-b">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              {event ? (
+                <>
+                  <span className="text-primary">{title || 'Event Details'}</span>
+                </>
+              ) : (
+                <>
+                  <CalendarDays className="h-5 w-5 text-primary" />
+                  <span>Create New Event</span>
+                </>
               )}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="resources" 
-              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
-              <Package className="h-4 w-4" />
-              <span>Resources</span>
-              {resources.length > 0 && (
-                <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">{resources.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="recurrence" 
-              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
-              <Repeat className="h-4 w-4" />
-              <span>Recurrence</span>
-              {recurrence.pattern !== 'None' && (
-                <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">!</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="emails" 
-              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2"
-              onClick={() => {
-                if (attendees.length > 0 && title && startDate && endDate) {
-                  const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                  const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
-                  
-                  generatePreview({
-                    title,
-                    description,
-                    location,
-                    startDate: startDateTime,
-                    endDate: endDateTime,
-                    attendees,
-                    resources
-                  });
-                }
-              }}
-            >
-              <Mail className="h-4 w-4" />
-              <span>Emails</span>
-              {attendees.length > 0 && (
-                <Badge variant="secondary" className="ml-1 bg-primary/20 text-primary">{attendees.length}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="more" 
-              className="event-form-tab-trigger flex items-center gap-2 data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-md rounded-md px-4 py-2">
-              <FileText className="h-4 w-4" />
-              <span>More</span>
-            </TabsTrigger>
-          </TabsList>
+            </DialogTitle>
+          </DialogHeader>
           
-          <ScrollArea className="flex-1 overflow-auto pr-3">
-            <div className="event-form-tabs-content">
-              <TabsContent value="basic" className="mt-0 space-y-4">
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <Label htmlFor="title" className="sr-only">Title *</Label>
+          <Tabs
+            defaultValue="basic"
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="flex-1 overflow-hidden flex flex-col"
+          >
+            <TabsList className="w-full justify-start border-b p-0 rounded-none">
+              <TabsTrigger value="basic" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+                <Calendar className="h-4 w-4 mr-2" />
+                Basic Details
+              </TabsTrigger>
+              
+              <TabsTrigger value="attendees" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+                <Users className="h-4 w-4 mr-2" />
+                Attendees
+                {attendees.length > 0 && (
+                  <Badge variant="outline" className="ml-2 h-5 min-w-5 px-1 flex items-center justify-center">
+                    {attendees.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              
+              <TabsTrigger value="resources" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+                <Package className="h-4 w-4 mr-2" />
+                Resources
+                {resources.length > 0 && (
+                  <Badge variant="outline" className="ml-2 h-5 min-w-5 px-1 flex items-center justify-center">
+                    {resources.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              
+              <TabsTrigger value="recurrence" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+                <Repeat className="h-4 w-4 mr-2" />
+                Recurrence
+                {recurrence.pattern !== 'None' && (
+                  <Badge variant="outline" className="ml-2 px-2 py-0">
+                    {recurrence.pattern}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              
+              {!event && attendees.length > 0 && (
+                <TabsTrigger value="emails" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+                  <Mail className="h-4 w-4 mr-2" />
+                  Email Preview
+                </TabsTrigger>
+              )}
+            </TabsList>
+            
+            <ScrollArea className="flex-1 p-4 overflow-y-auto">
+              <TabsContent value="basic" className="mt-0 p-0">
+                {/* Basic Details Form */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Title <span className="text-destructive">*</span></Label>
                     <Input
                       id="title"
                       ref={titleInputRef}
                       value={title}
-                      onChange={e => setTitle(e.target.value)}
+                      onChange={(e) => setTitle(e.target.value)}
                       placeholder="Event Title"
-                      className={`text-lg font-medium ${errors.title ? 'border-red-500' : ''}`}
+                      className={errors.title ? 'border-destructive' : ''}
                     />
-                  </div>
-                  {errors.title && (
-                    <p className="text-red-500 text-xs mt-1">{errors.title}</p>
-                  )}
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="calendar">Calendar *</Label>
-                  <Select value={calendarId} onValueChange={setCalendarId}>
-                    <SelectTrigger type="button" className={errors.calendarId ? 'border-red-500' : ''}>
-                      <SelectValue placeholder="Select a calendar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {calendars.map(calendar => (
-                        <SelectItem key={calendar.id} value={calendar.id.toString()}>
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="w-3 h-3 rounded-full" 
-                              style={{ backgroundColor: calendar.color }}
-                            />
-                            {calendar.name}
-                            {calendar.isPrimary && (
-                              <span className="text-xs bg-muted px-1 py-0.5 rounded">Primary</span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    {editableSharedCalendars.length > 0 && (
-                      <>
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                          Shared Calendars (Edit Permission)
-                        </div>
-                        {editableSharedCalendars.map(calendar => (
-                          <SelectItem key={calendar.id} value={calendar.id.toString()}>
-                            <div className="flex items-center gap-2">
-                              <div 
-                                className="w-3 h-3 rounded-full" 
-                                style={{ backgroundColor: calendar.color }}
-                              />
-                              {calendar.name}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </>
-                    )}
-                  </SelectContent>
-                </Select>
-                {errors.calendarId && (
-                  <p className="text-red-500 text-xs mt-1">{errors.calendarId}</p>
-                )}
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="all-day"
-                  checked={allDay}
-                  onCheckedChange={setAllDay}
-                />
-                <Label htmlFor="all-day">All day event</Label>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="start-date">Start Date *</Label>
-                  <Input
-                    id="start-date"
-                    type="date"
-                    value={startDate}
-                    onChange={e => setStartDate(e.target.value)}
-                    required
-                    className={errors.startDate ? 'border-red-500' : ''}
-                  />
-                  {errors.startDate && (
-                    <p className="text-red-500 text-xs mt-1">{errors.startDate}</p>
-                  )}
-                </div>
-                
-                {!allDay && (
-                  <div className="space-y-2">
-                    <Label htmlFor="start-time">Start Time *</Label>
-                    <Input
-                      id="start-time"
-                      type="time"
-                      value={startTime}
-                      onChange={e => setStartTime(e.target.value)}
-                      required
-                      className={errors.startTime ? 'border-red-500' : ''}
-                    />
-                    {errors.startTime && (
-                      <p className="text-red-500 text-xs mt-1">{errors.startTime}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="end-date">End Date *</Label>
-                  <Input
-                    id="end-date"
-                    type="date"
-                    value={endDate}
-                    onChange={e => setEndDate(e.target.value)}
-                    required
-                    className={errors.endDate ? 'border-red-500' : ''}
-                  />
-                  {errors.endDate && (
-                    <p className="text-red-500 text-xs mt-1">{errors.endDate}</p>
-                  )}
-                </div>
-                
-                {!allDay && (
-                  <div className="space-y-2">
-                    <Label htmlFor="end-time">End Time *</Label>
-                    <Input
-                      id="end-time"
-                      type="time"
-                      value={endTime}
-                      onChange={e => setEndTime(e.target.value)}
-                      required
-                      className={errors.endTime ? 'border-red-500' : ''}
-                    />
-                    {errors.endTime && (
-                      <p className="text-red-500 text-xs mt-1">{errors.endTime}</p>
-                    )}
-                  </div>
-                )}
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="timezone">Timezone</Label>
-                <Select value={timezone} onValueChange={setTimezone}>
-                  <SelectTrigger type="button">
-                    <SelectValue placeholder="Select timezone" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-80">
-                    {getTimezones().map(tz => (
-                      <SelectItem key={tz.value} value={tz.value}>
-                        {tz.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="location" className="flex items-center gap-1">
-                  <MapPin className="h-4 w-4" />
-                  <span>Location</span>
-                </Label>
-                <Input
-                  id="location"
-                  value={location}
-                  onChange={e => setLocation(e.target.value)}
-                  placeholder="Event location"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="description" className="flex items-center gap-1">
-                  <FileText className="h-4 w-4" />
-                  <span>Description</span>
-                </Label>
-                <Textarea
-                  id="description"
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
-                  placeholder="Event description"
-                  rows={4}
-                />
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="attendees" className="mt-0 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="attendees">Attendees</Label>
-                
-                <div className="flex space-x-2">
-                  <div className="flex-1">
-                    <Input
-                      id="attendee-input"
-                      value={attendeeInput}
-                      onChange={e => setAttendeeInput(e.target.value)}
-                      placeholder="Email address"
-                      className={errors.attendeeInput ? 'border-red-500' : ''}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddAttendee();
-                        }
-                      }}
-                    />
-                    {errors.attendeeInput && (
-                      <p className="text-red-500 text-xs mt-1">{errors.attendeeInput}</p>
+                    {errors.title && (
+                      <p className="text-destructive text-xs">{errors.title}</p>
                     )}
                   </div>
                   
-                  <Select value={attendeeRole} onValueChange={(value) => setAttendeeRole(value as AttendeeRole)}>
-                    <SelectTrigger type="button" className="w-36">
-                      <SelectValue placeholder="Role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Chairman">Chairman</SelectItem>
-                      <SelectItem value="Secretary">Secretary</SelectItem>
-                      <SelectItem value="Member">Member</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  
-                  <Button onClick={handleAddAttendee} size="sm" className="gap-1">
-                    <Plus className="h-4 w-4" />
-                    Add
-                  </Button>
-                </div>
-              </div>
-              
-              {errors.attendees && (
-                <Alert variant="destructive" className="py-2">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{errors.attendees}</AlertDescription>
-                </Alert>
-              )}
-              
-              {attendees.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="text-sm text-muted-foreground">
-                    {attendees.length} {attendees.length === 1 ? 'attendee' : 'attendees'}
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {attendees.map(attendee => (
-                      <div key={attendee.id} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="start-date">Start Date <span className="text-destructive">*</span></Label>
+                      <div className="flex gap-2">
                         <div className="flex-1">
-                          <div className="font-medium">{attendee.email}</div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Badge variant={
-                              attendee.role === 'Chairman' ? 'destructive' :
-                              attendee.role === 'Secretary' ? 'default' : 'outline'
-                            } className="text-xs">
-                              {attendee.role}
-                            </Badge>
-                          </div>
+                          <Input
+                            id="start-date"
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className={errors.startDate ? 'border-destructive' : ''}
+                          />
+                          {errors.startDate && (
+                            <p className="text-destructive text-xs">{errors.startDate}</p>
+                          )}
                         </div>
                         
-                        <div className="flex items-center gap-2">
-                          <Select 
-                            value={attendee.role} 
-                            onValueChange={(value) => handleUpdateAttendeeRole(attendee.id, value as AttendeeRole)}
-                          >
-                            <SelectTrigger type="button" className="h-8 w-28">
-                              <SelectValue placeholder="Role" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Chairman">Chairman</SelectItem>
-                              <SelectItem value="Secretary">Secretary</SelectItem>
-                              <SelectItem value="Member">Member</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            onClick={() => handleRemoveAttendee(attendee.id)}
-                            className="h-8 w-8 text-destructive"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        {!allDay && (
+                          <div className="flex-1">
+                            <Input
+                              id="start-time"
+                              type="time"
+                              value={startTime}
+                              onChange={(e) => setStartTime(e.target.value)}
+                              className={errors.startTime ? 'border-destructive' : ''}
+                            />
+                            {errors.startTime && (
+                              <p className="text-destructive text-xs">{errors.startTime}</p>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="end-date">End Date <span className="text-destructive">*</span></Label>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Input
+                            id="end-date"
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className={errors.endDate ? 'border-destructive' : ''}
+                          />
+                          {errors.endDate && (
+                            <p className="text-destructive text-xs">{errors.endDate}</p>
+                          )}
+                        </div>
+                        
+                        {!allDay && (
+                          <div className="flex-1">
+                            <Input
+                              id="end-time"
+                              type="time"
+                              value={endTime}
+                              onChange={(e) => setEndTime(e.target.value)}
+                              className={errors.endTime ? 'border-destructive' : ''}
+                            />
+                            {errors.endTime && (
+                              <p className="text-destructive text-xs">{errors.endTime}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="all-day"
+                      checked={allDay}
+                      onCheckedChange={(checked) => setAllDay(checked === true)}
+                    />
+                    <Label htmlFor="all-day" className="cursor-pointer">All Day Event</Label>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="timezone">Timezone</Label>
+                    <Select
+                      value={timezone}
+                      onValueChange={setTimezone}
+                    >
+                      <SelectTrigger id="timezone">
+                        <SelectValue placeholder="Select Timezone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getTimezones().map((tz) => (
+                          <SelectItem
+                            key={tz.value}
+                            value={tz.value}
+                          >
+                            {tz.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="calendar">Calendar <span className="text-destructive">*</span></Label>
+                    <Select
+                      value={calendarId}
+                      onValueChange={setCalendarId}
+                    >
+                      <SelectTrigger id="calendar" className={errors.calendarId ? 'border-destructive' : ''}>
+                        <SelectValue placeholder="Select Calendar" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {calendars.map((calendar) => (
+                          <SelectItem
+                            key={calendar.id}
+                            value={calendar.id.toString()}
+                          >
+                            {calendar.name}
+                          </SelectItem>
+                        ))}
+                        
+                        {editableSharedCalendars.length > 0 && (
+                          <>
+                            <Separator className="my-1" />
+                            <p className="px-2 py-1.5 text-xs text-muted-foreground">Shared with me (editable)</p>
+                            {editableSharedCalendars.map((calendar) => (
+                              <SelectItem
+                                key={calendar.id}
+                                value={calendar.id.toString()}
+                              >
+                                {calendar.name} (shared)
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {errors.calendarId && (
+                      <p className="text-destructive text-xs">{errors.calendarId}</p>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="location"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                        placeholder="Event Location"
+                        className="pl-8"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <Label htmlFor="description">Description</Label>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-muted-foreground">Template:</span>
+                        <Select
+                          value={selectedTemplate || ''}
+                          onValueChange={handleApplyTemplate}
+                        >
+                          <SelectTrigger id="template" className="h-7 w-[130px] text-xs">
+                            <SelectValue placeholder="Select Template" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {templates.map((template) => (
+                              <SelectItem key={template.id} value={template.id}>
+                                {template.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <Textarea
+                      id="description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Event Description"
+                      className="min-h-[120px]"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="busy-status"
+                      checked={isBusy}
+                      onCheckedChange={(checked) => setIsBusy(checked === true)}
+                    />
+                    <Label htmlFor="busy-status" className="cursor-pointer">Show as busy during this event</Label>
                   </div>
                 </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Users className="h-12 w-12 mx-auto opacity-20 mb-2" />
-                  <p>No attendees added yet</p>
-                  <p className="text-sm">Add attendees for meeting participants</p>
+              </TabsContent>
+              
+              <TabsContent value="attendees" className="mt-0 p-0">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Add Attendees</h3>
+                    
+                    <div className="flex space-x-3 items-end">
+                      <div className="flex-1 space-y-2">
+                        <Label htmlFor="attendee-email">Email</Label>
+                        <Input
+                          id="attendee-email"
+                          type="email"
+                          value={attendeeInput}
+                          onChange={(e) => setAttendeeInput(e.target.value)}
+                          placeholder="attendee@example.com"
+                          className={errors.attendeeInput ? 'border-destructive' : ''}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddAttendee();
+                            }
+                          }}
+                        />
+                        {errors.attendeeInput && (
+                          <p className="text-destructive text-xs">{errors.attendeeInput}</p>
+                        )}
+                      </div>
+                      
+                      <div className="w-[150px] space-y-2">
+                        <Label htmlFor="attendee-role">Role</Label>
+                        <Select
+                          value={attendeeRole}
+                          onValueChange={(value) => setAttendeeRole(value as AttendeeRole)}
+                        >
+                          <SelectTrigger id="attendee-role">
+                            <SelectValue placeholder="Select Role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Chairman">Chairman</SelectItem>
+                            <SelectItem value="Secretary">Secretary</SelectItem>
+                            <SelectItem value="Member">Member</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <Button 
+                        onClick={handleAddAttendee}
+                        size="icon"
+                        className="mb-[1px]"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* Error display for attendees */}
+                  {errors.attendees && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{errors.attendees}</AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium flex items-center">
+                      Attendees
+                      {attendees.length > 0 && (
+                        <Badge variant="outline" className="ml-2">
+                          {attendees.length}
+                        </Badge>
+                      )}
+                    </h3>
+                    
+                    {attendees.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No attendees added yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {attendees.map((attendee) => (
+                          <div 
+                            key={attendee.id}
+                            className="flex items-center justify-between gap-2 py-2 px-3 rounded-md bg-secondary/30 border border-border/40"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm truncate">{attendee.email}</p>
+                            </div>
+                            
+                            <Select
+                              value={attendee.role}
+                              onValueChange={(value) => handleUpdateAttendeeRole(attendee.id, value as AttendeeRole)}
+                            >
+                              <SelectTrigger className="h-7 w-[110px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Chairman">Chairman</SelectItem>
+                                <SelectItem value="Secretary">Secretary</SelectItem>
+                                <SelectItem value="Member">Member</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleRemoveAttendee(attendee.id)}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </TabsContent>
-            
-            <TabsContent value="resources" className="mt-0 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="resources">Resources</Label>
-                <div className="text-sm text-muted-foreground mb-2">
-                  Add resources such as conference rooms, projectors, or other equipment to book for your event.
-                </div>
-                
+              </TabsContent>
+              
+              <TabsContent value="resources" className="mt-0 p-0">
                 <ResourceManager 
                   resources={resources}
-                  onResourcesChange={setResources}
+                  onChange={setResources}
                 />
-              </div>
+              </TabsContent>
               
-              {resources.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Package className="h-12 w-12 mx-auto opacity-20 mb-2" />
-                  <p>No resources added yet</p>
-                  <p className="text-sm">Add resources like rooms or equipment</p>
-                </div>
-              )}
-            </TabsContent>
-            
-            <TabsContent value="recurrence" className="mt-0 space-y-4">
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-base">Repeat Pattern</Label>
-                  <RadioGroup 
-                    value={recurrence.pattern} 
-                    onValueChange={(value) => setRecurrence({
-                      ...recurrence,
-                      pattern: value as RecurrencePattern
-                    })}
-                    className="mt-2 space-y-2"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="None" id="none" />
-                      <Label htmlFor="none">Does not repeat</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="Daily" id="daily" />
-                      <Label htmlFor="daily">Daily</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="Weekly" id="weekly" />
-                      <Label htmlFor="weekly">Weekly</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="Monthly" id="monthly" />
-                      <Label htmlFor="monthly">Monthly</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="Yearly" id="yearly" />
-                      <Label htmlFor="yearly">Yearly</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-                
-                {recurrence.pattern !== 'None' && (
-                  <>
-                    <Separator />
-                    
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4 items-center">
+              <TabsContent value="recurrence" className="mt-0 p-0">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Recurrence Pattern</Label>
+                    <RadioGroup
+                      value={recurrence.pattern}
+                      onValueChange={(value) => setRecurrence({
+                        ...recurrence,
+                        pattern: value as RecurrencePattern
+                      })}
+                      className="grid grid-cols-3 gap-3"
+                    >
+                      <div>
+                        <RadioGroupItem 
+                          value="None" 
+                          id="r-none" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-none"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>None</span>
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem 
+                          value="Daily" 
+                          id="r-daily" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-daily"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>Daily</span>
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem 
+                          value="Weekly" 
+                          id="r-weekly" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-weekly"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>Weekly</span>
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem 
+                          value="Monthly" 
+                          id="r-monthly" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-monthly"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>Monthly</span>
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem 
+                          value="Yearly" 
+                          id="r-yearly" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-yearly"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>Yearly</span>
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                  
+                  {recurrence.pattern !== 'None' && (
+                    <>
+                      <div className="space-y-2">
                         <Label htmlFor="interval">Repeat every</Label>
                         <div className="flex items-center gap-2">
                           <Input
                             id="interval"
                             type="number"
                             min="1"
-                            max="999"
-                            value={recurrence.interval}
-                            onChange={e => setRecurrence({
+                            max="99"
+                            value={recurrence.interval.toString()}
+                            onChange={(e) => setRecurrence({
                               ...recurrence,
                               interval: parseInt(e.target.value) || 1
                             })}
                             className="w-20"
                           />
                           <span className="text-sm">
-                            {recurrence.pattern === 'Daily' ? 'days' :
-                             recurrence.pattern === 'Weekly' ? 'weeks' :
-                             recurrence.pattern === 'Monthly' ? 'months' : 'years'}
+                            {recurrence.pattern.toLowerCase()}
+                            {recurrence.interval !== 1 ? 's' : ''}
                           </span>
                         </div>
                       </div>
                       
                       {recurrence.pattern === 'Weekly' && (
                         <div className="space-y-2">
-                          <Label>Repeat on</Label>
+                          <Label>On these days</Label>
                           <div className="flex flex-wrap gap-2">
-                            {weekDays.map(day => (
-                              <Button
+                            {weekDays.map((day) => (
+                              <div 
                                 key={day}
-                                type="button"
-                                variant={recurrence.weekdays?.includes(day) ? 'default' : 'outline'}
-                                size="sm"
                                 onClick={() => handleWeekdayToggle(day)}
-                                className="w-20"
+                                className={`
+                                  cursor-pointer rounded-md px-2.5 py-1 text-sm border 
+                                  ${(recurrence.weekdays || []).includes(day) 
+                                    ? 'bg-primary text-primary-foreground border-primary' 
+                                    : 'bg-secondary text-secondary-foreground border-border'}
+                                `}
                               >
                                 {day.slice(0, 3)}
-                              </Button>
+                              </div>
                             ))}
                           </div>
                         </div>
                       )}
                       
-                      {(recurrence.pattern === 'Monthly' || recurrence.pattern === 'Yearly') && (
-                        <div className="grid grid-cols-2 gap-4 items-center">
-                          <Label htmlFor="dayOfMonth">Day of {recurrence.pattern === 'Yearly' ? 'month' : 'month'}</Label>
-                          <Input
-                            id="dayOfMonth"
-                            type="number"
-                            min="1"
-                            max={recurrence.pattern === 'Yearly' ? '31' : '31'}
-                            value={recurrence.dayOfMonth || ''}
-                            onChange={e => setRecurrence({
-                              ...recurrence,
-                              dayOfMonth: parseInt(e.target.value) || undefined
-                            })}
-                            placeholder={recurrence.pattern === 'Yearly' ? 'e.g., 15' : 'e.g., 15'}
-                          />
-                        </div>
-                      )}
-                      
-                      {recurrence.pattern === 'Yearly' && (
-                        <div className="grid grid-cols-2 gap-4 items-center">
-                          <Label htmlFor="monthOfYear">Month</Label>
-                          <Select 
-                            value={recurrence.monthOfYear?.toString() || ''} 
-                            onValueChange={(value) => setRecurrence({
-                              ...recurrence,
-                              monthOfYear: parseInt(value) || undefined
-                            })}
-                          >
-                            <SelectTrigger type="button">
-                              <SelectValue placeholder="Select month" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="1">January</SelectItem>
-                              <SelectItem value="2">February</SelectItem>
-                              <SelectItem value="3">March</SelectItem>
-                              <SelectItem value="4">April</SelectItem>
-                              <SelectItem value="5">May</SelectItem>
-                              <SelectItem value="6">June</SelectItem>
-                              <SelectItem value="7">July</SelectItem>
-                              <SelectItem value="8">August</SelectItem>
-                              <SelectItem value="9">September</SelectItem>
-                              <SelectItem value="10">October</SelectItem>
-                              <SelectItem value="11">November</SelectItem>
-                              <SelectItem value="12">December</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                      
                       <Separator />
                       
-                      <div className="space-y-4">
-                        <Label>Ends</Label>
-                        <RadioGroup 
-                          value={recurrence.endType} 
+                      <div className="space-y-3">
+                        <Label>End</Label>
+                        <RadioGroup
+                          value={recurrence.endType}
                           onValueChange={(value) => setRecurrence({
                             ...recurrence,
                             endType: value as RecurrenceEndType
                           })}
-                          className="space-y-4"
                         >
                           <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="Never" id="never" />
-                            <Label htmlFor="never">Never</Label>
+                            <RadioGroupItem value="Never" id="r-end-never" />
+                            <Label htmlFor="r-end-never">Never</Label>
                           </div>
-                          
                           <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="After" id="after" />
-                            <Label htmlFor="after" className="mr-2">After</Label>
+                            <RadioGroupItem value="After" id="r-end-after" />
+                            <Label htmlFor="r-end-after">After</Label>
                             <Input
                               type="number"
                               min="1"
                               max="999"
-                              value={recurrence.occurrences || 10}
-                              onChange={e => setRecurrence({
+                              value={recurrence.occurrences?.toString() || "10"}
+                              onChange={(e) => setRecurrence({
                                 ...recurrence,
                                 occurrences: parseInt(e.target.value) || 10
                               })}
+                              className="w-20 ml-2"
                               disabled={recurrence.endType !== 'After'}
-                              className="w-20"
                             />
-                            <Label>occurrences</Label>
+                            <span className="text-sm">occurrences</span>
                           </div>
-                          
                           <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="On" id="on" />
-                            <Label htmlFor="on" className="mr-2">On</Label>
-                            <Popover>
-                              <PopoverTrigger type="button" asChild>
-                                <Button
-                                  variant="outline"
-                                  disabled={recurrence.endType !== 'On'}
-                                  className={recurrence.endType === 'On' ? 'w-[180px] justify-start text-left font-normal' : 'w-[180px] justify-start text-left font-normal text-muted-foreground'}
-                                >
-                                  <CalendarDays className="mr-2 h-4 w-4" />
-                                  {recurrence.endDate ? format(recurrence.endDate, 'PPP') : 'Pick a date'}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0" align="start">
-                                <CalendarComponent
-                                  mode="single"
-                                  selected={recurrence.endDate}
-                                  onSelect={handleRecurrenceEndDateChange}
-                                  initialFocus
-                                />
-                              </PopoverContent>
-                            </Popover>
+                            <RadioGroupItem value="On" id="r-end-on" />
+                            <Label htmlFor="r-end-on">On</Label>
+                            <div className="ml-2">
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    className={`w-[200px] justify-start text-left font-normal ${recurrence.endType !== 'On' ? 'opacity-50' : ''}`}
+                                    disabled={recurrence.endType !== 'On'}
+                                  >
+                                    <CalendarDays className="mr-2 h-4 w-4" />
+                                    {recurrence.endDate ? (
+                                      format(recurrence.endDate, "PPP")
+                                    ) : (
+                                      <span>Pick a date</span>
+                                    )}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                  <CalendarComponent
+                                    mode="single"
+                                    selected={recurrence.endDate}
+                                    onSelect={handleRecurrenceEndDateChange}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </div>
                           </div>
                         </RadioGroup>
                       </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="emails" className="mt-0 space-y-4">
-              <div className="space-y-4">
-                {attendees.length === 0 ? (
-                  <Alert>
-                    <AlertDescription>
-                      Add attendees in the "Attendees" tab to enable email invitations. Email invitations will be sent to all attendees when the event is created.
-                    </AlertDescription>
-                  </Alert>
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-base font-medium">Invitation Emails</h3>
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => {
-                            if (title && startDate && endDate) {
-                              const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                              const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
-                              
-                              generatePreview({
-                                title,
-                                description,
-                                location,
-                                startDate: startDateTime,
-                                endDate: endDateTime,
-                                attendees,
-                                resources
-                              });
-                            } else {
-                              toast({
-                                title: "Required fields missing",
-                                description: "Please fill in at least title, start date, and end date to preview emails",
-                                variant: "destructive"
-                              });
-                            }
-                          }}
-                          className="flex items-center gap-1"
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                          Refresh Preview
-                        </Button>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Preview the email that will be sent to attendees when this event is created. 
-                        Each attendee will receive a personalized invitation with an iCalendar (.ics) attachment.
-                      </p>
-                    </div>
-                    
+                    </>
+                  )}
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="emails" className="mt-0 p-0">
+                <div className="space-y-4">
+                  <div className="flex-1 min-h-[500px]">
                     <EmailPreview 
+                      type="invitation"
                       isLoading={isEmailPreviewLoading}
-                      isSending={isEmailSending}
+                      previewData={previewData}
                       error={previewError}
-                      html={previewData?.html || null}
-                      showSendButton={attendees.length > 0}
                       lastSendResult={lastSendResult}
-                      onSend={async () => {
-                        if (!title || !startDate || !endDate || !attendees.length) {
+                      isSending={isEmailSending}
+                      onSend={() => {
+                        // Prepare the data for sending
+                        if (!title || !startDate || !endDate) {
                           toast({
-                            title: "Missing information",
-                            description: "Please fill in all required event details and add attendees before sending invitations.",
-                            variant: "destructive"
+                            title: 'Missing information',
+                            description: 'Please fill in all required fields',
+                            variant: 'destructive'
                           });
+                          setActiveTab('basic');
                           return;
                         }
-
-                        try {
-                          const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                          const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
-                          
-                          // For existing event, we pass the event ID
-                          const eventId = event ? event.id : undefined;
-                          
-                          // Send the email
-                          const result = await sendEmail({
-                            eventId,
-                            title,
-                            description,
-                            location,
-                            startDate: startDateTime,
-                            endDate: endDateTime,
-                            attendees,
-                            resources
-                          });
-                          
-                          if (result.success) {
-                            toast({
-                              title: "Invitations sent!",
-                              description: `Successfully sent email invitations to ${attendees.length} attendee${attendees.length > 1 ? 's' : ''}.`,
-                              variant: "default"
-                            });
-                          } else {
-                            throw new Error(result.message || "Failed to send invitations");
-                          }
-                        } catch (error) {
-                          console.error("Failed to send invitations:", error);
+                        
+                        const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                        const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                        
+                        sendEmail({
+                          title,
+                          description,
+                          location,
+                          startDate: startDateTime,
+                          endDate: endDateTime,
+                          attendees,
+                          resources
+                        }).then(() => {
+                          // If email was sent successfully, also create the event
+                          handleSubmit();
+                        }).catch(error => {
                           toast({
-                            title: "Failed to send invitations",
-                            description: error instanceof Error ? error.message : "An error occurred while sending invitations",
-                            variant: "destructive"
+                            title: 'Email sending failed',
+                            description: 'The email could not be sent. Please check your SMTP settings.',
+                            variant: 'destructive'
                           });
-                        }
+                        });
                       }}
                       onRefresh={() => {
-                        if (title && startDate && endDate) {
-                          const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                          const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
-                          
-                          generatePreview({
-                            title,
-                            description,
-                            location,
-                            startDate: startDateTime,
-                            endDate: endDateTime,
-                            attendees,
-                            resources
-                          });
-                        }
+                        // Regenerate the preview
+                        const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                        const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                        
+                        generatePreview({
+                          title,
+                          description,
+                          location,
+                          startDate: startDateTime,
+                          endDate: endDateTime,
+                          attendees,
+                          resources
+                        });
                       }}
                     />
-                  </>
-                )}
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="more" className="mt-0 space-y-4">
-              <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="busy"
-                    checked={isBusy}
-                    onCheckedChange={setIsBusy}
-                  />
-                  <Label htmlFor="busy">Show as busy</Label>
-                </div>
-                
-                <Separator />
-                
-                <div className="space-y-2">
-                  <Label>Description Templates</Label>
-                  <p className="text-sm text-muted-foreground">Apply a template to quickly fill your description</p>
-                  
-                  <div className="grid grid-cols-1 gap-2 mt-2">
-                    {templates.map(template => (
-                      <Button
-                        key={template.id}
-                        variant={selectedTemplate === template.id ? 'default' : 'outline'}
-                        className="justify-start h-auto py-2"
-                        onClick={() => handleApplyTemplate(template.id)}
-                      >
-                        <div className="text-left">
-                          <div className="font-medium">{template.name}</div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {template.content.split('\n').slice(0, 2).join(' · ')}
-                            {template.content.split('\n').length > 2 ? ' ...' : ''}
-                          </div>
-                        </div>
-                      </Button>
-                    ))}
                   </div>
                 </div>
-              </div>
-            </TabsContent>
+              </TabsContent>
+            </ScrollArea>
+          </Tabs>
+          
+          <DialogFooter className="border-t p-4 gap-y-3">
+            <div className="flex-1 flex justify-start">
+              {event && (
+                <Button 
+                  variant="destructive" 
+                  onClick={handleDelete}
+                  disabled={isSubmitting || isDeleting || isEmailSending}
+                  type="button"
+                  className="flex items-center gap-2 shadow-sm transition-all hover:shadow-md hover:bg-destructive/90"
+                >
+                  {isDeleting ? 
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                    <Trash2 className="h-4 w-4 mr-1" />
+                  }
+                  {isDeleting ? 'Deleting...' : 'Delete Event'}
+                </Button>
+              )}
             </div>
-          </ScrollArea>
-        </Tabs>
-        
-        <DialogFooter className="flex items-center justify-between border-t pt-4 mt-4">
-          <div>
-            {event && (
+            <div className="flex gap-3">
               <Button
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={isDeleting || isSubmitting}
+                variant="outline"
+                onClick={onClose}
+                disabled={isSubmitting || isDeleting || isEmailSending}
                 type="button"
-                className="flex items-center gap-2 shadow-sm transition-all hover:shadow-md hover:bg-destructive/90"
+                className="border border-primary/20 hover:bg-primary/5 transition-all"
               >
-                {isDeleting ? 
-                  <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
-                  <Trash2 className="h-4 w-4 mr-1" />
-                }
-                {isDeleting ? 'Deleting...' : 'Delete Event'}
+                Cancel
               </Button>
-            )}
-          </div>
-          <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={isSubmitting || isDeleting || isEmailSending}
-              type="button"
-              className="border border-primary/20 hover:bg-primary/5 transition-all"
-            >
-              Cancel
-            </Button>
-            
-            {/* Only show Send Mail and Create button when: 
-                1. It's a new event (not editing)
-                2. There are attendees */}
-            {!event && attendees.length > 0 && (
-              <Button
-                onClick={async () => {
-                  if (!validateForm()) return;
-                  
-                  // First, make sure we're on the email tab to see the preview
-                  setActiveTab('emails');
-                  
-                  // Refresh preview
-                  const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                  const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
-                  
-                  // Generate the preview first
-                  await generatePreview({
-                    title,
-                    description,
-                    location,
-                    startDate: startDateTime,
-                    endDate: endDateTime,
-                    attendees,
-                    resources
-                  });
-                  
-                  // Send the email
-                  try {
-                    await sendEmail({
+              
+              {/* Only show Send Mail and Create button when: 
+                  1. It's a new event (not editing)
+                  2. There are attendees */}
+              {!event && attendees.length > 0 && (
+                <Button
+                  onClick={async () => {
+                    if (!validateForm()) return;
+                    
+                    // Prepare date objects
+                    const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                    const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                    
+                    // Store the event data for use in the alert dialog
+                    const eventData = {
                       title,
                       description,
                       location,
@@ -1405,52 +1298,85 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       endDate: endDateTime,
                       attendees,
                       resources
-                    });
+                    };
                     
-                    // If email was sent successfully, create the event
-                    await handleSubmit();
-                  } catch (error) {
-                    // Email sending failed, show an error toast but don't create the event
-                    toast({
-                      title: 'Email sending failed',
-                      description: 'The email could not be sent. Please check your SMTP settings.',
-                      variant: 'destructive'
-                    });
-                  }
-                }}
+                    // Set the event data for later use and open the alert dialog
+                    setPreviewEventData(eventData);
+                    setAlertDialogOpen(true);
+                  }}
+                  disabled={isSubmitting || isDeleting || isEmailSending}
+                  type="button"
+                  className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all min-w-[180px] justify-center text-white"
+                >
+                  {isSubmitting || isEmailSending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <Mail className="h-4 w-4 mr-1" />
+                  )}
+                  {isSubmitting || isEmailSending 
+                    ? 'Processing...' 
+                    : 'Send Mail and Create'}
+                </Button>
+              )}
+              
+              <Button
+                onClick={handleSubmit}
                 disabled={isSubmitting || isDeleting || isEmailSending}
                 type="button"
-                className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all min-w-[180px] justify-center text-white"
+                className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-sm hover:shadow-md transition-all min-w-[120px] justify-center"
               >
-                {isSubmitting || isEmailSending ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                ) : (
-                  <Mail className="h-4 w-4 mr-1" />
-                )}
-                {isSubmitting || isEmailSending 
-                  ? 'Processing...' 
-                  : 'Send Mail and Create'}
+                {isSubmitting ? 
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                  <Save className="h-4 w-4 mr-1" />
+                }
+                {isSubmitting
+                  ? (event ? 'Updating...' : 'Creating...')
+                  : (event ? 'Update Event' : 'Create Event')}
               </Button>
-            )}
-            
-            <Button
-              onClick={handleSubmit}
-              disabled={isSubmitting || isDeleting || isEmailSending}
-              type="button"
-              className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-sm hover:shadow-md transition-all min-w-[120px] justify-center"
-            >
-              {isSubmitting ? 
-                <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
-                <Save className="h-4 w-4 mr-1" />
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Alert Dialog for email preview confirmation */}
+      <AlertDialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send Email Invitation</AlertDialogTitle>
+            <AlertDialogDescription>
+              Would you like to preview the email before sending it to {attendees.length} attendee{attendees.length !== 1 ? 's' : ''}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              // User chose not to preview, proceed with sending directly
+              if (previewEventData) {
+                sendEmail(previewEventData).then(() => {
+                  handleSubmit();
+                }).catch(error => {
+                  toast({
+                    title: 'Email sending failed',
+                    description: 'The email could not be sent. Please check your SMTP settings.',
+                    variant: 'destructive'
+                  });
+                });
               }
-              {isSubmitting
-                ? (event ? 'Updating...' : 'Creating...')
-                : (event ? 'Update Event' : 'Create Event')}
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            }}>
+              Send Without Preview
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              // Navigate to email tab and show preview
+              setActiveTab('emails');
+              if (previewEventData) {
+                generatePreview(previewEventData);
+              }
+            }}>
+              Preview First
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };
 
