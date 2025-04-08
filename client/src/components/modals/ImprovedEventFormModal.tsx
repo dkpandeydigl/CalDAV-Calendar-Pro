@@ -167,7 +167,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     previewError, 
     lastSendResult,
     isLoading: isEmailPreviewLoading,
-    isSending, 
+    isSending: isEmailSending, 
     generatePreview, 
     clearPreview,
     sendEmail
@@ -796,7 +796,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       </SelectTrigger>
                       <SelectContent>
                         {getTimezones().map(tz => (
-                          <SelectItem key={tz.value} value={tz.value}>{tz.label}</SelectItem>
+                          <SelectItem key={tz} value={tz}>{tz}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -860,7 +860,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       })}
                     >
                       <SelectTrigger id="repeat">
-                        <SelectValue placeholder="Select recurrence pattern" />
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="None">Does not repeat</SelectItem>
@@ -1037,7 +1037,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         onValueChange={(value) => setAttendeeRole(value as AttendeeRole)}
                       >
                         <SelectTrigger id="attendeeRole">
-                          <SelectValue placeholder="Select role" />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="Chairman">Chairman</SelectItem>
@@ -1098,7 +1098,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                   onValueChange={(value) => handleUpdateAttendeeRole(attendee.id, value as AttendeeRole)}
                                 >
                                   <SelectTrigger className="h-7 text-xs w-[110px]">
-                                    <SelectValue placeholder="Select role" />
+                                    <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="Chairman">Chairman</SelectItem>
@@ -1127,7 +1127,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <TabsContent value="resources" className="space-y-6 mt-0">
                 <ResourceManager
                   resources={resources}
-                  onResourcesChange={setResources}
+                  setResources={setResources}
                 />
               </TabsContent>
               
@@ -1186,24 +1186,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       </div>
                     ) : previewData ? (
                       <div className="border rounded-md">
-                        <EmailPreview 
-                          isLoading={false}
-                          error={null}
-                          html={previewData?.html || null}
-                          onRefresh={() => {
-                            const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                            const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
-                            generatePreview({
-                              title,
-                              description,
-                              location,
-                              startDate: startDateTime,
-                              endDate: endDateTime,
-                              attendees,
-                              resources
-                            });
-                          }}
-                        />
+                        <EmailPreview previewData={previewData} />
                         
                         {lastSendResult && (
                           <Alert 
@@ -1238,15 +1221,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                                 console.error('Failed to send email:', error);
                               }
                             }}
-                            disabled={isSending || isSubmitting}
+                            disabled={isEmailSending || isSubmitting}
                             className="bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
                           >
-                            {isSending ? (
+                            {isEmailSending ? (
                               <Loader2 className="h-4 w-4 animate-spin mr-1" />
                             ) : (
                               <Mail className="h-4 w-4 mr-1" />
                             )}
-                            {isSending ? 'Sending...' : 'Send Email & Save Event'}
+                            {isEmailSending ? 'Sending...' : 'Send Email & Save Event'}
                           </Button>
                         </div>
                       </div>
@@ -1270,7 +1253,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 <Button
                   variant="destructive"
                   onClick={handleDelete}
-                  disabled={isSubmitting || isDeleting || isSending}
+                  disabled={isSubmitting || isDeleting || isEmailSending}
                   className="flex items-center gap-2"
                 >
                   {isDeleting ? (
@@ -1308,16 +1291,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     // Show the confirmation dialog
                     setShowPreviewDialog(true);
                   }}
-                  disabled={isSubmitting || isDeleting || isSending}
+                  disabled={isSubmitting || isDeleting || isEmailSending}
                   type="button"
                   className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all min-w-[180px] justify-center text-white"
                 >
-                  {isSubmitting || isSending ? (
+                  {isSubmitting || isEmailSending ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-1" />
                   ) : (
                     <Mail className="h-4 w-4 mr-1" />
                   )}
-                  {isSubmitting || isSending 
+                  {isSubmitting || isEmailSending 
                     ? 'Processing...' 
                     : 'Send Mail and Create'}
                 </Button>
@@ -1325,7 +1308,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               
               <Button
                 onClick={handleSubmit}
-                disabled={isSubmitting || isDeleting || isSending}
+                disabled={isSubmitting || isDeleting || isEmailSending}
                 type="button"
                 className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-sm hover:shadow-md transition-all min-w-[120px] justify-center"
               >
@@ -1362,13 +1345,6 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   
                   // If email was sent successfully, create the event
                   await handleSubmit();
-                  
-                  // Success notification
-                  toast({
-                    title: 'Success',
-                    description: 'Email sent and event created successfully.',
-                    variant: 'default'
-                  });
                 } catch (error) {
                   // Email sending failed
                   toast({
@@ -1376,8 +1352,6 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     description: 'The email could not be sent. Please check your SMTP settings.',
                     variant: 'destructive'
                   });
-                } finally {
-                  setShowPreviewDialog(false);
                 }
               }}
             >
@@ -1392,9 +1366,6 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 // Generate preview
                 generatePreview(tempEventData);
-                
-                // Close the confirmation dialog
-                setShowPreviewDialog(false);
               }}
               className="bg-primary text-white hover:bg-primary/90"
             >
