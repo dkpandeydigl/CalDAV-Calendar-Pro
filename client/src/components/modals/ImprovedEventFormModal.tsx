@@ -465,6 +465,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   };
   
   const handleApplyTemplate = (templateId: string) => {
+    if (templateId === "none") {
+      // Clear the description when "None" is selected
+      setDescription("");
+      setSelectedTemplate(null);
+      return;
+    }
+    
     const template = templates.find(t => t.id === templateId);
     if (template) {
       setDescription(template.content);
@@ -835,7 +842,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             <SelectValue placeholder="Select Template" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="none">None</SelectItem>
                             {templates.map((template) => (
                               <SelectItem key={template.id} value={template.id}>
                                 {template.name}
@@ -983,7 +990,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <TabsContent value="resources" className="mt-0 p-0">
                 <ResourceManager 
                   resources={resources}
-                  onChange={setResources}
+                  onResourcesChange={setResources}
                 />
               </TabsContent>
               
@@ -1186,12 +1193,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 <div className="space-y-4">
                   <div className="flex-1 min-h-[500px]">
                     <EmailPreview 
-                      type="invitation"
                       isLoading={isEmailPreviewLoading}
-                      previewData={previewData}
+                      html={previewData?.html || null}
                       error={previewError}
                       lastSendResult={lastSendResult}
                       isSending={isEmailSending}
+                      showSendButton={true}
                       onSend={() => {
                         // Prepare the data for sending
                         if (!title || !startDate || !endDate) {
