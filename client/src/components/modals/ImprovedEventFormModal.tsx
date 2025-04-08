@@ -183,6 +183,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           console.error('Failed to parse attendees', error);
         }
         
+        // Try to parse resources from event if available
+        try {
+          const parsedResources = parseResourcesFromEvent(event);
+          if (parsedResources.length > 0) {
+            setResources(parsedResources);
+          }
+        } catch (error) {
+          console.error('Failed to parse resources', error);
+        }
+        
         // Try to parse recurrence from event if available
         try {
           // First check if we have recurrenceRule (from schema) and use that
@@ -488,6 +498,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         calendarId: parseInt(calendarId),
         busyStatus: isBusy ? 'busy' : 'free',
         attendees: attendeesJson,
+        resources: resources.length > 0 ? JSON.stringify(resources) : null,
         recurrenceRule,
         syncStatus: 'local',
       };
@@ -506,7 +517,6 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           ...eventData,
           uid: `event-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
           // Include mandatory fields with null/default values to match schema requirements
-          resources: null,
           etag: null,
           url: null,
           rawData: null,

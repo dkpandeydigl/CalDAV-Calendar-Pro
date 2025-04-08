@@ -567,7 +567,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
    * @returns HTML content for the email preview
    */
   public generateEmailPreview(data: EventInvitationData): string {
-    const { title, description, location, startDate, endDate, organizer, attendees } = data;
+    const { title, description, location, startDate, endDate, organizer, attendees, resources } = data;
     
     // Format the date for display in email
     const dateFormat = new Intl.DateTimeFormat('en-US', {
@@ -649,6 +649,21 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
                   `).join('')}
                 </div>
               </div>
+              
+              ${resources && resources.length > 0 ? `
+              <div class="detail-row">
+                <span class="label">Resources:</span> 
+                <div class="resources-list">
+                  ${resources.map((resource: Resource) => `
+                    <div class="resource-item">
+                      ${resource.subType}${resource.capacity ? ` (Capacity: ${resource.capacity})` : ''} 
+                      ${resource.remarks ? `<br><em>Notes: ${resource.remarks}</em>` : ''}
+                      <br>Admin: ${resource.adminName || resource.adminEmail}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+              ` : ''}
             </div>
             
             <p>The event details will be attached in an iCalendar file that recipients can import into their calendar application.</p>

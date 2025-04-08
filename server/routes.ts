@@ -5421,6 +5421,22 @@ END:VCALENDAR`;
       // Generate a unique ID for this event
       const uid = `preview-${Date.now()}@caldav-app`;
       
+      // Parse resources if they're sent as a string
+      let parsedResources = [];
+      if (resources) {
+        try {
+          parsedResources = typeof resources === 'string' ? JSON.parse(resources) : resources;
+          if (!Array.isArray(parsedResources)) {
+            throw new Error("Resources must be an array");
+          }
+        } catch (error) {
+          return res.status(400).json({
+            message: "Invalid resources format",
+            error: (error instanceof Error) ? error.message : String(error)
+          });
+        }
+      }
+      
       // Prepare the event invitation data
       const invitationData = {
         eventId: 0, // This is just a preview, not a real event
@@ -5555,6 +5571,22 @@ END:VCALENDAR`;
         }
       }
       
+      // Parse resources if they're sent as a string
+      let parsedResources = [];
+      if (resources) {
+        try {
+          parsedResources = typeof resources === 'string' ? JSON.parse(resources) : resources;
+          if (!Array.isArray(parsedResources)) {
+            throw new Error("Resources must be an array");
+          }
+        } catch (error) {
+          return res.status(400).json({
+            message: "Invalid resources format",
+            error: (error instanceof Error) ? error.message : String(error)
+          });
+        }
+      }
+      
       // Prepare the event invitation data
       const invitationData = {
         eventId: eventId || 0,
@@ -5573,7 +5605,8 @@ END:VCALENDAR`;
           name: a.name,
           role: a.role || 'REQ-PARTICIPANT',
           status: 'NEEDS-ACTION'
-        }))
+        })),
+        resources: parsedResources
       };
       
       // Send the invitation emails
