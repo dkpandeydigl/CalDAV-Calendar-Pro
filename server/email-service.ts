@@ -287,7 +287,7 @@ export class EmailService {
                 <span class="label">End:</span> ${formattedEnd}
               </div>
               <div class="detail-row">
-                <span class="label">Organizer:</span> ${data.organizer.name || data.organizer.email}
+                <span class="label">Organizer:</span> ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
               </div>
             </div>
             
@@ -323,7 +323,7 @@ Event: ${title}
 ${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}
 Start: ${formattedStart}
 End: ${formattedEnd}
-Organizer: ${data.organizer.name || data.organizer.email}
+Organizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
 
 Resource Information:
 Resource: ${resource.subType}
@@ -437,7 +437,7 @@ This notification was sent using CalDAV Calendar Application.`;
                 <span class="label">End:</span> ${formattedEnd}
               </div>
               <div class="detail-row">
-                <span class="label">Organizer:</span> ${data.organizer.name || data.organizer.email}
+                <span class="label">Organizer:</span> ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
               </div>
             </div>
             
@@ -462,7 +462,7 @@ This notification was sent using CalDAV Calendar Application.`;
         : attendee.email,
       subject: `Invitation: ${title}`,
       html: htmlContent,
-      text: `Hello ${attendeeName},\n\nYou have been invited to the following event:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer.name || data.organizer.email}\n\nThe event details are attached in an iCalendar file that you can import into your calendar application.\n\nThis invitation was sent using CalDAV Calendar Application.`,
+      text: `Hello ${attendeeName},\n\nYou have been invited to the following event:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n\nThe event details are attached in an iCalendar file that you can import into your calendar application.\n\nThis invitation was sent using CalDAV Calendar Application.`,
       attachments: [
         {
           filename: `invitation-${data.uid}.ics`,
@@ -660,18 +660,18 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
                 <span class="label">End:</span> ${formattedEnd}
               </div>
               <div class="detail-row">
-                <span class="label">Organizer:</span> ${organizer.name || organizer.email}
+                <span class="label">Organizer:</span> ${organizer ? (organizer.name || organizer.email) : 'Unknown'}
               </div>
               
               <div class="detail-row">
                 <span class="label">Attendees:</span> 
                 <div class="attendees-list">
-                  ${attendees.map(attendee => `
+                  ${attendees && attendees.length > 0 ? attendees.map(attendee => `
                     <div class="attendee-item">
                       ${attendee.name ? `${attendee.name} (${attendee.email})` : attendee.email} 
                       - Role: ${attendee.role || 'Participant'}
                     </div>
-                  `).join('')}
+                  `).join('') : '<div class="attendee-item">No attendees</div>'}
                 </div>
               </div>
               
@@ -863,7 +863,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
                 <span class="label">End:</span> ${formattedEnd}
               </div>
               <div class="detail-row">
-                <span class="label">Organizer:</span> ${data.organizer.name || data.organizer.email}
+                <span class="label">Organizer:</span> ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
               </div>
             </div>
             
@@ -888,7 +888,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         : attendee.email,
       subject: `Cancelled: ${title}`,
       html: htmlContent,
-      text: `CANCELLED EVENT\n\nHello ${attendeeName},\n\nThe following event has been CANCELLED:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer.name || data.organizer.email}\n\nYour calendar will be updated automatically if you previously accepted this invitation.\n\nThis cancellation notice was sent using CalDAV Calendar Application.`,
+      text: `CANCELLED EVENT\n\nHello ${attendeeName},\n\nThe following event has been CANCELLED:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n\nYour calendar will be updated automatically if you previously accepted this invitation.\n\nThis cancellation notice was sent using CalDAV Calendar Application.`,
       attachments: [
         {
           filename: `cancellation-${data.uid}.ics`,
@@ -939,14 +939,20 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     if (description) icsContent.push(`DESCRIPTION:${description.replace(/\\n/g, '\\n')}`);
     if (location) icsContent.push(`LOCATION:${location}`);
     
-    // Add organizer
-    icsContent.push(`ORGANIZER;CN=${organizer.name || organizer.email}:mailto:${organizer.email}`);
+    // Add organizer if exists
+    if (organizer && organizer.email) {
+      icsContent.push(`ORGANIZER;CN=${organizer.name || organizer.email}:mailto:${organizer.email}`);
+    }
     
-    // Add human attendees
-    attendees.forEach(attendee => {
-      let attendeeStr = `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=${attendee.role || 'REQ-PARTICIPANT'};PARTSTAT=${attendee.status || 'NEEDS-ACTION'};CN=${attendee.name || attendee.email}:mailto:${attendee.email}`;
-      icsContent.push(attendeeStr);
-    });
+    // Add human attendees if they exist
+    if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+      attendees.forEach(attendee => {
+        if (attendee && attendee.email) {
+          let attendeeStr = `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=${attendee.role || 'REQ-PARTICIPANT'};PARTSTAT=${attendee.status || 'NEEDS-ACTION'};CN=${attendee.name || attendee.email}:mailto:${attendee.email}`;
+          icsContent.push(attendeeStr);
+        }
+      });
+    }
     
     // Add resource attendees if they exist
     if (resources && Array.isArray(resources) && resources.length > 0) {
