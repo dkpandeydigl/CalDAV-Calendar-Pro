@@ -360,10 +360,45 @@ export class DatabaseStorage implements IStorage {
           }
         } catch (calendarDeleteError) {
           console.error(`Final calendar deletion error:`, calendarDeleteError);
+          
+          // Check specifically for foreign key constraint errors
+          const errorMsg = calendarDeleteError instanceof Error ? calendarDeleteError.message : String(calendarDeleteError);
+          if (errorMsg.includes('constraint') || errorMsg.includes('foreign key')) {
+            // This might be a constraint error with references to events or sharing records
+            console.error(`Detected potential constraint error during calendar deletion`);
+            
+            // Let's try to find what's still referencing the calendar
+            try {
+              // Check events again
+              const remainingEvents = await db.select({ id: events.id })
+                .from(events)
+                .where(eq(events.calendarId, id))
+                .limit(5);
+                
+              // Check sharing records again
+              const remainingSharing = await db.select({ id: calendarSharing.id })
+                .from(calendarSharing)
+                .where(eq(calendarSharing.calendarId, id))
+                .limit(5);
+              
+              return {
+                success: false, 
+                error: "Failed to delete calendar record due to database constraints", 
+                details: {
+                  message: errorMsg,
+                  remainingEvents: remainingEvents.map(e => e.id),
+                  remainingSharing: remainingSharing.map(s => s.id)
+                }
+              };
+            } catch (innerError) {
+              console.error("Error while checking for remaining references:", innerError);
+            }
+          }
+          
           return {
             success: false, 
             error: "Failed to delete calendar record", 
-            details: calendarDeleteError instanceof Error ? calendarDeleteError.message : String(calendarDeleteError)
+            details: errorMsg
           };
         }
       } catch (cascadeError) {

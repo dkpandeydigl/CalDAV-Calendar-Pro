@@ -1146,7 +1146,7 @@ END:VCALENDAR`
   async function deleteCalendarFromDAViCal(
     serverConnection: typeof serverConnections.$inferSelect,
     calendarUrl: string
-  ): Promise<{ success: boolean, errorMessage?: string, errorDetails?: any }> {
+  ): Promise<{ success: boolean, errorMessage: string, errorDetails?: any }> {
     console.log(`Attempting to delete calendar from DAViCal server at URL: ${calendarUrl}`);
     
     if (!calendarUrl) {
@@ -1207,7 +1207,7 @@ END:VCALENDAR`
       
       if (response.ok) {
         console.log("Successfully deleted calendar with standard DELETE");
-        return { success: true };
+        return { success: true, errorMessage: "" };
       } else {
         // Store error information but continue with next method
         console.warn(`Standard DELETE failed with status: ${response.status}`);
@@ -1246,7 +1246,7 @@ END:VCALENDAR`
       
       if (response.ok || response.status === 302) {
         console.log("Successfully deleted calendar using DAViCal-specific API");
-        return { success: true };
+        return { success: true, errorMessage: "" };
       } else {
         // Read and log the response for debugging
         let responseText = "";
@@ -1276,20 +1276,20 @@ END:VCALENDAR`
       
       if (check.status === 404) {
         console.log("Calendar no longer exists - verification confirms deletion was successful");
-        return { success: true };
+        return { success: true, errorMessage: "" };
       } else {
         console.log(`Calendar verification check returned status: ${check.status} - calendar might still exist`);
         
         // For certain status codes, we might consider it a success anyway
         if (check.status === 401 || check.status === 403) {
           console.log("Received authentication/permission error - assuming calendar is deleted or inaccessible");
-          return { success: true };
+          return { success: true, errorMessage: "" };
         }
       }
     } catch (checkError) {
       // If the check fails with an error, the calendar might actually be gone
       console.log("Verification check failed with exception, which could mean the calendar is gone:", checkError);
-      return { success: true };
+      return { success: true, errorMessage: "" };
     }
     
     // One final attempt: try to do an OPTIONS request to see if the calendar exists
@@ -1304,12 +1304,12 @@ END:VCALENDAR`
       
       if (optionsCheck.status === 404) {
         console.log("OPTIONS check confirms calendar is gone");
-        return { success: true };
+        return { success: true, errorMessage: "" };
       }
       console.log(`OPTIONS check status: ${optionsCheck.status}`);
     } catch (optionsError) {
       console.log("OPTIONS check failed, which may indicate the calendar is gone:", optionsError);
-      return { success: true };
+      return { success: true, errorMessage: "" };
     }
     
     // If we're still here, all deletion attempts failed

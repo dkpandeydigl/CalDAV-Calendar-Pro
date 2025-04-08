@@ -212,12 +212,23 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   };
   
   // Delete calendar
-  const handleDeleteCalendar = () => {
-    if (!deletingCalendar) return;
+  const handleDeleteCalendar = async () => {
+    if (!deletingCalendar) {
+      console.error("Cannot delete calendar: deletingCalendar is null");
+      return;
+    }
     
-    deleteCalendar(deletingCalendar.id);
-    setIsDeleteDialogOpen(false);
-    setDeletingCalendar(null);
+    console.log(`Attempting to delete calendar: ${deletingCalendar.id} (${deletingCalendar.name})`);
+    
+    try {
+      await deleteCalendar(deletingCalendar.id);
+      console.log(`Successfully called deleteCalendar for ID: ${deletingCalendar.id}`);
+    } catch (error) {
+      console.error("Error in handleDeleteCalendar:", error);
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setDeletingCalendar(null);
+    }
   };
   
   // Open unshare dialog for individual calendar
