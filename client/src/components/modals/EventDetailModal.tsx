@@ -106,6 +106,19 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // For events in user's own calendars, always allow edit
   // First check direct match
   let isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
+
+  // Special handling for DK Pandey (user ID 4) - consider all events in his calendar as his own
+  // This is specifically requested by the client
+  if (!isUsersOwnCalendar && calendar && user?.id === 4) {
+    // For DK Pandey, if it's his calendar, force isUsersOwnCalendar = true
+    if (
+      calendar.name.toLowerCase().includes('d k pandey') || 
+      calendar.name.toLowerCase().includes('pandey')
+    ) {
+      console.log('Calendar ownership granted to DK Pandey via special case');
+      isUsersOwnCalendar = true;
+    }
+  }
   
   // If not a direct match, do a more forgiving check using calendar name
   if (!isUsersOwnCalendar && calendar && user) {
@@ -187,11 +200,45 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     return hasActualAttendees || isPandeyCalendar;
   })();
   
+  // Check if the event has resources
+  const hasResources = (() => {
+    // First check if resources exists and is an array or object
+    const resourcesData = event.resources;
+    
+    // If it's an array with items
+    if (Array.isArray(resourcesData) && resourcesData.length > 0) {
+      return true;
+    }
+    
+    // If it's a string that might be JSON
+    if (typeof resourcesData === 'string' && resourcesData.trim() !== '') {
+      try {
+        const parsed = JSON.parse(resourcesData);
+        return Array.isArray(parsed) ? parsed.length > 0 : !!parsed;
+      } catch (e) {
+        // Not JSON, but still a non-empty string
+        return true;
+      }
+    }
+    
+    // If it's an object (not array, not null)
+    if (resourcesData && typeof resourcesData === 'object' && !Array.isArray(resourcesData)) {
+      return true;
+    }
+    
+    return false;
+  })();
+
   // Determine if the event should show a Cancel Event button
-  // We ONLY want to show this button when:
+  // We want to show this button when:
   // 1. The event belongs to the user's own calendar
-  // 2. The event has at least one attendee
-  const isEventOrganizer = isUsersOwnCalendar && hasAttendees;
+  // 2. AND (the event has at least one attendee OR it has resources)
+  const isEventOrganizer = isUsersOwnCalendar && (hasAttendees || hasResources);
+  
+  // For DK Pandey (user ID 4), special case to always show Cancel Event button 
+  // for events with attendees or resources
+  const isDkPandey = user?.id === 4;
+  const shouldShowCancelButton = isEventOrganizer || (isDkPandey && (hasAttendees || hasResources));
   
   // Handle delete event
   const handleDelete = async () => {
@@ -600,8 +647,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex space-x-2">
               {!isUserLoading && (
                 <>
-                  {/* Only show Cancel Event button for events with attendees where the user is the organizer */}
-                  {(hasAttendees && isEventOrganizer) && (
+                  {/* Show Cancel Event button for events with attendees or resources on the user's calendar, or for DK Pandey */}
+                  {shouldShowCancelButton && (
                     <Button 
                       variant="outline" 
                       className="border-amber-200 text-amber-600 hover:bg-amber-50 flex items-center gap-1" 
@@ -757,17 +804,88 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 }
                 return null;
               })()}
+              
+              {/* Show resources */}
+              {(() => {
+                // Use the same parsing approach we used above for resources
+                let resourcesData = event.resources as unknown;
+                if (!resourcesData) return null;
+                
+                // Parse the resources data
+                const parseResourcesData = (data: any): any[] => {
+                  if (!data) return [];
+                  
+                  // If already an array, use it
+                  if (Array.isArray(data)) return data;
+                  
+                  // If it's a string, try to parse it
+                  if (typeof data === 'string') {
+                    try {
+                      // First try direct JSON.parse
+                      const parsed = JSON.parse(data);
+                      return Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                      // If that fails, try removing extra quotes
+                      try {
+                        const cleanedString = data.replace(/\\"/g, '"').replace(/^"|"$/g, '').replace(/\\\\/g, '\\');
+                        const parsed = JSON.parse(cleanedString);
+                        return Array.isArray(parsed) ? parsed : [parsed];
+                      } catch (e2) {
+                        // Last resort, treat as a simple string
+                        return [data];
+                      }
+                    }
+                  }
+                  
+                  // If it's an object but not an array, wrap it
+                  if (typeof data === 'object' && data !== null) {
+                    return [data];
+                  }
+                  
+                  return [];
+                };
+                
+                // Process the resources
+                const resources = parseResourcesData(resourcesData);
+                if (resources.length > 0) {
+                  return (
+                    <div className="mt-3">
+                      <p className="text-sm font-medium mb-1">Resources to be released:</p>
+                      <div className="text-sm p-3 bg-gray-50 rounded-md">
+                        <ul className="space-y-1 list-disc pl-5">
+                          {resources.map((resource, index) => {
+                            // Handle both string and object formats
+                            if (typeof resource === 'object' && resource !== null) {
+                              // Extract the email, name, or id for display
+                              const email = resource.email || resource.adminEmail;
+                              const name = resource.name || resource.subType || resource.id;
+                              const display = name || email || 'Resource';
+                              const detail = resource.subType || resource.id;
+                              
+                              return <li key={index}>{display} {detail ? `(${detail})` : ''}</li>;
+                            } else {
+                              // Simple string format
+                              return <li key={index}>{String(resource)}</li>;
+                            }
+                          })}
+                        </ul>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
             
             <div className="text-sm bg-amber-50 p-3 rounded-md border border-amber-200">
               <div className="flex items-start mb-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600 mr-2 mt-0.5" />
                 <p className="text-amber-800">
-                  This action will send a cancellation email to all attendees and then delete the event.
+                  This action will send a cancellation email to all attendees, release any booked resources, and then delete the event.
                 </p>
               </div>
               <p className="text-xs text-amber-700">
-                The event will be marked as CANCELLED in their calendars.
+                The event will be marked as CANCELLED in all calendars, and any reserved resources will be released.
               </p>
             </div>
             

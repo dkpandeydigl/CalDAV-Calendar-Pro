@@ -220,7 +220,9 @@ export function registerImportRoutes(app: Express) {
             busyStatus: "busy",
             attendees: [],
             resources: [],
-            rawData: {}
+            rawData: {},
+            emailSent: 'not_sent',
+            emailError: null
           };
           
           console.log("Attempting to import event:", { 

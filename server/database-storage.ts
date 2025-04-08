@@ -111,7 +111,9 @@ export class DatabaseStorage implements IStorage {
         uid: `${Date.now()}-${createId()}@caldavclient`,
         url: null,
         etag: null,
-        rawData: null
+        rawData: null,
+        emailSent: 'not_sent',
+        emailError: null
       };
       
       await this.createEvent(event1);
@@ -137,7 +139,9 @@ export class DatabaseStorage implements IStorage {
         uid: `${Date.now() + 1}-${createId()}@caldavclient`,
         url: null,
         etag: null,
-        rawData: null
+        rawData: null,
+        emailSent: 'not_sent',
+        emailError: null
       };
       
       await this.createEvent(event2);
