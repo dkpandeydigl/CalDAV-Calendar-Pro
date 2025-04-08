@@ -4,6 +4,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
+import bcrypt from 'bcryptjs';
 import { storage } from "./database-storage";
 import { syncService } from "./sync-service";
 import { User as SelectUser } from "@shared/schema";
@@ -18,16 +19,46 @@ declare global {
 const scryptAsync = promisify(scrypt);
 
 async function hashPassword(password: string) {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
+  // Use bcrypt for new passwords to match existing database format
+  const saltRounds = 10;
+  return await bcrypt.hash(password, saltRounds);
 }
 
 async function comparePasswords(supplied: string, stored: string) {
-  const [hashed, salt] = stored.split(".");
-  const hashedBuf = Buffer.from(hashed, "hex");
-  const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(hashedBuf, suppliedBuf);
+  if (!stored || typeof stored !== 'string') {
+    console.error('Invalid stored password:', stored);
+    return false;
+  }
+
+  try {
+    // Detect if the password is in bcrypt format (starts with $2a$ or $2b$)
+    if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
+      console.log('Detected bcrypt format password, using bcrypt compare');
+      return await bcrypt.compare(supplied, stored);
+    } 
+    // For scrypt format (contains a dot separating hash and salt)
+    else if (stored.includes('.')) {
+      console.log('Detected scrypt format password, using scrypt compare');
+      const [hashed, salt] = stored.split(".");
+      
+      if (!hashed || !salt) {
+        console.error('Failed to extract hash or salt from stored password');
+        return false;
+      }
+
+      const hashedBuf = Buffer.from(hashed, "hex");
+      const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
+      return timingSafeEqual(hashedBuf, suppliedBuf);
+    } 
+    // Unrecognized format
+    else {
+      console.error('Unrecognized password hash format, cannot compare');
+      return false;
+    }
+  } catch (error) {
+    console.error('Error comparing passwords:', error);
+    return false;
+  }
 }
 
 // Function to verify credentials with the CalDAV server
@@ -112,19 +143,32 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
+        console.log(`Attempting to authenticate user: ${username}`);
         const user = await storage.getUserByUsername(username);
         
         if (!user) {
+          console.log(`Authentication failed: User ${username} not found`);
           return done(null, false, { message: "Invalid username or password" });
+        }
+        
+        console.log(`User found: ${user.id}, checking password field:`, 
+          user.password ? `Password exists (${user.password.length} chars)` : 'No password');
+        
+        if (!user.password) {
+          console.log(`Authentication failed: User ${username} has no password set`);
+          return done(null, false, { message: "User has no password set" });
         }
         
         const isPasswordValid = await comparePasswords(password, user.password);
         if (!isPasswordValid) {
+          console.log(`Authentication failed: Invalid password for user ${username}`);
           return done(null, false, { message: "Invalid username or password" });
         }
         
+        console.log(`Authentication successful for user ${username}`);
         return done(null, user);
       } catch (error) {
+        console.error(`Authentication error for user ${username}:`, error);
         return done(error);
       }
     }),
