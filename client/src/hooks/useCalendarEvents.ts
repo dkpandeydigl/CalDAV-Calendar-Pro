@@ -468,38 +468,76 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       // Extract the ID that was used in the update request
       const requestId = variables.id;
       
-      // Immediately update caches with the server response
-      // This is critical to prevent duplicate events from appearing
-      queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
-        if (!oldEvents) return [serverEvent];
+      // Create a function to update all caches consistently that can be called multiple times
+      const updateAllEventCaches = () => {
+        console.log(`Updating all caches for event ${serverEvent.title} (ID: ${serverEvent.id})`);
         
-        // First remove any potential duplicates (same UID but different ID)
-        const filteredEvents = oldEvents.filter(e => 
-          e.id === requestId || (e.uid !== serverEvent.uid || e.id === serverEvent.id)
+        // Handle main events cache first
+        queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
+          if (!oldEvents) return [serverEvent];
+          
+          // First remove any exact duplicates with same UID and different ID
+          // This is critical for preventing duplicates after sync
+          const eventsWithoutDuplicates = oldEvents.filter(e => 
+            // Keep this event if:
+            e.id === requestId || // It's the one we're updating
+            e.id === serverEvent.id || // It has the same ID as our server response
+            !e.uid || // It doesn't have a UID (keep it)
+            e.uid !== serverEvent.uid // It has a different UID (not a duplicate)
+          );
+          
+          // Then update the event that matches our request ID
+          return eventsWithoutDuplicates.map(e => 
+            (e.id === requestId || e.id === serverEvent.id) ? serverEvent : e
+          );
+        });
+        
+        // Update the calendar-specific cache too
+        queryClient.setQueryData<Event[]>(
+          ['/api/calendars', serverEvent.calendarId, 'events'], 
+          (oldEvents = []) => {
+            if (!oldEvents) return [serverEvent];
+            
+            // Apply the same deduplication logic
+            const eventsWithoutDuplicates = oldEvents.filter(e => 
+              e.id === requestId || 
+              e.id === serverEvent.id || 
+              !e.uid || 
+              e.uid !== serverEvent.uid
+            );
+            
+            return eventsWithoutDuplicates.map(e => 
+              (e.id === requestId || e.id === serverEvent.id) ? serverEvent : e
+            );
+          }
         );
         
-        // Then update the event that matches our request ID
-        return filteredEvents.map(e => e.id === requestId ? serverEvent : e);
-      });
+        // Update any date-filtered caches or other event caches
+        if (context?.allQueryKeys) {
+          context.allQueryKeys.forEach((key: QueryKey) => {
+            if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
+              queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
+                if (!oldEvents) return [serverEvent];
+                
+                // Apply the same deduplication logic
+                const eventsWithoutDuplicates = oldEvents.filter(e => 
+                  e.id === requestId || 
+                  e.id === serverEvent.id || 
+                  !e.uid || 
+                  e.uid !== serverEvent.uid
+                );
+                
+                return eventsWithoutDuplicates.map(e => 
+                  (e.id === requestId || e.id === serverEvent.id) ? serverEvent : e
+                );
+              });
+            }
+          });
+        }
+      };
       
-      // Update any date-filtered caches
-      if (context?.allQueryKeys) {
-        context.allQueryKeys.forEach((key: QueryKey) => {
-          if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
-            queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
-              if (!oldEvents) return [serverEvent];
-              
-              // First remove any potential duplicates
-              const filteredEvents = oldEvents.filter(e => 
-                e.id === requestId || (e.uid !== serverEvent.uid || e.id === serverEvent.id)
-              );
-              
-              // Then update the matching event
-              return filteredEvents.map(e => e.id === requestId ? serverEvent : e);
-            });
-          }
-        });
-      }
+      // Update all caches immediately for instant UI refresh
+      updateAllEventCaches();
       
       // If the event has a temporary ID (negative), we need to invalidate the queries to refresh
       if (requestId < 0) {
@@ -507,22 +545,17 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         queryClient.invalidateQueries({ queryKey: ['/api/events'] });
       }
       
-      // Final refresh after a short delay
+      // Trigger an immediate sync with the server and schedule a final refresh
+      // We do this in a timeout to ensure the UI updates first
       setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-        queryClient.invalidateQueries({ 
-          queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
-        });
-        
-        // Trigger an immediate sync with the server to ensure the event update is pushed to the CalDAV server
-        console.log('Triggering immediate sync for updated event');
-        
+        // Sync the event with the CalDAV server
         const syncEvent = async () => {
           try {
-            // First, make sure the event is properly saved in our local database
-            await queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            // Update caches again right before sync to ensure consistency
+            updateAllEventCaches();
             
-            // Then trigger an immediate sync with the CalDAV server
+            // Trigger an immediate sync with the CalDAV server
+            console.log('Triggering immediate sync for updated event');
             const syncResponse = await fetch('/api/sync/now', {
               method: 'POST',
               headers: {
@@ -537,18 +570,24 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             
             const syncResult = await syncResponse.json();
             
-            // Check if sync was successful based on the new response format
+            // Check if sync was successful based on the response format
             if (syncResponse.ok && syncResult.synced === true) {
               console.log('Immediate sync completed successfully after update:', syncResult);
               
-              // After successful sync, refresh the events list
-              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              // Update all caches again after successful sync
+              updateAllEventCaches();
+              
+              // Then do a final full refresh to ensure consistency with server
+              // But delay it slightly to avoid UI flicker
+              setTimeout(() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              }, 500);
             } else {
               // Not a critical error - we handle 202 status codes here which mean
               // the event was updated locally but not synced to the server
               console.log('Sync status after update:', syncResult);
               
-              // If the response has requiresAuth or requiresConnection, we show a more specific message
+              // We provide a more specific message based on the response type
               if (syncResult.requiresAuth) {
                 toast({
                   title: "Event Updated Locally",
@@ -571,7 +610,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             }
           } catch (error) {
             console.error('Error during immediate sync after update:', error);
-            // Still show the event updated locally even if sync failed
+            // Still show the event locally even if sync failed
             toast({
               title: "Event Updated",
               description: "Event updated locally, but sync with server failed. Will retry automatically.",
@@ -580,8 +619,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           }
         };
         
+        // Execute the sync operation
         syncEvent();
-      }, 100);
+      }, 50);
     },
     onError: (error: Error, variables: { id: number, data: Partial<Event> }, context: UpdateMutationContext | undefined) => {
       console.error(`Error updating event ${variables.id}:`, error);

@@ -28,6 +28,33 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
     
     // Sort events to prioritize those with URLs (synced with server) and more complete data
     const sortedEvents = [...events].sort((a, b) => {
+      // Prefer events with attendees or resources (more complete data)
+      const aHasAttendees = !!a.attendees && (
+        (typeof a.attendees === 'string' && a.attendees.length > 0) ||
+        (Array.isArray(a.attendees) && a.attendees.length > 0)
+      );
+      const bHasAttendees = !!b.attendees && (
+        (typeof b.attendees === 'string' && b.attendees.length > 0) ||
+        (Array.isArray(b.attendees) && b.attendees.length > 0)
+      );
+      
+      const aHasResources = !!a.resources && (
+        (typeof a.resources === 'string' && a.resources.length > 0) ||
+        (Array.isArray(a.resources) && a.resources.length > 0)
+      );
+      const bHasResources = !!b.resources && (
+        (typeof b.resources === 'string' && b.resources.length > 0) ||
+        (Array.isArray(b.resources) && b.resources.length > 0)
+      );
+      
+      // Prefer events with attendees
+      if (aHasAttendees && !bHasAttendees) return -1;
+      if (!aHasAttendees && bHasAttendees) return 1;
+      
+      // Prefer events with resources
+      if (aHasResources && !bHasResources) return -1;
+      if (!aHasResources && bHasResources) return 1;
+      
       // Prefer events with URLs (synced with server)
       if (a.url && !b.url) return -1;
       if (!a.url && b.url) return 1;
@@ -51,11 +78,24 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       return bProps - aProps; // More props is better
     });
     
-    // Special handling for April 29th and 30th dates which have duplication issues
-    const isApril2930 = dateKey && (dateKey === '2025-04-29' || dateKey === '2025-04-30');
+    // Special handling for all dates to prevent duplication after updates
+    const eventsByUid = new Map<string, Event[]>();
+    
+    // Create a map of UIDs for all events to better handle duplicates
+    sortedEvents.forEach(event => {
+      if (!event.uid) return;
+      
+      if (!eventsByUid.has(event.uid)) {
+        eventsByUid.set(event.uid, []);
+      }
+      eventsByUid.get(event.uid)!.push(event);
+    });
     
     // For special dates, create a map of title -> events to handle exact title matches
     const eventsByTitle = new Map<string, Event[]>();
+    
+    // Special handling for April 29th and 30th dates which have duplication issues
+    const isApril2930 = dateKey && (dateKey === '2025-04-29' || dateKey === '2025-04-30');
     
     if (isApril2930) {
       // Group events by title for special dates
@@ -76,7 +116,7 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       }
     }
     
-    // Apply enhanced deduplication for problematic dates
+    // Apply enhanced deduplication for all dates
     sortedEvents.forEach(event => {
       // Check if this event has a start date
       if (!event.startDate) return;
@@ -84,21 +124,33 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       // Create a unique key based on title, start time and calendar
       const startTime = new Date(event.startDate).getTime();
       
-      // For special dates (April 29-30), use more aggressive deduplication
+      // Determine if this is a resource-related event
+      const isResourceEvent = 
+        (event.title && event.title.toLowerCase().includes('res')) ||
+        (event.resources && (
+          (typeof event.resources === 'string' && event.resources.length > 0) ||
+          (Array.isArray(event.resources) && event.resources.length > 0)
+        ));
+      
+      // Generate a unique key for the event
       let key;
-      if (isApril2930) {
-        // For April 30th events with resources, use UID as key if available to ensure uniqueness
-      if (event.uid && event.title && (event.title.toLowerCase().includes('res') || event.resources?.length)) {
-        // For resource events, use UID as the best deduplication key
+      
+      // If the event has a UID and there are duplicates with the same UID,
+      // use the UID as the primary deduplication key, especially for resource events
+      if (event.uid && (isResourceEvent || eventsByUid.get(event.uid)?.length > 1)) {
         key = event.uid;
-        console.log(`Using UID as key for resource event: ${event.title}, UID=${event.uid}`);
+        if (isApril2930) {
+          console.log(`Using UID as key for resource event: ${event.title}, UID=${event.uid}`);
+        }
       }
       // For special dates, first try exact match by title for non-resource events
-      else if (event.title && eventsByTitle.get(event.title)?.length === 1) {
+      else if (isApril2930 && event.title && eventsByTitle.get(event.title)?.length === 1) {
         // If there's only one event with this title, use the title as the key
         key = event.title;
-      } else {
-        // Otherwise use rounded time for more flexible matching
+      } 
+      // For special dates with potential duplicates, use more aggressive deduplication
+      else if (isApril2930) {
+        // Use rounded time for more flexible matching
         const roundedTime = Math.round(startTime / (5 * 60 * 1000)) * (5 * 60 * 1000);
         
         // For these problem dates, match based on title and approximate time only
@@ -111,29 +163,52 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
           console.log(`  Existing: ID=${existing.id}, UID=${existing.uid || 'none'}`);
           console.log(`  Duplicate: ID=${event.id}, UID=${event.uid || 'none'}`);
         }
-      }
       } else {
-        // Regular key includes calendar ID for normal dates
+        // Regular key includes calendar ID and exact time for normal dates
         key = `${event.title}-${startTime}-${event.calendarId}`;
       }
       
       // Only add this event if we haven't seen it before or if this one is better
       if (!seenEvents.has(key)) {
         seenEvents.set(key, event);
-      } else if (isApril2930) {
-        // For problem dates, keep the event with a URL or more complete data
+      } else {
+        // For all dates, apply intelligent deduplication by keeping the best version
         const existingEvent = seenEvents.get(key)!;
         
-        // Prefer events with URLs
-        if (!existingEvent.url && event.url) {
+        // Prefer events with resources or attendees (more complete data)
+        const hasAttendees = !!event.attendees && (
+          (typeof event.attendees === 'string' && event.attendees.length > 0) ||
+          (Array.isArray(event.attendees) && event.attendees.length > 0)
+        );
+        const existingHasAttendees = !!existingEvent.attendees && (
+          (typeof existingEvent.attendees === 'string' && existingEvent.attendees.length > 0) ||
+          (Array.isArray(existingEvent.attendees) && existingEvent.attendees.length > 0)
+        );
+        
+        const hasResources = !!event.resources && (
+          (typeof event.resources === 'string' && event.resources.length > 0) ||
+          (Array.isArray(event.resources) && event.resources.length > 0)
+        );
+        const existingHasResources = !!existingEvent.resources && (
+          (typeof existingEvent.resources === 'string' && existingEvent.resources.length > 0) ||
+          (Array.isArray(existingEvent.resources) && existingEvent.resources.length > 0)
+        );
+        
+        // Replace if this event has resources/attendees but existing doesn't
+        if ((hasResources && !existingHasResources) || (hasAttendees && !existingHasAttendees)) {
           seenEvents.set(key, event);
         }
-        // Or those with more attendees
-        else if (event.attendees?.length > (existingEvent.attendees?.length || 0)) {
+        // Or if this event has a URL but existing doesn't
+        else if (!existingEvent.url && event.url) {
           seenEvents.set(key, event);
         }
-        // Or those with longer descriptions
-        else if ((event.description?.length || 0) > (existingEvent.description?.length || 0)) {
+        // Or if this event is more recently updated
+        else if (event.updatedAt && existingEvent.updatedAt && 
+                 new Date(event.updatedAt) > new Date(existingEvent.updatedAt)) {
+          seenEvents.set(key, event);
+        }
+        // Or if this event has a lower ID (usually means it was created first)
+        else if (event.id < existingEvent.id && event.uid === existingEvent.uid) {
           seenEvents.set(key, event);
         }
       }
