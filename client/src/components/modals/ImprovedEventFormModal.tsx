@@ -156,7 +156,17 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   
   // Reset form when modal opens/closes or event changes
   useEffect(() => {
+    // Always reset the form when the modal closes to clear stale data
+    if (!open) {
+      resetForm();
+      return;
+    }
+    
+    // When modal opens
     if (open) {
+      // First, reset the form to ensure we start with a clean state
+      resetForm();
+      
       // Focus on title input after modal opens
       setTimeout(() => {
         titleInputRef.current?.focus();
@@ -184,6 +194,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           }
         } catch (error) {
           console.error('Failed to parse attendees', error);
+          // Ensure attendees is reset to empty array on error
+          setAttendees([]);
         }
         
         // Try to parse resources from event if available
@@ -194,6 +206,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           }
         } catch (error) {
           console.error('Failed to parse resources', error);
+          // Ensure resources is reset to empty array on error
+          setResources([]);
         }
         
         // Try to parse recurrence from event if available
@@ -267,36 +281,31 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         
         setAllDay(event.allDay || false);
         setTimezone(event.timezone || selectedTimezone);
-      } else {
-        // Creating new event
-        resetForm();
-        
+      } else if (selectedDate) {
         // If a date was selected in the calendar, use it for start/end
-        if (selectedDate) {
-          const date = new Date(selectedDate);
-          if (!isNaN(date.getTime())) {
-            // Use local date format to avoid timezone offset issues
-            const year = date.getFullYear();
-            const month = (date.getMonth() + 1).toString().padStart(2, '0');
-            const day = date.getDate().toString().padStart(2, '0');
-            const formattedDate = `${year}-${month}-${day}`;
-            
-            console.log(`Selected date from calendar: ${date.toString()}`);
-            console.log(`Formatted as local date: ${formattedDate}`);
-            
-            setStartDate(formattedDate);
-            setEndDate(formattedDate);
-            
-            // Create default time for new event (current hour + 1)
-            const now = new Date();
-            const hours = now.getHours().toString().padStart(2, '0');
-            const minutes = now.getMinutes().toString().padStart(2, '0');
-            setStartTime(`${hours}:${minutes}`);
-            
-            // End time is 1 hour later
-            const endHour = (now.getHours() + 1) % 24;
-            setEndTime(`${endHour.toString().padStart(2, '0')}:${minutes}`);
-          }
+        const date = new Date(selectedDate);
+        if (!isNaN(date.getTime())) {
+          // Use local date format to avoid timezone offset issues
+          const year = date.getFullYear();
+          const month = (date.getMonth() + 1).toString().padStart(2, '0');
+          const day = date.getDate().toString().padStart(2, '0');
+          const formattedDate = `${year}-${month}-${day}`;
+          
+          console.log(`Selected date from calendar: ${date.toString()}`);
+          console.log(`Formatted as local date: ${formattedDate}`);
+          
+          setStartDate(formattedDate);
+          setEndDate(formattedDate);
+          
+          // Create default time for new event (current hour + 1)
+          const now = new Date();
+          const hours = now.getHours().toString().padStart(2, '0');
+          const minutes = now.getMinutes().toString().padStart(2, '0');
+          setStartTime(`${hours}:${minutes}`);
+          
+          // End time is 1 hour later
+          const endHour = (now.getHours() + 1) % 24;
+          setEndTime(`${endHour.toString().padStart(2, '0')}:${minutes}`);
         }
         
         // Default to first available calendar
