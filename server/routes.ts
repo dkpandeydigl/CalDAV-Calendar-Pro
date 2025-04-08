@@ -48,6 +48,117 @@ declare global {
   }
 }
 
+// Helper functions to extract attendees and resources from iCalendar data
+// These functions analyze the raw iCalendar data to find ATTENDEE fields
+// and determine if they are regular attendees or resources
+
+/**
+ * Extract attendees from iCalendar data
+ * @param icsData The raw iCalendar data
+ * @returns Array of attendee objects
+ */
+function extractAttendeesFromICS(icsData: string | null): any[] {
+  if (!icsData) return [];
+  
+  const attendees: any[] = [];
+  const lines = icsData.split('\n');
+  
+  for (const line of lines) {
+    // Look for ATTENDEE lines that are NOT resources (don't have CUTYPE=RESOURCE)
+    if (line.startsWith('ATTENDEE') && !line.includes('CUTYPE=RESOURCE')) {
+      try {
+        // Extract email from mailto: part
+        const emailMatch = line.match(/mailto:([^;\s]+)/i);
+        const email = emailMatch ? emailMatch[1] : '';
+        
+        // Extract role
+        let role = 'Member'; // Default role
+        if (line.includes('ROLE=CHAIR')) {
+          role = 'Chairman';
+        } else if (line.includes('ROLE=OPT-PARTICIPANT')) {
+          role = 'Secretary';
+        }
+        
+        // Extract name from CN parameter if available
+        const cnMatch = line.match(/CN=([^;:]+)/i);
+        const name = cnMatch ? cnMatch[1] : email;
+        
+        // Only add if we have an email
+        if (email) {
+          attendees.push({
+            id: `attendee-${attendees.length + 1}`,
+            email,
+            name,
+            role
+          });
+        }
+      } catch (error) {
+        console.error('Error parsing attendee from iCalendar data:', error);
+      }
+    }
+  }
+  
+  console.log(`Extracted ${attendees.length} attendees from iCalendar data`);
+  return attendees;
+}
+
+/**
+ * Extract resources from iCalendar data
+ * @param icsData The raw iCalendar data
+ * @returns Array of resource objects
+ */
+function extractResourcesFromICS(icsData: string | null): any[] {
+  if (!icsData) return [];
+  
+  const resources: any[] = [];
+  const lines = icsData.split('\n');
+  
+  for (const line of lines) {
+    // Look specifically for resource attendees
+    if (line.startsWith('ATTENDEE') && line.includes('CUTYPE=RESOURCE')) {
+      try {
+        // Extract email (will be admin email)
+        const emailMatch = line.match(/mailto:([^;\s]+)/i);
+        const adminEmail = emailMatch ? emailMatch[1] : '';
+        
+        // Extract resource name/type
+        const cnMatch = line.match(/CN=([^;:]+)/i);
+        const subType = cnMatch ? cnMatch[1] : 'Resource';
+        
+        // Extract capacity if available
+        let capacity: number | undefined = undefined;
+        const capacityMatch = line.match(/X-CAPACITY=(\d+)/i);
+        if (capacityMatch) {
+          capacity = parseInt(capacityMatch[1], 10);
+        }
+        
+        // Extract remarks if available
+        let remarks: string | undefined = undefined;
+        const remarksMatch = line.match(/X-REMARKS="([^"]+)"/i);
+        if (remarksMatch) {
+          remarks = remarksMatch[1].replace(/\\;/g, ';').replace(/\\,/g, ',').replace(/\\n/g, '\n');
+        }
+        
+        // Only add if we have an admin email
+        if (adminEmail) {
+          resources.push({
+            id: `resource-${resources.length + 1}`,
+            subType,
+            adminEmail,
+            capacity,
+            remarks
+          });
+        }
+      } catch (error) {
+        console.error('Error parsing resource from iCalendar data:', error);
+      }
+    }
+  }
+  
+  console.log(`Extracted ${resources.length} resources from iCalendar data`);
+  return resources;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   /**
    * Helper function to check if a user has permission to modify a calendar
@@ -4777,7 +4888,10 @@ END:VCALENDAR`;
                   
                   // Update existing event with latest server data
                   console.log(`Updating existing event "${existingEvent.title}" (ID: ${existingEvent.id}) with server data`);
-                  await storage.updateEvent(existingEvent.id, {
+                  
+                  // IMPORTANT: We need to preserve attendees and resources data during sync
+                  // This prevents them from being lost during server syncs
+                  const updateData: Partial<Event> = {
                     title: summary,
                     description: description || null,
                     location: location || null,
@@ -4788,10 +4902,52 @@ END:VCALENDAR`;
                     url: calObject.url || null,
                     uid: uid, // Update UID to match the server's version
                     syncStatus: 'synced', // Mark as successfully synced
-                  });
+                    rawData: calObject.data, // Update raw data
+                  };
+                  
+                  // Extract attendees from the iCalendar data
+                  const attendeesFromICS = extractAttendeesFromICS(calObject.data);
+                  
+                  // Only update attendees if we found some in the iCalendar data AND
+                  // the existing event doesn't already have attendees
+                  if (attendeesFromICS.length > 0 && 
+                      (!existingEvent.attendees || 
+                       (Array.isArray(existingEvent.attendees) && existingEvent.attendees.length === 0) ||
+                       existingEvent.attendees === '[]')) {
+                    console.log(`Updating attendees from server data for event ${existingEvent.id}`, attendeesFromICS);
+                    updateData.attendees = attendeesFromICS;
+                  } else {
+                    // Log that we're preserving existing attendees
+                    console.log(`Preserving existing attendees for event ${existingEvent.id}:`, existingEvent.attendees);
+                  }
+                  
+                  // Extract resources from the iCalendar data
+                  const resourcesFromICS = extractResourcesFromICS(calObject.data);
+                  
+                  // Only update resources if we found some in the iCalendar data AND
+                  // the existing event doesn't already have resources
+                  if (resourcesFromICS.length > 0 && 
+                      (!existingEvent.resources || 
+                       (Array.isArray(existingEvent.resources) && existingEvent.resources.length === 0) ||
+                       existingEvent.resources === '[]')) {
+                    console.log(`Updating resources from server data for event ${existingEvent.id}`, resourcesFromICS);
+                    updateData.resources = resourcesFromICS;
+                  } else {
+                    // Log that we're preserving existing resources
+                    console.log(`Preserving existing resources for event ${existingEvent.id}:`, existingEvent.resources);
+                  }
+                  
+                  await storage.updateEvent(existingEvent.id, updateData);
                 } else {
                   // Create new event
                   console.log(`Creating new event "${summary}" with UID ${uid}`);
+                  
+                  // Extract attendees and resources from iCalendar data
+                  const attendeesFromICS = extractAttendeesFromICS(calObject.data);
+                  const resourcesFromICS = extractResourcesFromICS(calObject.data);
+                  
+                  console.log(`Found ${attendeesFromICS.length} attendees and ${resourcesFromICS.length} resources in server data`);
+                  
                   await storage.createEvent({
                     calendarId: calendarId,
                     uid: uid,
@@ -4807,6 +4963,8 @@ END:VCALENDAR`;
                     url: calObject.url || null,
                     rawData: calObject.data,
                     syncStatus: 'synced', // Mark as already synced from server
+                    attendees: attendeesFromICS.length > 0 ? attendeesFromICS : null,
+                    resources: resourcesFromICS.length > 0 ? resourcesFromICS : null
                   });
                   
                   totalEventsCount++;
