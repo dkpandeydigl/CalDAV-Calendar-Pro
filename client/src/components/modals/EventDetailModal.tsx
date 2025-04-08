@@ -103,37 +103,39 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const canEdit = permissions.canEdit;
   const isOwner = permissions.isOwner;
   
-  // For events in user's own calendars, always allow edit
-  // First check direct match
+  // Determine if this event is in the user's own calendar
+  // First check: direct user ID match on the calendar (most reliable)
   let isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
-
-  // Special handling for DK Pandey (user ID 4) - consider all events in his calendar as his own
-  // This is specifically requested by the client
-  if (!isUsersOwnCalendar && calendar && user?.id === 4) {
-    // For DK Pandey, if it's his calendar, force isUsersOwnCalendar = true
-    if (
-      calendar.name.toLowerCase().includes('d k pandey') || 
-      calendar.name.toLowerCase().includes('pandey')
-    ) {
-      console.log('Calendar ownership granted to DK Pandey via special case');
-      isUsersOwnCalendar = true;
-    }
-  }
   
-  // If not a direct match, do a more forgiving check using calendar name
-  if (!isUsersOwnCalendar && calendar && user) {
-    // Check if the calendar name contains the user's username or email (partial match)
-    const calendarNameLower = calendar.name.toLowerCase();
-    const usernameLower = user.username.toLowerCase();
-    const userEmailLower = (user as any).email?.toLowerCase() || '';
-    
-    // Second check: calendar name contains username/email or vice versa
-    if (
-      (userEmailLower && (calendarNameLower.includes(userEmailLower) || userEmailLower.includes(calendarNameLower))) ||
-      (calendarNameLower.includes(usernameLower) || usernameLower.includes(calendarNameLower))
-    ) {
-      console.log(`Calendar ownership detected via name similarity: ${calendar.name} ≈ ${user.username}`);
-      isUsersOwnCalendar = true;
+  // Second check: if the event has organizer information that matches the current user
+  if (!isUsersOwnCalendar && event.rawData && user) {
+    // Try to extract organizer information from the rawData if available
+    try {
+      const rawData = typeof event.rawData === 'string' 
+        ? JSON.parse(event.rawData) 
+        : event.rawData;
+        
+      // Look for organizer info in the raw data
+      if (rawData && typeof rawData === 'object') {
+        const organizerEmail = rawData.organizer?.email || 
+                              rawData.ORGANIZER?.email ||
+                              rawData.organizer || 
+                              rawData.ORGANIZER;
+                              
+        // If we found organizer info, check if it matches the current user
+        if (organizerEmail && typeof organizerEmail === 'string') {
+          const emailLower = organizerEmail.toLowerCase();
+          const usernameLower = user.username.toLowerCase();
+          const userEmailLower = (user as any).email?.toLowerCase() || '';
+          
+          if (emailLower === usernameLower || emailLower === userEmailLower) {
+            console.log(`Calendar ownership detected via organizer email match: ${emailLower}`);
+            isUsersOwnCalendar = true;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Error parsing event raw data for organizer info:', e);
     }
   }
   
@@ -187,17 +189,32 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     endDate.setHours(endDate.getHours() + 1);
   }
   
-  // Check if event has attendees or should be treated as having attendees
+  // Check if event has attendees
   const hasAttendees = (() => {
     // First check the actual attendees array
     const attendees = event.attendees as unknown;
     const hasActualAttendees = attendees && Array.isArray(attendees) && attendees.length > 0;
     
-    // Then check if this event is from certain calendars that should always
-    // be treated as having attendees even if the attendees list is empty or lost during sync
-    const isPandeyCalendar = calendar?.name?.toLowerCase()?.includes("pandey");
+    // Also check if attendees are embedded in raw data but not properly extracted
+    let hasAttendeeInRawData = false;
+    if (event.rawData && !hasActualAttendees) {
+      try {
+        const rawData = typeof event.rawData === 'string' 
+          ? JSON.parse(event.rawData) 
+          : event.rawData;
+          
+        if (rawData && typeof rawData === 'object') {
+          // Check for attendees in various possible formats
+          const attendeesInRaw = rawData.attendees || rawData.ATTENDEE || rawData.ATTENDEES;
+          hasAttendeeInRawData = !!(attendeesInRaw && 
+            (Array.isArray(attendeesInRaw) ? attendeesInRaw.length > 0 : attendeesInRaw));
+        }
+      } catch (e) {
+        console.warn('Error parsing event raw data for attendees:', e);
+      }
+    }
     
-    return hasActualAttendees || isPandeyCalendar;
+    return hasActualAttendees || hasAttendeeInRawData;
   })();
   
   // Check if the event has resources
@@ -235,10 +252,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // 2. AND (the event has at least one attendee OR it has resources)
   const isEventOrganizer = isUsersOwnCalendar && (hasAttendees || hasResources);
   
-  // For DK Pandey (user ID 4), special case to always show Cancel Event button 
-  // for events with attendees or resources
-  const isDkPandey = user?.id === 4;
-  const shouldShowCancelButton = isEventOrganizer || (isDkPandey && (hasAttendees || hasResources));
+  // Universal logic for showing the Cancel Event button:
+  // Show for ANY user who owns a calendar with an event that has attendees or resources
+  const shouldShowCancelButton = isEventOrganizer;
   
   // Handle delete event
   const handleDelete = async () => {
