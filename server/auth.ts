@@ -4,7 +4,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { storage } from "./storage";
+import { storage } from "./database-storage";
 import { syncService } from "./sync-service";
 import { User as SelectUser } from "@shared/schema";
 import { DAVClient } from "tsdav";

@@ -1,4 +1,4 @@
-import { storage } from './storage';
+import { storage } from './database-storage';
 import { ServerConnection } from '@shared/schema';
 import { DAVClient } from 'tsdav';
 

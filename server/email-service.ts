@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { SmtpConfig } from '@shared/schema';
-import { storage } from './storage';
+import { storage } from './database-storage';
 import { formatICALDate } from './ical-utils';
 
 interface Attendee {
