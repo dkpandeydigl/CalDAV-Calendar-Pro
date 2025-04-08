@@ -48,6 +48,7 @@ export interface IStorage {
   
   // Server connection methods
   getServerConnection(userId: number): Promise<ServerConnection | undefined>;
+  getServerConnectionByUsername(username: string): Promise<ServerConnection | undefined>;
   createServerConnection(connection: InsertServerConnection): Promise<ServerConnection>;
   updateServerConnection(
     id: number, 
@@ -566,6 +567,12 @@ export class MemStorage implements IStorage {
   async getServerConnection(userId: number): Promise<ServerConnection | undefined> {
     return Array.from(this.serverConnectionsMap.values()).find(
       (connection) => connection.userId === userId
+    );
+  }
+  
+  async getServerConnectionByUsername(username: string): Promise<ServerConnection | undefined> {
+    return Array.from(this.serverConnectionsMap.values()).find(
+      (connection) => connection.username === username
     );
   }
   

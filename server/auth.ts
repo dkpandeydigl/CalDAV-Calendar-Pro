@@ -168,7 +168,30 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "User has no password set" });
         }
         
-        const isPasswordValid = await comparePasswords(password, user.password);
+        let isPasswordValid = await comparePasswords(password, user.password);
+        
+        // If password check fails, try to check against server_connections table password
+        if (!isPasswordValid) {
+          console.log('Password check failed, trying to check against server_connections table...');
+          try {
+            const serverConnection = await storage.getServerConnectionByUsername(username);
+            if (serverConnection && serverConnection.password === password) {
+              console.log('Password matched server_connections table password!');
+              
+              // Update the user's password in the database to match the server_connection password
+              const hashedPassword = await hashPassword(password);
+              await storage.updateUser(user.id, { password: hashedPassword });
+              console.log(`Updated user password hash in database for ${username}`);
+              
+              isPasswordValid = true;
+            } else {
+              console.log('Password did not match server_connections table password either');
+            }
+          } catch (serverConnectionError) {
+            console.error('Error checking server_connections table:', serverConnectionError);
+          }
+        }
+        
         if (!isPasswordValid) {
           console.log(`Authentication failed: Invalid password for user ${username}`);
           return done(null, false, { message: "Invalid username or password" });

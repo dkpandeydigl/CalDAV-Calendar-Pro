@@ -770,6 +770,19 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0 ? result[0] : undefined;
   }
   
+  async getServerConnectionByUsername(username: string): Promise<ServerConnection | undefined> {
+    try {
+      const result = await db.select()
+        .from(serverConnections)
+        .where(eq(serverConnections.username, username));
+      
+      return result.length > 0 ? result[0] : undefined;
+    } catch (error) {
+      console.error('Error getting server connection by username:', error);
+      return undefined;
+    }
+  }
+  
   async createServerConnection(insertConnection: InsertServerConnection): Promise<ServerConnection> {
     const result = await db.insert(serverConnections)
       .values({
