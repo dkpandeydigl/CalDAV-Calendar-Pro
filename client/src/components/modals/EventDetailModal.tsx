@@ -650,11 +650,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex space-x-2">
               {!isUserLoading && (
                 <>
-                  {/* Force show Cancel Event button for this specific user for all events */}
-                  {((user?.id === 4) || // Always show for user with ID 4 (DK Pandey)
-                    calendar?.name?.toLowerCase()?.includes("d k pandey") || 
-                    calendar?.name?.toLowerCase()?.includes("pandey") || 
-                    (hasAttendees && isEventOrganizer)) && (
+                  {/* Only show Cancel Event button for events with attendees where the user is the organizer */}
+                  {(hasAttendees && isEventOrganizer) && (
                     <Button 
                       variant="outline" 
                       className="border-amber-200 text-amber-600 hover:bg-amber-50 flex items-center gap-1" 
