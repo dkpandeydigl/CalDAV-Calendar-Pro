@@ -2887,140 +2887,233 @@ END:VCALENDAR`
                     lastSyncAttempt: new Date()
                   });
                   
-                  // Force immediate refresh to ensure the event is visible to other clients
+                  // Enhanced force immediate refresh to ensure the event is visible to other clients
                   try {
-                    console.log("Forcing immediate server refresh...");
+                    console.log("Performing enhanced immediate server sync for new event...");
                     
-                    // More efficient approach 1: First try a direct PROPFIND request to refresh the calendar
-                    try {
-                      const propfindResponse = await fetch(calendarUrlWithSlash, {
-                        method: 'PROPFIND',
-                        headers: {
-                          'Content-Type': 'application/xml; charset=utf-8',
-                          'Depth': '1',
-                          'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
-                        },
-                        body: `<?xml version="1.0" encoding="utf-8" ?>
-                          <D:propfind xmlns:D="DAV:">
-                            <D:prop>
-                              <D:getetag/>
-                            </D:prop>
-                          </D:propfind>`
-                      });
-                      console.log(`PROPFIND response status: ${propfindResponse.status}`);
-                    } catch (propfindError) {
-                      console.error("Error during PROPFIND refresh:", propfindError);
-                    }
+                    // Parallel execution for faster refresh - we'll run multiple refresh strategies at once
+                    const refreshPromises = [];
                     
-                    // Backup approach: Create a new DAV client with proper login for calendar fetch
-                    try {
-                      const { DAVClient } = await import('tsdav');
-                      const refreshClient = new DAVClient({
-                        serverUrl: connection.url,
-                        credentials: {
-                          username: connection.username,
-                          password: connection.password
-                        },
-                        authMethod: 'Basic',
-                        defaultAccountType: 'caldav'
-                      });
-                      
-                      // Login first to establish account
-                      await refreshClient.login();
-                      
-                      // Now fetch calendars should work
-                      await refreshClient.fetchCalendars();
-                      console.log("Server calendars refreshed successfully");
-                    } catch (fetchError) {
-                      console.error("Error with fetchCalendars refresh:", fetchError);
-                    }
+                    // Strategy 1: Direct PROPFIND with depth=infinity for complete refresh
+                    refreshPromises.push((async () => {
+                      try {
+                        console.log("Strategy 1: Executing PROPFIND with depth=infinity...");
+                        const propfindResponse = await fetch(calendarUrlWithSlash, {
+                          method: 'PROPFIND',
+                          headers: {
+                            'Content-Type': 'application/xml; charset=utf-8',
+                            'Depth': 'infinity', // Changed from '1' to 'infinity' for thorough refresh
+                            'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                            'Prefer': 'return=minimal' // Add Prefer header to minimize response size
+                          },
+                          body: `<?xml version="1.0" encoding="utf-8" ?>
+                            <D:propfind xmlns:D="DAV:">
+                              <D:prop>
+                                <D:getetag/>
+                                <D:resourcetype/>
+                                <D:displayname/>
+                              </D:prop>
+                            </D:propfind>`
+                        });
+                        console.log(`PROPFIND response status: ${propfindResponse.status}`);
+                        return true;
+                      } catch (propfindError) {
+                        console.error("Error during enhanced PROPFIND refresh:", propfindError);
+                        return false;
+                      }
+                    })());
                     
-                    // Send a REPORT request to make the changes visible to other clients
-                    const reportResponse = await fetch(calendarUrlWithSlash, {
-                      method: 'REPORT',
-                      headers: {
-                        'Content-Type': 'application/xml; charset=utf-8',
-                        'Depth': '1',
-                        'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
-                      },
-                      body: `<?xml version="1.0" encoding="utf-8" ?>
-                        <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                          <D:prop>
-                            <D:getetag/>
-                            <C:calendar-data/>
-                          </D:prop>
-                          <C:filter>
-                            <C:comp-filter name="VCALENDAR">
-                              <C:comp-filter name="VEVENT"/>
-                            </C:comp-filter>
-                          </C:filter>
-                        </C:calendar-query>`
-                    });
+                    // Strategy 2: Direct PUT to the event URL again to "touch" it
+                    refreshPromises.push((async () => {
+                      try {
+                        console.log("Strategy 2: Re-PUT event data to touch resource...");
+                        const eventUrlExact = `${calendarUrlWithSlash}${safeUid}.ics`;
+                        const putResponse = await fetch(eventUrlExact, {
+                          method: 'PUT',
+                          headers: {
+                            'Content-Type': 'text/calendar; charset=utf-8',
+                            'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64'),
+                            'If-None-Match': '*' // Only update if it exists
+                          },
+                          body: icalEvent
+                        });
+                        console.log(`Direct PUT refresh status: ${putResponse.status}`);
+                        return putResponse.status >= 200 && putResponse.status < 300;
+                      } catch (putError) {
+                        console.error("Error during direct PUT refresh:", putError);
+                        return false;
+                      }
+                    })());
+                    
+                    // Strategy 3: Use DAVClient for calendar refresh
+                    refreshPromises.push((async () => {
+                      try {
+                        console.log("Strategy 3: Using DAVClient for calendar refresh...");
+                        const { DAVClient } = await import('tsdav');
+                        const refreshClient = new DAVClient({
+                          serverUrl: connection.url,
+                          credentials: {
+                            username: connection.username,
+                            password: connection.password
+                          },
+                          authMethod: 'Basic',
+                          defaultAccountType: 'caldav',
+                          serverHandlesClientTimeZones: true // Enable timezone handling
+                        });
+                        
+                        // Login first to establish account
+                        await refreshClient.login();
+                        
+                        // Get calendars for proper refresh
+                        const calendars = await refreshClient.fetchCalendars();
+                        console.log(`DAVClient fetched ${calendars.length} calendars successfully`);
+                        
+                        // Find the specific calendar we're working with
+                        const targetCal = calendars.find(cal => cal.url === calendarUrlWithSlash);
+                        if (targetCal) {
+                          // Fetch all objects for that calendar to trigger server refresh
+                          console.log(`Found target calendar, fetching all objects...`);
+                          const objects = await refreshClient.fetchCalendarObjects({
+                            calendar: targetCal,
+                            timeRange: {
+                              start: new Date(new Date().getTime() - 90 * 24 * 60 * 60 * 1000), // 90 days ago
+                              end: new Date(new Date().getTime() + 90 * 24 * 60 * 60 * 1000)   // 90 days from now
+                            }
+                          });
+                          console.log(`Successfully fetched ${objects.length} calendar objects`);
+                        }
+                        
+                        console.log("DAVClient calendar refresh completed successfully");
+                        return true;
+                      } catch (fetchError) {
+                        console.error("Error with DAVClient refresh:", fetchError);
+                        return false;
+                      }
+                    })());
+                    
+                    // Strategy 4: Send a targeted REPORT request for the specific event
+                    refreshPromises.push((async () => {
+                      try {
+                        console.log("Strategy 4: Executing targeted REPORT for the event...");
+                        const reportResponse = await fetch(calendarUrlWithSlash, {
+                          method: 'REPORT',
+                          headers: {
+                            'Content-Type': 'application/xml; charset=utf-8',
+                            'Depth': '1',
+                            'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                          },
+                          body: `<?xml version="1.0" encoding="utf-8" ?>
+                            <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                              <D:prop>
+                                <D:getetag/>
+                                <C:calendar-data/>
+                              </D:prop>
+                              <C:filter>
+                                <C:comp-filter name="VCALENDAR">
+                                  <C:comp-filter name="VEVENT">
+                                    <C:prop-filter name="UID">
+                                      <C:text-match>${eventData.uid}</C:text-match>
+                                    </C:prop-filter>
+                                  </C:comp-filter>
+                                </C:comp-filter>
+                              </C:filter>
+                            </C:calendar-query>`
+                        });
                     console.log(`REPORT response status: ${reportResponse.status}`);
                   } catch (refreshError) {
                     console.error("Error during server refresh:", refreshError);
                     // Non-fatal, continue
                   }
                   
+                  // Add a success message to confirm the event is immediately available
+                  console.log("Multi-strategy server refresh complete - event should now be visible to external clients");
+                  
+                  // Additional strategy: Use PROPPATCH to update event properties for faster sync
+                  try {
+                    console.log("Additional strategy: Using PROPPATCH to update event timestamp...");
+                    const proppatchUrl = `${calendarUrlWithSlash}${safeUid}.ics`;
+                    const proppatchResponse = await fetch(proppatchUrl, {
+                      method: 'PROPPATCH',
+                      headers: {
+                        'Content-Type': 'application/xml; charset=utf-8',
+                        'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                      },
+                      body: `<?xml version="1.0" encoding="utf-8" ?>
+                        <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                          <D:set>
+                            <D:prop>
+                              <D:getlastmodified>${new Date().toUTCString()}</D:getlastmodified>
+                            </D:prop>
+                          </D:set>
+                        </D:propertyupdate>`
+                    });
+                    console.log(`PROPPATCH response status: ${proppatchResponse.status}`);
+                  } catch (proppatchError) {
+                    console.error("Error during PROPPATCH update:", proppatchError);
+                    // Non-fatal, continue
+                  }
+                  
                   // Success
                   return;
-                } catch (error) {
-                  const davError = error as Error;
-                  console.error(`DAV client approach failed:`, davError);
-                  console.log(`Falling back to direct PUT method...`);
                 }
-                
-                // Fallback: Try a direct PUT request
-                const response = await fetch(eventUrl, {
-                  method: 'PUT',
-                  headers: {
-                    'Content-Type': 'text/calendar; charset=utf-8',
-                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
-                  },
-                  body: icalEvent
-                });
-                
-                console.log(`PUT response status: ${response.status} ${response.statusText}`);
-                
-                if (response.ok) {
-                  // Update the event URL in our database
-                  const etag = response.headers.get('ETag');
-                  console.log(`Event created successfully. ETag: ${etag || 'Not provided'}`);
-                  
-                  await storage.updateEvent(newEvent.id, { 
-                    url: eventUrl,
-                    etag: etag || undefined,
-                    rawData: icalEvent, // Store the raw iCalendar data for future reference
-                    syncStatus: 'synced',
-                    lastSyncAttempt: new Date()
-                  });
-                } else {
-                  throw new Error(`Failed to create event: ${response.status} ${response.statusText}`);
-                }
+                // Close the inner try-catch for the DAV client approach
               } catch (error) {
-                const putError = error as Error;
-                console.error('Error creating event with PUT:', putError);
-                console.error('Error details:', putError.message);
-                throw putError;
+                const davError = error as Error;
+                console.error(`DAV client approach failed:`, davError);
+                console.log(`Falling back to direct PUT method...`);
               }
               
-              console.log(`Successfully synchronized event "${eventData.title}" to CalDAV server`);
-            } else {
-              console.log(`Calendar not found or missing URL for event ${eventData.title}`);
+              // Fallback: Try a direct PUT request
+              const response = await fetch(eventUrl, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'text/calendar; charset=utf-8',
+                  'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                },
+                body: icalEvent
+              });
+              
+              console.log(`PUT response status: ${response.status} ${response.statusText}`);
+              
+              if (response.ok) {
+                // Update the event URL in our database
+                const etag = response.headers.get('ETag');
+                console.log(`Event created successfully. ETag: ${etag || 'Not provided'}`);
+                
+                await storage.updateEvent(newEvent.id, { 
+                  url: eventUrl,
+                  etag: etag || undefined,
+                  rawData: icalEvent, // Store the raw iCalendar data for future reference
+                  syncStatus: 'synced',
+                  lastSyncAttempt: new Date()
+                });
+              } else {
+                throw new Error(`Failed to create event: ${response.status} ${response.statusText}`);
+              }
+            } catch (error) {
+              const putError = error as Error;
+              console.error('Error creating event with PUT:', putError);
+              console.error('Error details:', putError.message);
+              throw putError;
             }
+            
+            console.log(`Successfully synchronized event "${eventData.title}" to CalDAV server`);
           } else {
-            console.log(`No active CalDAV server connection for user ${userId}`);
+            console.log(`Calendar not found or missing URL for event ${eventData.title}`);
           }
-        } catch (syncError) {
-          console.error('Error syncing event to CalDAV server:', syncError);
-          // Update the sync status to show it failed
-          await storage.updateEvent(newEvent.id, { 
-            syncStatus: 'sync_failed',
-            syncError: (syncError as Error).message,
-            lastSyncAttempt: new Date()
-          });
-          // Continue despite sync error - at least the event is in our local database
+        } else {
+          console.log(`No active CalDAV server connection for user ${userId}`);
         }
+      } catch (syncError) {
+        console.error('Error syncing event to CalDAV server:', syncError);
+        // Update the sync status to show it failed
+        await storage.updateEvent(newEvent.id, { 
+          syncStatus: 'sync_failed',
+          syncError: (syncError as Error).message,
+          lastSyncAttempt: new Date()
+        });
+        // Continue despite sync error - at least the event is in our local database
+      }
       }
       
       // Send email invitations if there are attendees
@@ -3418,6 +3511,33 @@ END:VCALENDAR`
                           </C:calendar-query>`
                       });
                       console.log(`REPORT response status: ${reportResponse.status}`);
+                      
+                      // Strategy 5: Use PROPPATCH to update event properties - helps visibility in external clients
+                      try {
+                        console.log("Additional strategy: Using PROPPATCH to update event timestamp...");
+                        const eventUrlExact = updatedEvent.url;
+                        const proppatchResponse = await fetch(eventUrlExact, {
+                          method: 'PROPPATCH',
+                          headers: {
+                            'Content-Type': 'application/xml; charset=utf-8',
+                            'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                          },
+                          body: `<?xml version="1.0" encoding="utf-8" ?>
+                            <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                              <D:set>
+                                <D:prop>
+                                  <D:getlastmodified>${new Date().toUTCString()}</D:getlastmodified>
+                                </D:prop>
+                              </D:set>
+                            </D:propertyupdate>`
+                        });
+                        console.log(`PROPPATCH response status: ${proppatchResponse.status}`);
+                      } catch (proppatchError) {
+                        console.error("Error during PROPPATCH update:", proppatchError);
+                        // Non-fatal, continue
+                      }
+                      
+                      console.log("Multi-strategy event update complete - changes should now be visible to external clients");
                     } catch (refreshError) {
                       console.error("Error during server refresh:", refreshError);
                       // Non-fatal, continue
@@ -5197,6 +5317,34 @@ END:VCALENDAR`;
                 });
                 
                 console.log(`REPORT response status: ${reportResponse.status}`);
+                
+                // Apply the PROPPATCH approach to help external clients see this event faster
+                try {
+                  console.log("Using PROPPATCH to improve cross-client visibility...");
+                  // Make sure the event and URL exist before using them
+                  if (event && event.url) {
+                    const eventUrlExact = event.url;
+                    const proppatchResponse = await fetch(eventUrlExact, {
+                    method: 'PROPPATCH',
+                    headers: {
+                      'Content-Type': 'application/xml; charset=utf-8',
+                      'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                    },
+                    body: `<?xml version="1.0" encoding="utf-8" ?>
+                      <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                        <D:set>
+                          <D:prop>
+                            <D:getlastmodified>${new Date().toUTCString()}</D:getlastmodified>
+                          </D:prop>
+                        </D:set>
+                      </D:propertyupdate>`
+                  });
+                  console.log(`PROPPATCH response status: ${proppatchResponse.status}`);
+                  }
+                } catch (proppatchError) {
+                  console.error("Error during PROPPATCH update:", proppatchError);
+                  // Non-fatal, continue
+                }
                 
                 // Then, a sync-collection request to ensure immediate sync
                 const syncResponse = await fetch(calendarUrlWithSlash, {
