@@ -296,10 +296,9 @@ export class EmailService {
               <div class="detail-row">
                 <span class="label">Resource:</span> ${resource.subType}
               </div>
-              ${resource.capacity !== undefined ? `
               <div class="detail-row">
-                <span class="label">Capacity:</span> ${resource.capacity}
-              </div>` : ''}
+                <span class="label">Capacity:</span> ${resource.capacity !== undefined ? resource.capacity : 'Not specified'}
+              </div>
               ${resource.remarks ? `
               <div class="detail-row">
                 <span class="label">Remarks:</span> ${resource.remarks}
@@ -328,7 +327,7 @@ Organizer: ${data.organizer.name || data.organizer.email}
 
 Resource Information:
 Resource: ${resource.subType}
-${resource.capacity !== undefined ? `Capacity: ${resource.capacity}\n` : ''}${resource.remarks ? `Remarks: ${resource.remarks}\n` : ''}
+Capacity: ${resource.capacity !== undefined ? resource.capacity : 'Not specified'}\n${resource.remarks ? `Remarks: ${resource.remarks}\n` : ''}
 
 The event details are attached in an iCalendar file that you can import into your calendar application.
 
@@ -656,7 +655,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
                 <div class="resources-list">
                   ${resources.map((resource: Resource) => `
                     <div class="resource-item">
-                      ${resource.subType}${resource.capacity ? ` (Capacity: ${resource.capacity})` : ''} 
+                      ${resource.subType} (Capacity: ${resource.capacity !== undefined ? resource.capacity : 'Not specified'}) 
                       ${resource.remarks ? `<br><em>Notes: ${resource.remarks}</em>` : ''}
                       <br>Admin: ${resource.adminName || resource.adminEmail}
                     </div>
