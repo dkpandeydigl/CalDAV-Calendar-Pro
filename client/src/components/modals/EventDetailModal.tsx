@@ -482,7 +482,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             
             {/* Resources section - handle safely with runtime checks */}
             {(() => {
-              // Improved handling of resources with enhanced parsing logic
+              // Advanced handling of resources with enhanced parsing logic
               let resourcesData = event.resources as unknown;
               console.log('Raw resources data:', resourcesData);
               
@@ -502,10 +502,29 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   } catch (e) {
                     // If that fails, try removing extra quotes (double-escaped JSON)
                     try {
-                      // Handle double-escaped JSON strings from PostgreSQL
-                      const cleanedString = data.replace(/\\"/g, '"').replace(/^"|"$/g, '');
-                      const parsed = JSON.parse(cleanedString);
-                      return Array.isArray(parsed) ? parsed : [parsed];
+                      // Handle double-escaped JSON strings from PostgreSQL or CalDAV server
+                      const cleanedString = data
+                        .replace(/\\"/g, '"')
+                        .replace(/^"|"$/g, '')
+                        .replace(/\\\\/g, '\\');
+                        
+                      try {
+                        const parsed = JSON.parse(cleanedString);
+                        return Array.isArray(parsed) ? parsed : [parsed];
+                      } catch (e3) {
+                        // Try one more level of escaping for deeply nested cases
+                        const deepCleanedString = cleanedString
+                          .replace(/\\\\"/g, '"')
+                          .replace(/\\\"/g, '"');
+                        try {
+                          const parsed = JSON.parse(deepCleanedString);
+                          return Array.isArray(parsed) ? parsed : [parsed];
+                        } catch (e4) {
+                          console.warn('Failed all attempts to parse complex JSON string');
+                          // If it's just a simple string, return it as an item
+                          return [data];
+                        }
+                      }
                     } catch (e2) {
                       console.warn('Failed to parse resources string:', e2);
                       // If it's just a simple string, return it as an item
@@ -540,6 +559,26 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               try {
                                 if (resource.startsWith('{') || resource.startsWith('[')) {
                                   resourceObj = JSON.parse(resource);
+                                } else if (resource.includes('\\\"') || resource.includes('\\\\')) {
+                                  // Handle escaped JSON strings
+                                  const cleanedString = resource
+                                    .replace(/\\"/g, '"')
+                                    .replace(/^"|"$/g, '')
+                                    .replace(/\\\\/g, '\\');
+                                    
+                                  try {
+                                    resourceObj = JSON.parse(cleanedString);
+                                  } catch (e2) {
+                                    // Try one more level of escaping for deeply nested cases
+                                    const deepCleanedString = cleanedString
+                                      .replace(/\\\\"/g, '"')
+                                      .replace(/\\\"/g, '"');
+                                    try {
+                                      resourceObj = JSON.parse(deepCleanedString);
+                                    } catch (e3) {
+                                      // Keep original
+                                    }
+                                  }
                                 }
                               } catch (e) {
                                 // Keep as string if parsing fails
@@ -547,13 +586,21 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               }
                             }
                             
-                            // Check if we have a structured resource object
+                            // Check if we have a structured resource object with more flexible criteria
                             const isResourceObject = 
                               resourceObj && 
                               typeof resourceObj === 'object' && 
                               !Array.isArray(resourceObj) &&
-                              ('subType' in resourceObj || 'type' in resourceObj) && 
-                              ('adminEmail' in resourceObj || 'email' in resourceObj);
+                              (
+                                // Either has type info
+                                ('subType' in resourceObj || 'type' in resourceObj) ||
+                                // Or admin contact info
+                                ('adminEmail' in resourceObj || 'email' in resourceObj) ||
+                                // Or is a resource with capacity info
+                                ('id' in resourceObj && 'capacity' in resourceObj) ||
+                                // Or has specific resource markers
+                                ('resourceId' in resourceObj || 'resourceType' in resourceObj)
+                              );
                             
                             if (isResourceObject) {
                               // Handle both property naming conventions
