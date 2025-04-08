@@ -568,6 +568,29 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
   public generateEmailPreview(data: EventInvitationData): string {
     const { title, description, location, startDate, endDate, organizer, attendees, resources } = data;
     
+    // Ensure we have valid dates for formatting
+    let validStartDate: Date;
+    let validEndDate: Date;
+    
+    try {
+      // Try parsing dates if they're not already Date objects
+      validStartDate = startDate instanceof Date ? startDate : new Date(startDate);
+      validEndDate = endDate instanceof Date ? endDate : new Date(endDate);
+      
+      // Check if dates are valid
+      if (isNaN(validStartDate.getTime()) || isNaN(validEndDate.getTime())) {
+        console.warn("Invalid date values provided for email preview, using current time");
+        validStartDate = new Date();
+        validEndDate = new Date();
+        validEndDate.setHours(validEndDate.getHours() + 1);
+      }
+    } catch (error) {
+      console.warn("Error parsing dates for email preview:", error);
+      validStartDate = new Date();
+      validEndDate = new Date();
+      validEndDate.setHours(validEndDate.getHours() + 1);
+    }
+    
     // Format the date for display in email
     const dateFormat = new Intl.DateTimeFormat('en-US', {
       weekday: 'long',
@@ -579,8 +602,8 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       timeZoneName: 'short'
     });
     
-    const formattedStart = dateFormat.format(startDate);
-    const formattedEnd = dateFormat.format(endDate);
+    const formattedStart = dateFormat.format(validStartDate);
+    const formattedEnd = dateFormat.format(validEndDate);
     
     // Create the email content similar to what we'd send
     const htmlContent = `
