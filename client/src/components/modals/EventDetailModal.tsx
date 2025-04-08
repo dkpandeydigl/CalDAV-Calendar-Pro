@@ -187,81 +187,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     return hasActualAttendees || isPandeyCalendar;
   })();
   
-  // Determine if the current user is the organizer of this event
-  const isEventOrganizer = (() => {
-    // First check if this is the user's own calendar - if so, they're the organizer by default
-    if (isUsersOwnCalendar || isOwner) {
-      console.log('User is organizer due to calendar ownership');
-      return true;
-    }
-    
-    // For DK Pandey (user ID 4), show all events with attendees as if they're the organizer
-    // This is a special case requested by the user
-    if (user?.id === 4) {
-      // Special case for user ID 4 (DK Pandey)
-      return true;
-    }
-    
-    // For calendars with "pandey" in the name, consider the user an organizer
-    // This is also a special case requested by the user
-    if (calendar?.name?.toLowerCase()?.includes("d k pandey") || 
-        calendar?.name?.toLowerCase()?.includes("pandey")) {
-      return true;
-    }
-    
-    // Otherwise, examine attendees to find if current user is the organizer
-    try {
-      // Cast user to our extended interface that includes email
-      const userWithEmail = user as UserWithEmail | null;
-      console.log('Checking user email for organizer match:', userWithEmail?.email);
-      
-      if (!userWithEmail?.email && !userWithEmail?.username) return false;
-      
-      const attendees = event.attendees as unknown;
-      if (attendees && Array.isArray(attendees)) {
-        // Check if any attendee has the role of 'Chairman' and matches the current user's email or username
-        // Or if they match by email/username and the role is organizer-like
-        const isOrganizer = attendees.some(attendee => {
-          if (typeof attendee === 'object' && attendee !== null) {
-            const attendeeEmail = (attendee as any).email?.toLowerCase();
-            const userEmail = userWithEmail?.email?.toLowerCase();
-            const userName = userWithEmail?.username?.toLowerCase();
-            
-            // Check if either username or email matches
-            const emailMatch = userEmail && attendeeEmail && (
-              userEmail === attendeeEmail ||
-              userEmail.includes(attendeeEmail) ||
-              attendeeEmail.includes(userEmail)
-            );
-            const usernameMatch = userName && attendeeEmail && (
-              userName === attendeeEmail ||
-              userName.includes(attendeeEmail) ||
-              attendeeEmail.includes(userName)
-            );
-            
-            // Check for organizer roles (including 'Chairman' and various other possible role names)
-            const role = (attendee as any).role;
-            const isOrganizerRole = 
-              role === 'Chairman' || 
-              role === 'Organizer' || 
-              role === 'Owner';
-              
-            // If it's the user's own calendar and their email/username matches, consider them the organizer
-            // regardless of role
-            return (emailMatch || usernameMatch) && (isOrganizerRole || isUsersOwnCalendar);
-          }
-          return false;
-        });
-        
-        console.log('Is user the organizer?', isOrganizer);
-        return isOrganizer;
-      }
-    } catch (e) {
-      console.error('Error checking if user is event organizer:', e);
-    }
-    
-    return false;
-  })();
+  // Determine if the event should show a Cancel Event button
+  // We ONLY want to show this button when:
+  // 1. The event belongs to the user's own calendar
+  // 2. The event has at least one attendee
+  const isEventOrganizer = isUsersOwnCalendar && hasAttendees;
   
   // Handle delete event
   const handleDelete = async () => {
