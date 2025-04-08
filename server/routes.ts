@@ -622,7 +622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
     
-    // Add resources if provided
+    // Add resources if provided - using RFC 5545 format as ATTENDEE with CUTYPE=RESOURCE
     if (event.resources) {
       console.log("Processing resources:", event.resources);
       
@@ -664,9 +664,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (let i = 0; i < resourcesList.length; i++) {
           const resource = resourcesList[i];
           if (resource) {  // Check for null/undefined
-            const resourceStr = typeof resource === 'string' ? resource : String(resource);
-            eventComponents.push(`RESOURCES:${resourceStr}`);
-            console.log("Added resource:", resourceStr);
+            try {
+              // Format the resource as an attendee with CUTYPE=RESOURCE according to RFC 5545
+              // This makes the resource visible to other CalDAV clients
+              const resourceAttendee = `ATTENDEE;CUTYPE=RESOURCE;CN=${resource.subType || 'Resource'};ROLE=NON-PARTICIPANT;RSVP=FALSE` +
+                (resource.capacity !== undefined ? `;X-CAPACITY=${resource.capacity}` : '') +
+                (resource.remarks ? `;X-REMARKS="${resource.remarks.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')}"` : '') +
+                `:mailto:${resource.adminEmail}`;
+              
+              eventComponents.push(resourceAttendee);
+              console.log("Added resource as attendee:", resource.subType || 'Resource');
+            } catch (err) {
+              console.error("Error formatting resource:", err);
+            }
           }
         }
       }
