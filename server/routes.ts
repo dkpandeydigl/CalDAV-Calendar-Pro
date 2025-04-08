@@ -7,7 +7,8 @@ import {
   insertCalendarSchema,
   insertServerConnectionSchema,
   insertCalendarSharingSchema,
-  insertSmtpConfigSchema
+  insertSmtpConfigSchema,
+  type Event
 } from "@shared/schema";
 import { WebSocketServer } from "ws";
 import { setupAuth } from "./auth";
@@ -103,14 +104,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // EVENTS API
   app.get("/api/events", isAuthenticated, async (req, res) => {
     try {
-      const calendarId = parseInt(req.query.calendarId as string);
+      const userId = req.user!.id;
+      let allEvents: Event[] = [];
       
-      if (isNaN(calendarId)) {
-        return res.status(400).json({ message: "Invalid calendar ID" });
+      // Check if calendarIds is provided as an array in the query parameter
+      if (req.query.calendarIds) {
+        // Convert array-like string to actual array of numbers
+        let calendarIds: number[] = [];
+        
+        if (Array.isArray(req.query.calendarIds)) {
+          // Handle case when it's already an array in req.query
+          calendarIds = req.query.calendarIds.map(id => parseInt(id as string)).filter(id => !isNaN(id));
+        } else if (typeof req.query.calendarIds === 'string') {
+          // Handle case when it's a JSON string array
+          try {
+            const parsed = JSON.parse(req.query.calendarIds);
+            if (Array.isArray(parsed)) {
+              calendarIds = parsed.filter(id => !isNaN(parseInt(id))).map(id => parseInt(id));
+            }
+          } catch (e) {
+            // If not a valid JSON, try comma-separated values
+            calendarIds = req.query.calendarIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+          }
+        }
+        
+        // Get events for each calendar ID
+        if (calendarIds.length > 0) {
+          for (const calendarId of calendarIds) {
+            const calendarEvents = await storage.getEvents(calendarId);
+            allEvents = [...allEvents, ...calendarEvents];
+          }
+          return res.json(allEvents);
+        }
       }
       
-      const events = await storage.getEvents(calendarId);
-      res.json(events);
+      // If no calendarIds array, check for single calendarId
+      if (req.query.calendarId) {
+        const calendarId = parseInt(req.query.calendarId as string);
+        
+        if (isNaN(calendarId)) {
+          return res.status(400).json({ message: "Invalid calendar ID" });
+        }
+        
+        const events = await storage.getEvents(calendarId);
+        return res.json(events);
+      }
+      
+      // If no specific calendar ID is provided, return all events from user's calendars
+      const userCalendars = await storage.getCalendars(userId);
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      const allCalendars = [...userCalendars, ...sharedCalendars];
+      
+      for (const calendar of allCalendars) {
+        const calendarEvents = await storage.getEvents(calendar.id);
+        allEvents = [...allEvents, ...calendarEvents];
+      }
+      
+      res.json(allEvents);
     } catch (err) {
       console.error("Error fetching events:", err);
       res.status(500).json({ message: "Failed to fetch events" });
