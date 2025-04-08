@@ -4412,20 +4412,61 @@ END:VCALENDAR`;
           
           // Check if this calendar already exists in our storage
           const existingCalendars = await storage.getCalendars(userId);
-          const existingCalendar = existingCalendars.find(
+          
+          // Check for existing calendar by URL first (most accurate)
+          let existingCalendar = existingCalendars.find(
             cal => cal.url === serverCalendar.url
           );
+          
+          // Helper function for extracting base URL (outside the loop to avoid TS errors)
+          const getBaseUrl = (url: string) => {
+            const match = url.match(/^(https?:\/\/[^\/]+)/);
+            return match ? match[1] : '';
+          };
+          
+          // If not found by URL, also check by name to prevent duplicates
+          // This covers cases where the same calendar might be discovered through different URLs
+          if (!existingCalendar) {
+            // If we found a calendar with the same name from the same server, treat it as the same calendar
+            existingCalendar = existingCalendars.find(cal => {
+              // Only match if both have URLs (are server calendars) and the name matches
+              if (cal.url && serverCalendar.url && cal.name === displayName) {
+                // Check if they're from the same server by comparing domain parts of URLs
+                try {
+                  const calUrlObj = new URL(cal.url);
+                  const serverCalUrlObj = new URL(serverCalendar.url as string);
+                  return calUrlObj.hostname === serverCalUrlObj.hostname;
+                } catch (e) {
+                  // If URL parsing fails, fall back to simple string comparison of base URLs
+                  return getBaseUrl(cal.url) === getBaseUrl(serverCalendar.url as string);
+                }
+              }
+              return false;
+            });
+            
+            // Log if found duplicate by name
+            if (existingCalendar) {
+              console.log(`Found duplicate calendar "${displayName}" with different URL: 
+                Existing: ${existingCalendar.url}
+                Server: ${serverCalendar.url}
+              `);
+            }
+          }
           
           // Calendar ID to use for fetching/adding events
           let calendarId: number;
           
           if (existingCalendar) {
             calendarId = existingCalendar.id;
-            // Update the existing calendar if needed
+            console.log(`Updating existing calendar "${displayName}" (ID: ${calendarId})`);
+            
+            // Update the existing calendar
             await storage.updateCalendar(calendarId, {
               name: displayName,
               color: color,
-              syncToken: serverCalendar.syncToken as string || null
+              syncToken: serverCalendar.syncToken as string || null,
+              // Update URL if it changed (could happen with redirects or different discovery methods)
+              url: serverCalendar.url
             });
           } else {
             // Create a new calendar
