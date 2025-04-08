@@ -19,6 +19,10 @@ import { registerExportRoutes } from "./export-routes";
 import { registerImportRoutes } from "./import-routes";
 import fetch from "node-fetch";
 import { generateThunderbirdCompatibleICS } from "./ical-utils";
+import { syncService } from "./sync-service";
+
+// Using directly imported syncService
+import type { SyncService as SyncServiceType } from "./sync-service";
 
 declare module 'express-session' {
   interface SessionData {
@@ -306,6 +310,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("Error generating email preview:", err);
       res.status(500).json({ message: "Failed to generate email preview" });
+    }
+  });
+  
+  // MANUAL SYNC API
+  app.post("/api/sync", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Import syncService directly from the module, no need to access from global
+      
+      // Extract options
+      const forceRefresh = req.body.forceRefresh === true;
+      const calendarId = req.body.calendarId || null;
+      
+      // Request a sync
+      console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId });
+      
+      // If user doesn't have a sync job, set one up
+      const syncStatus = syncService.getSyncStatus(userId);
+      if (!syncStatus.configured) {
+        // Get server connection 
+        const connection = await storage.getServerConnection(userId);
+        
+        if (!connection) {
+          return res.status(400).json({ message: "No server connection found for this user" });
+        }
+        
+        // Try to set up sync job
+        const setupResult = await syncService.setupSyncForUser(userId, connection);
+        if (!setupResult) {
+          return res.status(500).json({ message: "Failed to set up sync job" });
+        }
+      }
+      
+      // Trigger an immediate sync
+      const success = await syncService.requestSync(userId, { forceRefresh, calendarId });
+      
+      if (success) {
+        res.json({ message: "Sync initiated" });
+      } else {
+        res.status(500).json({ message: "Failed to initiate sync" });
+      }
+    } catch (err) {
+      console.error("Error initiating sync:", err);
+      res.status(500).json({ message: "Failed to initiate sync" });
     }
   });
   

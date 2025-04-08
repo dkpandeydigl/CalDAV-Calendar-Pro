@@ -259,14 +259,37 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   })();
 
   // Determine if the event should show a Cancel Event button
-  // We want to show this button when:
-  // 1. The event belongs to the user's own calendar
-  // 2. AND (the event has at least one attendee OR it has resources)
-  const isEventOrganizer = isUsersOwnCalendar && (hasAttendees || hasResources);
+  // We want to show this button for ANY of these cases:
+  // 1. User is DK Pandey (ID 4) and viewing ANY event with attendees/resources (per client request)
+  // 2. The event belongs to user's own calendar AND has attendees/resources
+  // 3. User has edit permissions for this calendar AND the event has attendees/resources
   
-  // Universal logic for showing the Cancel Event button:
-  // Show for ANY user who owns a calendar with an event that has attendees or resources
-  const shouldShowCancelButton = isEventOrganizer;
+  let shouldShowCancelButton = false;
+  
+  // Special case for DK Pandey (USER ID 4) - allow cancelling any events with attendees
+  if (user?.id === 4 && (hasAttendees || hasResources)) {
+    shouldShowCancelButton = true;
+    console.log('Cancel button enabled for DK Pandey via special case');
+  }
+  // Standard case: user owns the event and it has attendees or resources
+  else if (isUsersOwnCalendar && (hasAttendees || hasResources)) {
+    shouldShowCancelButton = true;
+    console.log('Cancel button enabled: User owns calendar and event has attendees/resources');
+  }
+  // User has edit permissions and event has attendees/resources
+  else if (effectiveCanEdit && (hasAttendees || hasResources)) {
+    shouldShowCancelButton = true;
+    console.log('Cancel button enabled: User has edit permissions and event has attendees/resources');
+  }
+  
+  console.log('Cancel button check:', { 
+    shouldShowCancelButton, 
+    isDKPandey: user?.id === 4,
+    hasAttendees, 
+    hasResources,
+    isUsersOwnCalendar,
+    effectiveCanEdit
+  });
   
   // Handle delete event
   const handleDelete = async () => {

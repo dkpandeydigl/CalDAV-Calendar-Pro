@@ -19,7 +19,7 @@ interface SyncJob {
  * It maintains a collection of sync jobs, one per active user, and handles
  * scheduling, starting, stopping, and configuring synchronization
  */
-class SyncService {
+export class SyncService {
   private jobs: Map<number, SyncJob> = new Map();
   private defaultSyncInterval = 300; // 5 minutes in seconds
   private syncInProgress: Set<number> = new Set();
@@ -186,6 +186,13 @@ class SyncService {
     return true;
   }
 
+  /**
+   * Request a sync operation - alias for syncNow for backward compatibility
+   */
+  async requestSync(userId: number, options: { forceRefresh?: boolean, calendarId?: number | null } = {}): Promise<boolean> {
+    return this.syncNow(userId, options);
+  }
+  
   /**
    * Run a sync immediately for a user
    * @param userId - The ID of the user to sync
