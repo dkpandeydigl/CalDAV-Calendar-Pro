@@ -34,7 +34,16 @@ async function comparePasswords(supplied: string, stored: string) {
     // Detect if the password is in bcrypt format (starts with $2a$ or $2b$)
     if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
       console.log('Detected bcrypt format password, using bcrypt compare');
-      return await bcrypt.compare(supplied, stored);
+      console.log(`Password length: ${stored.length}, format: ${stored.substring(0, 7)}...`);
+      
+      try {
+        const result = await bcrypt.compare(supplied, stored);
+        console.log(`Bcrypt compare result: ${result}`);
+        return result;
+      } catch (bcryptError) {
+        console.error('Bcrypt compare error:', bcryptError);
+        return false;
+      }
     } 
     // For scrypt format (contains a dot separating hash and salt)
     else if (stored.includes('.')) {
