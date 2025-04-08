@@ -134,124 +134,192 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (serverEvent, newEventData, context) => {
       console.log(`Event created successfully on server:`, serverEvent);
       
-      // Keep optimistic UI updates for a short time to avoid flicker
-      setTimeout(() => {
-        // Replace all instances of the temp event with the real one
-        if (context?.tempEvent) {
-          // 1. Update main events cache
-          queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
-            return oldEvents.map(e => 
+      // Create a function to update all caches consistently that can be called multiple times
+      const updateAllEventCaches = () => {
+        console.log(`Updating all caches for new event ${serverEvent.title} (ID: ${serverEvent.id})`);
+        
+        // 1. Update main events cache
+        queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
+          if (!oldEvents) return [serverEvent];
+          
+          // First ensure we don't add duplicate events
+          const eventsWithoutDuplicates = oldEvents.filter(e => 
+            // Keep if it's the temp event we're replacing
+            (context?.tempEvent && e.id === context.tempEvent.id) ||
+            // Or it's not a duplicate by UID or ID
+            (e.id !== serverEvent.id && (!e.uid || e.uid !== serverEvent.uid))
+          );
+          
+          // Then update the temporary event or add the new event
+          if (context?.tempEvent) {
+            return eventsWithoutDuplicates.map(e => 
               e.id === context.tempEvent?.id ? serverEvent : e
             );
-          });
-          
-          // 2. Update any date-filtered caches
-          if (context.allQueryKeys) {
-            context.allQueryKeys.forEach((key: QueryKey) => {
-              if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
-                queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
-                  return oldEvents.map(e => 
-                    e.id === context.tempEvent?.id ? serverEvent : e
-                  );
-                });
-              }
-            });
+          } else {
+            return [...eventsWithoutDuplicates, serverEvent];
           }
-          
-          // 3. Update calendar-specific cache
-          queryClient.setQueryData<Event[]>(
-            ['/api/calendars', serverEvent.calendarId, 'events'], 
-            (oldEvents = []) => {
-              return oldEvents.map(e => 
-                e.id === context.tempEvent?.id ? serverEvent : e
-              );
-            }
-          );
-        }
-        
-        // Show success toast
-        toast({
-          title: "Event Created",
-          description: "New event has been created successfully."
         });
         
-        // Refetch after a slight delay to avoid UI flicker
-        setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-          queryClient.invalidateQueries({ 
-            queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
+        // 2. Update calendar-specific cache
+        queryClient.setQueryData<Event[]>(
+          ['/api/calendars', serverEvent.calendarId, 'events'], 
+          (oldEvents = []) => {
+            if (!oldEvents) return [serverEvent];
+            
+            // Apply the same deduplication logic
+            const eventsWithoutDuplicates = oldEvents.filter(e => 
+              // Keep if it's the temp event we're replacing
+              (context?.tempEvent && e.id === context.tempEvent.id) ||
+              // Or it's not a duplicate by UID or ID
+              (e.id !== serverEvent.id && (!e.uid || e.uid !== serverEvent.uid))
+            );
+            
+            // Then update the temporary event or add the new event
+            if (context?.tempEvent) {
+              return eventsWithoutDuplicates.map(e => 
+                e.id === context.tempEvent?.id ? serverEvent : e
+              );
+            } else {
+              return [...eventsWithoutDuplicates, serverEvent];
+            }
+          }
+        );
+        
+        // 3. Update any date-filtered caches
+        if (context?.allQueryKeys) {
+          context.allQueryKeys.forEach((key: QueryKey) => {
+            if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
+              queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
+                if (!oldEvents) return [serverEvent];
+                
+                // Apply the same deduplication logic
+                const eventsWithoutDuplicates = oldEvents.filter(e => 
+                  // Keep if it's the temp event we're replacing
+                  (context?.tempEvent && e.id === context.tempEvent.id) ||
+                  // Or it's not a duplicate by UID or ID
+                  (e.id !== serverEvent.id && (!e.uid || e.uid !== serverEvent.uid))
+                );
+                
+                // Then update the temporary event or add the new event
+                if (context?.tempEvent) {
+                  return eventsWithoutDuplicates.map(e => 
+                    e.id === context.tempEvent?.id ? serverEvent : e
+                  );
+                } else {
+                  return [...eventsWithoutDuplicates, serverEvent];
+                }
+              });
+            }
+          });
+        }
+      };
+      
+      // Update all caches immediately
+      updateAllEventCaches();
+      
+      // Show success toast
+      toast({
+        title: "Event Created",
+        description: "New event has been created successfully."
+      });
+      
+      // We'll do a server sync in a separate async function
+      const syncEventWithServer = async () => {
+        try {
+          // Update caches again before sync to ensure UI consistency
+          updateAllEventCaches();
+          
+          // Trigger an immediate sync with the CalDAV server
+          console.log('Triggering immediate sync for newly created event');
+          const syncResponse = await fetch('/api/sync/now', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              forceRefresh: true,
+              calendarId: serverEvent.calendarId
+            })
           });
           
-          // Trigger an immediate sync with the server to ensure the event is pushed to the CalDAV server
-          // Use forceRefresh and full mode for immediate propagation to other clients
-          console.log('Triggering immediate sync for newly created event');
+          const syncResult = await syncResponse.json();
           
-          const syncEvent = async () => {
-            try {
-              // First, make sure the event is properly saved in our local database
-              await queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+          // Update caches again after sync to ensure event remains in UI
+          updateAllEventCaches();
+          
+          // Check if sync was successful based on the response format
+          if (syncResponse.ok && syncResult.synced === true) {
+            console.log('Immediate sync completed successfully after creation:', syncResult);
+            
+            // Update caches once more to prevent event from disappearing
+            updateAllEventCaches();
+            
+            // Also schedule a delayed cache refresh to handle any edge cases
+            setTimeout(() => {
+              updateAllEventCaches();
               
-              // Then trigger an immediate sync with the CalDAV server
-              const syncResponse = await fetch('/api/sync/now', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({
-                  forceRefresh: true,
-                  calendarId: serverEvent.calendarId
-                })
-              });
-              
-              const syncResult = await syncResponse.json();
-              
-              // Check if sync was successful based on the new response format
-              if (syncResponse.ok && syncResult.synced === true) {
-                console.log('Immediate sync completed successfully after creation:', syncResult);
-                
-                // After successful sync, refresh the events list
+              // After successful sync, do a final refresh of the events list after a short delay
+              setTimeout(() => {
+                // Double ensure our event is still in the cache
+                updateAllEventCaches();
                 queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-              } else {
-                // Not a critical error - we handle 202 status codes here which mean
-                // the event was created locally but not synced to the server
-                console.log('Sync status after creation:', syncResult);
-                
-                // We provide a more specific message based on the response type
-                if (syncResult.requiresAuth) {
-                  toast({
-                    title: "Event Created Locally",
-                    description: "Event created in your local calendar. Sign in to sync with server.",
-                    variant: "default"
-                  });
-                } else if (syncResult.requiresConnection) {
-                  toast({
-                    title: "Event Created Locally",
-                    description: "Event created in your local calendar. Configure a server connection to sync.",
-                    variant: "default"
-                  });
-                } else {
-                  toast({
-                    title: "Event Created Locally",
-                    description: "Event created in your local calendar, but sync with server failed. Will retry automatically.",
-                    variant: "default"
-                  });
-                }
-              }
-            } catch (error) {
-              console.error('Error during immediate sync:', error);
-              // Still show the event locally even if sync failed
+                queryClient.invalidateQueries({ 
+                  queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
+                });
+              }, 500);
+            }, 200);
+          } else {
+            // Not a critical error - we handle 202 status codes here which mean
+            // the event was created locally but not synced to the server
+            console.log('Sync status after creation:', syncResult);
+            
+            // Make sure event is still in cache even if sync didn't complete
+            updateAllEventCaches();
+            
+            // We provide a more specific message based on the response type
+            if (syncResult.requiresAuth) {
               toast({
-                title: "Event Created",
-                description: "Event created locally, but sync with server failed. Will retry automatically.",
+                title: "Event Created Locally",
+                description: "Event created in your local calendar. Sign in to sync with server.",
+                variant: "default"
+              });
+            } else if (syncResult.requiresConnection) {
+              toast({
+                title: "Event Created Locally",
+                description: "Event created in your local calendar. Configure a server connection to sync.",
+                variant: "default"
+              });
+            } else {
+              toast({
+                title: "Event Created Locally",
+                description: "Event created in your local calendar, but sync with server failed. Will retry automatically.",
                 variant: "default"
               });
             }
-          };
+            
+            // Make sure event is still in cache
+            setTimeout(() => updateAllEventCaches(), 200);
+          }
+        } catch (error) {
+          console.error('Error during immediate sync:', error);
+          // Ensure event is still in cache even if sync failed
+          updateAllEventCaches();
           
-          syncEvent();
-        }, 100);
-      }, 10); // tiny delay to ensure UI stays smooth
+          // Still show the event locally even if sync failed
+          toast({
+            title: "Event Created",
+            description: "Event created locally, but sync with server failed. Will retry automatically.",
+            variant: "default"
+          });
+          
+          // Make sure event is still in cache
+          setTimeout(() => updateAllEventCaches(), 200);
+        }
+      };
+      
+      // Execute sync after a short delay to ensure UI updates first
+      setTimeout(syncEventWithServer, 50);
     },
     onError: (error, newEventData, context) => {
       console.error("Error creating event:", error);
