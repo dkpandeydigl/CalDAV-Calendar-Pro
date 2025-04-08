@@ -333,27 +333,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-secondary">
                   Loading...
                 </div>
-              ) : (isUsersOwnCalendar || effectiveCanEdit) ? (
-                <div className="flex">
-                  <Button variant="ghost" size="icon" onClick={onEdit} title="Edit">
-                    <span className="material-icons">edit</span>
-                    <span className="sr-only">Edit</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setDeleteDialogOpen(true)}
-                    title="Delete"
-                  >
-                    <span className="material-icons">delete</span>
-                    <span className="sr-only">Delete</span>
-                  </Button>
-                </div>
-              ) : (
+              ) : !(isUsersOwnCalendar || effectiveCanEdit) ? (
                 <div className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-secondary">
                   View only
                 </div>
-              )}
+              ) : null}
             </div>
           </DialogHeader>
           
