@@ -410,25 +410,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       setErrors(rest);
     }
     
-    // If we have the required fields and an attendee was just added, automatically switch to the email preview tab
-    if (title && startDate && endDate) {
-      // Navigate to the email preview tab
-      setActiveTab('emails');
-      
-      // Generate the email preview
-      const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-      const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
-      
-      generatePreview({
-        title,
-        description,
-        location,
-        startDate: startDateTime,
-        endDate: endDateTime,
-        attendees: updatedAttendees,
-        resources
-      });
-    }
+    // Don't automatically switch to email preview tab - let user control this
+    // Just show a toast notification that attendee was added
+    toast({
+      title: 'Attendee added',
+      description: `${attendeeInput} has been added as a ${attendeeRole}`,
+      duration: 3000,
+    });
   };
   
   const handleRemoveAttendee = (id: string) => {
@@ -591,7 +579,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       <Dialog open={open} onOpenChange={open => {
         if (!open) onClose();
       }}>
-        <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
           <DialogHeader className="pb-4 border-b">
             <DialogTitle className="flex items-center gap-2 text-lg">
               {event ? (
@@ -658,7 +646,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             </TabsList>
             
             <ScrollArea className="flex-1 p-4 overflow-y-auto">
-              <TabsContent value="basic" className="mt-0 p-0">
+              <TabsContent value="basic" className="mt-0 p-0 min-h-[500px]">
                 {/* Basic Details Form */}
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -872,7 +860,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 </div>
               </TabsContent>
               
-              <TabsContent value="attendees" className="mt-0 p-0">
+              <TabsContent value="attendees" className="mt-0 p-0 min-h-[500px]">
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <h3 className="text-sm font-medium">Add Attendees</h3>
@@ -984,17 +972,58 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       </div>
                     )}
                   </div>
+                  
+                  {attendees.length > 0 && (
+                    <div className="pt-4 mt-2 border-t">
+                      <Button 
+                        onClick={() => {
+                          // Validate required fields
+                          if (!title || !startDate || !endDate) {
+                            toast({
+                              title: 'Missing information',
+                              description: 'Please fill in all required fields',
+                              variant: 'destructive'
+                            });
+                            setActiveTab('basic');
+                            return;
+                          }
+                          
+                          // Navigate to email tab and generate preview
+                          setActiveTab('emails');
+                          
+                          // Generate email preview
+                          const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                          const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                          
+                          generatePreview({
+                            title,
+                            description,
+                            location,
+                            startDate: startDateTime,
+                            endDate: endDateTime,
+                            attendees,
+                            resources
+                          });
+                        }}
+                        type="button"
+                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                      >
+                        <Mail className="h-4 w-4 mr-1" />
+                        Preview Email
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
               
-              <TabsContent value="resources" className="mt-0 p-0">
+              <TabsContent value="resources" className="mt-0 p-0 min-h-[500px]">
                 <ResourceManager 
                   resources={resources}
                   onResourcesChange={setResources}
                 />
               </TabsContent>
               
-              <TabsContent value="recurrence" className="mt-0 p-0">
+              <TabsContent value="recurrence" className="mt-0 p-0 min-h-[500px]">
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label>Recurrence Pattern</Label>
@@ -1189,7 +1218,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 </div>
               </TabsContent>
               
-              <TabsContent value="emails" className="mt-0 p-0">
+              <TabsContent value="emails" className="mt-0 p-0 min-h-[500px]">
                 <div className="space-y-4">
                   <div className="flex-1 min-h-[500px]">
                     <EmailPreview 
