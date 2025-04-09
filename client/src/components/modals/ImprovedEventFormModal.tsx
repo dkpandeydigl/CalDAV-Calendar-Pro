@@ -527,33 +527,64 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       console.log(`[DATE DEBUG] endDate (raw string): ${endDate}`);
       console.log(`[DATE DEBUG] allDay: ${allDay}`);
       
-      // Create start date object properly preserving the selected date
-      const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-      console.log(`[DATE DEBUG] Constructed startDateTime: ${startDateTime.toISOString()}`);
-      
-      // For all-day events in CalDAV format, the end date should be the next day at 00:00:00
-      // This follows the CalDAV convention where an all-day event on April 25th would have:
-      // - Start: 2025-04-25T00:00:00
-      // - End: 2025-04-26T00:00:00 (exclusive end time)
-      let endDateTime;
-      if (allDay) {
-        // CRITICAL FIX: For all-day events, handle the CalDAV format carefully
-        // Step 1: Create a properly formatted date object from the date string
-        const endDateObj = new Date(`${endDate}T00:00:00`);
+      // CRITICAL FIX: Create dates more safely to avoid "invalid time value"
+      let startDateTime, endDateTime;
+
+      try {
+        // Always include validation to prevent invalid time values
+        if (allDay) {
+          // For all-day events, use a simpler and more reliable date creation approach
+          // Break the date into components: YYYY-MM-DD -> [YYYY, MM, DD]
+          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+          
+          // Important: Month in JavaScript Date is 0-indexed (January is 0)
+          startDateTime = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+          
+          console.log(`[DATE DEBUG] All-day event start date components:`, {
+            date: startDate,
+            year: startYear,
+            month: startMonth - 1, // Adjusted for JS Date 0-indexed months
+            day: startDay
+          });
+          
+          // Similar approach for end date
+          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+          
+          // Create end date - for all-day events we follow CalDAV convention (end date = next day)
+          let endDateTemp = new Date(endYear, endMonth - 1, endDay, 0, 0, 0, 0);
+          
+          // For all-day events in CalDAV, if start and end date are the same, 
+          // we add a day to the end date per the CalDAV spec
+          if (startDateTime.getTime() === endDateTemp.getTime()) {
+            endDateTemp = new Date(endDateTemp);
+            endDateTemp.setDate(endDateTemp.getDate() + 1);
+          }
+          
+          endDateTime = endDateTemp;
+          
+          console.log(`[DATE DEBUG] All-day event date objects:`, {
+            startDateTime: startDateTime.toISOString(),
+            endDateTime: endDateTime.toISOString()
+          });
+        } else {
+          // For regular events with time, use the normal approach
+          startDateTime = new Date(`${startDate}T${startTime}:00`);
+          endDateTime = new Date(`${endDate}T${endTime}:00`);
+        }
         
-        // Step 2: Add one day to comply with CalDAV spec for all-day events
-        // Note: We must use a new Date to avoid mutation
-        const nextDay = new Date(endDateObj);
-        nextDay.setDate(nextDay.getDate() + 1);
-        
-        // Log the exact date formatting details for debugging
-        console.log(`[DATE DEBUG] Original end date: ${endDate}`);
-        console.log(`[DATE DEBUG] As date object: ${endDateObj.toISOString()}`);
-        console.log(`[DATE DEBUG] CalDAV formatted date (next day): ${nextDay.toISOString()}`);
-        
-        endDateTime = nextDay;
-      } else {
-        endDateTime = new Date(`${endDate}T${endTime}:00`);
+        // Final validation to ensure we have valid dates
+        if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
+          throw new Error('Invalid date/time values');
+        }
+      } catch (error) {
+        console.error('Error creating date objects:', error);
+        toast({
+          title: 'Invalid date/time',
+          description: 'Please check the date and time values',
+          variant: 'destructive'
+        });
+        setIsSubmitting(false);
+        return; // Stop submission if dates are invalid
       }
       
       // Handle timezone adjustments if needed
