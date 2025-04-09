@@ -1233,17 +1233,36 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           // Navigate to email tab and generate preview
                           setActiveTab('emails');
                           
-                          // Generate email preview
-                          const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                          // Generate email preview with proper date handling
+                          let startDateTime, endDateTime;
                           
-                          // Handle all-day event end dates correctly for CalDAV format
-                          let endDateTime;
+                          // Use the same careful date construction that we use in the form submission
                           if (allDay) {
-                            const nextDay = new Date(`${endDate}T00:00:00`);
-                            nextDay.setDate(nextDay.getDate() + 1);
-                            endDateTime = nextDay;
+                            console.log(`[EMAIL PREVIEW] Creating dates for all-day event preview`);
+                            
+                            // Use UTC dates for all-day events to avoid timezone issues
+                            const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                            startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                            
+                            // For the end date, use the same approach
+                            const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                            
+                            // Add one day to the end date per CalDAV convention for all-day events
+                            endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                            
+                            console.log(`[EMAIL PREVIEW] All-day event dates created:`, {
+                              startDateTime: startDateTime.toISOString(),
+                              endDateTime: endDateTime.toISOString()
+                            });
                           } else {
+                            // For regular events, use the date-time strings
+                            startDateTime = new Date(`${startDate}T${startTime}:00`);
                             endDateTime = new Date(`${endDate}T${endTime}:00`);
+                            
+                            console.log(`[EMAIL PREVIEW] Regular event dates created:`, {
+                              startDateTime: startDateTime.toISOString(),
+                              endDateTime: endDateTime.toISOString()
+                            });
                           }
                           
                           generatePreview({
@@ -1500,16 +1519,35 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           return;
                         }
                         
-                        const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                        // Use the same careful date handling as in preview and submission
+                        let startDateTime, endDateTime;
                         
-                        // Handle all-day event end dates correctly for CalDAV format
-                        let endDateTime;
                         if (allDay) {
-                          const nextDay = new Date(`${endDate}T00:00:00`);
-                          nextDay.setDate(nextDay.getDate() + 1);
-                          endDateTime = nextDay;
+                          console.log(`[EMAIL SEND] Creating dates for all-day event`);
+                          
+                          // Use UTC dates for all-day events to avoid timezone issues
+                          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                          startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                          
+                          // For the end date, use the same approach
+                          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                          
+                          // Add one day to the end date per CalDAV convention for all-day events
+                          endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                          
+                          console.log(`[EMAIL SEND] All-day event dates created:`, {
+                            startDateTime: startDateTime.toISOString(),
+                            endDateTime: endDateTime.toISOString()
+                          });
                         } else {
+                          // For regular events, use the date-time strings
+                          startDateTime = new Date(`${startDate}T${startTime}:00`);
                           endDateTime = new Date(`${endDate}T${endTime}:00`);
+                          
+                          console.log(`[EMAIL SEND] Regular event dates created:`, {
+                            startDateTime: startDateTime.toISOString(),
+                            endDateTime: endDateTime.toISOString()
+                          });
                         }
                         
                         // Prepare email data
@@ -1564,17 +1602,35 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         });
                       }}
                       onRefresh={() => {
-                        // Regenerate the preview
-                        const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                        // Use the same careful date handling approach
+                        let startDateTime, endDateTime;
                         
-                        // Handle all-day event end dates correctly for CalDAV format
-                        let endDateTime;
                         if (allDay) {
-                          const nextDay = new Date(`${endDate}T00:00:00`);
-                          nextDay.setDate(nextDay.getDate() + 1);
-                          endDateTime = nextDay;
+                          console.log(`[EMAIL REFRESH] Creating dates for all-day event`);
+                          
+                          // Use UTC dates for all-day events to avoid timezone issues
+                          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                          startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                          
+                          // For the end date, use the same approach
+                          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                          
+                          // Add one day to the end date per CalDAV convention for all-day events
+                          endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                          
+                          console.log(`[EMAIL REFRESH] All-day event dates created:`, {
+                            startDateTime: startDateTime.toISOString(),
+                            endDateTime: endDateTime.toISOString()
+                          });
                         } else {
+                          // For regular events, use the date-time strings
+                          startDateTime = new Date(`${startDate}T${startTime}:00`);
                           endDateTime = new Date(`${endDate}T${endTime}:00`);
+                          
+                          console.log(`[EMAIL REFRESH] Regular event dates created:`, {
+                            startDateTime: startDateTime.toISOString(),
+                            endDateTime: endDateTime.toISOString()
+                          });
                         }
                         
                         const previewParams = {
@@ -1650,17 +1706,35 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   onClick={async () => {
                     if (!validateForm()) return;
                     
-                    // Prepare date objects
-                    const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                    // Prepare date objects using the consistent approach
+                    let startDateTime, endDateTime;
                     
-                    // Handle all-day event end dates correctly for CalDAV format
-                    let endDateTime;
                     if (allDay) {
-                      const nextDay = new Date(`${endDate}T00:00:00`);
-                      nextDay.setDate(nextDay.getDate() + 1);
-                      endDateTime = nextDay;
+                      console.log(`[SEND BUTTON] Creating dates for all-day event`);
+                      
+                      // Use UTC dates for all-day events to avoid timezone issues
+                      const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                      startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                      
+                      // For the end date, use the same approach
+                      const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                      
+                      // Add one day to the end date per CalDAV convention for all-day events
+                      endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                      
+                      console.log(`[SEND BUTTON] All-day event dates created:`, {
+                        startDateTime: startDateTime.toISOString(),
+                        endDateTime: endDateTime.toISOString()
+                      });
                     } else {
+                      // For regular events, use the date-time strings
+                      startDateTime = new Date(`${startDate}T${startTime}:00`);
                       endDateTime = new Date(`${endDate}T${endTime}:00`);
+                      
+                      console.log(`[SEND BUTTON] Regular event dates created:`, {
+                        startDateTime: startDateTime.toISOString(),
+                        endDateTime: endDateTime.toISOString()
+                      });
                     }
                     
                     // Store the event data for use in the alert dialog
@@ -1702,17 +1776,35 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         
                         // Mark the event as having email sent if it's an existing event
                         if (event) {
-                          // Prepare full event data (same as handleSubmit)
-                          const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                          // Prepare full event data with consistent date handling
+                          let startDateTime, endDateTime;
                           
-                          // Handle all-day event end dates correctly for CalDAV format
-                          let endDateTime;
                           if (allDay) {
-                            const nextDay = new Date(`${endDate}T00:00:00`);
-                            nextDay.setDate(nextDay.getDate() + 1);
-                            endDateTime = nextDay;
+                            console.log(`[EMAIL SENT UPDATE] Creating dates for all-day event`);
+                            
+                            // Use UTC dates for all-day events to avoid timezone issues
+                            const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                            startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                            
+                            // For the end date, use the same approach
+                            const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                            
+                            // Add one day to the end date per CalDAV convention for all-day events
+                            endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                            
+                            console.log(`[EMAIL SENT UPDATE] All-day event dates created:`, {
+                              startDateTime: startDateTime.toISOString(),
+                              endDateTime: endDateTime.toISOString()
+                            });
                           } else {
+                            // For regular events, use the date-time strings
+                            startDateTime = new Date(`${startDate}T${startTime}:00`);
                             endDateTime = new Date(`${endDate}T${endTime}:00`);
+                            
+                            console.log(`[EMAIL SENT UPDATE] Regular event dates created:`, {
+                              startDateTime: startDateTime.toISOString(),
+                              endDateTime: endDateTime.toISOString()
+                            });
                           }
                           
                           // Prepare recurrence rule if it exists
@@ -1831,17 +1923,35 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   
                   // If it's an existing event, mark it as having email sent
                   if (event) {
-                    // Prepare full event data (same as handleSubmit)
-                    const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                    // Prepare full event data with consistent date handling
+                    let startDateTime, endDateTime;
                     
-                    // Handle all-day event end dates correctly for CalDAV format
-                    let endDateTime;
                     if (allDay) {
-                      const nextDay = new Date(`${endDate}T00:00:00`);
-                      nextDay.setDate(nextDay.getDate() + 1);
-                      endDateTime = nextDay;
+                      console.log(`[ALERT DIALOG] Creating dates for all-day event`);
+                      
+                      // Use UTC dates for all-day events to avoid timezone issues
+                      const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                      startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                      
+                      // For the end date, use the same approach
+                      const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                      
+                      // Add one day to the end date per CalDAV convention for all-day events
+                      endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                      
+                      console.log(`[ALERT DIALOG] All-day event dates created:`, {
+                        startDateTime: startDateTime.toISOString(),
+                        endDateTime: endDateTime.toISOString()
+                      });
                     } else {
+                      // For regular events, use the date-time strings
+                      startDateTime = new Date(`${startDate}T${startTime}:00`);
                       endDateTime = new Date(`${endDate}T${endTime}:00`);
+                      
+                      console.log(`[ALERT DIALOG] Regular event dates created:`, {
+                        startDateTime: startDateTime.toISOString(),
+                        endDateTime: endDateTime.toISOString()
+                      });
                     }
                     
                     // Prepare recurrence rule if it exists
