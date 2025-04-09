@@ -424,7 +424,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startDate, 
         endDate, 
         attendees,
-        resources
+        resources,
+        recurrenceRule
       } = req.body;
       
       // Validate required fields
@@ -527,7 +528,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: a.name || undefined,
           role: a.role || undefined
         })),
-        resources: parsedResources.length > 0 ? parsedResources : undefined
+        resources: parsedResources.length > 0 ? parsedResources : undefined,
+        recurrenceRule: recurrenceRule || undefined
       };
       
       // Send the event invitation

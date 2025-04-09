@@ -35,6 +35,7 @@ interface EventInvitationData {
   resources?: Resource[]; // Optional resources array
   icsData?: string; // Optional pre-generated ICS data
   status?: string; // Optional status for events (e.g. 'CANCELLED')
+  recurrenceRule?: string | object; // Recurrence rule as string or object
 }
 
 export class EmailService {
@@ -942,6 +943,106 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     // Add organizer if exists
     if (organizer && organizer.email) {
       icsContent.push(`ORGANIZER;CN=${organizer.name || organizer.email}:mailto:${organizer.email}`);
+    }
+    
+    // Handle recurrence rules if present
+    interface RecurrenceRule {
+      pattern: string;
+      interval?: number;
+      weekdays?: string[];
+      endType?: string;
+      occurrences?: number;
+      untilDate?: string;
+    }
+    
+    if (data.recurrenceRule) {
+      console.log('Adding recurrence rule to ICS:', data.recurrenceRule);
+      
+      try {
+        let rule: RecurrenceRule | null = null;
+        
+        // If recurrenceRule is a string, try to parse it
+        if (typeof data.recurrenceRule === 'string') {
+          // Check if it's already a formatted RRULE string
+          if (data.recurrenceRule.startsWith('RRULE:')) {
+            icsContent.push(data.recurrenceRule);
+          } else {
+            try {
+              // Try to parse as JSON
+              rule = JSON.parse(data.recurrenceRule);
+            } catch (e) {
+              // If not valid JSON, just use as plain text with RRULE: prefix
+              icsContent.push(`RRULE:${data.recurrenceRule}`);
+            }
+          }
+        } else if (data.recurrenceRule && typeof data.recurrenceRule === 'object') {
+          // It's already an object
+          rule = data.recurrenceRule as unknown as RecurrenceRule;
+        }
+        
+        // If we have a valid rule object, convert it to RRULE format
+        if (rule && rule.pattern) {
+          let rruleString = 'RRULE:';
+          
+          // Convert pattern to FREQ
+          switch (rule.pattern.toLowerCase()) {
+            case 'daily':
+              rruleString += 'FREQ=DAILY';
+              break;
+            case 'weekly':
+              rruleString += 'FREQ=WEEKLY';
+              break;
+            case 'monthly':
+              rruleString += 'FREQ=MONTHLY';
+              break;
+            case 'yearly':
+              rruleString += 'FREQ=YEARLY';
+              break;
+            default:
+              rruleString += `FREQ=${rule.pattern.toUpperCase()}`;
+          }
+          
+          // Add interval if specified
+          if (rule.interval && rule.interval > 1) {
+            rruleString += `;INTERVAL=${rule.interval}`;
+          }
+          
+          // Add weekdays for weekly recurrence
+          if (rule.weekdays && rule.weekdays.length > 0 && rule.pattern.toLowerCase() === 'weekly') {
+            const dayMap: Record<string, string> = {
+              'sunday': 'SU', 'monday': 'MO', 'tuesday': 'TU', 'wednesday': 'WE',
+              'thursday': 'TH', 'friday': 'FR', 'saturday': 'SA'
+            };
+            
+            const byDays = rule.weekdays
+              .map(day => dayMap[day.toLowerCase()] || day)
+              .join(',');
+            
+            if (byDays) {
+              rruleString += `;BYDAY=${byDays}`;
+            }
+          }
+          
+          // Add count or until based on end type
+          if (rule.endType === 'After' && rule.occurrences) {
+            rruleString += `;COUNT=${rule.occurrences}`;
+          } else if (rule.endType === 'Until' && rule.untilDate) {
+            try {
+              // Format the date as required for UNTIL (YYYYMMDDTHHMMSSZ)
+              const untilDate = new Date(rule.untilDate);
+              const formattedUntil = untilDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+              rruleString += `;UNTIL=${formattedUntil}`;
+            } catch (e) {
+              console.error("Error formatting UNTIL date:", e);
+            }
+          }
+          
+          console.log("Adding RRULE to ICS:", rruleString);
+          icsContent.push(rruleString);
+        }
+      } catch (error) {
+        console.error('Error processing recurrence rule for ICS:', error);
+      }
     }
     
     // Add human attendees if they exist

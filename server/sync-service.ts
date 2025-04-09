@@ -218,10 +218,32 @@ export class SyncService {
    * @param options.calendarId - Optional calendar ID to sync just one calendar
    */
   async syncNow(userId: number, options: { forceRefresh?: boolean, calendarId?: number | null } = {}): Promise<boolean> {
-    const job = this.jobs.get(userId);
+    let job = this.jobs.get(userId);
+    
+    // If no job exists, try to create one on-demand
     if (!job) {
-      console.log(`No sync job found for user ID ${userId}`);
-      return false;
+      console.log(`No sync job found for user ID ${userId}, attempting to create one`);
+      
+      // Get the server connection for this user
+      const connection = await storage.getServerConnection(userId);
+      if (!connection) {
+        console.log(`Cannot create sync job: No server connection for user ID ${userId}`);
+        return false;
+      }
+      
+      // Setup a sync job for this user
+      const setupSuccess = await this.setupSyncForUser(userId, connection);
+      if (!setupSuccess) {
+        console.log(`Failed to set up sync job for user ID ${userId}`);
+        return false;
+      }
+      
+      // Get the newly created job
+      job = this.jobs.get(userId);
+      if (!job) {
+        console.log(`Failed to retrieve newly created sync job for user ID ${userId}`);
+        return false;
+      }
     }
     
     const { forceRefresh = false, calendarId = null } = options;
