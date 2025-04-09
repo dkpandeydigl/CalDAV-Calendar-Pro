@@ -1351,12 +1351,17 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     // If already on the email preview tab, don't show the confirmation dialog
                     if (activeTab === 'emails') {
                       // User is already viewing the preview, send directly
+                      // Note: isEmailSending state is handled by the sendEmail hook internally
+                      
                       sendEmail(eventData).then(() => {
+                        // On success, create/update the event
                         handleSubmit();
                       }).catch(error => {
+                        console.error('Email sending error:', error);
+                        // Show detailed error message from the exception
                         toast({
                           title: 'Email sending failed',
-                          description: 'The email could not be sent. Please check your SMTP settings.',
+                          description: error.message || 'The email could not be sent. Please check your SMTP settings.',
                           variant: 'destructive'
                         });
                       });
@@ -1412,12 +1417,17 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             <AlertDialogCancel onClick={() => {
               // User chose not to preview, proceed with sending directly
               if (previewEventData) {
+                // Note: isEmailSending state is handled by the sendEmail hook internally
+                
                 sendEmail(previewEventData).then(() => {
+                  // On success, create/update the event
                   handleSubmit();
                 }).catch(error => {
+                  console.error('Email sending error:', error);
+                  // Show detailed error message from the exception
                   toast({
                     title: 'Email sending failed',
-                    description: 'The email could not be sent. Please check your SMTP settings.',
+                    description: error.message || 'The email could not be sent. Please check your SMTP settings.',
                     variant: 'destructive'
                   });
                 });

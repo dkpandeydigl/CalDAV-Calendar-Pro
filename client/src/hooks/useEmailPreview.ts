@@ -57,11 +57,30 @@ export function useEmailPreview() {
       const response = await apiRequest('POST', '/api/email-preview', formattedData);
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to generate email preview');
+        // Try to parse response as JSON, but handle case where it's not valid JSON (like HTML)
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to generate email preview');
+        } catch (jsonError) {
+          // If response isn't valid JSON, try to get the text content
+          const textContent = await response.text();
+          
+          // Check if it's an HTML response
+          if (textContent.includes('<!DOCTYPE') || textContent.includes('<html')) {
+            throw new Error('Server returned HTML instead of JSON. The API endpoint may be experiencing an error.');
+          } else {
+            throw new Error(`Failed to generate preview: ${textContent.substring(0, 100)}...`);
+          }
+        }
       }
       
-      return await response.json() as EmailPreviewResponse;
+      // Try to parse the response as JSON, with error handling
+      try {
+        return await response.json() as EmailPreviewResponse;
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        throw new Error('Server returned invalid JSON response');
+      }
     },
     onSuccess: (data) => {
       setPreviewData(data);
@@ -107,11 +126,30 @@ export function useEmailPreview() {
       const response = await apiRequest('POST', '/api/send-email', formattedData);
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to send email');
+        // Try to parse response as JSON, but handle case where it's not valid JSON (like HTML)
+        try {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to send email');
+        } catch (jsonError) {
+          // If response isn't valid JSON, try to get the text content
+          const textContent = await response.text();
+          
+          // Check if it's an HTML response
+          if (textContent.includes('<!DOCTYPE') || textContent.includes('<html')) {
+            throw new Error('Server returned HTML instead of JSON. The API endpoint may be experiencing an error.');
+          } else {
+            throw new Error(`Failed to send email: ${textContent.substring(0, 100)}...`);
+          }
+        }
       }
       
-      return await response.json() as SendEmailResponse;
+      // Try to parse the response as JSON, with error handling
+      try {
+        return await response.json() as SendEmailResponse;
+      } catch (jsonError) {
+        console.error('Error parsing JSON response:', jsonError);
+        throw new Error('Server returned invalid JSON response');
+      }
     },
     onSuccess: (data) => {
       console.log('Email sent successfully:', data);
