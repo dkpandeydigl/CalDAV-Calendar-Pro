@@ -332,6 +332,19 @@ export class SyncService {
                 caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
               }
               
+              // Ensure we have valid start and end dates
+              const currentDate = new Date();
+              if (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime())) {
+                console.warn(`Event ${caldavEvent.uid} missing valid start date, using current date`);
+                caldavEvent.startDate = currentDate;
+              }
+              
+              if (!caldavEvent.endDate || isNaN(caldavEvent.endDate.getTime())) {
+                console.warn(`Event ${caldavEvent.uid} missing valid end date, using start date + 1 hour`);
+                // Set end date to start date + 1 hour if not valid
+                caldavEvent.endDate = new Date(caldavEvent.startDate.getTime() + 60 * 60 * 1000);
+              }
+              
               // Convert the event data
               const eventData: Partial<InsertEvent> = {
                 uid: caldavEvent.uid,
@@ -449,6 +462,19 @@ export class SyncService {
                   if (!caldavEvent.uid) {
                     console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
                     caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
+                  }
+                  
+                  // Ensure we have valid start and end dates
+                  const currentDate = new Date();
+                  if (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime())) {
+                    console.warn(`Event ${caldavEvent.uid} missing valid start date, using current date`);
+                    caldavEvent.startDate = currentDate;
+                  }
+                  
+                  if (!caldavEvent.endDate || isNaN(caldavEvent.endDate.getTime())) {
+                    console.warn(`Event ${caldavEvent.uid} missing valid end date, using start date + 1 hour`);
+                    // Set end date to start date + 1 hour if not valid
+                    caldavEvent.endDate = new Date(caldavEvent.startDate.getTime() + 60 * 60 * 1000);
                   }
                   
                   // Convert the event data

@@ -198,10 +198,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Handle date conversions
       if (typeof eventData.startDate === 'string') {
         eventData.startDate = new Date(eventData.startDate);
+      } else if (!eventData.startDate) {
+        // If startDate is null/undefined, set it to the current date
+        console.warn("Missing startDate in event creation, using current date");
+        eventData.startDate = new Date();
       }
       
       if (typeof eventData.endDate === 'string') {
         eventData.endDate = new Date(eventData.endDate);
+      } else if (!eventData.endDate) {
+        // If endDate is null/undefined, set it to 1 hour after startDate
+        console.warn("Missing endDate in event creation, setting to 1 hour after startDate");
+        const endDate = new Date(eventData.startDate.getTime());
+        endDate.setHours(endDate.getHours() + 1);
+        eventData.endDate = endDate;
+      }
+      
+      // Validate that dates are valid
+      if (isNaN(eventData.startDate.getTime())) {
+        console.warn("Invalid startDate detected, using current date instead");
+        eventData.startDate = new Date();
+      }
+      
+      if (isNaN(eventData.endDate.getTime())) {
+        console.warn("Invalid endDate detected, setting to 1 hour after startDate");
+        const endDate = new Date(eventData.startDate.getTime());
+        endDate.setHours(endDate.getHours() + 1);
+        eventData.endDate = endDate;
+      }
+      
+      // For all-day events, ensure the dates are properly formatted
+      if (eventData.allDay === true) {
+        // Set time to midnight in UTC for all-day events
+        const startDate = new Date(eventData.startDate);
+        startDate.setUTCHours(0, 0, 0, 0);
+        eventData.startDate = startDate;
+        
+        const endDate = new Date(eventData.endDate);
+        // For all-day events, end date should be set to midnight of the next day in UTC
+        endDate.setUTCHours(0, 0, 0, 0);
+        
+        // If start and end date are the same, set end date to the next day
+        if (startDate.getTime() === endDate.getTime()) {
+          endDate.setDate(endDate.getDate() + 1);
+        }
+        
+        eventData.endDate = endDate;
       }
       
       // Convert arrays to JSON strings
@@ -318,10 +360,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Handle date conversions
       if (typeof updateData.startDate === 'string') {
         updateData.startDate = new Date(updateData.startDate);
+      } else if (updateData.startDate === null || updateData.startDate === undefined) {
+        // Keep existing startDate if not provided
+        updateData.startDate = existingEvent.startDate;
       }
       
       if (typeof updateData.endDate === 'string') {
         updateData.endDate = new Date(updateData.endDate);
+      } else if (updateData.endDate === null || updateData.endDate === undefined) {
+        // Keep existing endDate if not provided
+        updateData.endDate = existingEvent.endDate;
+      }
+      
+      // Validate that dates are valid
+      if (updateData.startDate && isNaN(updateData.startDate.getTime())) {
+        console.warn("Invalid startDate detected in update, keeping existing value");
+        updateData.startDate = existingEvent.startDate;
+      }
+      
+      if (updateData.endDate && isNaN(updateData.endDate.getTime())) {
+        console.warn("Invalid endDate detected in update, keeping existing value");
+        updateData.endDate = existingEvent.endDate;
+      }
+      
+      // For all-day events, ensure the dates are properly formatted
+      if (updateData.allDay === true) {
+        // Set time to midnight in UTC for all-day events
+        if (updateData.startDate) {
+          const startDate = new Date(updateData.startDate);
+          startDate.setUTCHours(0, 0, 0, 0);
+          updateData.startDate = startDate;
+        }
+        
+        if (updateData.endDate) {
+          const endDate = new Date(updateData.endDate);
+          // For all-day events, end date should be set to midnight of the next day in UTC
+          endDate.setUTCHours(0, 0, 0, 0);
+          
+          // If start and end date are the same, set end date to the next day
+          if (updateData.startDate && 
+              endDate.getTime() === updateData.startDate.getTime()) {
+            endDate.setDate(endDate.getDate() + 1);
+          }
+          
+          updateData.endDate = endDate;
+        }
       }
       
       // Convert arrays to JSON strings
