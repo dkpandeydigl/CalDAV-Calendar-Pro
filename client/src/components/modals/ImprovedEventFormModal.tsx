@@ -309,26 +309,32 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         setAllDay(event.allDay || false);
         setTimezone(event.timezone || selectedTimezone);
       } else if (selectedDate) {
-        // If a date was selected in the calendar, use it for start/end
-        // We must create a new Date to avoid potentially mutating the prop
+        // CRITICAL FIX: If a date was selected in the calendar, use it for start/end
+        // Create a fresh date object to avoid any reference issues
         const date = new Date(selectedDate);
+        
         if (!isNaN(date.getTime())) {
-          // Use local date format to avoid timezone offset issues
+          // Format the date as YYYY-MM-DD using the actual selected date
+          // This is critical for ensuring we use the date the user clicked on
           const year = date.getFullYear();
           const month = (date.getMonth() + 1).toString().padStart(2, '0');
           const day = date.getDate().toString().padStart(2, '0');
           const formattedDate = `${year}-${month}-${day}`;
           
-          console.log(`Selected date from calendar: ${date.toString()}`);
-          console.log(`Formatted as local date: ${formattedDate}`);
+          // Extensive logging to help diagnose the issue
+          console.log(`[DATE DEBUG] ------- Event Form Date Initialization -------`);
+          console.log(`[DATE DEBUG] Selected date from calendar: ${date.toString()}`);
+          console.log(`[DATE DEBUG] Formatted as YYYY-MM-DD: ${formattedDate}`);
+          console.log(`[DATE DEBUG] Original selectedDate prop: ${selectedDate instanceof Date ? selectedDate.toISOString() : selectedDate}`);
           
-          // Store the actual selected date for debugging
-          console.log(`Original selectedDate prop: ${selectedDate instanceof Date ? selectedDate.toISOString() : selectedDate}`);
-          
-          // Always use the correct selected date for both start and end
-          // This ensures that when a user selects April 25th, they get an event on April 25th
+          // CRITICAL FIX: Always use the formattedDate from the selected date
+          // This ensures the event appears on the exact day the user clicked
           setStartDate(formattedDate);
           setEndDate(formattedDate);
+          
+          // Force the allDay checkbox to be checked when creating a new event
+          // This helps ensure proper date handling for the specific use case
+          setAllDay(true);
           
           // Create default time for new event (current hour + 1)
           const now = new Date();
@@ -525,12 +531,22 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       // - End: 2025-04-26T00:00:00 (exclusive end time)
       let endDateTime;
       if (allDay) {
-        // Create a new date for the end date (to avoid modifying the endDate string directly)
-        const nextDay = new Date(`${endDate}T00:00:00`);
-        // Add one day for CalDAV compliance
+        // CRITICAL FIX: For all-day events, handle the CalDAV format carefully
+        // Step 1: Create a properly formatted date object from the date string
+        const endDateObj = new Date(`${endDate}T00:00:00`);
+        
+        // Step 2: Add one day to comply with CalDAV spec for all-day events
+        // Note: We must use a new Date to avoid mutation
+        const nextDay = new Date(endDateObj);
         nextDay.setDate(nextDay.getDate() + 1);
+        
+        // Log the exact date formatting details for debugging
+        console.log(`[DATE DEBUG] ------- All-Day Event CalDAV Format -------`);
+        console.log(`[DATE DEBUG] Original end date: ${endDate}`);
+        console.log(`[DATE DEBUG] As date object: ${endDateObj.toISOString()}`);
+        console.log(`[DATE DEBUG] CalDAV formatted date (next day): ${nextDay.toISOString()}`);
+        
         endDateTime = nextDay;
-        console.log(`All-day event end date adjusted to: ${endDateTime.toISOString()}`);
       } else {
         endDateTime = new Date(`${endDate}T${endTime}:00`);
       }

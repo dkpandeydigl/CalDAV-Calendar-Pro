@@ -53,7 +53,18 @@ const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick, on
       className={`p-1 border border-neutral-200 min-h-[100px] cursor-pointer ${
         isToday ? 'bg-blue-50' : ''
       }`}
-      onDoubleClick={(e) => onDayDoubleClick && onDayDoubleClick(date)}
+      onDoubleClick={(e) => {
+        if (onDayDoubleClick) {
+          console.log(`[DATE DEBUG] Double-clicked day: ${date.toISOString()}`);
+          console.log(`[DATE DEBUG] Date object being passed to handler:`, date);
+          
+          // Important: Create a NEW date object here to avoid reference issues
+          const selectedDate = new Date(date);
+          console.log(`[DATE DEBUG] New date created for event: ${selectedDate.toISOString()}`);
+          
+          onDayDoubleClick(selectedDate);
+        }
+      }}
     >
       <div className="flex justify-between items-center p-1">
         {showCleanupButton && calendarId && (

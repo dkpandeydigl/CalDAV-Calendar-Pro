@@ -444,8 +444,10 @@ function CalendarContent() {
       <ImprovedEventFormModal 
         open={eventFormOpen} 
         event={selectedEvent}
+        // Make sure we pass the selected date correctly
         selectedDate={!selectedEvent ? selectedDate : undefined} 
         onClose={() => {
+          console.log(`[DATE DEBUG] Closing event form modal, clearing selectedDate`);
           setEventFormOpen(false);
           setSelectedDate(undefined);
         }} 
