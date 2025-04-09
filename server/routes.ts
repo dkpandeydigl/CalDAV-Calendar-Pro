@@ -340,7 +340,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Update an existing event
+  // Utility endpoint to cleanup duplicate untitled events
+  app.post("/api/cleanup-duplicate-events", isAuthenticated, async (req, res) => {
+    try {
+      const { date, calendarId } = req.body;
+      
+      if (!date || !calendarId) {
+        return res.status(400).json({ error: 'Missing date or calendarId parameter' });
+      }
+      
+      // Get all events for the calendar
+      const events = await storage.getEvents(calendarId);
+      
+      // Find all Untitled Events on the specified date
+      const targetDateStr = new Date(date).toISOString().split('T')[0]; // Get just the date part
+      
+      // Filter untitled events for the target date
+      const untitledEvents = events.filter(event => {
+        const eventDate = event.startDate ? new Date(event.startDate).toISOString().split('T')[0] : null;
+        return event.title === 'Untitled Event' && eventDate === targetDateStr;
+      });
+      
+      console.log(`Found ${untitledEvents.length} untitled events for date ${targetDateStr}`);
+      
+      // If there are more than one, keep the first one and delete the rest
+      if (untitledEvents.length > 1) {
+        // Sort by ID to get the oldest one
+        untitledEvents.sort((a, b) => a.id - b.id);
+        
+        // Keep the first one, delete the rest
+        const eventsToDelete = untitledEvents.slice(1);
+        console.log(`Deleting ${eventsToDelete.length} duplicate untitled events`);
+        
+        for (const event of eventsToDelete) {
+          await storage.deleteEvent(event.id);
+        }
+        
+        // Sync the changes to the server
+        if (req.user) {
+          syncService.syncNow(req.user.id).catch(err => {
+            console.error('Error during sync after cleanup:', err);
+          });
+        }
+        
+        return res.json({ 
+          success: true, 
+          message: `Deleted ${eventsToDelete.length} duplicate untitled events.`,
+          deletedIds: eventsToDelete.map(e => e.id)
+        });
+      } else {
+        return res.json({ 
+          success: true, 
+          message: 'No duplicate untitled events found to clean up.'
+        });
+      }
+    } catch (err) {
+      console.error('Error cleaning up duplicate events:', err);
+      res.status(500).json({ error: 'Failed to cleanup duplicate events' });
+    }
+  });
+  
   app.put("/api/events/:id", isAuthenticated, async (req, res) => {
     try {
       const eventId = parseInt(req.params.id);

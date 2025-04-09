@@ -326,23 +326,22 @@ export class SyncService {
               // Check if we already have this event in our database
               const existingEvent = await storage.getEventByUID(caldavEvent.uid);
               
+              // Skip events that don't have essential data (summary, dates)
+              // Check if this is just a placeholder or empty event
+              const isEmptyEvent = !caldavEvent.summary && (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime()));
+              const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
+                                     caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
+                                     
+              // Skip placeholder events
+              if (isEmptyEvent || !hasValidDates) {
+                console.log(`Skipping empty or invalid event (no summary or valid dates): ${caldavEvent.uid || 'No UID'}`);
+                continue; // Skip to the next event
+              }
+
               // Ensure the event has a valid UID
               if (!caldavEvent.uid) {
                 console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
                 caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
-              }
-              
-              // Ensure we have valid start and end dates
-              const currentDate = new Date();
-              if (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime())) {
-                console.warn(`Event ${caldavEvent.uid} missing valid start date, using current date`);
-                caldavEvent.startDate = currentDate;
-              }
-              
-              if (!caldavEvent.endDate || isNaN(caldavEvent.endDate.getTime())) {
-                console.warn(`Event ${caldavEvent.uid} missing valid end date, using start date + 1 hour`);
-                // Set end date to start date + 1 hour if not valid
-                caldavEvent.endDate = new Date(caldavEvent.startDate.getTime() + 60 * 60 * 1000);
               }
               
               // Convert the event data
@@ -458,23 +457,22 @@ export class SyncService {
                   // Check if we already have this event in our database
                   const existingEvent = await storage.getEventByUID(caldavEvent.uid);
                   
+                  // Skip events that don't have essential data (summary, dates)
+                  // Check if this is just a placeholder or empty event
+                  const isEmptyEvent = !caldavEvent.summary && (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime()));
+                  const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
+                                         caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
+                  
+                  // Skip placeholder events
+                  if (isEmptyEvent || !hasValidDates) {
+                    console.log(`Skipping empty or invalid event (no summary or valid dates): ${caldavEvent.uid || 'No UID'}`);
+                    continue; // Skip to the next event
+                  }
+                  
                   // Ensure the event has a valid UID
                   if (!caldavEvent.uid) {
                     console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
                     caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
-                  }
-                  
-                  // Ensure we have valid start and end dates
-                  const currentDate = new Date();
-                  if (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime())) {
-                    console.warn(`Event ${caldavEvent.uid} missing valid start date, using current date`);
-                    caldavEvent.startDate = currentDate;
-                  }
-                  
-                  if (!caldavEvent.endDate || isNaN(caldavEvent.endDate.getTime())) {
-                    console.warn(`Event ${caldavEvent.uid} missing valid end date, using start date + 1 hour`);
-                    // Set end date to start date + 1 hour if not valid
-                    caldavEvent.endDate = new Date(caldavEvent.startDate.getTime() + 60 * 60 * 1000);
                   }
                   
                   // Convert the event data
