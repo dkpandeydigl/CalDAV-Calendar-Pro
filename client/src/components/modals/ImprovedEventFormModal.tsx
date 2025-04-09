@@ -525,49 +525,55 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       if (event) {
         // Update existing event - need to use the { id, data } format required by updateEvent
         try {
-          // Call updateEvent to trigger the update
-          updateEvent({ 
-            id: event.id, 
-            data: eventData 
-          });
-          
-          // Since updateEvent is from updateEventMutation.mutate which doesn't return a promise,
-          // we need to make the API call manually to get the response for the email preview
-          const response = await apiRequest('PUT', `/api/events/${event.id}`, eventData);
-          const updateResponse = await response.json() as UpdateEventResponse;
-          
-          if (updateResponse && updateResponse.hasAttendees && attendees.length > 0) {
-            setActiveTab('emails');
+            // Call the regular update function to update the event
+            updateEvent({ 
+              id: event.id, 
+              data: eventData 
+            });
             
-            // Generate email preview for the updated event
-            try {
-              const previewParams = {
-                title,
-                description,
-                location,
-                startDate: startDateTime,
-                endDate: endDateTime,
-                attendees: attendees,
-                resources: resources,
-                eventId: event.id
-              };
-              
-              try {
-                const previewResult = await generatePreview(previewParams);
-                if (previewResult && previewResult.html) {
-                  setEmailPreviewHtml(previewResult.html);
-                }
-              } catch (err) {
-                console.error("Error generating email preview:", err);
-              }
-            } catch (previewError) {
-              console.error("Error preparing email preview:", previewError);
+            // Since updateEvent (from mutate) doesn't return a promise with the result,
+            // we need to make a separate API call to get the response for email preview
+            const response = await apiRequest('PUT', `/api/events/${event.id}`, eventData);
+            
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Update failed: ${errorText}`);
             }
             
-            // Don't close the modal, let the user preview/send emails
-            setIsSubmitting(false);
-            return;
-          }
+            const updateResponse = await response.json() as UpdateEventResponse;
+            
+            if (updateResponse && updateResponse.hasAttendees && attendees.length > 0) {
+              setActiveTab('emails');
+              
+              // Generate email preview for the updated event
+              try {
+                const previewParams = {
+                  title,
+                  description,
+                  location,
+                  startDate: startDateTime,
+                  endDate: endDateTime,
+                  attendees: attendees,
+                  resources: resources,
+                  eventId: event.id
+                };
+                
+                try {
+                  const previewResult = await generatePreview(previewParams);
+                  if (previewResult && previewResult.html) {
+                    setEmailPreviewHtml(previewResult.html);
+                  }
+                } catch (err) {
+                  console.error("Error generating email preview:", err);
+                }
+              } catch (previewError) {
+                console.error("Error preparing email preview:", previewError);
+              }
+            
+              // Don't close the modal, let the user preview/send emails
+              setIsSubmitting(false);
+              return;
+            }
           
           // If no attendees or email work needed, close the modal
           queryClient.invalidateQueries({ queryKey: ['/api/events'] });

@@ -381,9 +381,8 @@ export class SyncService {
             } else {
               // Create a new calendar
               console.log(`Creating new calendar: ${davCalendar.displayName}`);
-              // Cast the DAVCalendar to our expected type with color
-              const calendarColor = typeof davCalendar.color === 'string' ? 
-                davCalendar.color : '#3788d8';
+              // Use default color since DAVCalendar doesn't have a color property
+              const calendarColor = '#3788d8';
                 
               const newCalendar = await storage.createCalendar({
                 name: String(davCalendar.displayName || ''),
