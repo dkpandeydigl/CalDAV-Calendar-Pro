@@ -358,6 +358,13 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     }
   });
 
+  // Define response type for update operation
+  type UpdateEventResponse = {
+    success: boolean;
+    event: Event;
+    hasAttendees: boolean;
+  };
+
   type UpdateMutationContext = {
     previousEvents?: Event[];
     eventToUpdate?: Event;
@@ -366,7 +373,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   };
 
   const updateEventMutation = useMutation<
-    Event, 
+    UpdateEventResponse, 
     Error, 
     { id: number, data: Partial<Event> }, 
     UpdateMutationContext
@@ -517,13 +524,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       
       return { previousEvents, eventToUpdate, updatedEvent, allQueryKeys };
     },
-    onSuccess: (serverEvent, variables, context) => {
-      console.log(`Event updated successfully on server:`, serverEvent);
+    onSuccess: (response, variables, context) => {
+      // In our updated PUT endpoint, the response includes event and hasAttendees properties
+      const serverEvent = response.event || response;
+      const hasAttendees = response.hasAttendees || false;
+      
+      console.log(`Event updated successfully on server:`, serverEvent, 'Has attendees:', hasAttendees);
       
       // Show success toast
       toast({
         title: "Event Updated",
-        description: "Event has been updated successfully."
+        description: hasAttendees 
+          ? "Event updated. You may now preview and send invitation emails." 
+          : "Event has been updated successfully."
       });
       
       // Extract the ID that was used in the update request

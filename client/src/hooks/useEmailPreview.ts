@@ -93,18 +93,24 @@ export function useEmailPreview() {
     }
   });
   
-  const generatePreview = (data: EmailPreviewData) => {
+  const generatePreview = async (data: EmailPreviewData): Promise<EmailPreviewResponse> => {
     // Validate required fields
     if (!data.title || !data.startDate || !data.endDate || !data.attendees || data.attendees.length === 0) {
       setPreviewError('Required fields missing for email preview');
-      return;
+      return Promise.reject(new Error('Required fields missing for email preview'));
     }
     
     // Clear any previous send results when generating a new preview
     setLastSendResult(null);
     
-    // Generate preview
-    emailPreviewMutation.mutate(data);
+    // Generate preview and return promise
+    try {
+      const result = await emailPreviewMutation.mutateAsync(data);
+      return result;
+    } catch (error) {
+      console.error('Email preview generation error:', error);
+      throw error;
+    }
   };
   
   const clearPreview = () => {
@@ -165,7 +171,7 @@ export function useEmailPreview() {
   });
   
   // Function to trigger email sending
-  const sendEmail = (data: EmailPreviewData) => {
+  const sendEmail = async (data: EmailPreviewData): Promise<SendEmailResponse> => {
     // Validate required fields
     if (!data.title || !data.startDate || !data.endDate || !data.attendees || data.attendees.length === 0) {
       const error = new Error('Required fields missing for sending email');
@@ -177,7 +183,13 @@ export function useEmailPreview() {
     }
     
     // Send email
-    return sendEmailMutation.mutateAsync(data);
+    try {
+      const result = await sendEmailMutation.mutateAsync(data);
+      return result;
+    } catch (error) {
+      console.error('Email sending error:', error);
+      throw error;
+    }
   };
   
   return {

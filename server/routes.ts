@@ -209,6 +209,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Update an existing event
+  app.put("/api/events/:id", isAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Get the existing event
+      const existingEvent = await storage.getEvent(eventId);
+      if (!existingEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // Process the update data
+      const updateData = { ...req.body };
+      
+      // Handle date conversions
+      if (typeof updateData.startDate === 'string') {
+        updateData.startDate = new Date(updateData.startDate);
+      }
+      
+      if (typeof updateData.endDate === 'string') {
+        updateData.endDate = new Date(updateData.endDate);
+      }
+      
+      // Convert arrays to JSON strings
+      if (updateData.attendees && Array.isArray(updateData.attendees)) {
+        updateData.attendees = JSON.stringify(updateData.attendees);
+      }
+      
+      if (updateData.resources && Array.isArray(updateData.resources)) {
+        updateData.resources = JSON.stringify(updateData.resources);
+      }
+      
+      // Update with sync status
+      updateData.syncStatus = updateData.syncStatus || 'pending';
+      updateData.lastSyncAttempt = new Date();
+      
+      // Update the event
+      const updatedEvent = await storage.updateEvent(eventId, updateData);
+      
+      // Check if the event has attendees to determine if email workflow is needed
+      let hasAttendees = false;
+      
+      if (updateData.attendees) {
+        const attendeesArray = JSON.parse(typeof updateData.attendees === 'string' 
+          ? updateData.attendees 
+          : JSON.stringify(updateData.attendees));
+        hasAttendees = Array.isArray(attendeesArray) && attendeesArray.length > 0;
+      } else if (existingEvent.attendees) {
+        const attendeesArray = JSON.parse(typeof existingEvent.attendees === 'string'
+          ? existingEvent.attendees
+          : JSON.stringify(existingEvent.attendees));
+        hasAttendees = Array.isArray(attendeesArray) && attendeesArray.length > 0;
+      }
+      
+      res.status(200).json({ 
+        success: true, 
+        event: updatedEvent,
+        hasAttendees
+      });
+    } catch (err) {
+      console.error("Error updating event:", err);
+      return handleZodError(err, res);
+    }
+  });
+  
   // CALENDAR SHARING API
   app.get("/api/shared-calendars", isAuthenticated, async (req, res) => {
     try {

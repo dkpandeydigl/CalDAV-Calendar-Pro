@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { getTimezones } from '@/lib/date-utils';
+import { apiRequest } from '@/lib/queryClient';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { useSharedCalendars } from '@/hooks/useSharedCalendars';
 import { Label } from '@/components/ui/label';
@@ -153,6 +154,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     clearPreview,
     sendEmail
   } = useEmailPreview();
+  
+  // Define interface for event update response
+  interface UpdateEventResponse {
+    success: boolean;
+    event: Event;
+    hasAttendees: boolean;
+  }
+  
+  // Store the HTML content for email previews
+  const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
   
   // Reset form when modal opens/closes or event changes
   useEffect(() => {
@@ -510,15 +521,64 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         syncStatus: 'local',
       };
       
+      // Handle existing event update
       if (event) {
         // Update existing event - need to use the { id, data } format required by updateEvent
-        await updateEvent({ 
-          id: event.id, 
-          data: eventData 
-        });
-        
-        // Toast is displayed by the mutation's onSuccess handler
-      } else {
+        try {
+          // Call updateEvent to trigger the update
+          updateEvent({ 
+            id: event.id, 
+            data: eventData 
+          });
+          
+          // Since updateEvent is from updateEventMutation.mutate which doesn't return a promise,
+          // we need to make the API call manually to get the response for the email preview
+          const response = await apiRequest('PUT', `/api/events/${event.id}`, eventData);
+          const updateResponse = await response.json() as UpdateEventResponse;
+          
+          if (updateResponse && updateResponse.hasAttendees && attendees.length > 0) {
+            setActiveTab('emails');
+            
+            // Generate email preview for the updated event
+            try {
+              const previewParams = {
+                title,
+                description,
+                location,
+                startDate: startDateTime,
+                endDate: endDateTime,
+                attendees: attendees,
+                resources: resources,
+                eventId: event.id
+              };
+              
+              try {
+                const previewResult = await generatePreview(previewParams);
+                if (previewResult && previewResult.html) {
+                  setEmailPreviewHtml(previewResult.html);
+                }
+              } catch (err) {
+                console.error("Error generating email preview:", err);
+              }
+            } catch (previewError) {
+              console.error("Error preparing email preview:", previewError);
+            }
+            
+            // Don't close the modal, let the user preview/send emails
+            setIsSubmitting(false);
+            return;
+          }
+          
+          // If no attendees or email work needed, close the modal
+          queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+          onClose();
+        } catch (updateError) {
+          console.error("Failed to update event:", updateError);
+          throw updateError; // Will be caught by the outer catch block
+        }
+      } 
+      // Handle new event creation
+      else {
         // For new events, we need to generate a unique ID and include all required fields
         const newEventData = {
           ...eventData,
@@ -536,14 +596,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         // Create new event
         await createEvent(newEventData);
         
-        // Toast is displayed by the mutation's onSuccess handler
+        // Refresh the events list and close modal
+        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+        onClose();
       }
-      
-      // Refresh the events list
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      
-      // Close the modal
-      onClose();
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -646,7 +702,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 )}
               </TabsTrigger>
               
-              {!event && attendees.length > 0 && (
+              {attendees.length > 0 && (
                 <TabsTrigger value="emails" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
                   <Mail className="h-4 w-4 mr-2" />
                   Email Preview
@@ -1232,7 +1288,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   <div className="flex-1 min-h-[500px]">
                     <EmailPreview 
                       isLoading={isEmailPreviewLoading}
-                      html={previewData?.html || null}
+                      html={emailPreviewHtml}
                       error={previewError}
                       lastSendResult={lastSendResult}
                       isSending={isEmailSending}
@@ -1252,17 +1308,40 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
                         const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
                         
-                        sendEmail({
+                        // Prepare email data
+                        const emailData = {
                           title,
                           description,
                           location,
                           startDate: startDateTime,
                           endDate: endDateTime,
                           attendees,
-                          resources
-                        }).then(() => {
-                          // If email was sent successfully, also create the event
-                          handleSubmit();
+                          resources,
+                          // Include eventId for existing events
+                          eventId: event ? event.id : undefined
+                        };
+                        
+                        // Send email
+                        sendEmail(emailData).then(() => {
+                          // Display success toast
+                          toast({
+                            title: 'Email sent',
+                            description: 'Invitation email was sent successfully to all attendees',
+                          });
+                          
+                          // Mark the event as having email sent if it's an existing event
+                          if (event) {
+                            updateEvent({
+                              id: event.id,
+                              data: {
+                                emailSent: 'sent',
+                                emailError: null
+                              }
+                            });
+                          }
+                          
+                          // Close the modal
+                          onClose();
                         }).catch(error => {
                           toast({
                             title: 'Email sending failed',
@@ -1276,15 +1355,27 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
                         const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
                         
-                        generatePreview({
+                        const previewParams = {
                           title,
                           description,
                           location,
                           startDate: startDateTime,
                           endDate: endDateTime,
                           attendees,
-                          resources
-                        });
+                          resources,
+                          // Include event ID for existing events
+                          eventId: event ? event.id : undefined
+                        };
+                        
+                        generatePreview(previewParams)
+                          .then(previewResult => {
+                            if (previewResult && previewResult.html) {
+                              setEmailPreviewHtml(previewResult.html);
+                            }
+                          })
+                          .catch(error => {
+                            console.error("Error refreshing email preview:", error);
+                          });
                       }}
                     />
                   </div>
@@ -1322,10 +1413,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 Cancel
               </Button>
               
-              {/* Only show Send Mail and Create button when: 
-                  1. It's a new event (not editing)
-                  2. There are attendees */}
-              {!event && attendees.length > 0 && (
+              {/* Show Send Mail button for both new and existing events with attendees */}
+              {attendees.length > 0 && (
                 <Button
                   onClick={async () => {
                     if (!validateForm()) return;
@@ -1342,7 +1431,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       startDate: startDateTime,
                       endDate: endDateTime,
                       attendees,
-                      resources
+                      resources,
+                      // Include event ID for existing events
+                      eventId: event ? event.id : undefined
                     };
                     
                     // Set the event data for later use
@@ -1354,8 +1445,26 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       // Note: isEmailSending state is handled by the sendEmail hook internally
                       
                       sendEmail(eventData).then(() => {
-                        // On success, create/update the event
-                        handleSubmit();
+                        // On success, create/update the event and close the modal
+                        toast({
+                          title: 'Email sent',
+                          description: 'Invitation email was sent successfully to all attendees',
+                        });
+                        
+                        // Mark the event as having email sent if it's an existing event
+                        if (event) {
+                          updateEvent({
+                            id: event.id,
+                            data: {
+                              emailSent: 'sent',
+                              emailError: null
+                            }
+                          });
+                          onClose();
+                        } else {
+                          // If it's a new event, create it
+                          handleSubmit();
+                        }
                       }).catch(error => {
                         console.error('Email sending error:', error);
                         // Show detailed error message from the exception
@@ -1381,7 +1490,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   )}
                   {isSubmitting || isEmailSending 
                     ? 'Processing...' 
-                    : 'Send Mail and Create'}
+                    : event ? 'Send Email' : 'Send Mail and Create'}
                 </Button>
               )}
               
@@ -1420,8 +1529,26 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 // Note: isEmailSending state is handled by the sendEmail hook internally
                 
                 sendEmail(previewEventData).then(() => {
-                  // On success, create/update the event
-                  handleSubmit();
+                  // Display success toast
+                  toast({
+                    title: 'Email sent',
+                    description: 'Invitation email was sent successfully to all attendees',
+                  });
+                  
+                  // If it's an existing event, mark it as having email sent
+                  if (event) {
+                    updateEvent({
+                      id: event.id,
+                      data: {
+                        emailSent: 'sent',
+                        emailError: null
+                      }
+                    });
+                    onClose();
+                  } else {
+                    // If it's a new event, create it
+                    handleSubmit();
+                  }
                 }).catch(error => {
                   console.error('Email sending error:', error);
                   // Show detailed error message from the exception
