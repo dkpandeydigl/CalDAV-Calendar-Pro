@@ -484,6 +484,10 @@ export class SyncService {
         }
       }
       
+      // After downloading events from the server, let's push any local events to the server
+      console.log(`Now pushing local events to server for user ID ${userId}`);
+      await this.pushLocalEvents(userId, calendarId ? calendarId : undefined);
+      
       // Store the time of the sync
       const syncTime = new Date();
       
@@ -611,6 +615,269 @@ export class SyncService {
       inProgress: job.running,
       autoSync: job.autoSync
     };
+  }
+
+  /**
+   * Push local events to the CalDAV server
+   * This syncs events from our database to the CalDAV server
+   * @param userId The ID of the user to sync events for
+   * @param calendarId Optional calendar ID to sync just one calendar
+   */
+  async pushLocalEvents(userId: number, calendarId?: number): Promise<boolean> {
+    console.log(`Pushing local events for user ID ${userId}${calendarId ? ` for calendar ${calendarId}` : ''}`);
+    
+    const job = this.jobs.get(userId);
+    if (!job) {
+      console.log(`No sync job found for user ID ${userId}`);
+      return false;
+    }
+    
+    try {
+      // Get all local events (pending or not synced)
+      const calendars = calendarId 
+        ? [await storage.getCalendar(calendarId)]
+        : await storage.getCalendars(userId);
+      
+      if (!calendars || calendars.length === 0 || calendars[0] === undefined) {
+        console.log(`No calendars found for user ID ${userId}`);
+        return false;
+      }
+      
+      console.log(`Found ${calendars.length} calendars to sync local events for`);
+      
+      // Create a DAV client
+      const davClient = new DAVClient({
+        serverUrl: job.connection.url,
+        credentials: {
+          username: job.connection.username,
+          password: job.connection.password
+        },
+        authMethod: 'Basic',
+        defaultAccountType: 'caldav'
+      });
+      
+      // Login to the server
+      await davClient.login();
+      
+      // For each calendar
+      for (const calendar of calendars.filter(Boolean)) {
+        if (!calendar) continue; // Skip undefined calendars
+        
+        console.log(`Processing calendar ${calendar.name} (ID: ${calendar.id})`);
+        
+        if (!calendar.url) {
+          console.log(`Calendar ${calendar.name} (ID: ${calendar.id}) has no URL, skipping`);
+          continue;
+        }
+        
+        // Get all events for this calendar
+        const events = await storage.getEvents(calendar.id);
+        
+        // Filter to events that need to be pushed to the server (local/pending)
+        const localEvents = events.filter(event => 
+          event.syncStatus === 'local' || event.syncStatus === 'pending'
+        );
+        
+        console.log(`Found ${localEvents.length} local events to push for calendar ${calendar.name}`);
+        
+        // For each local event
+        for (const event of localEvents) {
+          try {
+            console.log(`Pushing event ${event.title} (ID: ${event.id}) to server`);
+            
+            // Create iCalendar data
+            let icalData = "";
+            
+            // If event has raw data, use it as a template
+            if (event.rawData) {
+              // Parse raw data as a base, but update with our values
+              try {
+                // Handle the case where rawData might be an object or string
+                if (typeof event.rawData === 'string') {
+                  const parsedData = JSON.parse(event.rawData);
+                  icalData = typeof parsedData === 'string' ? parsedData : JSON.stringify(parsedData);
+                } else {
+                  icalData = JSON.stringify(event.rawData);
+                }
+              } catch (e) {
+                // If parsing fails, just use the raw data as is
+                icalData = String(event.rawData);
+              }
+            } else {
+              // Create new iCalendar data
+              icalData = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//CalDAV Client//NONSGML v1.0//EN
+BEGIN:VEVENT
+UID:${event.uid}
+SUMMARY:${event.title || "Untitled Event"}
+DTSTART:${this.formatICalDate(event.startDate, event.allDay === true)}
+DTEND:${this.formatICalDate(event.endDate, event.allDay === true)}
+${event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\n` : ''}
+${event.location ? `LOCATION:${event.location}\n` : ''}
+DTSTAMP:${this.formatICalDate(new Date())}
+${event.recurrenceRule ? `RRULE:${this.formatRecurrenceRule(event.recurrenceRule)}\n` : ''}
+END:VEVENT
+END:VCALENDAR`;
+            }
+            
+            // Determine if we're creating or updating
+            if (event.url && event.etag) {
+              // Update existing event on server
+              console.log(`Updating existing event on server: ${event.title}`);
+              
+              try {
+                const response = await davClient.updateCalendarObject({
+                  calendarObject: {
+                    url: event.url,
+                    etag: event.etag,
+                    data: icalData,
+                  },
+                });
+                
+                // Extract ETag from response
+                const result = response as any;
+                const newEtag = result.etag;
+                
+                // Update the event in our database
+                await storage.updateEvent(event.id, {
+                  syncStatus: 'synced',
+                  lastSyncAttempt: new Date(),
+                  etag: newEtag || event.etag
+                });
+                
+                console.log(`Successfully updated event on server: ${event.title}`);
+              } catch (error) {
+                console.error(`Error updating event on server:`, error);
+                
+                // Update the event as failed
+                await storage.updateEvent(event.id, {
+                  syncStatus: 'error',
+                  lastSyncAttempt: new Date()
+                });
+              }
+            } else {
+              // Create new event on server
+              console.log(`Creating new event on server: ${event.title}`);
+              
+              try {
+                // Get the calendar URL
+                const calendarUrl = calendar.url.startsWith('http') 
+                  ? calendar.url 
+                  : `${job.connection.url}${calendar.url}`;
+                
+                console.log(`Using calendar URL: ${calendarUrl}`);
+                
+                // Create the event on the server
+                const response = await davClient.createCalendarObject({
+                  calendar: { url: calendarUrl },
+                  filename: `${event.uid}.ics`,
+                  iCalString: icalData,
+                });
+                
+                // Extract URL and ETag from response
+                const result = response as any;
+                const url = result.url;
+                const etag = result.etag;
+                
+                // Update the event in our database
+                await storage.updateEvent(event.id, {
+                  url,
+                  etag,
+                  syncStatus: 'synced',
+                  lastSyncAttempt: new Date()
+                });
+                
+                console.log(`Successfully created event on server: ${event.title}`);
+              } catch (error) {
+                console.error(`Error creating event on server:`, error);
+                
+                // Update the event as failed
+                await storage.updateEvent(event.id, {
+                  syncStatus: 'error',
+                  lastSyncAttempt: new Date()
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`Error pushing event to server:`, error);
+          }
+        }
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`Error pushing local events to server:`, error);
+      return false;
+    }
+  }
+  
+  /**
+   * Format a date for iCalendar
+   */
+  private formatICalDate(date: Date, allDay: boolean = false): string {
+    if (allDay) {
+      return date.toISOString().replace(/[-:]/g, '').split('T')[0];
+    }
+    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+  }
+  
+  /**
+   * Format a recurrence rule for iCalendar
+   */
+  private formatRecurrenceRule(rule: string): string {
+    try {
+      const parsedRule = JSON.parse(rule);
+      
+      // Start building the RRULE string
+      let rrule = '';
+      
+      // Pattern (FREQ)
+      if (parsedRule.pattern) {
+        rrule += `FREQ=${parsedRule.pattern.toUpperCase()};`;
+      }
+      
+      // Interval
+      if (parsedRule.interval && parsedRule.interval > 1) {
+        rrule += `INTERVAL=${parsedRule.interval};`;
+      }
+      
+      // Weekdays (BYDAY) for weekly patterns
+      if (parsedRule.pattern === 'Weekly' && parsedRule.weekdays && parsedRule.weekdays.length > 0) {
+        const days = parsedRule.weekdays.map((day: string) => {
+          switch (day) {
+            case 'Monday': return 'MO';
+            case 'Tuesday': return 'TU';
+            case 'Wednesday': return 'WE';
+            case 'Thursday': return 'TH';
+            case 'Friday': return 'FR';
+            case 'Saturday': return 'SA';
+            case 'Sunday': return 'SU';
+            default: return '';
+          }
+        }).filter(Boolean).join(',');
+        
+        if (days) {
+          rrule += `BYDAY=${days};`;
+        }
+      }
+      
+      // End type
+      if (parsedRule.endType) {
+        if (parsedRule.endType === 'After' && parsedRule.occurrences) {
+          rrule += `COUNT=${parsedRule.occurrences};`;
+        } else if (parsedRule.endType === 'On' && parsedRule.untilDate) {
+          const untilDate = new Date(parsedRule.untilDate);
+          rrule += `UNTIL=${this.formatICalDate(untilDate)};`;
+        }
+      }
+      
+      // Remove trailing semicolon if it exists
+      return rrule.endsWith(';') ? rrule.slice(0, -1) : rrule;
+    } catch (error) {
+      console.error(`Error formatting recurrence rule:`, error);
+      return rule; // Return the original string if parsing fails
+    }
   }
 
   /**

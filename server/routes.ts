@@ -188,9 +188,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       
       // Generate a unique UID for the event if not provided
+      // Set syncStatus to pending to mark it for pushing to the server
       const eventData = {
         ...req.body,
-        uid: req.body.uid || `${Date.now()}-${Math.floor(Math.random() * 1000000)}@caldavclient`
+        uid: req.body.uid || `event-${Date.now()}-${Math.random().toString(36).substring(2, 8)}@caldavclient.local`,
+        syncStatus: 'pending'
       };
       
       // Handle date conversions
@@ -218,6 +220,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("Error creating event:", err);
       return handleZodError(err, res);
+    }
+  });
+  
+  // Delete an event
+  app.delete("/api/events/:id", isAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Get the existing event to check if it has a URL and etag (meaning it exists on the server)
+      const event = await storage.getEvent(eventId);
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // If the event exists on the server, we should try to delete it there too
+      if (event.url && event.etag) {
+        try {
+          // Get the user's server connection
+          const userId = req.user!.id;
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection && connection.status === 'connected') {
+            // Create a DAV client
+            const { DAVClient } = await import('tsdav');
+            const davClient = new DAVClient({
+              serverUrl: connection.url,
+              credentials: {
+                username: connection.username,
+                password: connection.password
+              },
+              authMethod: 'Basic',
+              defaultAccountType: 'caldav'
+            });
+            
+            // Login to the server
+            await davClient.login();
+            
+            // Try to delete the event on the server
+            await davClient.deleteCalendarObject({
+              calendarObject: {
+                url: event.url,
+                etag: event.etag
+              }
+            });
+            
+            console.log(`Successfully deleted event ${eventId} from CalDAV server`);
+          } else {
+            console.log(`User ${userId} does not have an active server connection, can't delete event on server`);
+          }
+        } catch (error) {
+          console.error(`Error deleting event ${eventId} from CalDAV server:`, error);
+          // Continue with local deletion even if server deletion fails
+        }
+      }
+      
+      // Delete the event locally
+      const success = await storage.deleteEvent(eventId);
+      
+      // Track deleted events in session to avoid re-syncing them
+      if (!req.session.recentlyDeletedEvents) {
+        req.session.recentlyDeletedEvents = [];
+      }
+      req.session.recentlyDeletedEvents.push(eventId);
+      
+      if (success) {
+        return res.status(200).json({ message: "Event deleted successfully" });
+      } else {
+        return res.status(500).json({ message: "Failed to delete event" });
+      }
+    } catch (err) {
+      console.error("Error deleting event:", err);
+      res.status(500).json({ message: "Failed to delete event" });
     }
   });
   
@@ -256,8 +333,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.resources = JSON.stringify(updateData.resources);
       }
       
-      // Update with sync status
-      updateData.syncStatus = updateData.syncStatus || 'pending';
+      // Always set sync status to 'pending' for updated events to push changes to the server
+      updateData.syncStatus = 'pending';
       updateData.lastSyncAttempt = new Date();
       
       // Update the event
@@ -594,6 +671,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error initiating sync:", err);
       res.setHeader('Content-Type', 'application/json');
       res.status(500).json({ message: "Failed to initiate sync" });
+    }
+  });
+  
+  // PUSH LOCAL EVENTS ENDPOINT
+  app.post("/api/sync/push-local", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const calendarId = req.body.calendarId ? parseInt(req.body.calendarId) : undefined;
+      
+      console.log(`Push local events requested for userId=${userId}, calendarId=${calendarId}`);
+      
+      // Check if user has a server connection configured
+      const connection = await storage.getServerConnection(userId);
+      if (!connection) {
+        // Ensure proper content type header is set
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(202).json({ 
+          message: "Cannot push events (no server connection configured)",
+          pushed: false,
+          requiresConnection: true
+        });
+      }
+      
+      // Check connection status
+      if (connection.status !== 'connected') {
+        // Ensure proper content type header is set
+        res.setHeader('Content-Type', 'application/json');
+        return res.status(202).json({ 
+          message: "Cannot push events (server connection not active)",
+          pushed: false,
+          requiresConnection: true
+        });
+      }
+
+      // Setup sync job if needed
+      const syncStatus = syncService.getSyncStatus(userId);
+      if (!syncStatus.configured) {
+        const setupResult = await syncService.setupSyncForUser(userId, connection);
+        if (!setupResult) {
+          return res.status(500).json({ 
+            message: "Failed to set up sync job",
+            pushed: false
+          });
+        }
+      }
+      
+      // Push local events to the server
+      const success = await syncService.pushLocalEvents(userId, calendarId);
+      
+      // Ensure proper content type header is set
+      res.setHeader('Content-Type', 'application/json');
+      
+      if (success) {
+        return res.status(200).json({
+          message: "Successfully pushed local events to server",
+          pushed: true
+        });
+      } else {
+        return res.status(500).json({
+          message: "Failed to push local events to server",
+          pushed: false
+        });
+      }
+    } catch (err) {
+      console.error("Error pushing local events:", err);
+      res.setHeader('Content-Type', 'application/json');
+      res.status(500).json({ 
+        message: "Failed to push local events",
+        pushed: false,
+        error: err instanceof Error ? err.message : "Unknown error"
+      });
     }
   });
   
