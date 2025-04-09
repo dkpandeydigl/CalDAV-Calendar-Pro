@@ -338,10 +338,19 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           // This prevents most timezone issues and is the most intuitive behavior
           setAllDay(true);
           
-          // Even though these won't be visible for all-day events, set default times
-          // in case the user switches to a timed event later
-          setStartTime('00:00');
-          setEndTime('23:59');
+          // Set current time as defaults even though they won't be visible 
+          // for all-day events. This way if user unchecks all-day, they'll see current time
+          const now = new Date();
+          const currentHour = now.getHours();
+          const currentMinute = now.getMinutes();
+          // Format current time as HH:MM
+          const formattedStartTime = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+          // End time is 1 hour later
+          const endHour = (currentHour + 1) % 24; // Handle wrap around midnight
+          const formattedEndTime = `${String(endHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+          
+          setStartTime(formattedStartTime);
+          setEndTime(formattedEndTime);
           
           // SIMPLIFIED: For all-day events, we always use UTC timezone
           // This ensures consistent date storage regardless of user's local timezone
@@ -940,13 +949,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           // When unchecking all-day, restore user's preferred timezone
                           setTimezone(selectedTimezone);
                           
-                          // Set default time values for non-all-day events
-                          // Start at current hour rounded up, end 1 hour later
+                          // Set default time values for non-all-day events to current time
                           const now = new Date();
                           const currentHour = now.getHours();
-                          const roundedHour = currentHour + 1;
-                          const formattedStartTime = `${String(roundedHour).padStart(2, '0')}:00`;
-                          const formattedEndTime = `${String(roundedHour + 1).padStart(2, '0')}:00`;
+                          const currentMinute = now.getMinutes();
+                          // Format current time as HH:MM
+                          const formattedStartTime = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+                          // End time is 1 hour later
+                          const endHour = (currentHour + 1) % 24; // Handle wrap around midnight
+                          const formattedEndTime = `${String(endHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
                           
                           setStartTime(formattedStartTime);
                           setEndTime(formattedEndTime);
