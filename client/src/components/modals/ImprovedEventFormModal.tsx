@@ -1452,13 +1452,47 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         
                         // Mark the event as having email sent if it's an existing event
                         if (event) {
+                          // Prepare full event data (same as handleSubmit)
+                          const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                          const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                          
+                          // Prepare recurrence rule if it exists
+                          const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify({
+                            pattern: recurrence.pattern,
+                            interval: recurrence.interval,
+                            weekdays: recurrence.weekdays,
+                            endType: recurrence.endType,
+                            occurrences: recurrence.occurrences,
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                          }) : null;
+                          
+                          // Prepare attendees and resources
+                          const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
+                          const resourcesJson = resources.length > 0 ? JSON.stringify(resources) : null;
+                          
+                          // Update the entire event with all properties
                           updateEvent({
                             id: event.id,
                             data: {
+                              title,
+                              description,
+                              location,
+                              startDate: startDateTime,
+                              endDate: endDateTime,
+                              allDay,
+                              timezone,
+                              calendarId: parseInt(calendarId),
+                              busyStatus: isBusy ? 'busy' : 'free',
+                              attendees: attendeesJson,
+                              resources: resourcesJson,
+                              recurrenceRule,
+                              syncStatus: 'local',
                               emailSent: new Date().toISOString(), // Convert date to ISO string for the database
                               emailError: null
                             }
                           });
+                          
+                          // Close the modal
                           onClose();
                         } else {
                           // If it's a new event, create it
@@ -1538,9 +1572,41 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   
                   // If it's an existing event, mark it as having email sent
                   if (event) {
+                    // Prepare full event data (same as handleSubmit)
+                    const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+                    const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                    
+                    // Prepare recurrence rule if it exists
+                    const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify({
+                      pattern: recurrence.pattern,
+                      interval: recurrence.interval,
+                      weekdays: recurrence.weekdays,
+                      endType: recurrence.endType,
+                      occurrences: recurrence.occurrences,
+                      untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                    }) : null;
+                    
+                    // Prepare attendees and resources
+                    const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
+                    const resourcesJson = resources.length > 0 ? JSON.stringify(resources) : null;
+                    
+                    // Update the entire event with all properties
                     updateEvent({
                       id: event.id,
                       data: {
+                        title,
+                        description,
+                        location,
+                        startDate: startDateTime,
+                        endDate: endDateTime,
+                        allDay,
+                        timezone,
+                        calendarId: parseInt(calendarId),
+                        busyStatus: isBusy ? 'busy' : 'free',
+                        attendees: attendeesJson,
+                        resources: resourcesJson,
+                        recurrenceRule,
+                        syncStatus: 'local',
                         emailSent: new Date().toISOString(), // Convert date to ISO string for the database
                         emailError: null
                       }
