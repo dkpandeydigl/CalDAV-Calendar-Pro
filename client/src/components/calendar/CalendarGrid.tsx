@@ -444,8 +444,11 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
           // Storage for the current date we're working with
           let currentDate = new Date(startRecurDate);
 
-          // Check if the original date should be included based on the recurrence pattern
-          let includeFirstOccurrence = true;
+          // IMPORTANT: Always include the original start date as the first occurrence,
+          // regardless of whether it matches the recurrence pattern or not
+          
+          // For reporting purposes, determine if the original start date matches the recurrence pattern
+          let startDateMatchesPattern = true;
           
           // For weekly recurrence with specific weekdays, check if the start date matches any selected weekday
           if (pattern === 'Weekly' && weekdays && weekdays.length > 0) {
@@ -459,50 +462,16 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
             
             // Check if the start date's day matches any of the selected weekdays
             const startDateDay = startRecurDate.getDay();
-            includeFirstOccurrence = selectedDays.includes(startDateDay);
+            startDateMatchesPattern = selectedDays.includes(startDateDay);
             
             console.log(`[RECURRENCE] Start date is ${startRecurDate.toDateString()} (day ${startDateDay})`);
             console.log(`[RECURRENCE] Selected weekdays: ${weekdays.join(', ')} (days ${selectedDays.join(', ')})`);
-            console.log(`[RECURRENCE] Including first occurrence: ${includeFirstOccurrence}`);
-            
-            // If the start date doesn't match our selected weekdays, find the first valid occurrence
-            if (!includeFirstOccurrence) {
-              console.log('[RECURRENCE] Finding first valid occurrence date for weekday-specific recurrence');
-              
-              // Create a test date starting from the original start date
-              let firstValidDate = new Date(startRecurDate);
-              let found = false;
-              
-              // Check up to 7 days ahead to find the first matching day
-              for (let i = 1; i <= 7 && !found; i++) {
-                firstValidDate.setDate(firstValidDate.getDate() + 1);
-                const dayOfWeek = firstValidDate.getDay();
-                
-                if (selectedDays.includes(dayOfWeek)) {
-                  found = true;
-                  console.log(`[RECURRENCE] Found first valid occurrence on ${firstValidDate.toDateString()} (day ${dayOfWeek})`);
-                  
-                  // Add this first valid occurrence to our recurrence dates
-                  recurrenceDates.push(new Date(firstValidDate));
-                  
-                  // Update the currentDate to this new first valid date for calculating future occurrences
-                  currentDate = new Date(firstValidDate);
-                }
-              }
-              
-              // If we still couldn't find a matching day in the next 7 days, use the original start date
-              // This is a fallback and shouldn't happen with normal weekly recurrence patterns
-              if (!found) {
-                console.log('[RECURRENCE] Could not find a valid first occurrence within 7 days, using original date');
-                recurrenceDates.push(new Date(startRecurDate));
-              }
-            }
+            console.log(`[RECURRENCE] Start date matches pattern: ${startDateMatchesPattern}`);
           }
           
-          // Add the original date as the first occurrence only if it matches the pattern
-          if (includeFirstOccurrence) {
-            recurrenceDates.push(new Date(startRecurDate));
-          }
+          // Always include the start date as the first occurrence, regardless of pattern
+          console.log('[RECURRENCE] Including start date in occurrences count as first occurrence');
+          recurrenceDates.push(new Date(startRecurDate));
           
           // Calculate the duration of the event for adding to future occurrences
           const eventDurationMs = new Date(event.endDate).getTime() - new Date(event.startDate).getTime();
@@ -538,29 +507,39 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
                   // Get the numerical values for the selected weekdays
                   const selectedDays = weekdays.map((day: string) => dayMap[day as keyof typeof dayMap]).sort();
                   
-                  // Find the next day that matches one of our selected days
-                  // First, add the interval weeks to the current date
-                  let nextWeekDate = new Date(nextDate);
-                  nextWeekDate.setDate(nextWeekDate.getDate() + (7 * interval));
-                  
-                  // Find the matching weekday in the next interval period
+                  // Start from the current date and find the next occurrence
                   let found = false;
-                  let testDate = new Date(nextWeekDate);
-                  // Get the start of the week (Sunday)
-                  testDate.setDate(testDate.getDate() - testDate.getDay());
+                  let testDate = new Date(currentDate);
                   
-                  // Check each day in the next week for a matching weekday
-                  for (let i = 0; i < 7 && !found; i++) {
+                  // Add 1 day to start looking for the next date (avoid repeating the current date)
+                  testDate.setDate(testDate.getDate() + 1);
+                  
+                  // Look for a matching day within the next 2 weeks (to be safe)
+                  for (let i = 0; i < 14 && !found; i++) {
+                    // Check if this day matches one of our selected weekdays
                     if (selectedDays.includes(testDate.getDay())) {
-                      nextDate = new Date(testDate);
-                      found = true;
+                      // Check if this date maintains the interval pattern
+                      // For weekly recurrences, the day of the week matters, but also ensure
+                      // we're not picking dates too close to the current date
+                      const weekDiff = Math.floor((testDate.getTime() - currentDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
+                      
+                      if (weekDiff >= interval) {
+                        // Found a matching day that also maintains the interval
+                        nextDate = new Date(testDate);
+                        found = true;
+                        console.log(`[RECURRENCE] Found next occurrence on ${nextDate.toDateString()} (day ${nextDate.getDay()})`);
+                      }
                     }
+                    
+                    // Try the next day
                     testDate.setDate(testDate.getDate() + 1);
                   }
                   
-                  // If we still didn't find a matching day, just use the next interval week
+                  // Fallback if no day was found (shouldn't happen with a valid pattern)
                   if (!found) {
-                    nextDate = nextWeekDate;
+                    console.log('[RECURRENCE] Failed to find next weekday match, using simple week interval');
+                    nextDate = new Date(currentDate);
+                    nextDate.setDate(nextDate.getDate() + (7 * interval));
                   }
                 } else {
                   // Simple weekly interval
@@ -597,12 +576,10 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
           
           // Process each recurrence date
           recurrenceDates.forEach((date, index) => {
-            // Skip processing the original event date if it was already processed
-            // This is only true if index === 0 and we included the first occurrence AND the first date is the original start date
-            if (index === 0 && 
-                includeFirstOccurrence && 
-                date.toDateString() === new Date(startRecurDate).toDateString()) {
-              console.log(`[RECURRENCE] Skipping first occurrence as it's already processed`);
+            // Skip processing the original event date if it's already processed
+            // This is only true for the first entry in the array which should be the start date
+            if (index === 0 && date.toDateString() === new Date(startRecurDate).toDateString()) {
+              console.log(`[RECURRENCE] Skipping first occurrence as it matches the original event`);
               return;
             }
             
