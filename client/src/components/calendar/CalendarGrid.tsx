@@ -1,12 +1,9 @@
 import React from 'react';
 import { useCalendarContext } from '@/contexts/CalendarContext';
-import { getCalendarDays, getWeekdayHeaders, isValidRecurrencePattern } from '@/lib/date-utils';
+import { getCalendarDays, getWeekdayHeaders } from '@/lib/date-utils';
 import CalendarDay from './CalendarDay';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Event } from '@shared/schema';
-
-// Array of weekday names for recurrence pattern matching
-const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 interface CalendarGridProps {
   events: Event[];
@@ -317,30 +314,11 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
         
         // If the event day is in our current view, add it
         if (daysInMonth.includes(dateKey)) {
-          // First check if this is a recurring event and examine if we should add it
-          const recurrenceObj = event.recurrenceRule ? 
-            (typeof event.recurrenceRule === 'string' ? 
-              JSON.parse(event.recurrenceRule) : event.recurrenceRule) : null;
-              
-          // Check if this is the original event of a recurrence and we shouldn't include it
-          const shouldSkipOriginal = recurrenceObj && 
-            recurrenceObj.includeFirstOccurrence === false && 
-            isValidRecurrencePattern(recurrenceObj.pattern);
-            
-          // Check if event day matches weekdays pattern for recurring weekly events
-          const shouldAddOriginal = !shouldSkipOriginal || 
-            (recurrenceObj?.pattern === 'Weekly' && recurrenceObj?.weekdays?.includes(weekDayNames[new Date(event.startDate).getDay()]));
-          
-          // Only add the event if it's not excluded by the recurrence rules
-          if (shouldAddOriginal) {
-            if (!eventsByDay[dateKey]) {
-              eventsByDay[dateKey] = [];
-            }
-            
-            eventsByDay[dateKey].push(event);
-          } else {
-            console.log(`Skipping original event ${event.title} as it doesn't match recurrence pattern`);
+          if (!eventsByDay[dateKey]) {
+            eventsByDay[dateKey] = [];
           }
+          
+          eventsByDay[dateKey].push(event);
         }
       }
       
@@ -348,9 +326,6 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       if (event.recurrenceRule) {
         console.log(`Event ${event.title} has recurrence rule: ${event.recurrenceRule}`);
         console.log(`Recurring event detected: ${event.title} with rule: ${event.recurrenceRule}`);
-        
-        // Store originalEventAdded flag to track if we should include the original event
-        let originalEventAdded = false;
         
         try {
           // Parse the recurrence rule
@@ -466,22 +441,15 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
           // Storage for all recurrence dates
           const recurrenceDates = [];
           
-          // Check if we should include the first occurrence
-          const includeFirstOccurrence = recurrenceObj?.includeFirstOccurrence !== false; // Default to true if not specified
-          console.log(`Recurrence includeFirstOccurrence flag: ${includeFirstOccurrence}`);
-          
-          // Only add the original date as the first occurrence if the flag is true
-          if (includeFirstOccurrence) {
-            recurrenceDates.push(new Date(startRecurDate));
-          }
+          // Add the original date as the first occurrence
+          recurrenceDates.push(new Date(startRecurDate));
           
           // Calculate the duration of the event for adding to future occurrences
           const eventDurationMs = new Date(event.endDate).getTime() - new Date(event.startDate).getTime();
           
           // Generate the occurrences based on the pattern
           let currentDate = new Date(startRecurDate);
-          // Start count based on whether we're including the first occurrence
-          let count = includeFirstOccurrence ? 1 : 0;
+          let count = 1; // Start at 1 because we already have the original event
           
           while (count < maxOccurrences && currentDate < endRecurDate) {
             // Calculate the next occurrence based on the pattern
@@ -558,12 +526,8 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
           
           // Now create the recurring event instances and add them to the appropriate days
           recurrenceDates.forEach((date, index) => {
-            // Handle first occurrence differently based on includeFirstOccurrence flag
-            if (index === 0 && includeFirstOccurrence) {
-              // Skip the first occurrence if flag is true because it's already processed 
-              // as the original event
-              return;
-            }
+            // Skip the first occurrence as it's already handled above
+            if (index === 0) return;
             
             // Calculate the end date by adding the original duration
             const recEndDate = new Date(date.getTime() + eventDurationMs);

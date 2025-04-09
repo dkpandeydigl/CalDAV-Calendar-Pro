@@ -77,15 +77,6 @@ export const getCalendarDays = (currentDate: Date): CalendarDay[] => {
   return daysInMonth;
 };
 
-/**
- * Checks if a recurrence pattern is valid (not null/undefined/empty and not 'None')
- * @param pattern The recurrence pattern to check
- * @returns true if the pattern is valid and active, false otherwise
- */
-export const isValidRecurrencePattern = (pattern?: string | null): boolean => {
-  return !!pattern && pattern !== 'None';
-};
-
 // Available timezones
 export const getTimezones = (): { label: string, value: string }[] => {
   return [
