@@ -521,9 +521,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     setIsSubmitting(true);
     
     try {
-      // Create start and end date objects
-      // Create start date with proper format for all-day vs regular events
+      // CRITICAL FIX: Explicitly log the current form state
+      console.log(`[DATE DEBUG] ------- FORM SUBMISSION VALUES -------`);
+      console.log(`[DATE DEBUG] startDate (raw string): ${startDate}`);
+      console.log(`[DATE DEBUG] endDate (raw string): ${endDate}`);
+      console.log(`[DATE DEBUG] allDay: ${allDay}`);
+      
+      // Create start date object properly preserving the selected date
       const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
+      console.log(`[DATE DEBUG] Constructed startDateTime: ${startDateTime.toISOString()}`);
       
       // For all-day events in CalDAV format, the end date should be the next day at 00:00:00
       // This follows the CalDAV convention where an all-day event on April 25th would have:
@@ -541,7 +547,6 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         nextDay.setDate(nextDay.getDate() + 1);
         
         // Log the exact date formatting details for debugging
-        console.log(`[DATE DEBUG] ------- All-Day Event CalDAV Format -------`);
         console.log(`[DATE DEBUG] Original end date: ${endDate}`);
         console.log(`[DATE DEBUG] As date object: ${endDateObj.toISOString()}`);
         console.log(`[DATE DEBUG] CalDAV formatted date (next day): ${nextDay.toISOString()}`);

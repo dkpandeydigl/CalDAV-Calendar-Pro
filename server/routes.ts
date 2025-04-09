@@ -229,14 +229,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // For all-day events, ensure the dates are properly formatted
       if (eventData.allDay === true) {
-        // Set time to midnight in UTC for all-day events
-        const startDate = new Date(eventData.startDate);
-        startDate.setUTCHours(0, 0, 0, 0);
+        // CRITICAL FIX: Preserve the selected date for all-day events
+        console.log(`[BACKEND DATE DEBUG] Original date values:`, {
+          startDate: eventData.startDate.toISOString(),
+          endDate: eventData.endDate.toISOString()
+        });
+        
+        // Get the date components (year, month, day) while preserving the actual calendar date
+        const startYear = eventData.startDate.getFullYear();
+        const startMonth = eventData.startDate.getMonth();
+        const startDay = eventData.startDate.getDate();
+        
+        // Create a new date with the same YMD but at midnight
+        const startDate = new Date(startYear, startMonth, startDay, 0, 0, 0, 0);
         eventData.startDate = startDate;
         
-        const endDate = new Date(eventData.endDate);
-        // For all-day events, end date should be set to midnight of the next day in UTC
-        endDate.setUTCHours(0, 0, 0, 0);
+        // Similarly for end date
+        const endYear = eventData.endDate.getFullYear();
+        const endMonth = eventData.endDate.getMonth();
+        const endDay = eventData.endDate.getDate();
+        
+        // For all-day events, end date should be midnight of the next day per CalDAV convention
+        const endDate = new Date(endYear, endMonth, endDay, 0, 0, 0, 0);
         
         // If start and end date are the same, set end date to the next day
         if (startDate.getTime() === endDate.getTime()) {
@@ -244,6 +258,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         eventData.endDate = endDate;
+        
+        console.log(`[BACKEND DATE DEBUG] Adjusted date values for all-day event:`, {
+          startDate: eventData.startDate.toISOString(),
+          endDate: eventData.endDate.toISOString()
+        });
       }
       
       // Convert arrays to JSON strings
@@ -485,17 +504,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // For all-day events, ensure the dates are properly formatted
       if (updateData.allDay === true) {
-        // Set time to midnight in UTC for all-day events
+        // CRITICAL FIX: Preserve the selected date for all-day events in updates too
+        console.log(`[BACKEND DATE DEBUG] Event update - Original date values:`, {
+          startDate: updateData.startDate ? updateData.startDate.toISOString() : null,
+          endDate: updateData.endDate ? updateData.endDate.toISOString() : null
+        });
+        
         if (updateData.startDate) {
-          const startDate = new Date(updateData.startDate);
-          startDate.setUTCHours(0, 0, 0, 0);
+          // Get the date components (year, month, day) while preserving the actual calendar date
+          const startYear = updateData.startDate.getFullYear();
+          const startMonth = updateData.startDate.getMonth();
+          const startDay = updateData.startDate.getDate();
+          
+          // Create a new date with the same YMD but at midnight
+          const startDate = new Date(startYear, startMonth, startDay, 0, 0, 0, 0);
           updateData.startDate = startDate;
         }
         
         if (updateData.endDate) {
-          const endDate = new Date(updateData.endDate);
-          // For all-day events, end date should be set to midnight of the next day in UTC
-          endDate.setUTCHours(0, 0, 0, 0);
+          // Similarly for end date
+          const endYear = updateData.endDate.getFullYear();
+          const endMonth = updateData.endDate.getMonth();
+          const endDay = updateData.endDate.getDate();
+          
+          // For all-day events, end date should be midnight per CalDAV convention
+          const endDate = new Date(endYear, endMonth, endDay, 0, 0, 0, 0);
           
           // If start and end date are the same, set end date to the next day
           if (updateData.startDate && 
@@ -505,6 +538,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           updateData.endDate = endDate;
         }
+        
+        console.log(`[BACKEND DATE DEBUG] Event update - Adjusted date values:`, {
+          startDate: updateData.startDate ? updateData.startDate.toISOString() : null,
+          endDate: updateData.endDate ? updateData.endDate.toISOString() : null
+        });
       }
       
       // Convert arrays to JSON strings
