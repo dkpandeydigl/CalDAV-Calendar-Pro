@@ -911,7 +911,20 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     <Checkbox
                       id="all-day"
                       checked={allDay}
-                      onCheckedChange={(checked) => setAllDay(checked === true)}
+                      onCheckedChange={(checked) => {
+                        const isChecked = checked === true;
+                        setAllDay(isChecked);
+                        
+                        // When switching to all-day events, default to 00:00-23:59 in UTC
+                        if (isChecked) {
+                          setStartTime('00:00');
+                          setEndTime('23:59');
+                          setTimezone('UTC');
+                        } else {
+                          // When unchecking all-day, restore user's preferred timezone
+                          setTimezone(selectedTimezone);
+                        }
+                      }}
                     />
                     <Label htmlFor="all-day" className="cursor-pointer">All Day Event</Label>
                   </div>
