@@ -404,17 +404,22 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         };
       }
       
-      const res = await apiRequest('PUT', `/api/events/${id}`, data);
-      
-      // Check if the response is JSON before parsing
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const textContent = await res.text();
-        console.error('Non-JSON response from server:', textContent);
-        throw new Error('Server returned an invalid response format. Please try again.');
+      try {
+        const res = await apiRequest('PUT', `/api/events/${id}`, data);
+        
+        // Check if the response is JSON before parsing
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          const textContent = await res.text();
+          console.error('Non-JSON response from server:', textContent);
+          throw new Error('Server returned an invalid response format. Please try again.');
+        }
+        
+        return await res.json();
+      } catch (error) {
+        console.error('Error in event update request:', error);
+        throw error;
       }
-
-      return res.json();
     },
     onMutate: async ({ id, data }) => {
       console.log(`Starting optimistic update for event ${id}`);
@@ -643,6 +648,14 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
               forceRefresh: true,
               calendarId: serverEvent.calendarId
             });
+            
+            // Check if the response is JSON before parsing
+            const contentType = syncResponse.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+              const textContent = await syncResponse.text();
+              console.error('Non-JSON response from sync endpoint:', textContent);
+              throw new Error('Sync server returned an invalid response format.');
+            }
             
             const syncResult = await syncResponse.json();
             
@@ -964,6 +977,14 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
               // If we have the calendar ID from the deleted event, use it for targeted sync
               calendarId: context?.eventToDelete?.calendarId
             });
+            
+            // Check if the response is JSON before parsing
+            const contentType = syncResponse.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+              const textContent = await syncResponse.text();
+              console.error('Non-JSON response from sync endpoint during delete:', textContent);
+              throw new Error('Sync server returned an invalid response format after deletion.');
+            }
             
             const syncResult = await syncResponse.json();
             

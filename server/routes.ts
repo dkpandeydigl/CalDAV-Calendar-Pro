@@ -278,6 +278,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasAttendees = Array.isArray(attendeesArray) && attendeesArray.length > 0;
       }
       
+      // Ensure proper content type header is set
+      res.setHeader('Content-Type', 'application/json');
       res.status(200).json({ 
         success: true, 
         event: updatedEvent,
@@ -294,9 +296,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       const sharedCalendars = await storage.getSharedCalendars(userId);
+      res.setHeader('Content-Type', 'application/json');
       res.json(sharedCalendars);
     } catch (err) {
       console.error("Error fetching shared calendars:", err);
+      res.setHeader('Content-Type', 'application/json');
       res.status(500).json({ message: "Failed to fetch shared calendars" });
     }
   });
@@ -323,9 +327,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       const connection = await storage.getServerConnection(userId);
+      res.setHeader('Content-Type', 'application/json');
       res.json(connection || null);
     } catch (err) {
       console.error("Error fetching server connection:", err);
+      res.setHeader('Content-Type', 'application/json');
       res.status(500).json({ message: "Failed to fetch server connection" });
     }
   });
@@ -354,9 +360,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       const config = await storage.getSmtpConfig(userId);
+      res.setHeader('Content-Type', 'application/json');
       res.json(config || null);
     } catch (err) {
       console.error("Error fetching SMTP config:", err);
+      res.setHeader('Content-Type', 'application/json');
       res.status(500).json({ message: "Failed to fetch SMTP config" });
     }
   });
@@ -386,9 +394,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await emailService.initialize(userId);
       
       const previewHtml = emailService.generateEmailPreview(req.body);
+      res.setHeader('Content-Type', 'application/json');
       res.json({ html: previewHtml });
     } catch (err) {
       console.error("Error generating email preview:", err);
+      res.setHeader('Content-Type', 'application/json');
       res.status(500).json({ message: "Failed to generate email preview" });
     }
   });
@@ -524,9 +534,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await emailService.sendEventInvitation(userId, invitationData);
       
       // Return the result to the client
+      res.setHeader('Content-Type', 'application/json');
       return res.status(result.success ? 200 : 500).json(result);
     } catch (err) {
       console.error("Error sending email:", err);
+      res.setHeader('Content-Type', 'application/json');
       return res.status(500).json({ 
         success: false, 
         message: err instanceof Error ? err.message : "An unknown error occurred", 
@@ -569,13 +581,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Trigger an immediate sync
       const success = await syncService.requestSync(userId, { forceRefresh, calendarId });
       
+      res.setHeader('Content-Type', 'application/json');
       if (success) {
         res.json({ message: "Sync initiated" });
       } else {
+        res.setHeader('Content-Type', 'application/json');
         res.status(500).json({ message: "Failed to initiate sync" });
       }
     } catch (err) {
       console.error("Error initiating sync:", err);
+      res.setHeader('Content-Type', 'application/json');
       res.status(500).json({ message: "Failed to initiate sync" });
     }
   });
@@ -592,6 +607,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if user has a server connection configured
       const connection = await storage.getServerConnection(userId);
       if (!connection) {
+        // Ensure proper content type header is set
+        res.setHeader('Content-Type', 'application/json');
         return res.status(202).json({ 
           message: "Changes saved locally but not synced (no server connection configured)",
           synced: false,
@@ -607,6 +624,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check connection status
       if (connection.status !== 'connected') {
+        // Ensure proper content type header is set
+        res.setHeader('Content-Type', 'application/json');
         return res.status(202).json({ 
           message: "Changes saved locally but not synced (server connection not active)",
           synced: false,
@@ -623,6 +642,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // This will trigger a sync right away with the specified options
       const success = await syncService.syncNow(userId, { forceRefresh, calendarId });
       
+      // Ensure proper content type header is set
+      res.setHeader('Content-Type', 'application/json');
+      
       if (success) {
         res.json({ 
           message: "Sync triggered successfully", 
@@ -634,6 +656,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         });
       } else {
+        res.setHeader('Content-Type', 'application/json');
         res.status(202).json({ 
           message: "Changes saved locally but sync to server failed",
           synced: false,
@@ -647,6 +670,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (err) {
       console.error("Error in immediate sync:", err);
+      // Ensure proper content type header is set
+      res.setHeader('Content-Type', 'application/json');
       res.status(202).json({ 
         message: "Changes saved locally but sync to server failed with error",
         synced: false,
