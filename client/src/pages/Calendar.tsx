@@ -306,7 +306,10 @@ function CalendarContent() {
 
   const handleCreateEvent = (date?: Date) => {
     setSelectedEvent(null);
-    setSelectedDate(date);
+    // Always create a new date object to prevent references issues
+    // This ensures that when we select e.g. April 25th, we get that exact date
+    setSelectedDate(date ? new Date(date) : undefined);
+    console.log(`Calendar: Setting selected date to ${date?.toISOString()}`);
     setEventFormOpen(true);
   };
 

@@ -310,6 +310,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         setTimezone(event.timezone || selectedTimezone);
       } else if (selectedDate) {
         // If a date was selected in the calendar, use it for start/end
+        // We must create a new Date to avoid potentially mutating the prop
         const date = new Date(selectedDate);
         if (!isNaN(date.getTime())) {
           // Use local date format to avoid timezone offset issues
@@ -320,6 +321,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           
           console.log(`Selected date from calendar: ${date.toString()}`);
           console.log(`Formatted as local date: ${formattedDate}`);
+          
+          // Store the actual selected date for debugging
+          console.log(`Original selectedDate prop: ${selectedDate instanceof Date ? selectedDate.toISOString() : selectedDate}`);
           
           // Always use the correct selected date for both start and end
           // This ensures that when a user selects April 25th, they get an event on April 25th
