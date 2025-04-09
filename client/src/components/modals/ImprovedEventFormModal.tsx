@@ -609,6 +609,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           });
           console.log(`[CRITICAL DATE DEBUG] ************************`);
         } else {
+          console.log(`[CRITICAL DATE DEBUG] ************************`);
+          console.log(`[CRITICAL DATE DEBUG] Regular timed event submission`);
+          console.log(`[CRITICAL DATE DEBUG] Form date strings:`, { startDate, endDate, startTime, endTime });
+          
           // For regular events with time, create the date objects from components
           // to avoid timezone issues with string parsing
           const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
@@ -617,16 +621,28 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           // Create the date in local timezone for timed events
           startDateTime = new Date(startYear, startMonth - 1, startDay, startHour, startMinute);
           
-          // Same for end date
+          // For the end date, ensure we're using the same day as the start date if dates are the same
+          // This prevents the event from showing on multiple days in the calendar
           const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
           const [endHour, endMinute] = endTime.split(':').map(Number);
           
-          endDateTime = new Date(endYear, endMonth - 1, endDay, endHour, endMinute);
+          // Create the end time on the same date as the start date if user didn't change the date
+          if (startDate === endDate) {
+            // Use the same date components as the start date
+            endDateTime = new Date(startYear, startMonth - 1, startDay, endHour, endMinute);
+            console.log(`[CRITICAL DATE DEBUG] Using the same date for end time (single-day event)`);
+          } else {
+            // Different dates selected, use end date as specified
+            endDateTime = new Date(endYear, endMonth - 1, endDay, endHour, endMinute);
+            console.log(`[CRITICAL DATE DEBUG] Using different dates for multi-day event`);
+          }
           
-          console.log(`[DATE DEBUG] Regular event date objects:`, {
+          console.log(`[CRITICAL DATE DEBUG] Regular event date objects:`, {
             startDateTime: startDateTime.toISOString(),
-            endDateTime: endDateTime.toISOString()
+            endDateTime: endDateTime.toISOString(),
+            datesEqual: startDate === endDate
           });
+          console.log(`[CRITICAL DATE DEBUG] ************************`);
         }
         
         // Final validation to ensure we have valid dates
@@ -923,6 +939,17 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         } else {
                           // When unchecking all-day, restore user's preferred timezone
                           setTimezone(selectedTimezone);
+                          
+                          // Set default time values for non-all-day events
+                          // Start at current hour rounded up, end 1 hour later
+                          const now = new Date();
+                          const currentHour = now.getHours();
+                          const roundedHour = currentHour + 1;
+                          const formattedStartTime = `${String(roundedHour).padStart(2, '0')}:00`;
+                          const formattedEndTime = `${String(roundedHour + 1).padStart(2, '0')}:00`;
+                          
+                          setStartTime(formattedStartTime);
+                          setEndTime(formattedEndTime);
                         }
                       }}
                     />
