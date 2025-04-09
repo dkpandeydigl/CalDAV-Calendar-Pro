@@ -705,6 +705,61 @@ export class SyncService {
               }
             } else {
               // Create new iCalendar data
+              let attendeesSection = '';
+              let resourcesSection = '';
+              
+              // Process attendees if present
+              if (event.attendees) {
+                try {
+                  const attendeesArray = typeof event.attendees === 'string' 
+                    ? JSON.parse(event.attendees) 
+                    : event.attendees;
+                    
+                  if (Array.isArray(attendeesArray)) {
+                    attendeesArray.forEach(attendee => {
+                      if (attendee && attendee.email) {
+                        // Format: ATTENDEE;CN=Name;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:email@example.com
+                        const cn = attendee.name ? `;CN=${attendee.name}` : '';
+                        const role = attendee.role ? `;ROLE=${attendee.role}` : ';ROLE=REQ-PARTICIPANT';
+                        const status = attendee.status ? `;PARTSTAT=${attendee.status}` : ';PARTSTAT=NEEDS-ACTION';
+                        attendeesSection += `ATTENDEE${cn}${role}${status}:mailto:${attendee.email}\n`;
+                      }
+                    });
+                  }
+                } catch (e) {
+                  console.error(`Error processing attendees for event ${event.id}:`, e);
+                }
+              }
+              
+              // Process resources if present
+              if (event.resources) {
+                try {
+                  const resourcesArray = typeof event.resources === 'string' 
+                    ? JSON.parse(event.resources) 
+                    : event.resources;
+                    
+                  if (Array.isArray(resourcesArray)) {
+                    resourcesArray.forEach(resource => {
+                      if (resource && resource.adminEmail) {
+                        // Format: ATTENDEE;CN=Resource Name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT:mailto:resource@example.com
+                        const cn = resource.adminName ? `;CN=${resource.adminName}` : '';
+                        const subType = resource.subType ? `;X-RESOURCE-TYPE=${resource.subType}` : '';
+                        resourcesSection += `ATTENDEE${cn};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${subType}:mailto:${resource.adminEmail}\n`;
+                      }
+                    });
+                  }
+                } catch (e) {
+                  console.error(`Error processing resources for event ${event.id}:`, e);
+                }
+              }
+              
+              // Add organizer using username as both name and email (if not available)
+              const username = job.connection.username;
+              // Extract email from username if it looks like an email
+              const emailMatch = username.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/);
+              const email = emailMatch ? username : `${username}@caldavclient.local`;
+              const orgSection = `ORGANIZER;CN=${username}:mailto:${email}\n`;
+              
               icalData = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//CalDAV Client//NONSGML v1.0//EN
@@ -717,7 +772,7 @@ ${event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\n`
 ${event.location ? `LOCATION:${event.location}\n` : ''}
 DTSTAMP:${this.formatICalDate(new Date())}
 ${event.recurrenceRule ? `RRULE:${this.formatRecurrenceRule(event.recurrenceRule)}\n` : ''}
-END:VEVENT
+${orgSection}${attendeesSection}${resourcesSection}END:VEVENT
 END:VCALENDAR`;
             }
             
