@@ -309,34 +309,39 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         setAllDay(event.allDay || false);
         setTimezone(event.timezone || selectedTimezone);
       } else if (selectedDate) {
-        // CRITICAL FIX: If a date was selected in the calendar, use it for start/end
-        // Create a fresh date object to avoid any reference issues
-        const date = new Date(selectedDate);
+        // CRITICAL TIMEZONE FIX: If a date was selected in the calendar,
+        // use direct date components to avoid any timezone issues that might shift the date
         
-        if (!isNaN(date.getTime())) {
-          // Format the date as YYYY-MM-DD using the actual selected date
-          // This is critical for ensuring we use the date the user clicked on
-          const year = date.getFullYear();
-          const month = (date.getMonth() + 1).toString().padStart(2, '0');
-          const day = date.getDate().toString().padStart(2, '0');
+        // First log the incoming date to diagnose any issues
+        console.log(`[DATE DEBUG] ------- Event Form Date Initialization -------`);
+        console.log(`[DATE DEBUG] Received selectedDate: ${selectedDate instanceof Date ? selectedDate.toString() : selectedDate}`);
+        
+        // Convert to local time to make sure we capture exactly what the user sees
+        // This is critical because we want the calendar date in the user's timezone
+        const localDate = new Date(selectedDate);
+        
+        if (!isNaN(localDate.getTime())) {
+          // Get the date components by using direct component getters
+          // This approach avoids timezone issues by not using ISO string parsing
+          const year = localDate.getFullYear();
+          const month = (localDate.getMonth() + 1).toString().padStart(2, '0');
+          const day = localDate.getDate().toString().padStart(2, '0');
           const formattedDate = `${year}-${month}-${day}`;
           
-          // Extensive logging to help diagnose the issue
-          console.log(`[DATE DEBUG] ------- Event Form Date Initialization -------`);
-          console.log(`[DATE DEBUG] Selected date from calendar: ${date.toString()}`);
+          // More detailed logging to diagnose any date shifting issues
+          console.log(`[DATE DEBUG] Local date object: ${localDate.toString()}`);
+          console.log(`[DATE DEBUG] Date components extracted: year=${year}, month=${month}, day=${day}`);
           console.log(`[DATE DEBUG] Formatted as YYYY-MM-DD: ${formattedDate}`);
-          console.log(`[DATE DEBUG] Original selectedDate prop: ${selectedDate instanceof Date ? selectedDate.toISOString() : selectedDate}`);
           
-          // CRITICAL FIX: Always use the formattedDate from the selected date
-          // This ensures the event appears on the exact day the user clicked
+          // Preserve the date components exactly as shown in the UI
           setStartDate(formattedDate);
           setEndDate(formattedDate);
           
-          // Force the allDay checkbox to be checked when creating a new event
-          // This helps ensure proper date handling for the specific use case
+          // Always default to all-day for new events created by clicking on a day
+          // This creates more intuitive behavior and reduces timezone issues
           setAllDay(true);
           
-          // Create default time for new event (current hour + 1)
+          // Set reasonable default times in case user switches to timed event
           const now = new Date();
           const hours = now.getHours().toString().padStart(2, '0');
           const minutes = now.getMinutes().toString().padStart(2, '0');
@@ -345,6 +350,19 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           // End time is 1 hour later
           const endHour = (now.getHours() + 1) % 24;
           setEndTime(`${endHour.toString().padStart(2, '0')}:${minutes}`);
+          
+          // Set default timezone
+          setTimezone(selectedTimezone);
+          
+          // Log the final values we're setting for the form
+          console.log(`[DATE DEBUG] Form values set:`, {
+            startDate: formattedDate,
+            endDate: formattedDate,
+            startTime: `${hours}:${minutes}`,
+            endTime: `${endHour.toString().padStart(2, '0')}:${minutes}`,
+            allDay: true,
+            timezone: selectedTimezone
+          });
         }
         
         // Default to first available calendar

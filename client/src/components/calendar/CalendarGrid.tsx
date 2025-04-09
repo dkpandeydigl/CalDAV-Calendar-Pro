@@ -109,11 +109,11 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       });
       
       // Log duplicate counts for debugging
-      for (const [title, events] of eventsByTitle.entries()) {
+      Array.from(eventsByTitle.entries()).forEach(([title, events]) => {
         if (events.length > 1) {
           console.log(`Found ${events.length} events with title "${title}" on ${dateKey}`);
         }
-      }
+      });
     }
     
     // Apply enhanced deduplication for all dates
@@ -137,7 +137,7 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       
       // If the event has a UID and there are duplicates with the same UID,
       // use the UID as the primary deduplication key, especially for resource events
-      if (event.uid && (isResourceEvent || eventsByUid.get(event.uid)?.length > 1)) {
+      if (event.uid && (isResourceEvent || (eventsByUid.get(event.uid) && eventsByUid.get(event.uid)!.length > 1))) {
         key = event.uid;
         if (isApril2930) {
           console.log(`Using UID as key for resource event: ${event.title}, UID=${event.uid}`);
@@ -202,9 +202,10 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
         else if (!existingEvent.url && event.url) {
           seenEvents.set(key, event);
         }
-        // Or if this event is more recently updated
-        else if (event.updatedAt && existingEvent.updatedAt && 
-                 new Date(event.updatedAt) > new Date(existingEvent.updatedAt)) {
+        // Note: The updatedAt property isn't in our schema, so we'll use lastSyncAttempt instead
+        // This is a fallback for recency comparison
+        else if (event.lastSyncAttempt && existingEvent.lastSyncAttempt && 
+                 new Date(event.lastSyncAttempt) > new Date(existingEvent.lastSyncAttempt)) {
           seenEvents.set(key, event);
         }
         // Or if this event has a lower ID (usually means it was created first)
