@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
-import { getTimezones } from '@/lib/date-utils';
+import { getTimezones, isValidRecurrencePattern } from '@/lib/date-utils';
 import { apiRequest } from '@/lib/queryClient';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { useSharedCalendars } from '@/hooks/useSharedCalendars';
@@ -87,15 +87,7 @@ interface RecurrenceConfig {
   includeFirstOccurrence?: boolean; // Whether to include first occurrence if it doesn't match the pattern
 }
 
-// Helper function to check if a pattern is a valid recurrence pattern (not 'None')
-const isValidRecurrencePattern = (pattern: RecurrencePattern | undefined): boolean => {
-  return !!pattern && (
-    pattern === 'Daily' || 
-    pattern === 'Weekly' || 
-    pattern === 'Monthly' || 
-    pattern === 'Yearly'
-  );
-};
+// Using the shared isValidRecurrencePattern function from date-utils.ts
 
 const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDate, onClose }) => {
   const { calendars } = useCalendars();
