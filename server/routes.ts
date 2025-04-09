@@ -349,49 +349,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Missing date or calendarId parameter' });
       }
       
+      console.log(`Cleaning up untitled events for date ${date} and calendar ${calendarId}`);
+      
       // Get all events for the calendar
-      const events = await storage.getEvents(calendarId);
+      const allEvents = await storage.getEvents(calendarId);
+      console.log(`Total events in calendar ${calendarId}: ${allEvents.length}`);
       
       // Find all Untitled Events on the specified date
       const targetDateStr = new Date(date).toISOString().split('T')[0]; // Get just the date part
+      console.log(`Looking for events on date: ${targetDateStr}`);
       
-      // Filter untitled events for the target date
-      const untitledEvents = events.filter(event => {
-        const eventDate = event.startDate ? new Date(event.startDate).toISOString().split('T')[0] : null;
-        return event.title === 'Untitled Event' && eventDate === targetDateStr;
+      // Find all untitled events (any case variations)
+      const untitledEvents = allEvents.filter(event => {
+        try {
+          // Handle both null dates and actual dates
+          let eventDate = null;
+          if (event.startDate) {
+            const eventDateObj = new Date(event.startDate);
+            eventDate = isNaN(eventDateObj.getTime()) ? null : eventDateObj.toISOString().split('T')[0];
+          }
+          
+          // Check for any case variations of "Untitled Event"
+          const isTitleMatch = event.title && 
+                               (event.title.toLowerCase() === 'untitled event' || 
+                                event.title === 'Untitled Event');
+          
+          const isDateMatch = eventDate === targetDateStr;
+          
+          // Debug output
+          if (isTitleMatch) {
+            console.log(`Found untitled event: ID=${event.id}, title="${event.title}", date=${eventDate}, matches=${isDateMatch}`);
+          }
+          
+          return isTitleMatch && isDateMatch;
+        } catch (error) {
+          console.error(`Error processing event ${event.id}:`, error);
+          return false;
+        }
       });
       
       console.log(`Found ${untitledEvents.length} untitled events for date ${targetDateStr}`);
       
-      // If there are more than one, keep the first one and delete the rest
-      if (untitledEvents.length > 1) {
-        // Sort by ID to get the oldest one
+      // Always attempt to clean up any duplicate "Untitled Event" entries,
+      // even if there's only one per calendar - they might be duplicates across different calendars
+      if (untitledEvents.length >= 1) {
+        // Sort by ID to get the oldest one (first created)
         untitledEvents.sort((a, b) => a.id - b.id);
         
         // Keep the first one, delete the rest
         const eventsToDelete = untitledEvents.slice(1);
-        console.log(`Deleting ${eventsToDelete.length} duplicate untitled events`);
         
-        for (const event of eventsToDelete) {
-          await storage.deleteEvent(event.id);
-        }
-        
-        // Sync the changes to the server
-        if (req.user) {
-          syncService.syncNow(req.user.id).catch(err => {
-            console.error('Error during sync after cleanup:', err);
+        if (eventsToDelete.length > 0) {
+          console.log(`Deleting ${eventsToDelete.length} duplicate untitled events:`, eventsToDelete.map(e => e.id));
+          
+          for (const event of eventsToDelete) {
+            console.log(`Deleting untitled event ID: ${event.id}`);
+            await storage.deleteEvent(event.id);
+          }
+          
+          // Also attempt to clean up the event from the server
+          if (req.user) {
+            syncService.syncNow(req.user.id).catch(err => {
+              console.error('Error during sync after cleanup:', err);
+            });
+          }
+          
+          return res.json({ 
+            success: true, 
+            message: `Deleted ${eventsToDelete.length} duplicate untitled events.`,
+            deletedIds: eventsToDelete.map(e => e.id)
+          });
+        } else {
+          // If all calendars have been checked and we've deleted everything we can,
+          // check if there are still outstanding untitled events
+          console.log(`No more duplicate untitled events to clean on this calendar.`);
+          
+          return res.json({ 
+            success: true, 
+            message: 'No more duplicate untitled events found to clean up.'
           });
         }
-        
-        return res.json({ 
-          success: true, 
-          message: `Deleted ${eventsToDelete.length} duplicate untitled events.`,
-          deletedIds: eventsToDelete.map(e => e.id)
-        });
       } else {
         return res.json({ 
           success: true, 
-          message: 'No duplicate untitled events found to clean up.'
+          message: 'No untitled events found to clean up.'
         });
       }
     } catch (err) {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { format } from 'date-fns';
 import CalendarEvent from './CalendarEvent';
 import { CleanupButton } from '@/components/utils/CleanupButton';
@@ -17,17 +17,36 @@ const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick, on
   const { date, isCurrentMonth, isToday } = day;
   const { calendars } = useCalendars();
   
-  // Check if this day has multiple "Untitled Event" entries
-  const untitledEvents = events.filter(event => event.title === 'Untitled Event');
-  const hasDuplicateUntitledEvents = untitledEvents.length > 1;
-  
-  // Get the calendar ID for the untitled events (using the first one)
-  const calendarId = untitledEvents.length > 0 ? untitledEvents[0].calendarId : undefined;
-  
-  // Find the calendar name
-  const calendar = calendarId ? calendars.find(cal => cal.id === calendarId) : undefined;
-  
   const dateStr = format(date, 'yyyy-MM-dd');
+  
+  // Find all events with "Untitled Event" in the title (case insensitive)
+  const untitledEvents = events.filter(event => 
+    event.title && event.title.toLowerCase() === 'untitled event'
+  );
+  
+  // Get a unique list of calendar IDs that have untitled events
+  const calendarIds: number[] = [];
+  // Use a manual approach to filter unique IDs
+  untitledEvents.forEach(event => {
+    if (event.calendarId && !calendarIds.includes(event.calendarId)) {
+      calendarIds.push(event.calendarId);
+    }
+  });
+  
+  // Debug information about untitled events - only log once during initial render
+  useEffect(() => {
+    if (untitledEvents.length > 1) {
+      console.log(`Date ${dateStr} has ${untitledEvents.length} untitled events:`, 
+        untitledEvents.map(e => ({ id: e.id, title: e.title, calendarId: e.calendarId }))
+      );
+    }
+  }, []);
+  
+  // Show cleanup button if we have multiple untitled events
+  const showCleanupButton = untitledEvents.length > 1;
+  
+  // Use the first calendar ID if there are untitled events
+  const calendarId = calendarIds.length > 0 ? calendarIds[0] : undefined;
   
   return (
     <div 
@@ -37,12 +56,12 @@ const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick, on
       onDoubleClick={(e) => onDayDoubleClick && onDayDoubleClick(date)}
     >
       <div className="flex justify-between items-center p-1">
-        {hasDuplicateUntitledEvents && calendarId && (
+        {showCleanupButton && calendarId && (
           <div className="flex-shrink-0">
             <CleanupButton date={dateStr} calendarId={calendarId} />
           </div>
         )}
-        <div className={`text-right ${hasDuplicateUntitledEvents ? 'ml-auto' : ''}`}>
+        <div className={`text-right ${showCleanupButton ? 'ml-auto' : ''}`}>
           {isToday ? (
             <span className="text-sm font-bold bg-primary text-white rounded-full w-6 h-6 flex items-center justify-center">
               {format(date, 'd')}
@@ -54,6 +73,13 @@ const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick, on
           )}
         </div>
       </div>
+      
+      {/* Show count of untitled events as a debug indicator */}
+      {untitledEvents.length > 1 && (
+        <div className="text-xs text-red-500 font-semibold mb-1">
+          {untitledEvents.length} untitled events
+        </div>
+      )}
       
       {/* Events */}
       <div className="space-y-1">
