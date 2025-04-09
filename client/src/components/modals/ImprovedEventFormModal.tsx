@@ -84,7 +84,18 @@ interface RecurrenceConfig {
   endType: RecurrenceEndType;
   occurrences?: number; // For 'After'
   endDate?: Date; // For 'On'
+  includeFirstOccurrence?: boolean; // Whether to include first occurrence if it doesn't match the pattern
 }
+
+// Helper function to check if a pattern is a valid recurrence pattern (not 'None')
+const isValidRecurrencePattern = (pattern: RecurrencePattern | undefined): boolean => {
+  return !!pattern && (
+    pattern === 'Daily' || 
+    pattern === 'Weekly' || 
+    pattern === 'Monthly' || 
+    pattern === 'Yearly'
+  );
+};
 
 const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDate, onClose }) => {
   const { calendars } = useCalendars();
@@ -130,7 +141,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     interval: 1,
     weekdays: [],
     endType: 'Never',
-    occurrences: 10
+    occurrences: 10,
+    includeFirstOccurrence: true // Default to including first occurrence (traditional behavior)
   });
   
   // Template state
@@ -395,7 +407,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       interval: 1,
       weekdays: [],
       endType: 'Never',
-      occurrences: 10
+      occurrences: 10,
+      includeFirstOccurrence: true
     });
     setSelectedTemplate(null);
     setIsBusy(true);
@@ -674,7 +687,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       
       // Prepare attendees and recurrence data for storage
       const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
-      const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify(recurrence) : null;
+      const recurrenceRule = isValidRecurrencePattern(recurrence.pattern) ? JSON.stringify(recurrence) : null;
             
       // Map form data to schema fields
       const eventData = {
@@ -830,7 +843,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <TabsTrigger value="recurrence" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
                 <Repeat className="h-4 w-4 mr-2" />
                 Recurrence
-                {recurrence.pattern !== 'None' && (
+                {recurrence.pattern !== 'None' && recurrence.pattern && (
                   <Badge variant="outline" className="ml-2 px-2 py-0">
                     {recurrence.pattern}
                   </Badge>
@@ -1274,7 +1287,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             attendees,
                             resources,
                             // Include recurrence rule if it exists
-                            recurrenceRule: recurrence.pattern !== 'None' ? {
+                            recurrenceRule: isValidRecurrencePattern(recurrence.pattern) ? {
                               pattern: recurrence.pattern,
                               interval: recurrence.interval,
                               weekdays: recurrence.weekdays,
@@ -1382,7 +1395,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     </RadioGroup>
                   </div>
                   
-                  {recurrence.pattern !== 'None' && (
+                  {recurrence.pattern && recurrence.pattern !== 'None' && (
                     <>
                       <div className="space-y-2">
                         <Label htmlFor="interval">Repeat every</Label>
@@ -1428,7 +1441,28 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         </div>
                       )}
                       
-                      <Separator />
+                      <Separator className="my-4" />
+                      
+                      {isValidRecurrencePattern(recurrence.pattern) && (
+                        <div className="flex items-center space-x-2 mb-4">
+                          <Checkbox 
+                            id="include-first-occurrence"
+                            checked={recurrence.includeFirstOccurrence}
+                            onCheckedChange={(checked) => setRecurrence({
+                              ...recurrence,
+                              includeFirstOccurrence: checked === true
+                            })}
+                          />
+                          <div className="grid gap-1.5 leading-none">
+                            <Label htmlFor="include-first-occurrence" className="cursor-pointer">
+                              Include first occurrence if it doesn't match pattern
+                            </Label>
+                            <p className="text-sm text-muted-foreground">
+                              When checked, the event will occur on the start date even if it doesn't match the pattern
+                            </p>
+                          </div>
+                        </div>
+                      )}
                       
                       <div className="space-y-3">
                         <Label>End</Label>
@@ -1562,13 +1596,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           // Include eventId for existing events
                           eventId: event ? event.id : undefined,
                           // Include recurrence rule if it exists
-                          recurrenceRule: recurrence.pattern !== 'None' ? {
+                          recurrenceRule: isValidRecurrencePattern(recurrence.pattern) ? {
                             pattern: recurrence.pattern,
                             interval: recurrence.interval,
                             weekdays: recurrence.weekdays,
                             endType: recurrence.endType,
                             occurrences: recurrence.occurrences,
-                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined,
+                            includeFirstOccurrence: recurrence.includeFirstOccurrence
                           } : undefined
                         };
                         
@@ -1644,13 +1679,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           // Include event ID for existing events
                           eventId: event ? event.id : undefined,
                           // Include recurrence rule if it exists
-                          recurrenceRule: recurrence.pattern !== 'None' ? {
+                          recurrenceRule: isValidRecurrencePattern(recurrence.pattern) ? {
                             pattern: recurrence.pattern,
                             interval: recurrence.interval,
                             weekdays: recurrence.weekdays,
                             endType: recurrence.endType,
                             occurrences: recurrence.occurrences,
-                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined,
+                            includeFirstOccurrence: recurrence.includeFirstOccurrence
                           } : undefined
                         };
                         
@@ -1749,13 +1785,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       // Include event ID for existing events
                       eventId: event ? event.id : undefined,
                       // Include recurrence rule if it exists
-                      recurrenceRule: recurrence.pattern !== 'None' ? {
+                      recurrenceRule: isValidRecurrencePattern(recurrence.pattern) ? {
                         pattern: recurrence.pattern,
                         interval: recurrence.interval,
                         weekdays: recurrence.weekdays,
                         endType: recurrence.endType,
                         occurrences: recurrence.occurrences,
-                        untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                        untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined,
+                        includeFirstOccurrence: recurrence.includeFirstOccurrence
                       } : undefined
                     };
                     
@@ -1808,13 +1845,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           }
                           
                           // Prepare recurrence rule if it exists
-                          const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify({
+                          const recurrenceRule = isValidRecurrencePattern(recurrence.pattern) ? JSON.stringify({
                             pattern: recurrence.pattern,
                             interval: recurrence.interval,
                             weekdays: recurrence.weekdays,
                             endType: recurrence.endType,
                             occurrences: recurrence.occurrences,
-                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined,
+                            includeFirstOccurrence: recurrence.includeFirstOccurrence
                           }) : null;
                           
                           // Prepare attendees and resources
@@ -1955,13 +1993,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     }
                     
                     // Prepare recurrence rule if it exists
-                    const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify({
+                    const recurrenceRule = isValidRecurrencePattern(recurrence.pattern) ? JSON.stringify({
                       pattern: recurrence.pattern,
                       interval: recurrence.interval,
                       weekdays: recurrence.weekdays,
                       endType: recurrence.endType,
                       occurrences: recurrence.occurrences,
-                      untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                      untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined,
+                      includeFirstOccurrence: recurrence.includeFirstOccurrence
                     }) : null;
                     
                     // Prepare attendees and resources
