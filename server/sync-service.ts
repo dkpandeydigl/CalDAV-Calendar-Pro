@@ -326,6 +326,12 @@ export class SyncService {
               // Check if we already have this event in our database
               const existingEvent = await storage.getEventByUID(caldavEvent.uid);
               
+              // Ensure the event has a valid UID
+              if (!caldavEvent.uid) {
+                console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
+                caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
+              }
+              
               // Convert the event data
               const eventData: Partial<InsertEvent> = {
                 uid: caldavEvent.uid,
@@ -438,6 +444,12 @@ export class SyncService {
                   
                   // Check if we already have this event in our database
                   const existingEvent = await storage.getEventByUID(caldavEvent.uid);
+                  
+                  // Ensure the event has a valid UID
+                  if (!caldavEvent.uid) {
+                    console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
+                    caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
+                  }
                   
                   // Convert the event data
                   const eventData: Partial<InsertEvent> = {
@@ -870,11 +882,32 @@ END:VCALENDAR`;
   /**
    * Format a date for iCalendar
    */
-  private formatICalDate(date: Date, allDay: boolean = false): string {
-    if (allDay) {
-      return date.toISOString().replace(/[-:]/g, '').split('T')[0];
+  private formatICalDate(date: Date | null | undefined, allDay: boolean = false): string {
+    // If date is null or undefined, use current date as fallback
+    if (!date) {
+      console.warn("Converting null/undefined date to current date");
+      date = new Date();
     }
-    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+    
+    // Verify that the date is valid
+    if (isNaN(date.getTime())) {
+      console.warn("Invalid date detected, using current date instead");
+      date = new Date();
+    }
+    
+    try {
+      if (allDay) {
+        return date.toISOString().replace(/[-:]/g, '').split('T')[0];
+      }
+      return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+    } catch (error) {
+      console.error("Error formatting date for iCalendar:", error);
+      // Last resort fallback - use current time
+      const now = new Date();
+      return allDay 
+        ? now.toISOString().replace(/[-:]/g, '').split('T')[0]
+        : now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+    }
   }
   
   /**
