@@ -843,7 +843,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <TabsTrigger value="recurrence" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
                 <Repeat className="h-4 w-4 mr-2" />
                 Recurrence
-                {recurrence.pattern !== 'None' && recurrence.pattern && (
+                {isValidRecurrencePattern(recurrence.pattern) && (
                   <Badge variant="outline" className="ml-2 px-2 py-0">
                     {recurrence.pattern}
                   </Badge>
@@ -1395,7 +1395,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     </RadioGroup>
                   </div>
                   
-                  {recurrence.pattern && recurrence.pattern !== 'None' && (
+                  {isValidRecurrencePattern(recurrence.pattern) && (
                     <>
                       <div className="space-y-2">
                         <Label htmlFor="interval">Repeat every</Label>
