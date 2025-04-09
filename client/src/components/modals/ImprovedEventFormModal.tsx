@@ -32,7 +32,8 @@ import {
   Loader2,
   Mail,
   RefreshCw,
-  Package
+  Package,
+  Info
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -309,59 +310,48 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         setAllDay(event.allDay || false);
         setTimezone(event.timezone || selectedTimezone);
       } else if (selectedDate) {
-        // CRITICAL TIMEZONE FIX: If a date was selected in the calendar,
-        // use direct date components to avoid any timezone issues that might shift the date
+        // CRITICAL TIMEZONE FIX: For all-day events, we now use a simpler approach
+        // where we ALWAYS use UTC time for all-day events to avoid timezone issues completely
         
-        // First log the incoming date to diagnose any issues
         console.log(`[DATE DEBUG] ------- Event Form Date Initialization -------`);
         console.log(`[DATE DEBUG] Received selectedDate: ${selectedDate instanceof Date ? selectedDate.toString() : selectedDate}`);
+        console.log(`[DATE DEBUG] Using simplified UTC approach for all-day events`);
         
-        // Convert to local time to make sure we capture exactly what the user sees
-        // This is critical because we want the calendar date in the user's timezone
+        // First get the date in the format needed for display (YYYY-MM-DD)
         const localDate = new Date(selectedDate);
         
         if (!isNaN(localDate.getTime())) {
-          // Get the date components by using direct component getters
-          // This approach avoids timezone issues by not using ISO string parsing
+          // Extract date components directly from the date 
           const year = localDate.getFullYear();
           const month = (localDate.getMonth() + 1).toString().padStart(2, '0');
           const day = localDate.getDate().toString().padStart(2, '0');
           const formattedDate = `${year}-${month}-${day}`;
           
-          // More detailed logging to diagnose any date shifting issues
-          console.log(`[DATE DEBUG] Local date object: ${localDate.toString()}`);
-          console.log(`[DATE DEBUG] Date components extracted: year=${year}, month=${month}, day=${day}`);
+          console.log(`[DATE DEBUG] Selected date components: year=${year}, month=${month}, day=${day}`);
           console.log(`[DATE DEBUG] Formatted as YYYY-MM-DD: ${formattedDate}`);
           
-          // Preserve the date components exactly as shown in the UI
+          // Set the same date for both start and end
           setStartDate(formattedDate);
           setEndDate(formattedDate);
           
-          // Always default to all-day for new events created by clicking on a day
-          // This creates more intuitive behavior and reduces timezone issues
+          // DEFAULT FOR SIMPLICITY: Always set events created by clicking to all-day
+          // This prevents most timezone issues and is the most intuitive behavior
           setAllDay(true);
           
-          // Set reasonable default times in case user switches to timed event
-          const now = new Date();
-          const hours = now.getHours().toString().padStart(2, '0');
-          const minutes = now.getMinutes().toString().padStart(2, '0');
-          setStartTime(`${hours}:${minutes}`);
+          // Even though these won't be visible for all-day events, set default times
+          // in case the user switches to a timed event later
+          setStartTime('00:00');
+          setEndTime('23:59');
           
-          // End time is 1 hour later
-          const endHour = (now.getHours() + 1) % 24;
-          setEndTime(`${endHour.toString().padStart(2, '0')}:${minutes}`);
+          // SIMPLIFIED: For all-day events, we always use UTC timezone
+          // This ensures consistent date storage regardless of user's local timezone
+          setTimezone('UTC');
           
-          // Set default timezone
-          setTimezone(selectedTimezone);
-          
-          // Log the final values we're setting for the form
-          console.log(`[DATE DEBUG] Form values set:`, {
+          console.log(`[DATE DEBUG] Form values set for all-day event:`, {
             startDate: formattedDate,
             endDate: formattedDate,
-            startTime: `${hours}:${minutes}`,
-            endTime: `${endHour.toString().padStart(2, '0')}:${minutes}`,
             allDay: true,
-            timezone: selectedTimezone
+            timezone: 'UTC' // IMPORTANT: Always UTC for all-day events
           });
         }
         
@@ -926,27 +916,43 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     <Label htmlFor="all-day" className="cursor-pointer">All Day Event</Label>
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <Select
-                      value={timezone}
-                      onValueChange={setTimezone}
-                    >
-                      <SelectTrigger id="timezone">
-                        <SelectValue placeholder="Select Timezone" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {getTimezones().map((tz) => (
-                          <SelectItem
-                            key={tz.value}
-                            value={tz.value}
-                          >
-                            {tz.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {/* Only show timezone selector for non-all-day events */}
+                  {!allDay && (
+                    <div className="space-y-2">
+                      <Label htmlFor="timezone">Timezone</Label>
+                      <Select
+                        value={timezone}
+                        onValueChange={setTimezone}
+                      >
+                        <SelectTrigger id="timezone">
+                          <SelectValue placeholder="Select Timezone" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getTimezones().map((tz) => (
+                            <SelectItem
+                              key={tz.value}
+                              value={tz.value}
+                            >
+                              {tz.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  
+                  {/* Show a note about UTC timezone for all-day events */}
+                  {allDay && (
+                    <div className="space-y-1 bg-muted/40 p-2 rounded-md border border-muted">
+                      <div className="text-sm font-medium flex items-center gap-1.5">
+                        <Info className="h-4 w-4 text-muted-foreground" />
+                        Timezone: UTC (fixed for all-day events)
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        All-day events use UTC timezone to avoid date shifting problems
+                      </p>
+                    </div>
+                  )}
                   
                   <div className="space-y-2">
                     <Label htmlFor="calendar">Calendar <span className="text-destructive">*</span></Label>
