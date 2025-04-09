@@ -405,6 +405,15 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       }
       
       const res = await apiRequest('PUT', `/api/events/${id}`, data);
+      
+      // Check if the response is JSON before parsing
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const textContent = await res.text();
+        console.error('Non-JSON response from server:', textContent);
+        throw new Error('Server returned an invalid response format. Please try again.');
+      }
+
       return res.json();
     },
     onMutate: async ({ id, data }) => {

@@ -58,10 +58,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   
   function handleZodError(err: unknown, res: Response) {
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({ errors: err.errors });
+    // Always set content type to ensure proper JSON response
+    res.setHeader('Content-Type', 'application/json');
+    
+    try {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ errors: err.errors });
+      }
+      
+      // Handle other error types
+      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred";
+      return res.status(500).json({ message: errorMessage });
+    } catch (formatError) {
+      // Final fallback if JSON formatting itself fails
+      console.error("Error while formatting error response:", formatError);
+      return res.status(500).json({ message: "Server error occurred" });
     }
-    return res.status(500).json({ message: (err as Error).message || "An error occurred" });
   }
   
   // USERS API

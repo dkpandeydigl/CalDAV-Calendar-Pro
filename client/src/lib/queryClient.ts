@@ -7,6 +7,12 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+// Function to check if a response is likely to be JSON
+function isJsonResponse(res: Response): boolean {
+  const contentType = res.headers.get('content-type');
+  return contentType !== null && contentType.includes('application/json');
+}
+
 export async function apiRequest(
   method: string,
   url: string,
@@ -45,6 +51,14 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
+    
+    // Safely check content type before parsing as JSON
+    if (!isJsonResponse(res)) {
+      const textContent = await res.text();
+      console.error('Non-JSON response from server:', textContent);
+      throw new Error('Server returned an invalid response format. Please try again.');
+    }
+    
     return await res.json();
   };
 
