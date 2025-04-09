@@ -313,6 +313,148 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // EMAIL SENDING API  
+  app.post("/api/send-email", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.email) {
+        return res.status(400).json({ 
+          message: "User email not available. Please update your profile with a valid email."
+        });
+      }
+      
+      // Get the event data from the request
+      const { 
+        eventId,
+        title, 
+        description, 
+        location, 
+        startDate, 
+        endDate, 
+        attendees,
+        resources
+      } = req.body;
+      
+      // Validate required fields
+      if (!title || !startDate || !endDate || !attendees) {
+        return res.status(400).json({
+          message: "Missing required fields (title, startDate, endDate, attendees)"
+        });
+      }
+      
+      // Parse the attendees if they're sent as a string
+      let parsedAttendees;
+      try {
+        parsedAttendees = typeof attendees === 'string' ? JSON.parse(attendees) : attendees;
+        if (!Array.isArray(parsedAttendees)) {
+          throw new Error("Attendees must be an array");
+        }
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid attendees format",
+          error: (error instanceof Error) ? error.message : String(error)
+        });
+      }
+      
+      // Initialize with the user's SMTP configuration
+      const initialized = await emailService.initialize(userId);
+      
+      if (!initialized) {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to initialize email service. Please check your SMTP configuration."
+        });
+      }
+      
+      // Format the dates to make them valid Date objects
+      let parsedStartDate, parsedEndDate;
+      try {
+        parsedStartDate = new Date(startDate);
+        parsedEndDate = new Date(endDate);
+        
+        if (isNaN(parsedStartDate.getTime()) || isNaN(parsedEndDate.getTime())) {
+          throw new Error("Invalid date format");
+        }
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid date format",
+          error: (error instanceof Error) ? error.message : String(error)
+        });
+      }
+      
+      // Use provided eventId or generate a unique ID for this event
+      const uid = eventId ? `event-${eventId}@caldavclient.local` : `manual-send-${Date.now()}@caldavclient.local`;
+      
+      // If this is for an existing event, update the emailSent status
+      if (eventId) {
+        try {
+          const event = await storage.getEvent(eventId);
+          if (event) {
+            await storage.updateEvent(eventId, { 
+              emailSent: new Date(),
+              emailError: null
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to update email status for event ${eventId}:`, error);
+          // Continue anyway - we still want to try sending the email
+        }
+      }
+      
+      // Parse resources if they're sent as a string
+      let parsedResources = [];
+      if (resources) {
+        try {
+          parsedResources = typeof resources === 'string' ? JSON.parse(resources) : resources;
+          if (!Array.isArray(parsedResources)) {
+            throw new Error("Resources must be an array");
+          }
+        } catch (error) {
+          return res.status(400).json({
+            message: "Invalid resources format",
+            error: (error instanceof Error) ? error.message : String(error)
+          });
+        }
+      }
+      
+      // Prepare the event invitation data
+      const invitationData = {
+        eventId: eventId || 0,
+        uid,
+        title,
+        description,
+        location,
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
+        organizer: {
+          email: user.email,
+          name: user.username || undefined
+        },
+        attendees: parsedAttendees.map((a: any) => ({
+          email: a.email,
+          name: a.name || undefined,
+          role: a.role || undefined
+        })),
+        resources: parsedResources.length > 0 ? parsedResources : undefined
+      };
+      
+      // Send the event invitation
+      const result = await emailService.sendEventInvitation(userId, invitationData);
+      
+      // Return the result to the client
+      return res.status(result.success ? 200 : 500).json(result);
+    } catch (err) {
+      console.error("Error sending email:", err);
+      return res.status(500).json({ 
+        success: false, 
+        message: err instanceof Error ? err.message : "An unknown error occurred", 
+        details: err 
+      });
+    }
+  });
+  
   // MANUAL SYNC API
   app.post("/api/sync", isAuthenticated, async (req, res) => {
     try {
