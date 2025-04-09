@@ -265,6 +265,22 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             end = new Date();
             end.setHours(end.getHours() + 1);
           }
+          
+          // For all-day events, the end date in CalDAV is typically the day after
+          // (exclusive end date). So for display purposes, we need to subtract 1 day
+          // from the end date if this is an all-day event.
+          if (event.allDay) {
+            console.log(`All-day event detected for "${event.title}"`);
+            console.log(`Original dates: Start=${start.toISOString()}, End=${end.toISOString()}`);
+            
+            // If end date is after start date, adjust it back by one day for display
+            if (end.getTime() > start.getTime()) {
+              const adjustedEnd = new Date(end);
+              adjustedEnd.setDate(adjustedEnd.getDate() - 1);
+              end = adjustedEnd;
+              console.log(`Adjusted end date for form display: ${end.toISOString()}`);
+            }
+          }
         } catch (error) {
           console.error(`Error parsing dates for event "${event.title}":`, error);
           start = new Date();
@@ -272,7 +288,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           end.setHours(end.getHours() + 1);
         }
         
-        // Format dates for form
+        // Format dates for form - now with correct adjustment for all-day events
         setStartDate(start.toISOString().split('T')[0]);
         setEndDate(end.toISOString().split('T')[0]);
         
@@ -305,6 +321,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           console.log(`Selected date from calendar: ${date.toString()}`);
           console.log(`Formatted as local date: ${formattedDate}`);
           
+          // Always use the correct selected date for both start and end
+          // This ensures that when a user selects April 25th, they get an event on April 25th
           setStartDate(formattedDate);
           setEndDate(formattedDate);
           
