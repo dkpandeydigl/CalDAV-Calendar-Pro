@@ -531,53 +531,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               data: eventData 
             });
             
-            // Since updateEvent (from mutate) doesn't return a promise with the result,
-            // we need to make a separate API call to get the response for email preview
-            const response = await apiRequest('PUT', `/api/events/${event.id}`, eventData);
-            
-            if (!response.ok) {
-              const errorText = await response.text();
-              throw new Error(`Update failed: ${errorText}`);
-            }
-            
-            const updateResponse = await response.json() as UpdateEventResponse;
-            
-            if (updateResponse && updateResponse.hasAttendees && attendees.length > 0) {
-              setActiveTab('emails');
-              
-              // Generate email preview for the updated event
-              try {
-                const previewParams = {
-                  title,
-                  description,
-                  location,
-                  startDate: startDateTime,
-                  endDate: endDateTime,
-                  attendees: attendees,
-                  resources: resources,
-                  eventId: event.id
-                };
-                
-                try {
-                  const previewResult = await generatePreview(previewParams);
-                  if (previewResult && previewResult.html) {
-                    setEmailPreviewHtml(previewResult.html);
-                  }
-                } catch (err) {
-                  console.error("Error generating email preview:", err);
-                }
-              } catch (previewError) {
-                console.error("Error preparing email preview:", previewError);
-              }
-            
-              // Don't close the modal, let the user preview/send emails
-              setIsSubmitting(false);
-              return;
-            }
-          
-          // If no attendees or email work needed, close the modal
-          queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-          onClose();
+            // Update successful - simply close the modal and refresh the events
+            // We no longer automatically show email preview or send emails on regular update
+            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            onClose();
         } catch (updateError) {
           console.error("Failed to update event:", updateError);
           throw updateError; // Will be caught by the outer catch block
@@ -1496,7 +1453,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   )}
                   {isSubmitting || isEmailSending 
                     ? 'Processing...' 
-                    : event ? 'Send Email' : 'Send Mail and Create'}
+                    : event ? 'Send Mail and Update' : 'Send Mail and Create'}
                 </Button>
               )}
               
@@ -1523,7 +1480,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       <AlertDialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Send Email Invitation</AlertDialogTitle>
+            <AlertDialogTitle>{event ? 'Send Update Notification' : 'Send Email Invitation'}</AlertDialogTitle>
             <AlertDialogDescription>
               Would you like to preview the email before sending it to {attendees.length} attendee{attendees.length !== 1 ? 's' : ''}?
             </AlertDialogDescription>
@@ -1538,7 +1495,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   // Display success toast
                   toast({
                     title: 'Email sent',
-                    description: 'Invitation email was sent successfully to all attendees',
+                    description: event 
+                      ? 'Update notification was sent successfully to all attendees' 
+                      : 'Invitation email was sent successfully to all attendees',
                   });
                   
                   // If it's an existing event, mark it as having email sent
