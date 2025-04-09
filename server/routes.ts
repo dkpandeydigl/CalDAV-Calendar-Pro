@@ -10,7 +10,7 @@ import {
   insertSmtpConfigSchema,
   type Event
 } from "@shared/schema";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import { setupAuth } from "./auth";
 import { DAVClient } from "tsdav";
 import { emailService } from "./email-service";
@@ -45,6 +45,9 @@ declare module 'express' {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
+  
+  // Create the HTTP server
+  const httpServer = createServer(app);
   
   // Register the export and import routes
   registerExportRoutes(app);
@@ -108,7 +111,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const validatedData = insertCalendarSchema.parse(calendarData);
-      const newCalendar = await storage.createCalendar(validatedData);
+      
+      // First check if the user has a server connection
+      const connection = await storage.getServerConnection(userId);
+      
+      if (connection && connection.status === 'connected') {
+        try {
+          // Create the calendar on the server first
+          const { DAVClient } = await import('tsdav');
+          const davClient = new DAVClient({
+            serverUrl: connection.url,
+            credentials: {
+              username: connection.username,
+              password: connection.password
+            },
+            authMethod: 'Basic',
+            defaultAccountType: 'caldav'
+          });
+          
+          // Login to the server
+          await davClient.login();
+          
+          // Get the calendars from the server to determine the base URL structure
+          const calendars = await davClient.fetchCalendars();
+          if (calendars && calendars.length > 0) {
+            // Extract the base URL from the first calendar's URL
+            // For davical, this is usually something like /caldav.php/username/
+            let homeUrl = '';
+            
+            for (const cal of calendars) {
+              if (cal.url && cal.url.includes('/caldav.php/')) {
+                const parts = cal.url.split('/');
+                // Find the index of caldav.php
+                const caldavIndex = parts.findIndex(p => p === 'caldav.php');
+                if (caldavIndex >= 0 && caldavIndex + 1 < parts.length) {
+                  // Extract up to the username part (which is usually after caldav.php)
+                  homeUrl = parts.slice(0, caldavIndex + 2).join('/') + '/';
+                  break;
+                }
+              }
+            }
+            
+            if (!homeUrl) {
+              // If we couldn't parse from existing calendars, try to construct from username
+              homeUrl = `${connection.url.replace(/\/?$/, '')}/caldav.php/${connection.username}/`;
+            }
+            
+            console.log(`Attempting to create calendar "${validatedData.name}" on CalDAV server at ${homeUrl}`);
+            
+            // For DaviCal, which is the server we're using, we need to construct the URL correctly
+            // The URL pattern is usually /caldav.php/username/calendarname/
+            if (homeUrl.includes('/caldav.php/')) {
+              // Extract the base URL up to the username part
+              const baseUrl = homeUrl.substring(0, homeUrl.lastIndexOf('/') + 1);
+              
+              // Create a URL-safe version of the calendar name
+              const safeCalendarName = encodeURIComponent(validatedData.name.toLowerCase().replace(/\s+/g, '-'));
+              
+              // Construct the new calendar URL
+              const newCalendarUrl = `${baseUrl}${safeCalendarName}/`;
+              
+              try {
+                // Create the calendar on the server
+                await davClient.makeCalendar({
+                  url: newCalendarUrl,
+                  props: {
+                    displayname: validatedData.name,
+                    color: validatedData.color
+                  }
+                });
+                
+                console.log(`Successfully created calendar "${validatedData.name}" on CalDAV server at ${newCalendarUrl}`);
+                
+                // Save the URL in our database
+                validatedData.url = newCalendarUrl;
+              } catch (makeCalendarError) {
+                console.error(`Error creating calendar on server:`, makeCalendarError);
+                // Continue with local creation even if server creation fails
+              }
+            } else {
+              console.log(`Calendar home URL does not match expected DaviCal pattern: ${homeUrl}`);
+            }
+          } else {
+            console.log('Could not find calendar home set');
+          }
+        } catch (error) {
+          console.error(`Error connecting to CalDAV server:`, error);
+          // Continue with local creation even if server connection fails
+        }
+      }
+      
+      // Create the calendar locally
+      const newCalendar = await storage.createCalendar(calendarData);
       
       res.status(201).json(newCalendar);
     } catch (err) {
@@ -150,8 +244,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const connection = await storage.getServerConnection(userId);
           
           if (connection && connection.status === 'connected') {
-            // Create a DAV client
-            const davClient = await createDAVClient({
+            // Create a DAV client using import
+            const { DAVClient } = await import('tsdav');
+            const davClient = new DAVClient({
               serverUrl: connection.url,
               credentials: {
                 username: connection.username,
@@ -172,17 +267,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (existingCalendar.url.includes('/caldav.php/')) {
                 // For DaviCal-based servers, updating calendar properties is limited
                 console.log(`Server appears to be DaviCal-based, calendar renaming may not be supported`);
+                
+                // For DaviCal, we would need to use PROPPATCH - but it's usually limited
+                // Most DaviCal servers restrict this operation
               } else {
                 // For other CalDAV servers, try standard PROPPATCH
                 console.log(`Attempting to update calendar "${existingCalendar.name}" to "${req.body.name}" on CalDAV server`);
                 
-                await davClient.updateCalendar({
+                // Since we can't directly access updateCalendar, we'll use davRequest with PROPPATCH
+                await davClient.davRequest({
                   url: existingCalendar.url,
-                  displayName: req.body.name,
-                  // Other properties could be updated here
+                  init: {
+                    method: 'PROPPATCH',
+                    headers: {
+                      'Content-Type': 'application/xml; charset=utf-8',
+                    },
+                    body: `<?xml version="1.0" encoding="utf-8" ?>
+                      <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                        <D:set>
+                          <D:prop>
+                            <D:displayname>${req.body.name}</D:displayname>
+                          </D:prop>
+                        </D:set>
+                      </D:propertyupdate>`
+                  }
                 });
                 
-                console.log(`Successfully updated calendar on CalDAV server`);
+                console.log(`Successfully sent update request to CalDAV server`);
               }
             } catch (calendarUpdateError) {
               console.error(`Error updating calendar on server:`, calendarUpdateError);
@@ -243,8 +354,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const connection = await storage.getServerConnection(userId);
           
           if (connection && connection.status === 'connected') {
-            // Create a DAV client
-            const davClient = await createDAVClient({
+            // Create a DAV client using import
+            const { DAVClient } = await import('tsdav');
+            const davClient = new DAVClient({
               serverUrl: connection.url,
               credentials: {
                 username: connection.username,
@@ -291,9 +403,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 // For DaviCal-based servers, we can't delete the calendar itself
                 console.log(`Server appears to be DaviCal-based, skipping calendar deletion`);
               } else {
-                // For other CalDAV servers, try to delete the calendar
-                await davClient.deleteCalendar({
-                  url: existingCalendar.url
+                // For other CalDAV servers, try to delete the calendar using DELETE method
+                await davClient.davRequest({
+                  url: existingCalendar.url,
+                  init: {
+                    method: 'DELETE',
+                    headers: {
+                      'Content-Type': 'application/xml; charset=utf-8',
+                    },
+                    body: '' // Empty body for DELETE request
+                  }
                 });
                 console.log(`Successfully deleted calendar from CalDAV server`);
               }
@@ -1311,8 +1430,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create HTTP server
-  const httpServer = createServer(app);
-  
   // Add WebSocket server
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   
@@ -1325,7 +1442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('WebSocket message received:', data);
         
         // Echo back
-        if (ws.readyState === 1) { // WebSocket.OPEN
+        if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ echo: data }));
         }
       } catch (err) {
@@ -1338,7 +1455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
     
     // Send a welcome message
-    if (ws.readyState === 1) { // WebSocket.OPEN
+    if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ message: 'Connected to server' }));
     }
   });
