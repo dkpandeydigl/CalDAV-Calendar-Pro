@@ -1,6 +1,23 @@
 import { storage } from './database-storage';
-import { ServerConnection } from '@shared/schema';
+import { ServerConnection, Calendar, InsertEvent } from '@shared/schema';
 import { DAVClient } from 'tsdav';
+
+// Extend the DAVObject interface to include properties we need
+interface CalDAVEvent {
+  uid: string;
+  summary: string;
+  description?: string;
+  location?: string;
+  startDate: Date;
+  endDate: Date;
+  allDay?: boolean;
+  timezone?: string;
+  recurrenceRule?: string;
+  attendees?: any[];
+  etag?: string;
+  url?: string;
+  data?: any;
+}
 
 interface SyncJob {
   userId: number;
@@ -267,32 +284,61 @@ export class SyncService {
           // Force update events for this calendar
           console.log(`Forcing update of events for calendar ${calendar.name} (ID: ${calendarId})`);
           try {
-            // Execute the CalDAV request for this specific calendar
-            // Instead of fetching all calendars and events
-            const calendarResponse = await fetch(calendarUrl, {
-              method: 'PROPFIND',
-              headers: {
-                'Content-Type': 'text/xml; charset=utf-8',
-                'Depth': '1',
-                'Authorization': `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
-              },
-              body: `<?xml version="1.0" encoding="utf-8" ?>
-                <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                  <D:prop>
-                    <D:displayname/>
-                    <C:calendar-description/>
-                    <C:calendar-timezone/>
-                    <C:supported-calendar-component-set/>
-                    <C:calendar-color/>
-                  </D:prop>
-                </D:propfind>`
+            // First, get events from the CalDAV server for this calendar
+            console.log(`Fetching events for calendar ${calendar.name} from ${calendarUrl}`);
+            
+            // Use the DAVClient to fetch the calendar objects (events)
+            const events = await davClient.fetchCalendarObjects({
+              calendar: {
+                url: calendarUrl
+              }
             });
             
-            if (calendarResponse.ok) {
-              console.log(`Calendar ${calendar.name} sync initiated successfully`);
-            } else {
-              console.warn(`Failed to sync calendar ${calendar.name}:`, calendarResponse.status);
+            console.log(`Retrieved ${events.length} events from calendar ${calendar.name}`);
+            
+            // Process the events
+            for (const event of events) {
+              // Check if we already have this event in our database
+              const existingEvent = await storage.getEventByUID(event.uid);
+              
+              // Convert the event data
+              const eventData = {
+                uid: event.uid,
+                calendarId: calendar.id,
+                title: event.summary || 'Untitled Event',
+                description: event.description,
+                location: event.location,
+                startDate: event.startDate,
+                endDate: event.endDate,
+                allDay: event.allDay,
+                timezone: event.timezone || 'UTC',
+                recurrenceRule: event.recurrenceRule,
+                attendees: event.attendees && event.attendees.length > 0 ? 
+                  JSON.stringify(event.attendees) : null,
+                etag: event.etag,
+                url: event.url,
+                rawData: event.data ? JSON.stringify(event.data) : null,
+                syncStatus: 'synced',
+                lastSyncAttempt: new Date()
+              };
+              
+              if (existingEvent) {
+                // Update the existing event
+                console.log(`Updating existing event: ${event.uid}`);
+                await storage.updateEvent(existingEvent.id, eventData);
+              } else {
+                // Create a new event
+                console.log(`Creating new event: ${event.uid}`);
+                await storage.createEvent(eventData);
+              }
             }
+            
+            console.log(`Successfully synced ${events.length} events for calendar ${calendar.name}`);
+            
+            // Also update the calendar sync token/status
+            await storage.updateCalendar(calendar.id, {
+              syncToken: new Date().toISOString()
+            });
           } catch (err) {
             console.error(`Error syncing calendar ${calendar.name}:`, err);
           }
@@ -303,6 +349,108 @@ export class SyncService {
         // Normal sync for all calendars
         const davCalendars = await davClient.fetchCalendars();
         console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server`);
+        
+        // Process each calendar - first update our local calendars database
+        for (const davCalendar of davCalendars) {
+          try {
+            // Check if we have this calendar in our database
+            // First try to find by URL
+            let localCalendar = await this.findCalendarByUrl(davCalendar.url, userId);
+            
+            // If we couldn't find it by URL, try to find it by name
+            if (!localCalendar) {
+              // Get all calendars for this user
+              const userCalendars = await storage.getCalendars(userId);
+              localCalendar = userCalendars.find(cal => cal.name === davCalendar.displayName);
+            }
+            
+            let calendarId: number;
+            
+            if (localCalendar) {
+              // Update the existing calendar
+              console.log(`Updating calendar: ${davCalendar.displayName}`);
+              const updated = await storage.updateCalendar(localCalendar.id, {
+                name: davCalendar.displayName,
+                url: davCalendar.url,
+                syncToken: new Date().toISOString()
+              });
+              calendarId = localCalendar.id;
+            } else {
+              // Create a new calendar
+              console.log(`Creating new calendar: ${davCalendar.displayName}`);
+              const newCalendar = await storage.createCalendar({
+                name: davCalendar.displayName,
+                color: davCalendar.color || '#3788d8',
+                userId,
+                url: davCalendar.url,
+                syncToken: new Date().toISOString(),
+                enabled: true,
+                isPrimary: false,
+                isLocal: false
+              });
+              calendarId = newCalendar.id;
+            }
+            
+            // Now fetch events for this calendar
+            console.log(`Fetching events for calendar ${davCalendar.displayName} from ${davCalendar.url}`);
+            
+            try {
+              // Use the DAVClient to fetch the calendar objects (events)
+              const events = await davClient.fetchCalendarObjects({
+                calendar: davCalendar
+              });
+              
+              console.log(`Retrieved ${events.length} events from calendar ${davCalendar.displayName}`);
+              
+              // Process the events
+              for (const event of events) {
+                try {
+                  // Check if we already have this event in our database
+                  const existingEvent = await storage.getEventByUID(event.uid);
+                  
+                  // Convert the event data
+                  const eventData = {
+                    uid: event.uid,
+                    calendarId,
+                    title: event.summary || 'Untitled Event',
+                    description: event.description,
+                    location: event.location,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    allDay: event.allDay,
+                    timezone: event.timezone || 'UTC',
+                    recurrenceRule: event.recurrenceRule,
+                    attendees: event.attendees && event.attendees.length > 0 ? 
+                      JSON.stringify(event.attendees) : null,
+                    etag: event.etag,
+                    url: event.url,
+                    rawData: event.data ? JSON.stringify(event.data) : null,
+                    syncStatus: 'synced',
+                    lastSyncAttempt: new Date()
+                  };
+                  
+                  if (existingEvent) {
+                    // Update the existing event
+                    console.log(`Updating existing event: ${event.uid}`);
+                    await storage.updateEvent(existingEvent.id, eventData);
+                  } else {
+                    // Create a new event
+                    console.log(`Creating new event: ${event.uid}`);
+                    await storage.createEvent(eventData);
+                  }
+                } catch (error) {
+                  console.error(`Error processing event ${event.uid}:`, error);
+                }
+              }
+              
+              console.log(`Successfully synced ${events.length} events for calendar ${davCalendar.displayName}`);
+            } catch (error) {
+              console.error(`Error fetching events for calendar ${davCalendar.displayName}:`, error);
+            }
+          } catch (error) {
+            console.error(`Error processing calendar ${davCalendar.displayName}:`, error);
+          }
+        }
       }
       
       // Store the time of the sync
@@ -335,6 +483,25 @@ export class SyncService {
     }
   }
 
+  /**
+   * Helper method to find a calendar by URL
+   * @param url The URL of the calendar to find
+   * @param userId The user ID to limit the search to
+   * @returns The calendar if found, undefined otherwise
+   */
+  private async findCalendarByUrl(url: string, userId: number): Promise<Calendar | undefined> {
+    const calendars = await storage.getCalendars(userId);
+    
+    // Check for exact match
+    const exactMatch = calendars.find(cal => cal.url === url);
+    if (exactMatch) {
+      return exactMatch;
+    }
+    
+    // No match found
+    return undefined;
+  }
+  
   /**
    * Update the sync interval for a user
    */

@@ -393,7 +393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const event = await storage.getEvent(eventId);
           if (event) {
             await storage.updateEvent(eventId, { 
-              emailSent: new Date(),
+              emailSent: 'sent', // Use string value instead of Date since the schema defines it as text
               emailError: null
             });
           }
@@ -497,6 +497,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("Error initiating sync:", err);
       res.status(500).json({ message: "Failed to initiate sync" });
+    }
+  });
+  
+  // IMMEDIATE SYNC ENDPOINT
+  app.post("/api/sync/now", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const forceRefresh = req.body.forceRefresh === true;
+      const calendarId = req.body.calendarId ? parseInt(req.body.calendarId) : null;
+      
+      console.log(`Immediate sync requested for userId=${userId}, calendarId=${calendarId}, forceRefresh=${forceRefresh}`);
+      
+      // Check if user has a server connection configured
+      const connection = await storage.getServerConnection(userId);
+      if (!connection) {
+        return res.status(202).json({ 
+          message: "Changes saved locally but not synced (no server connection configured)",
+          synced: false,
+          requiresConnection: true,
+          sync: {
+            attempted: false,
+            succeeded: false,
+            noConnection: true,
+            error: "Server connection required to sync with CalDAV server"
+          }
+        });
+      }
+      
+      // Check connection status
+      if (connection.status !== 'connected') {
+        return res.status(202).json({ 
+          message: "Changes saved locally but not synced (server connection not active)",
+          synced: false,
+          requiresConnection: true,
+          sync: {
+            attempted: false,
+            succeeded: false,
+            noConnection: true,
+            error: "Server connection is not active"
+          }
+        });
+      }
+
+      // This will trigger a sync right away with the specified options
+      const success = await syncService.syncNow(userId, { forceRefresh, calendarId });
+      
+      if (success) {
+        res.json({ 
+          message: "Sync triggered successfully", 
+          synced: true,
+          sync: {
+            attempted: true,
+            succeeded: true,
+            noConnection: false
+          }
+        });
+      } else {
+        res.status(202).json({ 
+          message: "Changes saved locally but sync to server failed",
+          synced: false,
+          sync: {
+            attempted: true,
+            succeeded: false,
+            noConnection: false,
+            error: "Sync operation failed"
+          }
+        });
+      }
+    } catch (err) {
+      console.error("Error in immediate sync:", err);
+      res.status(202).json({ 
+        message: "Changes saved locally but sync to server failed with error",
+        synced: false,
+        sync: {
+          attempted: true,
+          succeeded: false,
+          noConnection: false,
+          error: err instanceof Error ? err.message : "Unknown error during sync"
+        }
+      });
     }
   });
   
