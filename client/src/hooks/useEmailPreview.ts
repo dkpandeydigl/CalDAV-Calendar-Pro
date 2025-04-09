@@ -27,6 +27,7 @@ interface EmailPreviewData {
   attendees: Attendee[];
   resources?: Resource[]; // Add resources to preview data
   eventId?: number; // Optional event ID if sending emails for an existing event
+  recurrenceRule?: string | object; // Add recurrence rule
 }
 
 interface EmailPreviewResponse {

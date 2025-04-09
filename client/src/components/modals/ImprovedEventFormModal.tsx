@@ -1030,7 +1030,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             startDate: startDateTime,
                             endDate: endDateTime,
                             attendees,
-                            resources
+                            resources,
+                            // Include recurrence rule if it exists
+                            recurrenceRule: recurrence.pattern !== 'None' ? {
+                              pattern: recurrence.pattern,
+                              interval: recurrence.interval,
+                              weekdays: recurrence.weekdays,
+                              endType: recurrence.endType,
+                              occurrences: recurrence.occurrences,
+                              untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                            } : undefined
                           });
                         }}
                         type="button"
@@ -1281,7 +1290,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           attendees,
                           resources,
                           // Include eventId for existing events
-                          eventId: event ? event.id : undefined
+                          eventId: event ? event.id : undefined,
+                          // Include recurrence rule if it exists
+                          recurrenceRule: recurrence.pattern !== 'None' ? {
+                            pattern: recurrence.pattern,
+                            interval: recurrence.interval,
+                            weekdays: recurrence.weekdays,
+                            endType: recurrence.endType,
+                            occurrences: recurrence.occurrences,
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                          } : undefined
                         };
                         
                         // Send email
@@ -1327,7 +1345,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           attendees,
                           resources,
                           // Include event ID for existing events
-                          eventId: event ? event.id : undefined
+                          eventId: event ? event.id : undefined,
+                          // Include recurrence rule if it exists
+                          recurrenceRule: recurrence.pattern !== 'None' ? {
+                            pattern: recurrence.pattern,
+                            interval: recurrence.interval,
+                            weekdays: recurrence.weekdays,
+                            endType: recurrence.endType,
+                            occurrences: recurrence.occurrences,
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                          } : undefined
                         };
                         
                         generatePreview(previewParams)
@@ -1396,7 +1423,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       attendees,
                       resources,
                       // Include event ID for existing events
-                      eventId: event ? event.id : undefined
+                      eventId: event ? event.id : undefined,
+                      // Include recurrence rule if it exists
+                      recurrenceRule: recurrence.pattern !== 'None' ? {
+                        pattern: recurrence.pattern,
+                        interval: recurrence.interval,
+                        weekdays: recurrence.weekdays,
+                        endType: recurrence.endType,
+                        occurrences: recurrence.occurrences,
+                        untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                      } : undefined
                     };
                     
                     // Set the event data for later use
