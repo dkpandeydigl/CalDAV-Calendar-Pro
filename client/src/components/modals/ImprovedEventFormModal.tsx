@@ -551,43 +551,92 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       try {
         // Always include validation to prevent invalid time values
         if (allDay) {
-          // For all-day events, use a simpler and more reliable date creation approach
-          // Break the date into components: YYYY-MM-DD -> [YYYY, MM, DD]
+          console.log(`[CRITICAL DATE DEBUG] ************************`);
+          console.log(`[CRITICAL DATE DEBUG] All-day event submission`);
+          console.log(`[CRITICAL DATE DEBUG] Form date strings:`, { startDate, endDate });
+          console.log(`[CRITICAL DATE DEBUG] Current browser timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+          console.log(`[CRITICAL DATE DEBUG] Current timezone offset: ${new Date().getTimezoneOffset() / -60}hrs`);
+          
+          // For all-day events, we need to be extremely careful with date handling
+          // to ensure the dates aren't shifted due to timezone issues
+          
+          // IMPORTANT FIX: Split the date string and use Date.UTC to create the date at midnight UTC
+          // This helps avoid any local timezone offsets that might shift the date
           const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
           
-          // Important: Month in JavaScript Date is 0-indexed (January is 0)
-          startDateTime = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+          // Create date based on explicit components using UTC to avoid timezone issues
+          // This is the key fix - using UTC dates for all-day events
+          startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
           
-          console.log(`[DATE DEBUG] All-day event start date components:`, {
+          console.log(`[CRITICAL DATE DEBUG] All-day event start date breakdown:`, {
             date: startDate,
             year: startYear,
-            month: startMonth - 1, // Adjusted for JS Date 0-indexed months
-            day: startDay
+            month: startMonth, // Original month (1-indexed)
+            monthForJS: startMonth - 1, // Adjusted for JS Date (0-indexed)
+            day: startDay,
+            createdDateUTC: startDateTime.toUTCString(),
+            createdDateISO: startDateTime.toISOString(),
+            createdDateLocal: startDateTime.toString()
           });
           
-          // Similar approach for end date
+          // Same careful approach for end date
           const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
           
-          // Create end date - for all-day events we follow CalDAV convention (end date = next day)
-          let endDateTemp = new Date(endYear, endMonth - 1, endDay, 0, 0, 0, 0);
+          // Create end date with Date.UTC
+          const endDateTemp = new Date(Date.UTC(endYear, endMonth - 1, endDay, 0, 0, 0));
+          
+          console.log(`[CRITICAL DATE DEBUG] All-day event end date breakdown:`, {
+            date: endDate,
+            year: endYear,
+            month: endMonth, // Original month (1-indexed)
+            monthForJS: endMonth - 1, // Adjusted for JS Date (0-indexed)
+            day: endDay,
+            createdDateUTC: endDateTemp.toUTCString(),
+            createdDateISO: endDateTemp.toISOString(),
+            createdDateLocal: endDateTemp.toString()
+          });
           
           // For all-day events in CalDAV, if start and end date are the same, 
           // we add a day to the end date per the CalDAV spec
           if (startDateTime.getTime() === endDateTemp.getTime()) {
-            endDateTemp = new Date(endDateTemp);
-            endDateTemp.setDate(endDateTemp.getDate() + 1);
+            // Create a proper next day using UTC to avoid timezone issues
+            const nextDay = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+            endDateTime = nextDay;
+            
+            console.log(`[CRITICAL DATE DEBUG] Adjusted end date to next day:`, {
+              original: endDateTemp.toISOString(),
+              adjusted: nextDay.toISOString()
+            });
+          } else {
+            // If dates are already different, just use the end date as is
+            endDateTime = endDateTemp;
           }
           
-          endDateTime = endDateTemp;
+          console.log(`[CRITICAL DATE DEBUG] Final all-day event date objects:`, {
+            startDateTime: startDateTime.toISOString(),
+            endDateTime: endDateTime.toISOString(),
+            timezoneOffset: new Date().getTimezoneOffset()
+          });
+          console.log(`[CRITICAL DATE DEBUG] ************************`);
+        } else {
+          // For regular events with time, create the date objects from components
+          // to avoid timezone issues with string parsing
+          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+          const [startHour, startMinute] = startTime.split(':').map(Number);
           
-          console.log(`[DATE DEBUG] All-day event date objects:`, {
+          // Create the date in local timezone for timed events
+          startDateTime = new Date(startYear, startMonth - 1, startDay, startHour, startMinute);
+          
+          // Same for end date
+          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+          const [endHour, endMinute] = endTime.split(':').map(Number);
+          
+          endDateTime = new Date(endYear, endMonth - 1, endDay, endHour, endMinute);
+          
+          console.log(`[DATE DEBUG] Regular event date objects:`, {
             startDateTime: startDateTime.toISOString(),
             endDateTime: endDateTime.toISOString()
           });
-        } else {
-          // For regular events with time, use the normal approach
-          startDateTime = new Date(`${startDate}T${startTime}:00`);
-          endDateTime = new Date(`${endDate}T${endTime}:00`);
         }
         
         // Final validation to ensure we have valid dates
