@@ -483,7 +483,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const event = await storage.getEvent(eventId);
           if (event) {
             await storage.updateEvent(eventId, { 
-              emailSent: 'sent', // Use string value instead of Date since the schema defines it as text
+              emailSent: new Date().toISOString(), // Use ISO string for timestamp
               emailError: null
             });
           }

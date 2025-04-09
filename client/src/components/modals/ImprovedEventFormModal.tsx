@@ -1419,7 +1419,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           updateEvent({
                             id: event.id,
                             data: {
-                              emailSent: 'sent',
+                              emailSent: new Date().toISOString(), // Convert date to ISO string for the database
                               emailError: null
                             }
                           });
@@ -1505,7 +1505,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     updateEvent({
                       id: event.id,
                       data: {
-                        emailSent: 'sent',
+                        emailSent: new Date().toISOString(), // Convert date to ISO string for the database
                         emailError: null
                       }
                     });
