@@ -12,7 +12,7 @@ import {
 } from "@shared/schema";
 import { WebSocketServer } from "ws";
 import { setupAuth } from "./auth";
-import { createDAVClient } from "tsdav";
+import { DAVClient } from "tsdav";
 import { emailService } from "./email-service";
 import { z } from "zod";
 import { registerExportRoutes } from "./export-routes";
@@ -114,6 +114,217 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("Error creating calendar:", err);
       return handleZodError(err, res);
+    }
+  });
+
+  // Update a calendar
+  app.put("/api/calendars/:id", isAuthenticated, async (req, res) => {
+    try {
+      const calendarId = parseInt(req.params.id);
+      if (isNaN(calendarId)) {
+        return res.status(400).json({ message: "Invalid calendar ID" });
+      }
+      
+      const userId = req.user!.id;
+      
+      // Get the existing calendar to check ownership
+      const existingCalendar = await storage.getCalendar(calendarId);
+      if (!existingCalendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Check if the user owns this calendar
+      if (existingCalendar.userId !== userId) {
+        return res.status(403).json({ message: "You don't have permission to modify this calendar" });
+      }
+      
+      // Set content type header explicitly to ensure JSON response
+      res.setHeader('Content-Type', 'application/json');
+      
+      // If this calendar exists on the CalDAV server and we're changing its properties
+      // Note that some properties (like color) can be changed locally without affecting the server
+      if (existingCalendar.url && 
+          (req.body.name !== undefined && req.body.name !== existingCalendar.name)) {
+        try {
+          // Get the user's server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection && connection.status === 'connected') {
+            // Create a DAV client
+            const davClient = await createDAVClient({
+              serverUrl: connection.url,
+              credentials: {
+                username: connection.username,
+                password: connection.password
+              },
+              authMethod: 'Basic',
+              defaultAccountType: 'caldav'
+            });
+            
+            // Login to the server
+            await davClient.login();
+            
+            // Try to update the calendar on the server
+            // Note: Not all CalDAV servers support renaming calendars through the API
+            // We can try but we'll continue with the local update even if it fails
+            try {
+              // Attempt to update properties - this is highly server-dependent
+              if (existingCalendar.url.includes('/caldav.php/')) {
+                // For DaviCal-based servers, updating calendar properties is limited
+                console.log(`Server appears to be DaviCal-based, calendar renaming may not be supported`);
+              } else {
+                // For other CalDAV servers, try standard PROPPATCH
+                console.log(`Attempting to update calendar "${existingCalendar.name}" to "${req.body.name}" on CalDAV server`);
+                
+                await davClient.updateCalendar({
+                  url: existingCalendar.url,
+                  displayName: req.body.name,
+                  // Other properties could be updated here
+                });
+                
+                console.log(`Successfully updated calendar on CalDAV server`);
+              }
+            } catch (calendarUpdateError) {
+              console.error(`Error updating calendar on server:`, calendarUpdateError);
+              // Continue with local update even if server update fails
+            }
+          } else {
+            console.log(`User ${userId} does not have an active server connection, can't update calendar on server`);
+          }
+        } catch (error) {
+          console.error(`Error connecting to CalDAV server:`, error);
+          // Continue with local update even if server connection fails
+        }
+      }
+      
+      // Update the calendar locally
+      const updatedCalendar = await storage.updateCalendar(calendarId, req.body);
+      
+      // Return the updated calendar
+      if (updatedCalendar) {
+        res.json(updatedCalendar);
+      } else {
+        res.status(500).json({ message: "Failed to update calendar" });
+      }
+    } catch (err) {
+      console.error("Error updating calendar:", err);
+      return handleZodError(err, res);
+    }
+  });
+  
+  // Delete a calendar
+  app.delete("/api/calendars/:id", isAuthenticated, async (req, res) => {
+    try {
+      const calendarId = parseInt(req.params.id);
+      if (isNaN(calendarId)) {
+        return res.status(400).json({ message: "Invalid calendar ID" });
+      }
+      
+      const userId = req.user!.id;
+      
+      // Get the existing calendar to check ownership
+      const existingCalendar = await storage.getCalendar(calendarId);
+      if (!existingCalendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Check if the user owns this calendar
+      if (existingCalendar.userId !== userId) {
+        return res.status(403).json({ message: "You don't have permission to delete this calendar" });
+      }
+      
+      // Set content type header explicitly to ensure JSON response
+      res.setHeader('Content-Type', 'application/json');
+      
+      // If this calendar has a URL, try to delete it from the CalDAV server first
+      if (existingCalendar.url) {
+        try {
+          // Get the user's server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection && connection.status === 'connected') {
+            // Create a DAV client
+            const davClient = await createDAVClient({
+              serverUrl: connection.url,
+              credentials: {
+                username: connection.username,
+                password: connection.password
+              },
+              authMethod: 'Basic',
+              defaultAccountType: 'caldav'
+            });
+            
+            // Login to the server
+            await davClient.login();
+            
+            // Try to delete the calendar on the server
+            // Note: This is dependent on the server supporting calendar deletion
+            // Some CalDAV servers might restrict this operation
+            try {
+              console.log(`Attempting to delete calendar "${existingCalendar.name}" from CalDAV server`);
+              
+              // For a full calendar deletion, we need to delete all events first
+              const calendarEvents = await storage.getEvents(calendarId);
+              console.log(`Found ${calendarEvents.length} events to remove from server`);
+              
+              // Delete each event that has a URL and etag
+              for (const event of calendarEvents) {
+                if (event.url && event.etag) {
+                  try {
+                    await davClient.deleteCalendarObject({
+                      calendarObject: {
+                        url: event.url,
+                        etag: event.etag
+                      }
+                    });
+                    console.log(`Deleted event "${event.title}" (ID: ${event.id}) from server`);
+                  } catch (eventDeleteError) {
+                    console.error(`Error deleting event ${event.id} from server:`, eventDeleteError);
+                    // Continue with other events even if one fails
+                  }
+                }
+              }
+              
+              // Some servers support calendar deletion, but it's not universally supported
+              // This might throw an error on servers that don't allow it
+              if (existingCalendar.url.includes('/caldav.php/')) {
+                // For DaviCal-based servers, we can't delete the calendar itself
+                console.log(`Server appears to be DaviCal-based, skipping calendar deletion`);
+              } else {
+                // For other CalDAV servers, try to delete the calendar
+                await davClient.deleteCalendar({
+                  url: existingCalendar.url
+                });
+                console.log(`Successfully deleted calendar from CalDAV server`);
+              }
+            } catch (calendarDeleteError) {
+              console.error(`Error deleting calendar from server:`, calendarDeleteError);
+              // Continue with local deletion even if server deletion fails
+            }
+          } else {
+            console.log(`User ${userId} does not have an active server connection, can't delete calendar on server`);
+          }
+        } catch (error) {
+          console.error(`Error connecting to CalDAV server:`, error);
+          // Continue with local deletion even if server connection fails
+        }
+      }
+      
+      // Delete the calendar and all its events locally
+      const result = await storage.deleteCalendar(calendarId);
+      
+      if (result.success) {
+        res.json({ message: "Calendar deleted successfully" });
+      } else {
+        res.status(500).json({ 
+          message: "Failed to delete calendar", 
+          error: result.error,
+          details: result.details
+        });
+      }
+    } catch (err) {
+      console.error("Error deleting calendar:", err);
+      res.status(500).json({ message: "Failed to delete calendar" });
     }
   });
   
