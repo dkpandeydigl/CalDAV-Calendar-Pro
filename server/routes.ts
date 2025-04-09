@@ -229,37 +229,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // For all-day events, ensure the dates are properly formatted
       if (eventData.allDay === true) {
-        // CRITICAL FIX: Preserve the selected date for all-day events
+        // CRITICAL FIX: Preserve the selected date for all-day events without timezone shifting
         console.log(`[BACKEND DATE DEBUG] Original date values:`, {
           startDate: eventData.startDate.toISOString(),
-          endDate: eventData.endDate.toISOString()
+          endDate: eventData.endDate.toISOString(),
+          startDateLocal: eventData.startDate.toString(),
+          endDateLocal: eventData.endDate.toString()
         });
         
-        // Get the date components (year, month, day) while preserving the actual calendar date
-        const startYear = eventData.startDate.getFullYear();
-        const startMonth = eventData.startDate.getMonth();
-        const startDay = eventData.startDate.getDate();
+        // Extract the date string in YYYY-MM-DD format directly from the ISO string
+        // This avoids any timezone complications
+        const startDateStr = eventData.startDate.toISOString().split('T')[0];
+        const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number);
         
-        // Create a new date with the same YMD but at midnight
-        const startDate = new Date(startYear, startMonth, startDay, 0, 0, 0, 0);
+        // Important: When creating a Date using components, month is 0-indexed
+        // So we need to subtract 1 from the month value (January = 0)
+        const startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+        
+        // Double-check that we're creating the correct date
+        console.log(`[BACKEND DATE DEBUG] Original date components:`, {
+          startDateStr,
+          year: startYear,
+          month: startMonth - 1, // JavaScript Date constructor uses 0-indexed months
+          day: startDay,
+          constructedDate: startDate.toISOString()
+        });
+        
         eventData.startDate = startDate;
         
-        // Similarly for end date
-        const endYear = eventData.endDate.getFullYear();
-        const endMonth = eventData.endDate.getMonth();
-        const endDay = eventData.endDate.getDate();
+        // Do the same for end date
+        const endDateStr = eventData.endDate.toISOString().split('T')[0];
+        const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number);
         
-        // For all-day events, end date should be midnight of the next day per CalDAV convention
-        const endDate = new Date(endYear, endMonth, endDay, 0, 0, 0, 0);
+        // Create end date with time 00:00:00
+        const endDate = new Date(endYear, endMonth - 1, endDay, 0, 0, 0, 0);
         
-        // If start and end date are the same, set end date to the next day
-        if (startDate.getTime() === endDate.getTime()) {
-          endDate.setDate(endDate.getDate() + 1);
+        // For CalDAV all-day events, if start and end date are the same, 
+        // we need to set end date to the next day
+        if (startDateStr === endDateStr) {
+          // Create a new date to avoid modifying the date twice
+          const nextDayDate = new Date(endDate);
+          nextDayDate.setDate(nextDayDate.getDate() + 1);
+          eventData.endDate = nextDayDate;
+          
+          console.log(`[BACKEND DATE DEBUG] Adjusted end date to next day:`, {
+            originalEnd: endDate.toISOString(),
+            adjustedEnd: nextDayDate.toISOString()
+          });
+        } else {
+          eventData.endDate = endDate;
         }
         
-        eventData.endDate = endDate;
-        
-        console.log(`[BACKEND DATE DEBUG] Adjusted date values for all-day event:`, {
+        console.log(`[BACKEND DATE DEBUG] Final date values for all-day event:`, {
           startDate: eventData.startDate.toISOString(),
           endDate: eventData.endDate.toISOString()
         });
@@ -504,42 +525,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // For all-day events, ensure the dates are properly formatted
       if (updateData.allDay === true) {
-        // CRITICAL FIX: Preserve the selected date for all-day events in updates too
+        // CRITICAL FIX: Preserve the selected date for all-day events without timezone shifting
         console.log(`[BACKEND DATE DEBUG] Event update - Original date values:`, {
           startDate: updateData.startDate ? updateData.startDate.toISOString() : null,
-          endDate: updateData.endDate ? updateData.endDate.toISOString() : null
+          endDate: updateData.endDate ? updateData.endDate.toISOString() : null,
+          startDateLocal: updateData.startDate ? updateData.startDate.toString() : null,
+          endDateLocal: updateData.endDate ? updateData.endDate.toString() : null
         });
         
         if (updateData.startDate) {
-          // Get the date components (year, month, day) while preserving the actual calendar date
-          const startYear = updateData.startDate.getFullYear();
-          const startMonth = updateData.startDate.getMonth();
-          const startDay = updateData.startDate.getDate();
+          // Extract date string from ISO to avoid timezone issues
+          const startDateStr = updateData.startDate.toISOString().split('T')[0];
+          const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number);
           
-          // Create a new date with the same YMD but at midnight
-          const startDate = new Date(startYear, startMonth, startDay, 0, 0, 0, 0);
+          // Create date using components with month - 1 (JS months are 0-indexed)
+          const startDate = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+          
+          console.log(`[BACKEND DATE DEBUG] Event update - Start date components:`, {
+            startDateStr,
+            year: startYear,
+            month: startMonth - 1, // Adjusted for JS Date 0-indexed months
+            day: startDay,
+            constructedDate: startDate.toISOString()
+          });
+          
           updateData.startDate = startDate;
         }
         
         if (updateData.endDate) {
-          // Similarly for end date
-          const endYear = updateData.endDate.getFullYear();
-          const endMonth = updateData.endDate.getMonth();
-          const endDay = updateData.endDate.getDate();
+          // Do the same for end date
+          const endDateStr = updateData.endDate.toISOString().split('T')[0];
+          const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number);
           
-          // For all-day events, end date should be midnight per CalDAV convention
-          const endDate = new Date(endYear, endMonth, endDay, 0, 0, 0, 0);
+          // Create end date with time 00:00:00
+          const endDate = new Date(endYear, endMonth - 1, endDay, 0, 0, 0, 0);
           
-          // If start and end date are the same, set end date to the next day
-          if (updateData.startDate && 
-              endDate.getTime() === updateData.startDate.getTime()) {
-            endDate.setDate(endDate.getDate() + 1);
+          // For single-day all-day events, end date should be the next day in CalDAV
+          if (updateData.startDate) {
+            const startDateStr = updateData.startDate.toISOString().split('T')[0];
+            
+            if (startDateStr === endDateStr) {
+              // Create a new date to avoid modifying the date twice
+              const nextDayDate = new Date(endDate);
+              nextDayDate.setDate(nextDayDate.getDate() + 1);
+              updateData.endDate = nextDayDate;
+              
+              console.log(`[BACKEND DATE DEBUG] Event update - Adjusted end date to next day:`, {
+                originalEnd: endDate.toISOString(),
+                adjustedEnd: nextDayDate.toISOString()
+              });
+            } else {
+              updateData.endDate = endDate;
+            }
+          } else {
+            updateData.endDate = endDate;
           }
-          
-          updateData.endDate = endDate;
         }
         
-        console.log(`[BACKEND DATE DEBUG] Event update - Adjusted date values:`, {
+        console.log(`[BACKEND DATE DEBUG] Event update - Final date values:`, {
           startDate: updateData.startDate ? updateData.startDate.toISOString() : null,
           endDate: updateData.endDate ? updateData.endDate.toISOString() : null
         });
