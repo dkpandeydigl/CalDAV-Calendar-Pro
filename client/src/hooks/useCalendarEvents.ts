@@ -231,16 +231,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           
           // Trigger an immediate sync with the CalDAV server
           console.log('Triggering immediate sync for newly created event');
-          const syncResponse = await fetch('/api/sync/now', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              forceRefresh: true,
-              calendarId: serverEvent.calendarId
-            })
+          const syncResponse = await apiRequest('POST', '/api/sync/now', {
+            forceRefresh: true,
+            calendarId: serverEvent.calendarId
           });
           
           const syncResult = await syncResponse.json();
@@ -624,16 +617,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             
             // Trigger an immediate sync with the CalDAV server
             console.log('Triggering immediate sync for updated event');
-            const syncResponse = await fetch('/api/sync/now', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              credentials: 'include',
-              body: JSON.stringify({
-                forceRefresh: true,
-                calendarId: serverEvent.calendarId
-              })
+            const syncResponse = await apiRequest('POST', '/api/sync/now', {
+              forceRefresh: true,
+              calendarId: serverEvent.calendarId
             });
             
             const syncResult = await syncResponse.json();
@@ -951,17 +937,10 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             await queryClient.invalidateQueries({ queryKey: ['/api/events'] });
             
             // Then trigger an immediate sync with the CalDAV server
-            const syncResponse = await fetch('/api/sync/now', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              credentials: 'include',
-              body: JSON.stringify({
-                forceRefresh: true,
-                // If we have the calendar ID from the deleted event, use it for targeted sync
-                calendarId: context?.eventToDelete?.calendarId
-              })
+            const syncResponse = await apiRequest('POST', '/api/sync/now', {
+              forceRefresh: true,
+              // If we have the calendar ID from the deleted event, use it for targeted sync
+              calendarId: context?.eventToDelete?.calendarId
             });
             
             const syncResult = await syncResponse.json();

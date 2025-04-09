@@ -298,38 +298,41 @@ export class SyncService {
             
             // Process the events
             for (const event of events) {
+              // Cast DAVObject to our CalDAVEvent interface for type safety
+              const caldavEvent = event as unknown as CalDAVEvent;
+              
               // Check if we already have this event in our database
-              const existingEvent = await storage.getEventByUID(event.uid);
+              const existingEvent = await storage.getEventByUID(caldavEvent.uid);
               
               // Convert the event data
-              const eventData = {
-                uid: event.uid,
+              const eventData: Partial<InsertEvent> = {
+                uid: caldavEvent.uid,
                 calendarId: calendar.id,
-                title: event.summary || 'Untitled Event',
-                description: event.description,
-                location: event.location,
-                startDate: event.startDate,
-                endDate: event.endDate,
-                allDay: event.allDay,
-                timezone: event.timezone || 'UTC',
-                recurrenceRule: event.recurrenceRule,
-                attendees: event.attendees && event.attendees.length > 0 ? 
-                  JSON.stringify(event.attendees) : null,
-                etag: event.etag,
-                url: event.url,
-                rawData: event.data ? JSON.stringify(event.data) : null,
+                title: caldavEvent.summary || 'Untitled Event',
+                description: caldavEvent.description,
+                location: caldavEvent.location,
+                startDate: caldavEvent.startDate,
+                endDate: caldavEvent.endDate,
+                allDay: caldavEvent.allDay || false,
+                timezone: caldavEvent.timezone || 'UTC',
+                recurrenceRule: caldavEvent.recurrenceRule,
+                attendees: caldavEvent.attendees && caldavEvent.attendees.length > 0 ? 
+                  JSON.stringify(caldavEvent.attendees) : null,
+                etag: caldavEvent.etag,
+                url: caldavEvent.url,
+                rawData: caldavEvent.data ? JSON.stringify(caldavEvent.data) : null,
                 syncStatus: 'synced',
                 lastSyncAttempt: new Date()
               };
               
               if (existingEvent) {
                 // Update the existing event
-                console.log(`Updating existing event: ${event.uid}`);
-                await storage.updateEvent(existingEvent.id, eventData);
+                console.log(`Updating existing event: ${(event as unknown as CalDAVEvent).uid}`);
+                await storage.updateEvent(existingEvent.id, eventData as any);
               } else {
                 // Create a new event
-                console.log(`Creating new event: ${event.uid}`);
-                await storage.createEvent(eventData);
+                console.log(`Creating new event: ${(event as unknown as CalDAVEvent).uid}`);
+                await storage.createEvent(eventData as any);
               }
             }
             
@@ -370,19 +373,23 @@ export class SyncService {
               // Update the existing calendar
               console.log(`Updating calendar: ${davCalendar.displayName}`);
               const updated = await storage.updateCalendar(localCalendar.id, {
-                name: davCalendar.displayName,
-                url: davCalendar.url,
+                name: String(davCalendar.displayName || ''),
+                url: String(davCalendar.url || ''),
                 syncToken: new Date().toISOString()
               });
               calendarId = localCalendar.id;
             } else {
               // Create a new calendar
               console.log(`Creating new calendar: ${davCalendar.displayName}`);
+              // Cast the DAVCalendar to our expected type with color
+              const calendarColor = typeof davCalendar.color === 'string' ? 
+                davCalendar.color : '#3788d8';
+                
               const newCalendar = await storage.createCalendar({
-                name: davCalendar.displayName,
-                color: davCalendar.color || '#3788d8',
+                name: String(davCalendar.displayName || ''),
+                color: calendarColor,
                 userId,
-                url: davCalendar.url,
+                url: String(davCalendar.url || ''),
                 syncToken: new Date().toISOString(),
                 enabled: true,
                 isPrimary: false,
@@ -405,41 +412,44 @@ export class SyncService {
               // Process the events
               for (const event of events) {
                 try {
+                  // Cast DAVObject to our CalDAVEvent interface for type safety
+                  const caldavEvent = event as unknown as CalDAVEvent;
+                  
                   // Check if we already have this event in our database
-                  const existingEvent = await storage.getEventByUID(event.uid);
+                  const existingEvent = await storage.getEventByUID(caldavEvent.uid);
                   
                   // Convert the event data
-                  const eventData = {
-                    uid: event.uid,
+                  const eventData: Partial<InsertEvent> = {
+                    uid: caldavEvent.uid,
                     calendarId,
-                    title: event.summary || 'Untitled Event',
-                    description: event.description,
-                    location: event.location,
-                    startDate: event.startDate,
-                    endDate: event.endDate,
-                    allDay: event.allDay,
-                    timezone: event.timezone || 'UTC',
-                    recurrenceRule: event.recurrenceRule,
-                    attendees: event.attendees && event.attendees.length > 0 ? 
-                      JSON.stringify(event.attendees) : null,
-                    etag: event.etag,
-                    url: event.url,
-                    rawData: event.data ? JSON.stringify(event.data) : null,
+                    title: caldavEvent.summary || 'Untitled Event',
+                    description: caldavEvent.description,
+                    location: caldavEvent.location,
+                    startDate: caldavEvent.startDate,
+                    endDate: caldavEvent.endDate,
+                    allDay: caldavEvent.allDay || false,
+                    timezone: caldavEvent.timezone || 'UTC',
+                    recurrenceRule: caldavEvent.recurrenceRule,
+                    attendees: caldavEvent.attendees && caldavEvent.attendees.length > 0 ? 
+                      JSON.stringify(caldavEvent.attendees) : null,
+                    etag: caldavEvent.etag,
+                    url: caldavEvent.url,
+                    rawData: caldavEvent.data ? JSON.stringify(caldavEvent.data) : null,
                     syncStatus: 'synced',
                     lastSyncAttempt: new Date()
                   };
                   
                   if (existingEvent) {
                     // Update the existing event
-                    console.log(`Updating existing event: ${event.uid}`);
-                    await storage.updateEvent(existingEvent.id, eventData);
+                    console.log(`Updating existing event: ${caldavEvent.uid}`);
+                    await storage.updateEvent(existingEvent.id, eventData as any);
                   } else {
                     // Create a new event
-                    console.log(`Creating new event: ${event.uid}`);
-                    await storage.createEvent(eventData);
+                    console.log(`Creating new event: ${caldavEvent.uid}`);
+                    await storage.createEvent(eventData as any);
                   }
                 } catch (error) {
-                  console.error(`Error processing event ${event.uid}:`, error);
+                  console.error(`Error processing event:`, error);
                 }
               }
               

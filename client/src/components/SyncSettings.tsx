@@ -44,17 +44,55 @@ export function SyncSettings() {
   const fetchStatus = async () => {
     try {
       const response = await apiRequest('GET', '/api/sync/status');
-      const data = await response.json();
-      setStatus(data);
-      setAutoSync(data.autoSync || false);
-      setInterval(data.interval || 300);
-      setSyncInProgress(data.inProgress || false);
+      
+      // Check if the response is OK before trying to parse JSON
+      if (response.ok) {
+        try {
+          const data = await response.json();
+          setStatus(data);
+          setAutoSync(data.autoSync || false);
+          setInterval(data.interval || 300);
+          setSyncInProgress(data.inProgress || false);
+        } catch (jsonError) {
+          console.error('Failed to parse sync status JSON:', jsonError);
+          // Use fallback values if we can't parse the response
+          setStatus({
+            syncing: false,
+            configured: false,
+            lastSync: null,
+            interval: 300,
+            inProgress: false,
+            autoSync: false
+          });
+        }
+      } else {
+        console.error('Failed to fetch sync status, status code:', response.status);
+        // Create a reasonable default state when the API fails
+        setStatus({
+          syncing: false,
+          configured: false,
+          lastSync: null,
+          interval: 300,
+          inProgress: false,
+          autoSync: false
+        });
+      }
     } catch (error) {
       console.error('Failed to fetch sync status:', error);
       toast({
         title: 'Error',
         description: 'Failed to fetch sync status',
         variant: 'destructive',
+      });
+      
+      // Create a reasonable default state when the API fails
+      setStatus({
+        syncing: false,
+        configured: false,
+        lastSync: null,
+        interval: 300,
+        inProgress: false,
+        autoSync: false
       });
     } finally {
       setLoading(false);
@@ -150,14 +188,12 @@ export function SyncSettings() {
     // Create a wrapper function to avoid binding issues
     const pollFn = () => fetchStatus();
     
-    // Set up polling
-    const pollInterval = setInterval(pollFn, 10000); // Check every 10 seconds
+    // Set up polling with the correct return type
+    const pollInterval = window.setInterval(pollFn, 10000); // Check every 10 seconds
     
     // Clean up interval when component unmounts
     return () => {
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
+      clearInterval(pollInterval);
     };
   }, []);
   
