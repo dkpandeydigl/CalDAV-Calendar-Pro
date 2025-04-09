@@ -238,8 +238,34 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
       // Use the user's selected timezone from context
       console.log(`Using selected timezone: ${selectedTimezone}`);
       
-      // If the event is a multi-day event, display it on all days between start and end
-      const isMultiDayEvent = startDate.toISOString().split('T')[0] !== endDate.toISOString().split('T')[0];
+      // Special handling for all-day events - we need to check if it's actually a multi-day event
+      // or just a single day event with the end date on the next day (common CalDAV format for all-day events)
+      let isMultiDayEvent = startDate.toISOString().split('T')[0] !== endDate.toISOString().split('T')[0];
+      
+      // For all-day events, if the end date is exactly one day after the start date, 
+      // and both are at midnight, it's actually a single-day event in CalDAV format
+      if (isMultiDayEvent && event.allDay) {
+        // Check if the end date is exactly one day after the start date
+        const oneDayInMs = 24 * 60 * 60 * 1000;
+        const dateDiffMs = endDate.getTime() - startDate.getTime();
+        
+        // Also check if both times are at midnight (common for all-day events)
+        const isStartAtMidnight = 
+          startDate.getUTCHours() === 0 && 
+          startDate.getUTCMinutes() === 0 && 
+          startDate.getUTCSeconds() === 0;
+          
+        const isEndAtMidnight = 
+          endDate.getUTCHours() === 0 && 
+          endDate.getUTCMinutes() === 0 && 
+          endDate.getUTCSeconds() === 0;
+        
+        // If it's a one-day event with midnight boundaries, treat as single day
+        if (Math.abs(dateDiffMs - oneDayInMs) < 1000 && isStartAtMidnight && isEndAtMidnight) {
+          console.log(`All-day event "${event.title}" detected - treating as single day event`);
+          isMultiDayEvent = false;
+        }
+      }
       
       // If it's a multi-day event or has recurrence, handle it specially
       if (isMultiDayEvent) {

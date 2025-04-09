@@ -494,8 +494,24 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     
     try {
       // Create start and end date objects
+      // Create start date with proper format for all-day vs regular events
       const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-      const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+      
+      // For all-day events in CalDAV format, the end date should be the next day at 00:00:00
+      // This follows the CalDAV convention where an all-day event on April 25th would have:
+      // - Start: 2025-04-25T00:00:00
+      // - End: 2025-04-26T00:00:00 (exclusive end time)
+      let endDateTime;
+      if (allDay) {
+        // Create a new date for the end date (to avoid modifying the endDate string directly)
+        const nextDay = new Date(`${endDate}T00:00:00`);
+        // Add one day for CalDAV compliance
+        nextDay.setDate(nextDay.getDate() + 1);
+        endDateTime = nextDay;
+        console.log(`All-day event end date adjusted to: ${endDateTime.toISOString()}`);
+      } else {
+        endDateTime = new Date(`${endDate}T${endTime}:00`);
+      }
       
       // Handle timezone adjustments if needed
       // (could add timezone conversion logic here if needed)
@@ -1021,7 +1037,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           
                           // Generate email preview
                           const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                          const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                          
+                          // Handle all-day event end dates correctly for CalDAV format
+                          let endDateTime;
+                          if (allDay) {
+                            const nextDay = new Date(`${endDate}T00:00:00`);
+                            nextDay.setDate(nextDay.getDate() + 1);
+                            endDateTime = nextDay;
+                          } else {
+                            endDateTime = new Date(`${endDate}T${endTime}:00`);
+                          }
                           
                           generatePreview({
                             title,
@@ -1278,7 +1303,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         }
                         
                         const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                        const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                        
+                        // Handle all-day event end dates correctly for CalDAV format
+                        let endDateTime;
+                        if (allDay) {
+                          const nextDay = new Date(`${endDate}T00:00:00`);
+                          nextDay.setDate(nextDay.getDate() + 1);
+                          endDateTime = nextDay;
+                        } else {
+                          endDateTime = new Date(`${endDate}T${endTime}:00`);
+                        }
                         
                         // Prepare email data
                         const emailData = {
@@ -1334,7 +1368,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       onRefresh={() => {
                         // Regenerate the preview
                         const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                        const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                        
+                        // Handle all-day event end dates correctly for CalDAV format
+                        let endDateTime;
+                        if (allDay) {
+                          const nextDay = new Date(`${endDate}T00:00:00`);
+                          nextDay.setDate(nextDay.getDate() + 1);
+                          endDateTime = nextDay;
+                        } else {
+                          endDateTime = new Date(`${endDate}T${endTime}:00`);
+                        }
                         
                         const previewParams = {
                           title,
@@ -1411,7 +1454,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                     
                     // Prepare date objects
                     const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                    const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                    
+                    // Handle all-day event end dates correctly for CalDAV format
+                    let endDateTime;
+                    if (allDay) {
+                      const nextDay = new Date(`${endDate}T00:00:00`);
+                      nextDay.setDate(nextDay.getDate() + 1);
+                      endDateTime = nextDay;
+                    } else {
+                      endDateTime = new Date(`${endDate}T${endTime}:00`);
+                    }
                     
                     // Store the event data for use in the alert dialog
                     const eventData = {
@@ -1454,7 +1506,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         if (event) {
                           // Prepare full event data (same as handleSubmit)
                           const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                          const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                          
+                          // Handle all-day event end dates correctly for CalDAV format
+                          let endDateTime;
+                          if (allDay) {
+                            const nextDay = new Date(`${endDate}T00:00:00`);
+                            nextDay.setDate(nextDay.getDate() + 1);
+                            endDateTime = nextDay;
+                          } else {
+                            endDateTime = new Date(`${endDate}T${endTime}:00`);
+                          }
                           
                           // Prepare recurrence rule if it exists
                           const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify({
@@ -1574,7 +1635,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   if (event) {
                     // Prepare full event data (same as handleSubmit)
                     const startDateTime = new Date(`${startDate}T${allDay ? '00:00:00' : startTime}:00`);
-                    const endDateTime = new Date(`${endDate}T${allDay ? '23:59:59' : endTime}:00`);
+                    
+                    // Handle all-day event end dates correctly for CalDAV format
+                    let endDateTime;
+                    if (allDay) {
+                      const nextDay = new Date(`${endDate}T00:00:00`);
+                      nextDay.setDate(nextDay.getDate() + 1);
+                      endDateTime = nextDay;
+                    } else {
+                      endDateTime = new Date(`${endDate}T${endTime}:00`);
+                    }
                     
                     // Prepare recurrence rule if it exists
                     const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify({
