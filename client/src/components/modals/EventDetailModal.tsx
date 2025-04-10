@@ -6,6 +6,7 @@ import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { formatDayOfWeekDate, formatEventTimeRange } from '@/lib/date-utils';
 import type { Event } from '@shared/schema';
+import { format } from 'date-fns';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -436,11 +437,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
               <span className="material-icons text-primary mr-2 bg-white p-1 rounded-md shadow-sm">schedule</span>
               <div>
-                <div className="text-sm font-medium text-primary/90">{formatDayOfWeekDate(startDate, event.timezone || undefined)}</div>
+                <div className="text-sm font-medium text-primary/90">
+                  {event.timezone === 'Asia/Kolkata' 
+                    ? format(startDate, 'EEEE, MMMM d, yyyy') // Direct format for Asia/Kolkata
+                    : formatDayOfWeekDate(startDate, event.timezone || undefined)}
+                </div>
                 <div className="text-sm text-primary/80">
                   {event.allDay 
                     ? '🕒 All Day' 
-                    : `🕒 ${formatEventTimeRange(startDate, endDate, false, event.timezone || undefined)}`}
+                    : event.timezone === 'Asia/Kolkata'
+                      ? `🕒 ${format(startDate, 'h:mm a')} - ${format(endDate, 'h:mm a')}` // Direct format for Asia/Kolkata
+                      : `🕒 ${formatEventTimeRange(startDate, endDate, false, event.timezone || undefined)}`}
                   {event.timezone && ` (${event.timezone})`}
                 </div>
               </div>

@@ -2,6 +2,7 @@ import React from 'react';
 import { formatTime } from '@/lib/date-utils';
 import type { Event } from '@shared/schema';
 import { useCalendars } from '@/hooks/useCalendars';
+import { format } from 'date-fns';
 
 interface CalendarEventProps {
   event: Event;

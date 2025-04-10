@@ -533,12 +533,11 @@ function CalendarContent() {
   );
 }
 
+import { setUserTimezonePreference } from '@/lib/date-utils';
+
 export default function Calendar() {
   const { user } = useAuth();
   const { selectedTimezone } = useCalendarContext();
-  
-  // Import the timezone utility
-  const { setUserTimezonePreference } = require('@/lib/date-utils');
   
   // Set the user's timezone when the component mounts or timezone changes
   useEffect(() => {
