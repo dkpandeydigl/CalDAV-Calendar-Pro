@@ -489,8 +489,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div 
                   className={`text-sm p-3 bg-neutral-100 rounded-md rich-text-content ${
                     !isDescriptionExpanded 
-                      ? 'line-clamp-2 max-h-[4em] overflow-hidden' 
-                      : 'max-h-[15em] overflow-y-auto'
+                      ? 'line-clamp-5 max-h-[10em] overflow-hidden' 
+                      : 'max-h-[20em] overflow-y-auto pr-2'
                   }`}
                   dangerouslySetInnerHTML={{ __html: event.description }}
                 />
@@ -522,8 +522,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       }`}>
                         {attendees
                           .filter(Boolean)
-                          // If not expanded, show only the first attendee
-                          .slice(0, areAttendeesExpanded ? undefined : 1)
+                          // If not expanded, show only the first 3 attendees
+                          .slice(0, areAttendeesExpanded ? undefined : 3)
                           .map((attendee, index) => {
                             // Handle both string and object formats
                             if (typeof attendee === 'object' && attendee !== null) {
