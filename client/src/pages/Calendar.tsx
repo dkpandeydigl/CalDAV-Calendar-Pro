@@ -9,6 +9,7 @@ import { SyncSettingsModal } from '@/components/modals/SyncSettingsModal';
 import ShareCalendarModal from '@/components/modals/ShareCalendarModal';
 import ExportCalendarModal from '@/components/modals/ExportCalendarModal';
 import ImportCalendarModal from '@/components/modals/ImportCalendarModal';
+import BulkDeleteModal from '@/components/modals/BulkDeleteModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Event, Calendar as CalendarType } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -273,6 +274,7 @@ function CalendarContent() {
   const [shareCalendarOpen, setShareCalendarOpen] = useState(false);
   const [exportCalendarOpen, setExportCalendarOpen] = useState(false);
   const [importCalendarOpen, setImportCalendarOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   
   const [selectedCalendar, setSelectedCalendar] = useState<CalendarType | null>(null);
   const queryClient = useQueryClient();
