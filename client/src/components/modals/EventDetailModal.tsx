@@ -52,26 +52,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
-  // Only one section can be expanded at a time
-  const [expandedSection, setExpandedSection] = useState<'description' | 'attendees' | 'resources' | null>(null);
-  
-  // Helper functions to check and set expanded sections
-  const isDescriptionExpanded = expandedSection === 'description';
-  const areAttendeesExpanded = expandedSection === 'attendees';
-  const areResourcesExpanded = expandedSection === 'resources';
-  
-  // Toggle functions that ensure only one section is expanded at a time
-  const toggleDescriptionExpanded = () => {
-    setExpandedSection(isDescriptionExpanded ? null : 'description');
-  };
-  
-  const toggleAttendeesExpanded = () => {
-    setExpandedSection(areAttendeesExpanded ? null : 'attendees');
-  };
-  
-  const toggleResourcesExpanded = () => {
-    setExpandedSection(areResourcesExpanded ? null : 'resources');
-  };
+  // Section expansion has been removed in favor of always showing scrollable content
   
   // Add a timeout to prevent infinite loading state
   useEffect(() => {
@@ -474,24 +455,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             
             {event.description && typeof event.description === 'string' && (
               <div>
-                <div className="flex items-center justify-between text-sm font-medium mb-1">
+                <div className="text-sm font-medium mb-1">
                   <span>Description</span>
-                  {/* Only show expand/collapse if content might be truncated */}
-                  {event.description.length > 100 && (
-                    <button 
-                      className="text-xs text-primary hover:text-primary/80"
-                      onClick={toggleDescriptionExpanded}
-                    >
-                      {isDescriptionExpanded ? 'Collapse' : 'Expand'}
-                    </button>
-                  )}
                 </div>
                 <div 
-                  className={`text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 ${
-                    !isDescriptionExpanded 
-                      ? 'line-clamp-3 max-h-[6em] overflow-hidden' 
-                      : 'max-h-[20em] overflow-y-auto pr-2'
-                  }`}
+                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 max-h-[12em] overflow-y-auto pr-2"
                   dangerouslySetInnerHTML={{ __html: event.description }}
                 />
               </div>
@@ -503,27 +471,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               if (attendees && Array.isArray(attendees) && attendees.length > 0) {
                 return (
                   <div>
-                    <div className="flex items-center justify-between text-sm font-medium mb-1">
-                      <span>Attendees</span>
-                      {attendees.length > 1 && (
-                        <button 
-                          className="text-xs text-primary hover:text-primary/80"
-                          onClick={toggleAttendeesExpanded}
-                        >
-                          {areAttendeesExpanded ? 'Collapse' : `Show All (${attendees.length})`}
-                        </button>
-                      )}
+                    <div className="text-sm font-medium mb-1">
+                      <span>Attendees ({attendees.length})</span>
                     </div>
                     <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                      <ul className={`space-y-2 ${
-                        areAttendeesExpanded && attendees.length > 3 
-                          ? 'max-h-[13em] overflow-y-auto pr-2' 
-                          : ''
-                      }`}>
+                      <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
                         {attendees
                           .filter(Boolean)
-                          // If not expanded, show only the first 2 attendees
-                          .slice(0, areAttendeesExpanded ? undefined : 2)
                           .map((attendee, index) => {
                             // Handle both string and object formats
                             if (typeof attendee === 'object' && attendee !== null) {
@@ -558,13 +512,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               );
                             }
                           })}
-                        {!areAttendeesExpanded && attendees.length > 2 && (
-                          <li className="text-xs text-muted-foreground italic text-center py-1">
-                            <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
-                              + {attendees.length - 2} more attendee{attendees.length > 3 ? 's' : ''}
-                            </span>
-                          </li>
-                        )}
                       </ul>
                     </div>
                   </div>
@@ -641,26 +588,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               if (parsedResources.length > 0) {
                 return (
                   <div>
-                    <div className="flex items-center justify-between text-sm font-medium mb-1">
-                      <span>Resources</span>
-                      {parsedResources.length > 1 && (
-                        <button 
-                          className="text-xs text-primary hover:text-primary/80"
-                          onClick={toggleResourcesExpanded}
-                        >
-                          {areResourcesExpanded ? 'Collapse' : `Show All (${parsedResources.length})`}
-                        </button>
-                      )}
+                    <div className="text-sm font-medium mb-1">
+                      <span>Resources ({parsedResources.length})</span>
                     </div>
                     <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                      <ul className={`space-y-1 ${
-                        areResourcesExpanded && parsedResources.length > 2
-                          ? 'max-h-[10em] overflow-y-auto pr-2'
-                          : ''
-                      }`}>
+                      <ul className="space-y-1 max-h-[10em] overflow-y-auto pr-2">
                         {parsedResources
-                          // If not expanded, show only the first resource
-                          .slice(0, areResourcesExpanded ? undefined : 1)
                           .map((resource: any, index) => {
                           try {
                             // Parse resource if it's a string that might be JSON
@@ -763,13 +696,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             );
                           }
                         })}
-                        {!areResourcesExpanded && parsedResources.length > 1 && (
-                          <li className="text-xs text-muted-foreground italic text-center py-1">
-                            <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
-                              + {parsedResources.length - 1} more resource{parsedResources.length > 2 ? 's' : ''}
-                            </span>
-                          </li>
-                        )}
                       </ul>
                     </div>
                   </div>
