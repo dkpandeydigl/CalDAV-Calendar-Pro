@@ -584,21 +584,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create date object from the string
         let startDate = new Date(eventData.startDate);
         
-        // SPECIAL CASE: For Asia/Kolkata timezone events 
-        // We want to preserve the exact same date rather than letting JavaScript convert to UTC
-        if (eventData.timezone === 'Asia/Kolkata') {
-          console.log('[EVENT CREATE DEBUG] Special handling for Asia/Kolkata timezone');
+        // CRITICAL FIX: For regular (timed) events in any timezone, ensure we compensate for the day shift
+        if (eventData.timezone && !eventData.allDay) {
+          console.log(`[EVENT CREATE DEBUG] Timed event (not all-day) with timezone: ${eventData.timezone}`);
           
-          // Extract directly from the original string (not the UTC-converted one)
-          // Format typically: 2025-04-12T03:00:00.000Z
+          // Extract the date and time components directly from the string
           const originalString = eventData.startDate as string;
           console.log(`[EVENT CREATE DEBUG] Original string: ${originalString}`);
           
-          // Parse the date directly - we know the timezone is supposed to be Asia/Kolkata
+          // Parse the date components (YYYY-MM-DD)
           const [datePart, timePart] = originalString.split('T');
           const [year, month, day] = datePart.split('-').map(Number);
           
-          // The time part might have the Z suffix or milliseconds, so handle that
+          // Parse the time components (HH:MM:SS.sss)
           let timeString = timePart;
           if (timeString.endsWith('Z')) {
             timeString = timeString.slice(0, -1); // Remove the Z
@@ -607,24 +605,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Split the time, handling potential milliseconds
           let [hours, minutes, secondsPart] = timeString.split(':');
           let seconds = secondsPart;
+          let milliseconds = 0;
+          
           if (seconds.includes('.')) {
-            seconds = seconds.split('.')[0];
+            const parts = seconds.split('.');
+            seconds = parts[0];
+            milliseconds = parseInt(parts[1].slice(0, 3));
           }
           
-          console.log(`[EVENT CREATE DEBUG] Directly parsed components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
+          console.log(`[EVENT CREATE DEBUG] Parsed components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`);
           
-          // Now create a Date in UTC but with the original time components
-          // By not specifying a timezone, we get exact time components as provided
+          // FIX: Manually add one day to all dates to counteract the client-side timezone shift
+          // This is a known issue with how dates are created on the client with regular Date constructor
+          const correctedDay = day + 1;
+          
+          // Create date using UTC to ensure consistent date handling
           const adjustedDate = new Date(Date.UTC(
             year, 
             month - 1, // JavaScript months are 0-indexed
-            day,
+            correctedDay, // Add one day
             parseInt(hours),
             parseInt(minutes),
-            parseInt(seconds)
+            parseInt(seconds),
+            milliseconds
           ));
           
-          console.log(`[EVENT CREATE DEBUG] UTC-adjusted Kolkata date: ${adjustedDate.toISOString()}`);
+          console.log(`[EVENT CREATE DEBUG] Original date: ${startDate.toISOString()}`);
+          console.log(`[EVENT CREATE DEBUG] Corrected date: ${adjustedDate.toISOString()}`);
+          
           startDate = adjustedDate;
         }
         
@@ -643,21 +651,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create date object from the string
         let endDate = new Date(eventData.endDate);
         
-        // SPECIAL CASE: For Asia/Kolkata timezone events 
-        // We want to preserve the exact same date rather than letting JavaScript convert to UTC
-        if (eventData.timezone === 'Asia/Kolkata') {
-          console.log('[EVENT CREATE DEBUG] Special handling for Asia/Kolkata timezone');
+        // CRITICAL FIX: For regular (timed) events in any timezone, ensure we compensate for the day shift
+        if (eventData.timezone && !eventData.allDay) {
+          console.log(`[EVENT CREATE DEBUG] Timed event (not all-day) with timezone: ${eventData.timezone}`);
           
-          // Extract directly from the original string (not the UTC-converted one)
-          // Format typically: 2025-04-12T04:00:00.000Z
+          // Extract the date and time components directly from the string
           const originalString = eventData.endDate as string;
           console.log(`[EVENT CREATE DEBUG] Original end string: ${originalString}`);
           
-          // Parse the date directly - we know the timezone is supposed to be Asia/Kolkata
+          // Parse the date components (YYYY-MM-DD)
           const [datePart, timePart] = originalString.split('T');
           const [year, month, day] = datePart.split('-').map(Number);
           
-          // The time part might have the Z suffix or milliseconds, so handle that
+          // Parse the time components (HH:MM:SS.sss)
           let timeString = timePart;
           if (timeString.endsWith('Z')) {
             timeString = timeString.slice(0, -1); // Remove the Z
@@ -666,24 +672,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Split the time, handling potential milliseconds
           let [hours, minutes, secondsPart] = timeString.split(':');
           let seconds = secondsPart;
+          let milliseconds = 0;
+          
           if (seconds.includes('.')) {
-            seconds = seconds.split('.')[0];
+            const parts = seconds.split('.');
+            seconds = parts[0];
+            milliseconds = parseInt(parts[1].slice(0, 3));
           }
           
-          console.log(`[EVENT CREATE DEBUG] Directly parsed end components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
+          console.log(`[EVENT CREATE DEBUG] Parsed end components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`);
           
-          // Now create a Date in UTC but with the original time components
-          // By not specifying a timezone, we get exact time components as provided
+          // FIX: Manually add one day to all dates to counteract the client-side timezone shift
+          // This is a known issue with how dates are created on the client with regular Date constructor
+          const correctedDay = day + 1;
+          
+          // Create date using UTC to ensure consistent date handling
           const adjustedDate = new Date(Date.UTC(
             year, 
             month - 1, // JavaScript months are 0-indexed
-            day,
+            correctedDay, // Add one day
             parseInt(hours),
             parseInt(minutes),
-            parseInt(seconds)
+            parseInt(seconds),
+            milliseconds
           ));
           
-          console.log(`[EVENT CREATE DEBUG] UTC-adjusted Kolkata end date: ${adjustedDate.toISOString()}`);
+          console.log(`[EVENT CREATE DEBUG] Original end date: ${endDate.toISOString()}`);
+          console.log(`[EVENT CREATE DEBUG] Corrected end date: ${adjustedDate.toISOString()}`);
+          
           endDate = adjustedDate;
         }
         
