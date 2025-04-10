@@ -24,8 +24,9 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
   const isLastDay = calendarMetadata?.isLastDay;
   const totalDays = calendarMetadata?.totalDays || 1;
   
-  // Format event time
-  const startTime = formatTime(new Date(event.startDate));
+  // Format event time with timezone awareness
+  const eventTimezone = event.timezone || 'UTC';
+  const startTime = formatTime(new Date(event.startDate), eventTimezone);
   
   // Determine what to display based on multi-day status
   let eventDisplay;

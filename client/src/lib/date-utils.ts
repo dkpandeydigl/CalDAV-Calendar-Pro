@@ -1,4 +1,5 @@
 import { format, isSameDay, isSameMonth, isToday, parseISO, startOfWeek, endOfWeek, addDays } from 'date-fns';
+import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 // Format date as "September 2023"
 export const formatMonthYear = (date: Date): string => {
@@ -6,25 +7,45 @@ export const formatMonthYear = (date: Date): string => {
 };
 
 // Format date as "September 4, 2023"
-export const formatFullDate = (date: Date | string): string => {
+export const formatFullDate = (date: Date | string, timezone?: string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
+  
+  if (timezone) {
+    return formatInTimeZone(dateObj, timezone, 'MMMM d, yyyy');
+  }
+  
   return format(dateObj, 'MMMM d, yyyy');
 };
 
 // Format time as "9:00 AM"
-export const formatTime = (date: Date | string): string => {
+export const formatTime = (date: Date | string, timezone?: string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
+  
+  if (timezone) {
+    return formatInTimeZone(dateObj, timezone, 'h:mm a');
+  }
+  
   return format(dateObj, 'h:mm a');
 };
 
 // Format date and time as "Monday, September 4, 2023"
-export const formatDayOfWeekDate = (date: Date | string): string => {
+export const formatDayOfWeekDate = (date: Date | string, timezone?: string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
+  
+  if (timezone) {
+    return formatInTimeZone(dateObj, timezone, 'EEEE, MMMM d, yyyy');
+  }
+  
   return format(dateObj, 'EEEE, MMMM d, yyyy');
 };
 
 // Format date and time range for event display
-export const formatEventTimeRange = (start: Date | string, end: Date | string, allDay: boolean = false): string => {
+export const formatEventTimeRange = (
+  start: Date | string, 
+  end: Date | string, 
+  allDay: boolean = false, 
+  timezone?: string
+): string => {
   const startDate = typeof start === 'string' ? parseISO(start) : start;
   const endDate = typeof end === 'string' ? parseISO(end) : end;
 
@@ -32,13 +53,17 @@ export const formatEventTimeRange = (start: Date | string, end: Date | string, a
     return 'All Day';
   }
   
+  // Convert to zoned time if timezone is provided
+  const startDateWithTZ = timezone ? utcToZonedTime(startDate, timezone) : startDate;
+  const endDateWithTZ = timezone ? utcToZonedTime(endDate, timezone) : endDate;
+  
   // Same day event
-  if (isSameDay(startDate, endDate)) {
-    return `${formatTime(startDate)} - ${formatTime(endDate)}`;
+  if (isSameDay(startDateWithTZ, endDateWithTZ)) {
+    return `${formatTime(startDate, timezone)} - ${formatTime(endDate, timezone)}`;
   }
   
   // Multi-day event
-  return `${formatFullDate(startDate)} ${formatTime(startDate)} - ${formatFullDate(endDate)} ${formatTime(endDate)}`;
+  return `${formatFullDate(startDate, timezone)} ${formatTime(startDate, timezone)} - ${formatFullDate(endDate, timezone)} ${formatTime(endDate, timezone)}`;
 };
 
 // Get week day headers for calendar grid
