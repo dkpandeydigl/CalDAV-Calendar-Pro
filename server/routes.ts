@@ -400,8 +400,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Some servers support calendar deletion, but it's not universally supported
               // This might throw an error on servers that don't allow it
               if (existingCalendar.url.includes('/caldav.php/')) {
-                // For DaviCal-based servers, we can't delete the calendar itself
-                console.log(`Server appears to be DaviCal-based, skipping calendar deletion`);
+                // For DaviCal servers, we need to try different approaches
+                console.log(`Attempting to delete DaviCal calendar: ${existingCalendar.url}`);
+                
+                try {
+                  // First, try standard DELETE method
+                  await davClient.davRequest({
+                    url: existingCalendar.url,
+                    init: {
+                      method: 'DELETE',
+                      headers: {
+                        'Content-Type': 'application/xml; charset=utf-8',
+                      }
+                    }
+                  });
+                  console.log(`Successfully deleted calendar from CalDAV server using standard DELETE`);
+                } catch (deleteError) {
+                  console.log(`Standard DELETE failed, trying alternative approach: ${deleteError.message}`);
+                  
+                  // If standard DELETE fails, try PROPPATCH to mark it as hidden/disabled/inactive
+                  try {
+                    await davClient.davRequest({
+                      url: existingCalendar.url,
+                      init: {
+                        method: 'PROPPATCH',
+                        headers: {
+                          'Content-Type': 'application/xml; charset=utf-8',
+                        },
+                        body: `<?xml version="1.0" encoding="utf-8" ?>
+                          <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                            <D:set>
+                              <D:prop>
+                                <C:calendar-enabled>false</C:calendar-enabled>
+                              </D:prop>
+                            </D:set>
+                          </D:propertyupdate>`
+                      }
+                    });
+                    console.log(`Successfully disabled calendar on CalDAV server using PROPPATCH`);
+                  } catch (propPatchError) {
+                    console.log(`PROPPATCH approach also failed: ${propPatchError.message}`);
+                    // At this point, we tried all server-side options, so we'll continue with local deletion
+                  }
+                }
               } else {
                 // For other CalDAV servers, try to delete the calendar using DELETE method
                 await davClient.davRequest({
@@ -410,8 +451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     method: 'DELETE',
                     headers: {
                       'Content-Type': 'application/xml; charset=utf-8',
-                    },
-                    body: '' // Empty body for DELETE request
+                    }
                   }
                 });
                 console.log(`Successfully deleted calendar from CalDAV server`);
