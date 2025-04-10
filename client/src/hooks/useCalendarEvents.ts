@@ -1176,6 +1176,68 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     }
   });
 
+  // Delete events in bulk with filtering options
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async ({
+      calendarIds,
+      deleteFrom,
+      year,
+      month,
+      day,
+      deleteScope
+    }: {
+      calendarIds: number[];
+      deleteFrom: 'local' | 'server' | 'both';
+      year?: number;
+      month?: number;
+      day?: number;
+      deleteScope: 'all' | 'filtered';
+    }) => {
+      const res = await apiRequest('DELETE', '/api/events/bulk', {
+        calendarIds,
+        deleteFrom,
+        year,
+        month,
+        day,
+        deleteScope
+      });
+      
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Failed to delete events');
+      }
+      
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      // Invalidate queries to reflect the changes
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
+      // Also invalidate calendar-specific queries
+      queryClient.invalidateQueries({ 
+        predicate: (query) => 
+          Array.isArray(query.queryKey) && 
+          query.queryKey[0] === '/api/calendars' && 
+          query.queryKey[2] === 'events'
+      });
+      
+      // Show success toast
+      toast({
+        title: "Events Deleted",
+        description: `${data.stats?.locallyDeleted || 0} events were successfully deleted locally, ${data.stats?.serverDeleted || 0} deleted from server.`,
+        variant: "default"
+      });
+    },
+    onError: (error) => {
+      // Show error toast
+      toast({
+        title: "Failed to Delete Events",
+        description: error.message || "An error occurred while deleting events",
+        variant: "destructive"
+      });
+    }
+  });
+
   return {
     events: filteredEvents,
     isLoading: eventsQueries.isLoading,
@@ -1184,6 +1246,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     createEvent: createEventMutation.mutate,
     updateEvent: updateEventMutation.mutate,
     deleteEvent: deleteEventMutation.mutate,
-    cancelEvent: cancelEventMutation.mutate
+    cancelEvent: cancelEventMutation.mutate,
+    bulkDeleteEvents: bulkDeleteMutation.mutate
   };
 };

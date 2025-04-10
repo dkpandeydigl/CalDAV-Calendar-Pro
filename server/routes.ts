@@ -750,6 +750,199 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Bulk event deletion with filters
+  app.delete("/api/events/bulk", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { 
+        calendarIds, 
+        deleteFrom, 
+        year,
+        month,
+        day,
+        deleteScope 
+      } = req.body;
+      
+      if (!Array.isArray(calendarIds) || calendarIds.length === 0) {
+        return res.status(400).json({ message: "At least one calendar ID must be provided" });
+      }
+      
+      if (!['local', 'server', 'both'].includes(deleteFrom)) {
+        return res.status(400).json({ message: "Invalid deleteFrom value. Must be 'local', 'server', or 'both'" });
+      }
+      
+      // Validate that the user has access to these calendars
+      const userCalendars = await storage.getCalendars(userId);
+      const validCalendarIds = userCalendars.map(cal => cal.id);
+      
+      const invalidCalendars = calendarIds.filter(id => !validCalendarIds.includes(id));
+      if (invalidCalendars.length > 0) {
+        return res.status(403).json({ 
+          message: "Access denied to one or more calendars",
+          invalidCalendars
+        });
+      }
+      
+      // Get all events for the selected calendars
+      let allEvents: Event[] = [];
+      for (const calendarId of calendarIds) {
+        const events = await storage.getEvents(calendarId);
+        allEvents = [...allEvents, ...events];
+      }
+      
+      // Apply additional filters
+      let filteredEvents = [...allEvents];
+      
+      // Apply date filters if provided
+      if (deleteScope !== 'all') {
+        filteredEvents = filteredEvents.filter(event => {
+          const eventDate = new Date(event.startDate);
+          
+          // Filter by year if specified
+          if (year !== undefined && eventDate.getFullYear() !== year) {
+            return false;
+          }
+          
+          // Filter by month if specified (note: JavaScript months are 0-based)
+          if (month !== undefined && eventDate.getMonth() !== month - 1) {
+            return false;
+          }
+          
+          // Filter by day if specified
+          if (day !== undefined && eventDate.getDate() !== day) {
+            return false;
+          }
+          
+          return true;
+        });
+      }
+      
+      console.log(`Bulk deleting ${filteredEvents.length} events from ${calendarIds.length} calendars with deleteFrom=${deleteFrom}`);
+      
+      // Track successfully deleted events
+      const locallyDeleted: number[] = [];
+      const serverDeleted: number[] = [];
+      const errors: any[] = [];
+      
+      // Get server connection if we need to delete from server
+      let connection;
+      let davClient;
+      
+      if (deleteFrom === 'server' || deleteFrom === 'both') {
+        connection = await storage.getServerConnection(userId);
+        
+        if (!connection || connection.status !== 'connected') {
+          return res.status(400).json({ 
+            message: "Server connection not available. Cannot delete events from server.",
+            locallyDeleted,
+            serverDeleted,
+            errors
+          });
+        }
+        
+        // Create DAV client for server operations
+        const { DAVClient } = await import('tsdav');
+        davClient = new DAVClient({
+          serverUrl: connection.url,
+          credentials: {
+            username: connection.username,
+            password: connection.password
+          },
+          authMethod: 'Basic',
+          defaultAccountType: 'caldav'
+        });
+        
+        // Login to the server
+        await davClient.login();
+      }
+      
+      // Process each event
+      for (const event of filteredEvents) {
+        try {
+          // Delete from server if requested and event has server info
+          if ((deleteFrom === 'server' || deleteFrom === 'both') && 
+              event.url && event.etag && davClient) {
+            try {
+              // Delete the event on the CalDAV server
+              await davClient.deleteCalendarObject({
+                calendarObject: {
+                  url: event.url,
+                  etag: event.etag
+                }
+              });
+              
+              serverDeleted.push(event.id);
+              console.log(`Successfully deleted event ${event.id} from CalDAV server`);
+            } catch (serverError) {
+              console.error(`Error deleting event ${event.id} from server:`, serverError);
+              errors.push({
+                eventId: event.id,
+                message: "Failed to delete from server",
+                error: serverError
+              });
+              
+              // If we're only deleting from server, continue to next event
+              if (deleteFrom === 'server') {
+                continue;
+              }
+            }
+          }
+          
+          // Delete locally if requested
+          if (deleteFrom === 'local' || deleteFrom === 'both') {
+            const success = await storage.deleteEvent(event.id);
+            
+            if (success) {
+              locallyDeleted.push(event.id);
+              
+              // Track deleted events in session to avoid re-syncing them
+              if (!req.session.recentlyDeletedEvents) {
+                req.session.recentlyDeletedEvents = [];
+              }
+              req.session.recentlyDeletedEvents.push(event.id);
+            } else {
+              errors.push({
+                eventId: event.id,
+                message: "Failed to delete locally",
+                error: "Unknown error"
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing event ${event.id} for deletion:`, error);
+          errors.push({
+            eventId: event.id,
+            message: "Failed to process event",
+            error
+          });
+        }
+      }
+      
+      // Return a summary of what was deleted
+      res.json({
+        success: true,
+        message: `Processed ${filteredEvents.length} events for deletion`,
+        stats: {
+          totalEvents: filteredEvents.length,
+          locallyDeleted: locallyDeleted.length,
+          serverDeleted: serverDeleted.length,
+          errors: errors.length
+        },
+        details: {
+          locallyDeletedIds: locallyDeleted,
+          serverDeletedIds: serverDeleted,
+          errors
+        }
+      });
+    } catch (err) {
+      console.error("Error in bulk event deletion:", err);
+      res.status(500).json({ 
+        message: "Failed to delete events",
+        error: err
+      });
+    }
+  });
+  
   // Utility endpoint to cleanup duplicate untitled events
   app.post("/api/cleanup-duplicate-events", isAuthenticated, async (req, res) => {
     try {
