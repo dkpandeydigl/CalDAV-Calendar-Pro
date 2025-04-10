@@ -751,7 +751,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Bulk event deletion with filters
-  app.delete("/api/events/bulk", isAuthenticated, async (req, res) => {
+  // Using POST for bulk delete to ensure body is properly handled by all clients/servers
+  app.post("/api/events/bulk/delete", isAuthenticated, async (req, res) => {
     try {
       console.log("Bulk delete request received:", req.body);
       

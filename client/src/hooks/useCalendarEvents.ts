@@ -1193,7 +1193,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       day?: number;
       deleteScope: 'all' | 'filtered';
     }) => {
-      const res = await apiRequest('DELETE', '/api/events/bulk', {
+      const res = await apiRequest('POST', '/api/events/bulk/delete', {
         calendarIds,
         deleteFrom,
         year,
