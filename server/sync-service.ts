@@ -731,15 +731,59 @@ export class SyncService {
                       const endMonth = endDate.getUTCMonth();
                       const endDay = endDate.getUTCDate();
                       
-                      // Create new dates using these components
-                      // This ensures we're working with the actual event day (March 31, 2025)
-                      // We'll set it to start 1 hour before the end time
-                      const fixedStartDate = new Date(Date.UTC(endYear, endMonth, endDay, 
-                          endHours > 0 ? endHours - 1 : 23, endMinutes, endSeconds));
+                      // CRITICAL BUGFIX: Handle Asia/Kolkata timezone specially
+                      // For Asia/Kolkata (IST, UTC+5:30), we need to adjust the hours back properly
+                      // Because India's timezone is 5.5 hours ahead of UTC, we need to adjust UTC time
+                      let fixedStartDate, fixedEndDate;
                       
-                      // Make sure both dates are the same date if it's a single-day event
-                      const fixedEndDate = new Date(Date.UTC(endYear, endMonth, endDay, 
-                          endHours, endMinutes, endSeconds));
+                      if (tzid === 'Asia/Kolkata') {
+                        console.log(`Handling Asia/Kolkata event specially to preserve local time`);
+                        // For Asia/Kolkata, create dates in a way that preserves the local time
+                        // We do this by subtracting the timezone offset (5.5 hours = 330 minutes)
+                        
+                        // For 1:00 AM in India, we want the UTC time to be 19:30 the previous day
+                        // Create date objects first, then adjust for timezone
+                        const hoursOffset = 5; // Hours part of UTC+5:30
+                        const minutesOffset = 30; // Minutes part of UTC+5:30
+                        
+                        // Calculate start time (1 hour before end time)
+                        let startHours = endHours > 0 ? endHours - 1 : 23;
+                        let startMinutes = endMinutes;
+                        let startSeconds = endSeconds;
+                        let adjustedStartDay = endDay;
+                        
+                        // Create base dates without timezone adjustment
+                        const baseStartDate = new Date(Date.UTC(endYear, endMonth, adjustedStartDay, 
+                            startHours, startMinutes, startSeconds));
+                            
+                        const baseEndDate = new Date(Date.UTC(endYear, endMonth, endDay,
+                            endHours, endMinutes, endSeconds));
+                        
+                        // Create the same date objects, but adjust them back by 5:30 hours to match UTC time
+                        // This ensures that when the timezone conversion happens later, 
+                        // the time will display correctly in Asia/Kolkata
+                        fixedStartDate = new Date(baseStartDate);
+                        fixedStartDate.setUTCHours(baseStartDate.getUTCHours() - hoursOffset);
+                        fixedStartDate.setUTCMinutes(baseStartDate.getUTCMinutes() - minutesOffset);
+                        
+                        fixedEndDate = new Date(baseEndDate);
+                        fixedEndDate.setUTCHours(baseEndDate.getUTCHours() - hoursOffset);
+                        fixedEndDate.setUTCMinutes(baseEndDate.getUTCMinutes() - minutesOffset);
+                        
+                        console.log(`Original dates: ${baseStartDate.toISOString()} to ${baseEndDate.toISOString()}`);
+                        console.log(`Adjusted for Asia/Kolkata: ${fixedStartDate.toISOString()} to ${fixedEndDate.toISOString()}`);
+                      } else {
+                        // For all other timezones, use the previous approach
+                        // Create new dates using these components
+                        // This ensures we're working with the actual event day (March 31, 2025)
+                        // We'll set it to start 1 hour before the end time
+                        fixedStartDate = new Date(Date.UTC(endYear, endMonth, endDay, 
+                            endHours > 0 ? endHours - 1 : 23, endMinutes, endSeconds));
+                        
+                        // Make sure both dates are the same date if it's a single-day event
+                        fixedEndDate = new Date(Date.UTC(endYear, endMonth, endDay, 
+                            endHours, endMinutes, endSeconds));
+                      }
                       
                       // Update the dates
                       caldavEvent.startDate = fixedStartDate;
