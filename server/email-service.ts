@@ -851,8 +851,27 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
           .cancelled-banner { background-color: #ffeeee; color: #990000; padding: 10px; border-radius: 5px; margin-bottom: 20px; text-align: center; font-weight: bold; }
           .event-details { margin-bottom: 20px; }
           .detail-row { margin-bottom: 10px; }
-          .label { font-weight: bold; display: inline-block; width: 100px; }
+          .label { font-weight: bold; display: inline-block; width: 100px; vertical-align: top; }
           .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+          
+          /* Rich text styling */
+          .description-container { display: flex; align-items: start; }
+          .description-content { 
+            display: inline-block; 
+            margin-left: 10px; 
+            max-width: 450px; 
+          }
+          .description-content p { margin-top: 0; margin-bottom: 0.5rem; }
+          .description-content strong, .description-content b { font-weight: bold; }
+          .description-content em, .description-content i { font-style: italic; }
+          .description-content ul { list-style-type: disc; margin-left: 20px; padding-left: 0; }
+          .description-content ol { list-style-type: decimal; margin-left: 20px; padding-left: 0; }
+          .description-content a { color: #0066cc; text-decoration: underline; }
+          .description-content h1, .description-content h2, .description-content h3 { 
+            font-weight: bold; 
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem; 
+          }
         </style>
       </head>
       <body>
@@ -872,7 +891,8 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
               </div>
               ${description ? `
               <div class="detail-row">
-                <span class="label">Description:</span> ${description}
+                <span class="label">Description:</span>
+                <div class="description-content">${description}</div>
               </div>` : ''}
               ${location ? `
               <div class="detail-row">
