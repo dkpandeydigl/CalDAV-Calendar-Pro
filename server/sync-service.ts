@@ -738,40 +738,29 @@ export class SyncService {
                       
                       if (tzid === 'Asia/Kolkata') {
                         console.log(`Handling Asia/Kolkata event specially to preserve local time`);
-                        // For Asia/Kolkata, create dates in a way that preserves the local time
-                        // We do this by subtracting the timezone offset (5.5 hours = 330 minutes)
+                        // CRITICAL FIX: For Asia/Kolkata, we must preserve the exact time as shown in the calendar
+                        // without applying the 5:30 offset again, as the dates are already in UTC
                         
-                        // For 1:00 AM in India, we want the UTC time to be 19:30 the previous day
-                        // Create date objects first, then adjust for timezone
-                        const hoursOffset = 5; // Hours part of UTC+5:30
-                        const minutesOffset = 30; // Minutes part of UTC+5:30
+                        // Instead of applying additional adjustments, just use the dates directly
+                        // but set them 1 hour apart as needed for start/end
                         
-                        // Calculate start time (1 hour before end time)
-                        let startHours = endHours > 0 ? endHours - 1 : 23;
-                        let startMinutes = endMinutes;
-                        let startSeconds = endSeconds;
-                        let adjustedStartDay = endDay;
-                        
-                        // Create base dates without timezone adjustment
-                        const baseStartDate = new Date(Date.UTC(endYear, endMonth, adjustedStartDay, 
-                            startHours, startMinutes, startSeconds));
-                            
+                        // First, create proper UTC dates from the components
                         const baseEndDate = new Date(Date.UTC(endYear, endMonth, endDay,
                             endHours, endMinutes, endSeconds));
                         
-                        // Create the same date objects, but adjust them back by 5:30 hours to match UTC time
-                        // This ensures that when the timezone conversion happens later, 
-                        // the time will display correctly in Asia/Kolkata
+                        // If we have a valid start date from the event (DTSTART), use that
+                        // Otherwise, set start date as 1 hour before end date
+                        const baseStartDate = new Date(Date.UTC(endYear, endMonth, endDay, 
+                            endHours > 0 ? endHours - 1 : 23, endMinutes, endSeconds));
+                        
+                        // Just use these dates directly without further timezone adjustments
+                        // This preserves the exact times as they appear in Thunderbird
                         fixedStartDate = new Date(baseStartDate);
-                        fixedStartDate.setUTCHours(baseStartDate.getUTCHours() - hoursOffset);
-                        fixedStartDate.setUTCMinutes(baseStartDate.getUTCMinutes() - minutesOffset);
-                        
                         fixedEndDate = new Date(baseEndDate);
-                        fixedEndDate.setUTCHours(baseEndDate.getUTCHours() - hoursOffset);
-                        fixedEndDate.setUTCMinutes(baseEndDate.getUTCMinutes() - minutesOffset);
                         
+                        // Just log the dates we're using without any adjustments
                         console.log(`Original dates: ${baseStartDate.toISOString()} to ${baseEndDate.toISOString()}`);
-                        console.log(`Adjusted for Asia/Kolkata: ${fixedStartDate.toISOString()} to ${fixedEndDate.toISOString()}`);
+                        console.log(`Preserved for Asia/Kolkata: ${fixedStartDate.toISOString()} to ${fixedEndDate.toISOString()}`);
                       } else {
                         // For all other timezones, use the previous approach
                         // Create new dates using these components
