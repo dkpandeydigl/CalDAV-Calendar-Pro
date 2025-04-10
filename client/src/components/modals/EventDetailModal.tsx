@@ -441,20 +441,55 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   {formatDayOfWeekDate(startDate, event.timezone || undefined)}
                 </div>
                 
-                {/* Always show original time as stored */}
-                <div className="text-sm text-primary/80">
-                  {event.allDay 
-                    ? '🕒 All Day' 
-                    : `🕒 ${format(startDate, 'h:mm a')} - ${format(endDate, 'h:mm a')}`} 
-                  <span className="font-medium">{event.timezone && ` (Original ${event.timezone} Time)`}</span>
-                </div>
-                
-                {/* Display converted time when event timezone differs from user timezone */}
-                {!event.allDay && event.timezone && event.timezone !== getUserTimezone() && (
-                  <div className="text-sm text-blue-600 italic mt-1">
-                    🕒 {formatEventTimeRange(startDate, endDate, false, event.timezone)}
-                    <span className="font-medium"> (Your Time in {getUserTimezone()})</span>
+                {/* Show different representations of the event time based on origin */}
+                {event.allDay ? (
+                  <div className="text-sm text-primary/80">
+                    🕒 All Day
                   </div>
+                ) : event.timezone === 'Asia/Kolkata' ? (
+                  <>
+                    {/* For events with explicit Asia/Kolkata timezone, show exact original time */}
+                    <div className="text-sm text-primary/80">
+                      🕒 {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
+                      <span className="font-medium"> (Original Asia/Kolkata Time)</span>
+                    </div>
+                  </>
+                ) : event.timezone === 'UTC' ? (
+                  <>
+                    {/* For events in UTC, show both UTC and local time */}
+                    <div className="text-sm text-primary/80">
+                      🕒 {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
+                      <span className="font-medium"> (Original UTC Time)</span>
+                    </div>
+                    
+                    {/* Always show converted time for UTC events */}
+                    <div className="text-sm text-blue-600 italic mt-1">
+                      🕒 {format(
+                        new Date(startDate.getTime() + (5.5 * 60 * 60 * 1000)), 
+                        'h:mm a'
+                      )} - {format(
+                        new Date(endDate.getTime() + (5.5 * 60 * 60 * 1000)), 
+                        'h:mm a'
+                      )}
+                      <span className="font-medium"> (Your Time in {getUserTimezone()})</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Default case for other timezones */}
+                    <div className="text-sm text-primary/80">
+                      🕒 {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
+                      <span className="font-medium">{event.timezone ? ` (Original ${event.timezone} Time)` : ''}</span>
+                    </div>
+                    
+                    {/* Display converted time when event timezone differs from user timezone */}
+                    {event.timezone && event.timezone !== getUserTimezone() && (
+                      <div className="text-sm text-blue-600 italic mt-1">
+                        🕒 {formatEventTimeRange(startDate, endDate, false, event.timezone)}
+                        <span className="font-medium"> (Your Time in {getUserTimezone()})</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

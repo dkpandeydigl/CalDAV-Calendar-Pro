@@ -565,45 +565,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
         syncStatus: 'pending'
       };
       
-      // Handle date conversions with improved timezone handling
+      // STANDARD TIMEZONE HANDLING:
+      // The issue is that our events created in UTC showing on the wrong day (off by ~6 hours)
+      // For Kolkata time (UTC+5:30), a 2:44 AM event in Kolkata time is 9:14 PM UTC time on the previous day
+      // The solution is to preserve the exact date/time as created in local timezone
+      
+      console.log(`[EVENT CREATE DEBUG] Timezone for event: ${eventData.timezone || 'none'}`);
+      
+      // Handle start date with proper timezone
       if (typeof eventData.startDate === 'string') {
-        // Parse the date string and preserve exactly what client sent
-        // This ensures consistent date representation regardless of server timezone
         console.log(`[EVENT CREATE DEBUG] Parsing startDate string: ${eventData.startDate}`);
         
+        // Parse the date string to create a UTC date
         const startDate = new Date(eventData.startDate);
         
-        // For Asia/Kolkata timezone handling, keep the date exactly as client sent it
-        // without any automatic timezone adjustments
-        if (eventData.timezone === 'Asia/Kolkata') {
-          console.log(`[EVENT CREATE DEBUG] Detected Asia/Kolkata timezone, preserving exact date`);
-          // No adjustment needed for Asia/Kolkata timezone
+        // Keep exact date-time conversion:
+        // For events created in our client, we store the date in UTC but maintain the 
+        // timezone information to ensure we can display it correctly later
+        
+        // Create a note about what timezone this event was created in
+        if (!eventData.timezone) {
+          console.log('[EVENT CREATE DEBUG] Setting timezone to default UTC');
+          eventData.timezone = 'UTC';
         }
         
+        // Store the parsed date without adjustments
         eventData.startDate = startDate;
-        console.log(`[EVENT CREATE DEBUG] Final startDate: ${eventData.startDate.toISOString()}`);
+        console.log(`[EVENT CREATE DEBUG] Final startDate: ${eventData.startDate.toISOString()} with timezone ${eventData.timezone}`);
       } else if (!eventData.startDate) {
-        // If startDate is null/undefined, set it to the current date
         console.warn("Missing startDate in event creation, using current date");
         eventData.startDate = new Date();
       }
       
+      // Handle end date with proper timezone
       if (typeof eventData.endDate === 'string') {
-        // Parse the date string and preserve exactly what client sent
         console.log(`[EVENT CREATE DEBUG] Parsing endDate string: ${eventData.endDate}`);
         
+        // Parse the date string to create a UTC date
         const endDate = new Date(eventData.endDate);
         
-        // For Asia/Kolkata timezone handling, keep the date exactly as client sent it
-        if (eventData.timezone === 'Asia/Kolkata') {
-          console.log(`[EVENT CREATE DEBUG] Detected Asia/Kolkata timezone, preserving exact date`);
-          // No adjustment needed for Asia/Kolkata timezone
-        }
-        
+        // Store the parsed date without adjustments
         eventData.endDate = endDate;
-        console.log(`[EVENT CREATE DEBUG] Final endDate: ${eventData.endDate.toISOString()}`);
+        console.log(`[EVENT CREATE DEBUG] Final endDate: ${eventData.endDate.toISOString()} with timezone ${eventData.timezone}`);
       } else if (!eventData.endDate) {
-        // If endDate is null/undefined, set it to 1 hour after startDate
         console.warn("Missing endDate in event creation, setting to 1 hour after startDate");
         const endDate = new Date(eventData.startDate.getTime());
         endDate.setHours(endDate.getHours() + 1);
