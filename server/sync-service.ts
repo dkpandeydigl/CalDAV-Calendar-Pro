@@ -785,10 +785,30 @@ export class SyncService {
                       newLines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.endDate, event.allDay === true)}`);
                     }
                     else if (line.startsWith('LOCATION:') && event.location !== undefined) {
-                      newLines.push(event.location ? `LOCATION:${event.location}` : '');
+                      if (event.location) {
+                        // Properly escape special characters in location according to RFC 5545
+                        const escapedLocation = event.location
+                          .replace(/\\/g, '\\\\')  // Escape backslashes
+                          .replace(/;/g, '\\;')    // Escape semicolons
+                          .replace(/,/g, '\\,')    // Escape commas
+                          .replace(/\n/g, '\\n');  // Escape line breaks
+                        newLines.push(`LOCATION:${escapedLocation}`);
+                      } else {
+                        newLines.push('');
+                      }
                     }
                     else if (line.startsWith('DESCRIPTION:') && event.description !== undefined) {
-                      newLines.push(event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}` : '');
+                      if (event.description) {
+                        // Properly escape special characters in description according to RFC 5545
+                        const escapedDescription = event.description
+                          .replace(/\\/g, '\\\\')  // Escape backslashes
+                          .replace(/;/g, '\\;')    // Escape semicolons
+                          .replace(/,/g, '\\,')    // Escape commas
+                          .replace(/\n/g, '\\n');  // Escape line breaks
+                        newLines.push(`DESCRIPTION:${escapedDescription}`);
+                      } else {
+                        newLines.push('');
+                      }
                     }
                     // Update SEQUENCE
                     else if (line.startsWith('SEQUENCE:')) {
@@ -919,26 +939,72 @@ export class SyncService {
               console.log(`Updating existing event on server: ${event.title}`);
               
               try {
-                const response = await davClient.updateCalendarObject({
-                  calendarObject: {
-                    url: event.url,
-                    etag: event.etag,
-                    data: icalData,
-                  },
+                // We'll use a direct PUT request instead of tsdav's updateCalendarObject
+                // This gives us more control over the exact format of the request
+                console.log(`Performing direct PUT request to ${event.url}`);
+                
+                // First make a PROPFIND request to double-check the event exists and get its current ETag
+                const headers = {
+                  'Content-Type': 'application/xml; charset=utf-8',
+                  'Depth': '0',
+                  'Authorization': `Basic ${Buffer.from(`${job.connection.username}:${job.connection.password}`).toString('base64')}`
+                };
+                
+                const propfindResponse = await fetch(event.url, {
+                  method: 'PROPFIND',
+                  headers,
+                  body: `<?xml version="1.0" encoding="utf-8" ?>
+                    <D:propfind xmlns:D="DAV:">
+                      <D:prop>
+                        <D:getetag/>
+                      </D:prop>
+                    </D:propfind>`
                 });
                 
-                // Extract ETag from response
-                const result = response as any;
-                const newEtag = result.etag;
+                if (!propfindResponse.ok) {
+                  throw new Error(`PROPFIND failed: ${propfindResponse.status} ${propfindResponse.statusText}`);
+                }
+                
+                // Parse the PROPFIND response to get the current ETag
+                const propfindText = await propfindResponse.text();
+                console.log(`PROPFIND response for ${event.url}:`, propfindText.substring(0, 200) + '...');
+                
+                // Now perform the PUT request with the updated iCalendar data
+                const putHeaders = {
+                  'Content-Type': 'text/calendar; charset=utf-8',
+                  'Authorization': `Basic ${Buffer.from(`${job.connection.username}:${job.connection.password}`).toString('base64')}`,
+                  'If-Match': event.etag
+                };
+                
+                console.log(`Sending PUT request to ${event.url} with If-Match: ${event.etag}`);
+                console.log(`iCalendar data snippet: ${icalData.substring(0, 100)}...`);
+                
+                const putResponse = await fetch(event.url, {
+                  method: 'PUT',
+                  headers: putHeaders,
+                  body: icalData
+                });
+                
+                if (!putResponse.ok) {
+                  throw new Error(`PUT failed: ${putResponse.status} ${putResponse.statusText}`);
+                }
+                
+                // Get the new ETag from the response headers
+                const newEtag = putResponse.headers.get('ETag') || event.etag;
+                console.log(`PUT request successful, new ETag: ${newEtag}`);
                 
                 // Update the event in our database
                 await storage.updateEvent(event.id, {
                   syncStatus: 'synced',
                   lastSyncAttempt: new Date(),
-                  etag: newEtag || event.etag
+                  etag: newEtag,
+                  rawData: icalData // Store the exact iCalendar data we sent
                 });
                 
                 console.log(`Successfully updated event on server: ${event.title}`);
+                
+                // Force a full refresh from the server to ensure we have the latest version
+                await this.syncNow(userId, { forceRefresh: true, calendarId: calendar.id });
               } catch (error) {
                 console.error(`Error updating event on server:`, error);
                 
@@ -960,24 +1026,46 @@ export class SyncService {
                 
                 console.log(`Using calendar URL: ${calendarUrl}`);
                 
-                // Create the event on the server
-                const response = await davClient.createCalendarObject({
-                  calendar: { url: calendarUrl },
-                  filename: `${event.uid}.ics`,
-                  iCalString: icalData,
+                // Ensure the calendar URL has a trailing slash
+                const normalizedCalendarUrl = calendarUrl.endsWith('/') 
+                  ? calendarUrl 
+                  : `${calendarUrl}/`;
+                  
+                // Generate a filename for the event
+                const filename = `${event.uid}.ics`;
+                const eventUrl = `${normalizedCalendarUrl}${filename}`;
+                
+                console.log(`Will create event at URL: ${eventUrl}`);
+                console.log(`iCalendar data snippet: ${icalData.substring(0, 100)}...`);
+                
+                // We'll use a direct PUT request for creating the event as well
+                const putHeaders = {
+                  'Content-Type': 'text/calendar; charset=utf-8',
+                  'Authorization': `Basic ${Buffer.from(`${job.connection.username}:${job.connection.password}`).toString('base64')}`
+                };
+                
+                // Make the PUT request to create the event
+                const putResponse = await fetch(eventUrl, {
+                  method: 'PUT',
+                  headers: putHeaders,
+                  body: icalData
                 });
                 
-                // Extract URL and ETag from response
-                const result = response as any;
-                const url = result.url;
-                const etag = result.etag;
+                if (!putResponse.ok) {
+                  throw new Error(`PUT failed: ${putResponse.status} ${putResponse.statusText}`);
+                }
+                
+                // Get the ETag from the response headers
+                const etag = putResponse.headers.get('ETag');
+                console.log(`PUT request successful, ETag: ${etag}`);
                 
                 // Update the event in our database
                 await storage.updateEvent(event.id, {
-                  url,
-                  etag,
+                  url: eventUrl,
+                  etag: etag || '',
                   syncStatus: 'synced',
-                  lastSyncAttempt: new Date()
+                  lastSyncAttempt: new Date(),
+                  rawData: icalData // Store the exact iCalendar data we sent
                 });
                 
                 console.log(`Successfully created event on server: ${event.title}`);
@@ -1183,8 +1271,18 @@ UID:${event.uid}\r
 SUMMARY:${event.title || "Untitled Event"}\r
 DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.startDate, event.allDay === true)}\r
 DTEND${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.endDate, event.allDay === true)}\r
-${event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\r\n` : ''}\
-${event.location ? `LOCATION:${event.location}\r\n` : ''}\
+${event.description ? `DESCRIPTION:${event.description
+      .replace(/\\/g, '\\\\')  // Escape backslashes
+      .replace(/;/g, '\\;')    // Escape semicolons
+      .replace(/,/g, '\\,')    // Escape commas
+      .replace(/\n/g, '\\n')   // Escape line breaks
+    }\r\n` : ''}\
+${event.location ? `LOCATION:${event.location
+      .replace(/\\/g, '\\\\')  // Escape backslashes
+      .replace(/;/g, '\\;')    // Escape semicolons
+      .replace(/,/g, '\\,')    // Escape commas
+      .replace(/\n/g, '\\n')   // Escape line breaks
+    }\r\n` : ''}\
 DTSTAMP:${timestamp}\r
 CREATED:${timestamp}\r
 LAST-MODIFIED:${timestamp}\r
