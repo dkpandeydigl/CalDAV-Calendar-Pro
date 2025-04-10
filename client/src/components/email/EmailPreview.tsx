@@ -154,15 +154,17 @@ const EmailPreview: React.FC<EmailPreviewProps> = ({
       
       <Separator className="my-4" />
       
-      <Card className="p-0 overflow-hidden border">
+      <Card className="p-0 overflow-hidden border shadow-sm">
         <div 
-          className="preview-container p-4 max-h-[500px] overflow-auto w-full max-w-[100%]"
+          className="preview-container p-6 max-h-[600px] overflow-auto w-full"
           dangerouslySetInnerHTML={{ __html: html }}
           style={{ 
             fontFamily: "'Segoe UI', 'Arial', sans-serif",
             fontSize: "14px",
-            lineHeight: "1.5",
-            wordBreak: "break-word"
+            lineHeight: "1.6",
+            color: "#333",
+            wordBreak: "break-word",
+            whiteSpace: "normal"
           }}
         />
       </Card>

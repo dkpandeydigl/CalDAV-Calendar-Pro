@@ -806,24 +806,24 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             onValueChange={setActiveTab}
             className="flex-1 overflow-hidden flex flex-col"
           >
-            <div className="w-full overflow-x-auto border-b bg-gray-50">
-              <TabsList className="w-max flex border-b-0 p-0 rounded-none">
+            <div className="w-full overflow-x-auto border-b bg-gray-50 px-2">
+              <TabsList className="flex h-12">
                 <TabsTrigger 
                   value="basic" 
-                  className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-2 px-4 transition-all"
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium"
                 >
-                  <Calendar className="h-4 w-4 mr-2" />
+                  <Calendar className="h-4 w-4" />
                   <span>Basic Details</span>
                 </TabsTrigger>
                 
                 <TabsTrigger 
                   value="attendees" 
-                  className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-2 px-4 transition-all"
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium"
                 >
-                  <Users className="h-4 w-4 mr-2" />
+                  <Users className="h-4 w-4" />
                   <span>Attendees</span>
                   {attendees.length > 0 && (
-                    <Badge variant="secondary" className="ml-2 bg-primary/10 text-primary font-semibold">
+                    <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary font-semibold">
                       {attendees.length}
                     </Badge>
                   )}
@@ -831,12 +831,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 <TabsTrigger 
                   value="resources" 
-                  className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-2 px-4 transition-all"
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium"
                 >
-                  <Package className="h-4 w-4 mr-2" />
+                  <Package className="h-4 w-4" />
                   <span>Resources</span>
                   {resources.length > 0 && (
-                    <Badge variant="secondary" className="ml-2 bg-primary/10 text-primary font-semibold">
+                    <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary font-semibold">
                       {resources.length}
                     </Badge>
                   )}
@@ -844,26 +844,30 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 <TabsTrigger 
                   value="recurrence" 
-                  className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-2 px-4 transition-all"
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium"
                 >
-                  <Repeat className="h-4 w-4 mr-2" />
+                  <Repeat className="h-4 w-4" />
                   <span>Recurrence</span>
                   {recurrence.pattern !== 'None' && (
-                    <Badge variant="secondary" className="ml-2 bg-primary/10 text-primary">
+                    <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary">
                       {recurrence.pattern}
                     </Badge>
                   )}
                 </TabsTrigger>
                 
-                {attendees.length > 0 && (
-                  <TabsTrigger 
-                    value="emails" 
-                    className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-2 px-4 transition-all whitespace-nowrap"
-                  >
-                    <Mail className="h-4 w-4 mr-2" />
-                    <span>Email Preview</span>
-                  </TabsTrigger>
-                )}
+                <TabsTrigger 
+                  value="emails" 
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium whitespace-nowrap px-4"
+                  disabled={attendees.length === 0}
+                >
+                  <Mail className="h-4 w-4" />
+                  <span className="font-semibold">Email Preview</span>
+                  {attendees.length > 0 && (
+                    <Badge variant="secondary" className="ml-1 bg-green-100 text-green-700 font-bold">
+                      Ready
+                    </Badge>
+                  )}
+                </TabsTrigger>
               </TabsList>
             </div>
             
