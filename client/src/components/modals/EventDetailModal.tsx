@@ -452,23 +452,23 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               )}
             </div>
             
-            <div className="flex items-start">
-              <span className="material-icons text-neutral-500 mr-2">schedule</span>
+            <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
+              <span className="material-icons text-primary mr-2 bg-white p-1 rounded-md shadow-sm">schedule</span>
               <div>
-                <div className="text-sm">{formatDayOfWeekDate(startDate)}</div>
-                <div className="text-sm">
+                <div className="text-sm font-medium text-primary/90">{formatDayOfWeekDate(startDate)}</div>
+                <div className="text-sm text-primary/80">
                   {event.allDay 
-                    ? 'All Day' 
-                    : formatEventTimeRange(startDate, endDate)}
+                    ? '🕒 All Day' 
+                    : `🕒 ${formatEventTimeRange(startDate, endDate)}`}
                   {' '}({event.timezone})
                 </div>
               </div>
             </div>
             
             {event.location && (
-              <div className="flex items-start">
-                <span className="material-icons text-neutral-500 mr-2">location_on</span>
-                <div className="text-sm">{event.location}</div>
+              <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                <span className="material-icons text-blue-500 mr-2 bg-white p-1 rounded-md shadow-sm">location_on</span>
+                <div className="text-sm font-medium text-blue-700">{event.location}</div>
               </div>
             )}
             
@@ -487,9 +487,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   )}
                 </div>
                 <div 
-                  className={`text-sm p-3 bg-neutral-100 rounded-md rich-text-content ${
+                  className={`text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 ${
                     !isDescriptionExpanded 
-                      ? 'line-clamp-5 max-h-[10em] overflow-hidden' 
+                      ? 'line-clamp-3 max-h-[6em] overflow-hidden' 
                       : 'max-h-[20em] overflow-y-auto pr-2'
                   }`}
                   dangerouslySetInnerHTML={{ __html: event.description }}
@@ -514,7 +514,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         </button>
                       )}
                     </div>
-                    <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                    <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
                       <ul className={`space-y-2 ${
                         areAttendeesExpanded && attendees.length > 3 
                           ? 'max-h-[13em] overflow-y-auto pr-2' 
@@ -522,8 +522,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       }`}>
                         {attendees
                           .filter(Boolean)
-                          // If not expanded, show only the first 3 attendees
-                          .slice(0, areAttendeesExpanded ? undefined : 3)
+                          // If not expanded, show only the first 2 attendees
+                          .slice(0, areAttendeesExpanded ? undefined : 2)
                           .map((attendee, index) => {
                             // Handle both string and object formats
                             if (typeof attendee === 'object' && attendee !== null) {
@@ -558,9 +558,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               );
                             }
                           })}
-                        {!areAttendeesExpanded && attendees.length > 3 && (
-                          <li className="text-xs text-muted-foreground italic">
-                            + {attendees.length - 3} more attendee{attendees.length > 4 ? 's' : ''}
+                        {!areAttendeesExpanded && attendees.length > 2 && (
+                          <li className="text-xs text-muted-foreground italic text-center py-1">
+                            <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
+                              + {attendees.length - 2} more attendee{attendees.length > 3 ? 's' : ''}
+                            </span>
                           </li>
                         )}
                       </ul>
@@ -650,15 +652,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         </button>
                       )}
                     </div>
-                    <div className="text-sm p-3 bg-neutral-100 rounded-md">
+                    <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
                       <ul className={`space-y-1 ${
                         areResourcesExpanded && parsedResources.length > 2
                           ? 'max-h-[10em] overflow-y-auto pr-2'
                           : ''
                       }`}>
                         {parsedResources
-                          // If not expanded, show only the first 2 resources
-                          .slice(0, areResourcesExpanded ? undefined : 2)
+                          // If not expanded, show only the first resource
+                          .slice(0, areResourcesExpanded ? undefined : 1)
                           .map((resource: any, index) => {
                           try {
                             // Parse resource if it's a string that might be JSON
@@ -761,9 +763,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             );
                           }
                         })}
-                        {!areResourcesExpanded && parsedResources.length > 2 && (
-                          <li className="text-xs text-muted-foreground italic">
-                            + {parsedResources.length - 2} more resource{parsedResources.length > 3 ? 's' : ''}
+                        {!areResourcesExpanded && parsedResources.length > 1 && (
+                          <li className="text-xs text-muted-foreground italic text-center py-1">
+                            <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
+                              + {parsedResources.length - 1} more resource{parsedResources.length > 2 ? 's' : ''}
+                            </span>
                           </li>
                         )}
                       </ul>
