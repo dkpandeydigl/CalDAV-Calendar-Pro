@@ -1917,5 +1917,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // FIX THUNDERBIRD EVENTS API
+  app.post("/api/fix-thunderbird-events", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Find all events with Asia/Kolkata timezone
+      const calendars = await storage.getCalendars(userId);
+      let fixedCount = 0;
+      
+      for (const calendar of calendars) {
+        const events = await storage.getEvents(calendar.id);
+        const kolkataEvents = events.filter(event => 
+          event.timezone === 'Asia/Kolkata' && 
+          !event.allDay && 
+          new Date(event.startDate).getHours() >= 5 // Events after 5:00 AM likely need adjustment
+        );
+        
+        console.log(`Found ${kolkataEvents.length} Asia/Kolkata events in calendar ${calendar.name} that need fixing`);
+        
+        for (const event of kolkataEvents) {
+          console.log(`Fixing Thunderbird event: ${event.title} (${event.id}) with dates: ${event.startDate} - ${event.endDate}`);
+          
+          // Convert the dates to Date objects
+          const startDate = new Date(event.startDate);
+          const endDate = new Date(event.endDate);
+          
+          // Apply the 5:30 timezone offset adjustment
+          const hoursOffset = 5;
+          const minutesOffset = 30;
+          
+          const fixedStartDate = new Date(startDate);
+          fixedStartDate.setHours(startDate.getHours() - hoursOffset);
+          fixedStartDate.setMinutes(startDate.getMinutes() - minutesOffset);
+          
+          const fixedEndDate = new Date(endDate);
+          fixedEndDate.setHours(endDate.getHours() - hoursOffset);
+          fixedEndDate.setMinutes(endDate.getMinutes() - minutesOffset);
+          
+          console.log(`Original: ${startDate.toISOString()} - ${endDate.toISOString()}`);
+          console.log(`Fixed: ${fixedStartDate.toISOString()} - ${fixedEndDate.toISOString()}`);
+          
+          // Update the event
+          await storage.updateEvent(event.id, {
+            startDate: fixedStartDate,
+            endDate: fixedEndDate
+          });
+          
+          fixedCount++;
+        }
+      }
+      
+      res.json({ 
+        message: `Fixed ${fixedCount} Thunderbird events with Asia/Kolkata timezone`,
+        fixedCount
+      });
+    } catch (err) {
+      console.error("Error fixing Thunderbird events:", err);
+      res.status(500).json({ message: "Failed to fix Thunderbird events" });
+    }
+  });
+
   return httpServer;
 }
