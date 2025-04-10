@@ -52,9 +52,26 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
-  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
-  const [areAttendeesExpanded, setAreAttendeesExpanded] = useState(false);
-  const [areResourcesExpanded, setAreResourcesExpanded] = useState(false);
+  // Only one section can be expanded at a time
+  const [expandedSection, setExpandedSection] = useState<'description' | 'attendees' | 'resources' | null>(null);
+  
+  // Helper functions to check and set expanded sections
+  const isDescriptionExpanded = expandedSection === 'description';
+  const areAttendeesExpanded = expandedSection === 'attendees';
+  const areResourcesExpanded = expandedSection === 'resources';
+  
+  // Toggle functions that ensure only one section is expanded at a time
+  const toggleDescriptionExpanded = () => {
+    setExpandedSection(isDescriptionExpanded ? null : 'description');
+  };
+  
+  const toggleAttendeesExpanded = () => {
+    setExpandedSection(areAttendeesExpanded ? null : 'attendees');
+  };
+  
+  const toggleResourcesExpanded = () => {
+    setExpandedSection(areResourcesExpanded ? null : 'resources');
+  };
   
   // Add a timeout to prevent infinite loading state
   useEffect(() => {
@@ -463,7 +480,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   {event.description.length > 100 && (
                     <button 
                       className="text-xs text-primary hover:text-primary/80"
-                      onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+                      onClick={toggleDescriptionExpanded}
                     >
                       {isDescriptionExpanded ? 'Collapse' : 'Expand'}
                     </button>
@@ -471,7 +488,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 </div>
                 <div 
                   className={`text-sm p-3 bg-neutral-100 rounded-md rich-text-content ${
-                    !isDescriptionExpanded ? 'line-clamp-2 max-h-[4em] overflow-hidden' : ''
+                    !isDescriptionExpanded 
+                      ? 'line-clamp-2 max-h-[4em] overflow-hidden' 
+                      : 'max-h-[15em] overflow-y-auto'
                   }`}
                   dangerouslySetInnerHTML={{ __html: event.description }}
                 />
@@ -489,14 +508,18 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       {attendees.length > 1 && (
                         <button 
                           className="text-xs text-primary hover:text-primary/80"
-                          onClick={() => setAreAttendeesExpanded(!areAttendeesExpanded)}
+                          onClick={toggleAttendeesExpanded}
                         >
                           {areAttendeesExpanded ? 'Collapse' : `Show All (${attendees.length})`}
                         </button>
                       )}
                     </div>
                     <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                      <ul className="space-y-2">
+                      <ul className={`space-y-2 ${
+                        areAttendeesExpanded && attendees.length > 3 
+                          ? 'max-h-[13em] overflow-y-auto pr-2' 
+                          : ''
+                      }`}>
                         {attendees
                           .filter(Boolean)
                           // If not expanded, show only the first attendee
@@ -621,14 +644,18 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       {parsedResources.length > 1 && (
                         <button 
                           className="text-xs text-primary hover:text-primary/80"
-                          onClick={() => setAreResourcesExpanded(!areResourcesExpanded)}
+                          onClick={toggleResourcesExpanded}
                         >
                           {areResourcesExpanded ? 'Collapse' : `Show All (${parsedResources.length})`}
                         </button>
                       )}
                     </div>
                     <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                      <ul className="space-y-1">
+                      <ul className={`space-y-1 ${
+                        areResourcesExpanded && parsedResources.length > 2
+                          ? 'max-h-[10em] overflow-y-auto pr-2'
+                          : ''
+                      }`}>
                         {parsedResources
                           // If not expanded, show only the first resource
                           .slice(0, areResourcesExpanded ? undefined : 1)
