@@ -54,8 +54,8 @@ export const formatEventTimeRange = (
   }
   
   // Convert to zoned time if timezone is provided
-  const startDateWithTZ = timezone ? utcToZonedTime(startDate, timezone) : startDate;
-  const endDateWithTZ = timezone ? utcToZonedTime(endDate, timezone) : endDate;
+  const startDateWithTZ = timezone ? toZonedTime(startDate, timezone) : startDate;
+  const endDateWithTZ = timezone ? toZonedTime(endDate, timezone) : endDate;
   
   // Same day event
   if (isSameDay(startDateWithTZ, endDateWithTZ)) {
