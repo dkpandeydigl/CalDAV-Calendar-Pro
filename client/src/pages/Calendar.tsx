@@ -281,7 +281,7 @@ function CalendarContent() {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  const { events, isLoading, refetch, deleteUntitledEvents } = useCalendarEvents(viewStartDate, viewEndDate);
+  const { events, isLoading, refetch } = useCalendarEvents(viewStartDate, viewEndDate);
   
   // Server connection status is managed by the useServerConnection hook
   
@@ -353,17 +353,6 @@ function CalendarContent() {
   
   const handleBulkDelete = () => {
     setBulkDeleteOpen(true);
-  };
-  
-  const handleDeleteUntitledEvents = async () => {
-    // Confirm with the user before proceeding
-    if (window.confirm('Are you sure you want to delete all untitled events? This action cannot be undone.')) {
-      try {
-        await deleteUntitledEvents({ deleteFrom: 'both' });
-      } catch (error) {
-        console.error('Error deleting untitled events:', error);
-      }
-    }
   };
   
   const handleSync = async () => {
@@ -440,16 +429,6 @@ function CalendarContent() {
                 >
                   <Trash className="mr-2 h-4 w-4" />
                   Bulk Delete
-                </Button>
-                
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={handleDeleteUntitledEvents}
-                  className="text-sm bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800"
-                >
-                  <Trash className="mr-2 h-4 w-4" />
-                  Delete Untitled Events
                 </Button>
               </div>
               

@@ -1177,45 +1177,6 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   });
 
   // Delete events in bulk with filtering options
-  // Mutation to delete all untitled events
-  const deleteUntitledEventsMutation = useMutation({
-    mutationFn: async ({
-      deleteFrom = 'both'
-    }: {
-      deleteFrom?: 'local' | 'server' | 'both';
-    }) => {
-      const res = await apiRequest('POST', '/api/events/delete-untitled', {
-        deleteFrom
-      });
-      
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.message || 'Failed to delete untitled events');
-      }
-      
-      return await res.json();
-    },
-    onSuccess: (data) => {
-      // Invalidate queries to reflect the changes
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      
-      // Show success toast
-      toast({
-        title: "Untitled Events Deleted",
-        description: `${data.stats?.locallyDeleted || 0} untitled events were deleted locally, ${data.stats?.serverDeleted || 0} deleted from server.`,
-        variant: "default"
-      });
-    },
-    onError: (error) => {
-      // Show error toast
-      toast({
-        title: "Failed to Delete Untitled Events",
-        description: error.message || "An error occurred while deleting untitled events",
-        variant: "destructive"
-      });
-    }
-  });
-
   const bulkDeleteMutation = useMutation({
     mutationFn: async ({
       calendarIds,
@@ -1286,7 +1247,6 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     updateEvent: updateEventMutation.mutate,
     deleteEvent: deleteEventMutation.mutate,
     cancelEvent: cancelEventMutation.mutate,
-    bulkDeleteEvents: bulkDeleteMutation.mutate,
-    deleteUntitledEvents: deleteUntitledEventsMutation.mutate
+    bulkDeleteEvents: bulkDeleteMutation.mutate
   };
 };
