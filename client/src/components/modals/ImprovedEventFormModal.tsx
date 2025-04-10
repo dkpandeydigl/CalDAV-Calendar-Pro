@@ -416,6 +416,18 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     setErrors({});
   };
   
+  // Helper function that determines which tabs have errors
+  const getErrorsByTab = (errors: Record<string, string>) => {
+    return {
+      basic: !!errors.title || !!errors.startDate || !!errors.endDate || !!errors.startTime || 
+             !!errors.endTime || !!errors.calendarId,
+      attendees: !!errors.attendees || !!errors.attendeeInput,
+      resources: !!errors.resources,
+      recurrence: !!errors.recurrence,
+      emails: !!errors.emails
+    };
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     
