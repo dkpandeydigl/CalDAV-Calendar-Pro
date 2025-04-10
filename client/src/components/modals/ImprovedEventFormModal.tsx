@@ -117,6 +117,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   
   // Advanced form state
   const [activeTab, setActiveTab] = useState('basic');
+  
+  // Reset to basic tab whenever modal opens
+  useEffect(() => {
+    if (open) {
+      setActiveTab('basic');
+    }
+  }, [open]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [attendeeInput, setAttendeeInput] = useState('');
   const [attendeeRole, setAttendeeRole] = useState<AttendeeRole>('Member');
