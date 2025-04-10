@@ -810,42 +810,42 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <TabsList className="flex flex-wrap h-auto min-h-12 w-full justify-evenly rounded-lg overflow-visible gap-1 p-1 bg-muted/20 border border-muted/30">
                 <TabsTrigger 
                   value="basic" 
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
+                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${title || location || description ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
                 >
-                  <Calendar className="h-4 w-4" />
+                  <Calendar className={`h-4 w-4 ${title || location || description ? 'text-primary' : ''}`} />
                   <span>Details</span>
                 </TabsTrigger>
                 
                 <TabsTrigger 
                   value="attendees" 
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
+                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${attendees.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
                 >
-                  <Users className="h-4 w-4" />
+                  <Users className={`h-4 w-4 ${attendees.length > 0 ? 'text-primary' : ''}`} />
                   <span>Attendees</span>
                 </TabsTrigger>
                 
                 <TabsTrigger 
                   value="resources" 
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
+                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${resources.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
                 >
-                  <Package className="h-4 w-4" />
+                  <Package className={`h-4 w-4 ${resources.length > 0 ? 'text-primary' : ''}`} />
                   <span>Resources</span>
                 </TabsTrigger>
                 
                 <TabsTrigger 
                   value="recurrence" 
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
+                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${recurrence.pattern !== 'None' ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
                 >
-                  <Repeat className="h-4 w-4" />
+                  <Repeat className={`h-4 w-4 ${recurrence.pattern !== 'None' ? 'text-primary' : ''}`} />
                   <span>Recurrence</span>
                 </TabsTrigger>
                 
                 <TabsTrigger 
                   value="emails" 
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
+                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 relative ${attendees.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
                   disabled={attendees.length === 0}
                 >
-                  <Mail className="h-4 w-4" />
+                  <Mail className={`h-4 w-4 ${attendees.length > 0 ? 'text-primary' : ''}`} />
                   <span>Email</span>
                 </TabsTrigger>
               </TabsList>
