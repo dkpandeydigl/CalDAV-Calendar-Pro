@@ -93,13 +93,14 @@ const EmailPreview: React.FC<EmailPreviewProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-medium">Email Preview</h3>
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-2">
+        <h3 className="text-lg font-medium text-primary">Email Preview</h3>
         <div className="flex space-x-2">
           <Button 
             size="sm" 
             variant="outline"
             onClick={onRefresh}
+            className="border-primary/30 hover:border-primary"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
@@ -111,7 +112,7 @@ const EmailPreview: React.FC<EmailPreviewProps> = ({
               variant="default"
               onClick={onSend}
               disabled={isSending || showSuccessMessage}
-              className={`min-w-[100px] ${showSuccessMessage ? "bg-green-600 hover:bg-green-700" : ""}`}
+              className={`min-w-[100px] ${showSuccessMessage ? "bg-green-600 hover:bg-green-700" : "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"}`}
             >
               {isSending ? (
                 <>
@@ -155,8 +156,14 @@ const EmailPreview: React.FC<EmailPreviewProps> = ({
       
       <Card className="p-0 overflow-hidden border">
         <div 
-          className="preview-container p-4 max-h-[500px] overflow-auto"
+          className="preview-container p-4 max-h-[500px] overflow-auto w-full max-w-[100%]"
           dangerouslySetInnerHTML={{ __html: html }}
+          style={{ 
+            fontFamily: "'Segoe UI', 'Arial', sans-serif",
+            fontSize: "14px",
+            lineHeight: "1.5",
+            wordBreak: "break-word"
+          }}
         />
       </Card>
       
