@@ -1,6 +1,7 @@
 import { storage } from './database-storage';
 import { ServerConnection, Calendar, InsertEvent } from '@shared/schema';
 import { DAVClient } from 'tsdav';
+import * as icalUtils from './ical-utils';
 
 // Extend the DAVObject interface to include properties we need
 interface CalDAVEvent {
@@ -925,12 +926,20 @@ export class SyncService {
                 
               } catch (e) {
                 console.error(`Error updating raw ICS data for event ${event.id}:`, e);
-                // Fallback to creating new iCalendar data
-                icalData = this.createNewICalData(event, job.connection.username, currentSequence, currentTimestamp);
+                // Fallback to creating new iCalendar data using our utilities
+                icalData = icalUtils.generateICalEvent(event, {
+                  organizer: job.connection.username,
+                  sequence: currentSequence,
+                  timestamp: currentTimestamp
+                });
               }
             } else {
-              // No existing raw data, create new iCalendar data
-              icalData = this.createNewICalData(event, job.connection.username, currentSequence, currentTimestamp);
+              // No existing raw data, create new iCalendar data using our utilities
+              icalData = icalUtils.generateICalEvent(event, {
+                organizer: job.connection.username,
+                sequence: currentSequence,
+                timestamp: currentTimestamp
+              });
             }
             
             // Determine if we're creating or updating

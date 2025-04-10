@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { SmtpConfig } from '@shared/schema';
 import { storage } from './database-storage';
-import { formatICALDate } from './ical-utils';
+import { formatICalDate } from './ical-utils';
 
 interface Attendee {
   email: string;
@@ -984,9 +984,9 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status } = data;
     
     // Format dates for iCalendar
-    const startDateStr = formatICALDate(startDate);
-    const endDateStr = formatICALDate(endDate);
-    const now = formatICALDate(new Date());
+    const startDateStr = formatICalDate(startDate);
+    const endDateStr = formatICalDate(endDate);
+    const now = formatICalDate(new Date());
     
     // Generate unique identifier for the event
     const eventId = uid || `event-${Date.now()}@caldav-app`;
