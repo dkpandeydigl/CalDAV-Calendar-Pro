@@ -453,9 +453,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             {event.description && typeof event.description === 'string' && (
               <div>
                 <div className="text-sm font-medium mb-1">Description</div>
-                <div className="text-sm p-3 bg-neutral-100 rounded-md">
-                  {event.description}
-                </div>
+                <div 
+                  className="text-sm p-3 bg-neutral-100 rounded-md rich-text-content"
+                  dangerouslySetInnerHTML={{ __html: event.description }}
+                />
               </div>
             )}
             
