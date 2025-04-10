@@ -751,6 +751,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Delete all untitled events
+  // Endpoint for deleting untitled events
   app.post("/api/events/delete-untitled", isAuthenticated, async (req, res) => {
     try {
       console.log("Delete untitled events request received");
@@ -774,10 +775,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Filter out events with "untitled" in the title (case insensitive)
+      // Also include events with missing or empty titles
       const untitledEvents = allEvents.filter(event => {
-        if (!event.title) return false;
+        // Include events with no title or empty title
+        if (!event.title || event.title.trim() === '') return true;
         
-        return event.title.toLowerCase().includes('untitled');
+        // Include events with "untitled" in the title (case insensitive)
+        if (event.title.toLowerCase().includes('untitled')) return true;
+        
+        // Include events with "no title" in the title (case insensitive)
+        if (event.title.toLowerCase().includes('no title')) return true;
+        
+        // Include events that seem to be auto-generated (like with time stamps or UUIDs)
+        if (event.title.toLowerCase().includes('event-')) return true;
+        
+        return false;
       });
       
       console.log(`Found ${untitledEvents.length} untitled events across ${calendarIds.length} calendars`);
@@ -819,35 +831,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await davClient.login();
       }
       
+      // Log details about all events for debugging
+      console.log("Found events for potential deletion:");
+      for (const event of untitledEvents) {
+        console.log(`- ID: ${event.id}, Title: "${event.title}", Start: ${event.startDate}, URL: ${event.url ? 'Yes' : 'No'}, etag: ${event.etag ? 'Yes' : 'No'}`);
+      }
+      
       // Process each event
       for (const event of untitledEvents) {
         try {
           // Delete from server if requested and event has server info
-          if ((deleteFrom === 'server' || deleteFrom === 'both') && 
-              event.url && event.etag && davClient) {
-            try {
-              // Delete the event on the CalDAV server
-              await davClient.deleteCalendarObject({
-                calendarObject: {
-                  url: event.url,
-                  etag: event.etag
+          if ((deleteFrom === 'server' || deleteFrom === 'both') && davClient) {
+            // Handle case where URL or etag might be missing
+            if (!event.url || !event.etag) {
+              console.log(`Event ${event.id} missing URL or etag, attempting to fetch from server`);
+              
+              // Try to find the event on the server
+              try {
+                // Try using UID if available
+                if (event.uid) {
+                  const findResult = await syncService.findEventOnServer(
+                    davClient, 
+                    event.uid,
+                    event.calendarId
+                  );
+                  
+                  if (findResult) {
+                    event.url = findResult.url;
+                    event.etag = findResult.etag;
+                    console.log(`Found event on server by UID: ${event.uid}`);
+                  }
                 }
-              });
-              
-              serverDeleted.push(event.id);
-              console.log(`Successfully deleted untitled event ${event.id} from CalDAV server`);
-            } catch (serverError) {
-              console.error(`Error deleting untitled event ${event.id} from server:`, serverError);
-              errors.push({
-                eventId: event.id,
-                title: event.title,
-                message: "Failed to delete from server",
-                error: serverError
-              });
-              
-              // If we're only deleting from server, continue to next event
-              if (deleteFrom === 'server') {
-                continue;
+              } catch (findError) {
+                console.error(`Could not find event ${event.id} on server:`, findError);
+              }
+            }
+            
+            // Now proceed if we have url and etag
+            if (event.url && event.etag) {
+              try {
+                // Delete the event on the CalDAV server
+                await davClient.deleteCalendarObject({
+                  calendarObject: {
+                    url: event.url,
+                    etag: event.etag
+                  }
+                });
+                
+                serverDeleted.push(event.id);
+                console.log(`Successfully deleted untitled event ${event.id} from CalDAV server`);
+              } catch (serverError) {
+                console.error(`Error deleting untitled event ${event.id} from server:`, serverError);
+                errors.push({
+                  eventId: event.id,
+                  title: event.title,
+                  message: "Failed to delete from server",
+                  error: serverError
+                });
+                
+                // If we're only deleting from server, continue to next event
+                if (deleteFrom === 'server') {
+                  continue;
+                }
               }
             }
           }
