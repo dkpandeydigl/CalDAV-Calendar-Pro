@@ -559,7 +559,25 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   };
   
   const handleSubmit = async () => {
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      // If there are errors, check which tab has errors and switch to it
+      const tabErrors = getErrorsByTab(errors);
+      
+      // Find the first tab with errors
+      if (tabErrors.basic) {
+        setActiveTab('basic');
+      } else if (tabErrors.attendees) {
+        setActiveTab('attendees');
+      } else if (tabErrors.resources) {
+        setActiveTab('resources');
+      } else if (tabErrors.recurrence) {
+        setActiveTab('recurrence');
+      } else if (tabErrors.emails) {
+        setActiveTab('emails');
+      }
+      
+      return; // Stop form submission
+    }
     
     setIsSubmitting(true);
     
@@ -828,48 +846,72 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             className="flex-1 overflow-hidden flex flex-col"
           >
             <div className="w-full border-b bg-gray-50 p-2">
-              <TabsList className="flex flex-wrap h-auto min-h-12 w-full justify-evenly rounded-lg overflow-visible gap-1 p-1 bg-muted/20 border border-muted/30">
-                <TabsTrigger 
-                  value="basic" 
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${title || location || description ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
-                >
-                  <Calendar className={`h-4 w-4 ${title || location || description ? 'text-primary' : ''}`} />
-                  <span>Details</span>
-                </TabsTrigger>
+              {/* Calculate which tabs have errors for our indicators */}
+              {(() => {
+                // Get error states for all tabs
+                const tabErrors = getErrorsByTab(errors);
                 
-                <TabsTrigger 
-                  value="attendees" 
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${attendees.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
-                >
-                  <Users className={`h-4 w-4 ${attendees.length > 0 ? 'text-primary' : ''}`} />
-                  <span>Attendees</span>
-                </TabsTrigger>
-                
-                <TabsTrigger 
-                  value="resources" 
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${resources.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
-                >
-                  <Package className={`h-4 w-4 ${resources.length > 0 ? 'text-primary' : ''}`} />
-                  <span>Resources</span>
-                </TabsTrigger>
-                
-                <TabsTrigger 
-                  value="recurrence" 
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${recurrence.pattern !== 'None' ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
-                >
-                  <Repeat className={`h-4 w-4 ${recurrence.pattern !== 'None' ? 'text-primary' : ''}`} />
-                  <span>Recurrence</span>
-                </TabsTrigger>
-                
-                <TabsTrigger 
-                  value="emails" 
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 relative ${attendees.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''}`}
-                  disabled={attendees.length === 0}
-                >
-                  <Mail className={`h-4 w-4 ${attendees.length > 0 ? 'text-primary' : ''}`} />
-                  <span>Email</span>
-                </TabsTrigger>
-              </TabsList>
+                return (
+                  <TabsList className="flex flex-wrap h-auto min-h-12 w-full justify-evenly rounded-lg overflow-visible gap-1 p-1 bg-muted/20 border border-muted/30">
+                    <TabsTrigger 
+                      value="basic" 
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${title || location || description ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.basic ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
+                    >
+                      {tabErrors.basic && (
+                        <AlertCircle className="h-4 w-4 text-red-500 absolute top-1 left-1" />
+                      )}
+                      <Calendar className={`h-4 w-4 ${title || location || description ? 'text-primary' : ''} ${tabErrors.basic ? 'text-red-500' : ''}`} />
+                      <span className={tabErrors.basic ? 'text-red-500 font-medium' : ''}>Details</span>
+                    </TabsTrigger>
+                    
+                    <TabsTrigger 
+                      value="attendees" 
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${attendees.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.attendees ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
+                    >
+                      {tabErrors.attendees && (
+                        <AlertCircle className="h-4 w-4 text-red-500 absolute top-1 left-1" />
+                      )}
+                      <Users className={`h-4 w-4 ${attendees.length > 0 ? 'text-primary' : ''} ${tabErrors.attendees ? 'text-red-500' : ''}`} />
+                      <span className={tabErrors.attendees ? 'text-red-500 font-medium' : ''}>Attendees</span>
+                    </TabsTrigger>
+                    
+                    <TabsTrigger 
+                      value="resources" 
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${resources.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.resources ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
+                    >
+                      {tabErrors.resources && (
+                        <AlertCircle className="h-4 w-4 text-red-500 absolute top-1 left-1" />
+                      )}
+                      <Package className={`h-4 w-4 ${resources.length > 0 ? 'text-primary' : ''} ${tabErrors.resources ? 'text-red-500' : ''}`} />
+                      <span className={tabErrors.resources ? 'text-red-500 font-medium' : ''}>Resources</span>
+                    </TabsTrigger>
+                    
+                    <TabsTrigger 
+                      value="recurrence" 
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${recurrence.pattern !== 'None' ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.recurrence ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
+                    >
+                      {tabErrors.recurrence && (
+                        <AlertCircle className="h-4 w-4 text-red-500 absolute top-1 left-1" />
+                      )}
+                      <Repeat className={`h-4 w-4 ${recurrence.pattern !== 'None' ? 'text-primary' : ''} ${tabErrors.recurrence ? 'text-red-500' : ''}`} />
+                      <span className={tabErrors.recurrence ? 'text-red-500 font-medium' : ''}>Recurrence</span>
+                    </TabsTrigger>
+                    
+                    <TabsTrigger 
+                      value="emails" 
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 relative ${attendees.length > 0 ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.emails ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
+                      disabled={attendees.length === 0}
+                    >
+                      {tabErrors.emails && (
+                        <AlertCircle className="h-4 w-4 text-red-500 absolute top-1 left-1" />
+                      )}
+                      <Mail className={`h-4 w-4 ${attendees.length > 0 ? 'text-primary' : ''} ${tabErrors.emails ? 'text-red-500' : ''}`} />
+                      <span className={tabErrors.emails ? 'text-red-500 font-medium' : ''}>Email</span>
+                    </TabsTrigger>
+                  </TabsList>
+                );
+              })()}
+              
             </div>
             
             <ScrollArea className="flex-1 p-4 overflow-y-auto">
@@ -1745,7 +1787,25 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               {attendees.length > 0 && (
                 <Button
                   onClick={async () => {
-                    if (!validateForm()) return;
+                    if (!validateForm()) {
+                      // If there are errors, check which tab has errors and switch to it
+                      const tabErrors = getErrorsByTab(errors);
+                      
+                      // Find the first tab with errors
+                      if (tabErrors.basic) {
+                        setActiveTab('basic');
+                      } else if (tabErrors.attendees) {
+                        setActiveTab('attendees');
+                      } else if (tabErrors.resources) {
+                        setActiveTab('resources');
+                      } else if (tabErrors.recurrence) {
+                        setActiveTab('recurrence');
+                      } else if (tabErrors.emails) {
+                        setActiveTab('emails');
+                      }
+                      
+                      return; // Stop form submission
+                    }
                     
                     // Prepare date objects using the consistent approach
                     let startDateTime, endDateTime;
