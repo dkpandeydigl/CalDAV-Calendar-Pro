@@ -174,8 +174,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       return;
     }
     
-    // When modal opens
-    if (open) {
+    // One-time initialization for the form when modal opens
+    const initializeForm = () => {
       // First, reset the form to ensure we start with a clean state
       resetForm();
       
@@ -373,7 +373,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       // Clear any previous errors
       setErrors({});
     }
-  }, [open, event, selectedDate, calendars, selectedTimezone]);
+    
+    // Call the initialization function once
+    initializeForm();
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, event, selectedDate]);
   
   const resetForm = () => {
     setTitle('');
@@ -801,44 +806,59 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             onValueChange={setActiveTab}
             className="flex-1 overflow-hidden flex flex-col"
           >
-            <TabsList className="w-full justify-start border-b p-0 rounded-none">
-              <TabsTrigger value="basic" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+            <TabsList className="w-full justify-start border-b p-0 rounded-none bg-gray-50">
+              <TabsTrigger 
+                value="basic" 
+                className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-3 px-4 transition-all"
+              >
                 <Calendar className="h-4 w-4 mr-2" />
                 Basic Details
               </TabsTrigger>
               
-              <TabsTrigger value="attendees" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+              <TabsTrigger 
+                value="attendees" 
+                className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-3 px-4 transition-all"
+              >
                 <Users className="h-4 w-4 mr-2" />
                 Attendees
                 {attendees.length > 0 && (
-                  <Badge variant="outline" className="ml-2 h-5 min-w-5 px-1 flex items-center justify-center">
+                  <Badge variant="secondary" className="ml-2 bg-primary/10 text-primary font-semibold">
                     {attendees.length}
                   </Badge>
                 )}
               </TabsTrigger>
               
-              <TabsTrigger value="resources" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+              <TabsTrigger 
+                value="resources" 
+                className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-3 px-4 transition-all"
+              >
                 <Package className="h-4 w-4 mr-2" />
                 Resources
                 {resources.length > 0 && (
-                  <Badge variant="outline" className="ml-2 h-5 min-w-5 px-1 flex items-center justify-center">
+                  <Badge variant="secondary" className="ml-2 bg-primary/10 text-primary font-semibold">
                     {resources.length}
                   </Badge>
                 )}
               </TabsTrigger>
               
-              <TabsTrigger value="recurrence" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+              <TabsTrigger 
+                value="recurrence" 
+                className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-3 px-4 transition-all"
+              >
                 <Repeat className="h-4 w-4 mr-2" />
                 Recurrence
                 {recurrence.pattern !== 'None' && (
-                  <Badge variant="outline" className="ml-2 px-2 py-0">
+                  <Badge variant="secondary" className="ml-2 bg-primary/10 text-primary">
                     {recurrence.pattern}
                   </Badge>
                 )}
               </TabsTrigger>
               
               {attendees.length > 0 && (
-                <TabsTrigger value="emails" className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none py-2">
+                <TabsTrigger 
+                  value="emails" 
+                  className="rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none data-[state=active]:bg-white data-[state=active]:text-primary font-medium py-3 px-4 transition-all"
+                >
                   <Mail className="h-4 w-4 mr-2" />
                   Email Preview
                 </TabsTrigger>
