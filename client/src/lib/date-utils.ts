@@ -6,37 +6,68 @@ export const formatMonthYear = (date: Date): string => {
   return format(date, 'MMMM yyyy');
 };
 
+// Get user's timezone preference or default to browser timezone
+const getUserTimezone = (): string => {
+  try {
+    // Use Intl API to get the browser's timezone
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch (e) {
+    return 'UTC'; // Fallback to UTC
+  }
+};
+
 // Format date as "September 4, 2023"
 export const formatFullDate = (date: Date | string, timezone?: string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
   
-  if (timezone) {
-    return formatInTimeZone(dateObj, timezone, 'MMMM d, yyyy');
+  // Don't do any timezone conversion if:
+  // 1. No timezone is provided, or
+  // 2. The timezone matches the user's timezone (no conversion needed)
+  const userTimezone = getUserTimezone();
+  
+  // Direct formatting with no timezone conversion 
+  if (!timezone || timezone === userTimezone) {
+    return format(dateObj, 'MMMM d, yyyy');
   }
   
-  return format(dateObj, 'MMMM d, yyyy');
+  // Only convert if timezone differs from user timezone
+  return formatInTimeZone(dateObj, timezone, 'MMMM d, yyyy');
 };
 
 // Format time as "9:00 AM"
 export const formatTime = (date: Date | string, timezone?: string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
   
-  if (timezone) {
-    return formatInTimeZone(dateObj, timezone, 'h:mm a');
+  // Don't do any timezone conversion if:
+  // 1. No timezone is provided, or
+  // 2. The timezone matches the user's timezone (no conversion needed)
+  const userTimezone = getUserTimezone();
+  
+  // Direct formatting with no timezone conversion
+  if (!timezone || timezone === userTimezone) {
+    return format(dateObj, 'h:mm a');
   }
   
-  return format(dateObj, 'h:mm a');
+  // Only convert if timezone differs from user timezone
+  return formatInTimeZone(dateObj, timezone, 'h:mm a');
 };
 
 // Format date and time as "Monday, September 4, 2023"
 export const formatDayOfWeekDate = (date: Date | string, timezone?: string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
   
-  if (timezone) {
-    return formatInTimeZone(dateObj, timezone, 'EEEE, MMMM d, yyyy');
+  // Don't do any timezone conversion if:
+  // 1. No timezone is provided, or
+  // 2. The timezone matches the user's timezone (no conversion needed)
+  const userTimezone = getUserTimezone();
+  
+  // Direct formatting with no timezone conversion
+  if (!timezone || timezone === userTimezone) {
+    return format(dateObj, 'EEEE, MMMM d, yyyy');
   }
   
-  return format(dateObj, 'EEEE, MMMM d, yyyy');
+  // Only convert if timezone differs from user timezone
+  return formatInTimeZone(dateObj, timezone, 'EEEE, MMMM d, yyyy');
 };
 
 // Format date and time range for event display
@@ -53,11 +84,22 @@ export const formatEventTimeRange = (
     return 'All Day';
   }
   
-  // We'll check same day status by comparing dates in the target timezone
-  // but won't convert the actual dates yet to avoid double-conversion
-  const isSameDayInTZ = timezone
-    ? formatInTimeZone(startDate, timezone, 'yyyy-MM-dd') === formatInTimeZone(endDate, timezone, 'yyyy-MM-dd')
-    : isSameDay(startDate, endDate);
+  // Get user timezone for comparison
+  const userTimezone = getUserTimezone();
+  
+  // Check if we need to do timezone conversion
+  const shouldConvert = timezone && timezone !== userTimezone;
+  
+  // Check same day in appropriate timezone context
+  let isSameDayInTZ;
+  if (shouldConvert) {
+    // Using timezone conversion only if needed
+    isSameDayInTZ = formatInTimeZone(startDate, timezone, 'yyyy-MM-dd') === 
+                   formatInTimeZone(endDate, timezone, 'yyyy-MM-dd');
+  } else {
+    // No conversion needed
+    isSameDayInTZ = isSameDay(startDate, endDate);
+  }
   
   // Same day event
   if (isSameDayInTZ) {

@@ -25,7 +25,9 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
   const totalDays = calendarMetadata?.totalDays || 1;
   
   // Format event time with timezone awareness
-  const eventTimezone = event.timezone || 'UTC';
+  // Only use event timezone if it exists, otherwise use local browser timezone
+  // This prevents unnecessary conversions when displaying events
+  const eventTimezone = event.timezone || undefined; // Use undefined to trigger local time format
   const startTime = formatTime(new Date(event.startDate), eventTimezone);
   
   // Determine what to display based on multi-day status
