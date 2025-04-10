@@ -784,7 +784,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       <Dialog open={open} onOpenChange={open => {
         if (!open) onClose();
       }}>
-        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
+        <DialogContent className="sm:max-w-[950px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
           <DialogHeader className="pb-4 border-b">
             <DialogTitle className="flex items-center gap-2 text-lg">
               {event ? (
@@ -806,19 +806,19 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             onValueChange={setActiveTab}
             className="flex-1 overflow-hidden flex flex-col"
           >
-            <div className="w-full border-b bg-gray-50 px-2">
-              <TabsList className="flex h-12 w-full justify-center">
+            <div className="w-full border-b bg-gray-50 p-2">
+              <TabsList className="flex flex-wrap h-auto min-h-12 w-full justify-evenly rounded-lg overflow-visible gap-1 p-1 bg-muted/20 border border-muted/30">
                 <TabsTrigger 
                   value="basic" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary px-5"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
                 >
                   <Calendar className="h-4 w-4" />
-                  <span>Basic Details</span>
+                  <span>Details</span>
                 </TabsTrigger>
                 
                 <TabsTrigger 
                   value="attendees" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary px-5"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
                 >
                   <Users className="h-4 w-4" />
                   <span>Attendees</span>
@@ -826,7 +826,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 <TabsTrigger 
                   value="resources" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary px-5"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
                 >
                   <Package className="h-4 w-4" />
                   <span>Resources</span>
@@ -834,7 +834,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 <TabsTrigger 
                   value="recurrence" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary px-5"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
                 >
                   <Repeat className="h-4 w-4" />
                   <span>Recurrence</span>
@@ -842,11 +842,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 <TabsTrigger 
                   value="emails" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary px-5"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2"
                   disabled={attendees.length === 0}
                 >
                   <Mail className="h-4 w-4" />
-                  <span>Email Preview</span>
+                  <span>Email</span>
                 </TabsTrigger>
               </TabsList>
             </div>
