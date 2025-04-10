@@ -723,93 +723,194 @@ export class SyncService {
             
             // Create iCalendar data
             let icalData = "";
+            let currentSequence = 0;
+            const currentTimestamp = this.formatICalDate(new Date());
             
-            // If event has raw data, use it as a template
+            // If event has raw data, modify it as a template while preserving critical fields
             if (event.rawData) {
-              // Parse raw data as a base, but update with our values
               try {
-                // Handle the case where rawData might be an object or string
+                // Extract raw data string
+                let rawDataStr = '';
                 if (typeof event.rawData === 'string') {
-                  const parsedData = JSON.parse(event.rawData);
-                  icalData = typeof parsedData === 'string' ? parsedData : JSON.stringify(parsedData);
+                  try {
+                    const parsedData = JSON.parse(event.rawData);
+                    rawDataStr = typeof parsedData === 'string' ? parsedData : JSON.stringify(parsedData);
+                  } catch (e) {
+                    // If parsing fails, just use the raw data as is
+                    rawDataStr = event.rawData;
+                  }
                 } else {
-                  icalData = JSON.stringify(event.rawData);
+                  rawDataStr = JSON.stringify(event.rawData);
                 }
+                
+                // Extract SEQUENCE from existing data
+                currentSequence = this.extractSequenceFromICal(rawDataStr);
+                
+                // For updates, increment the sequence number
+                if (event.syncStatus === 'pending' && event.url && event.etag) {
+                  currentSequence += 1;
+                  console.log(`Incrementing SEQUENCE to ${currentSequence} for event ${event.id}`);
+                }
+                
+                // Process raw data to update only what we need while keeping other properties
+                // Split by lines to modify specific properties
+                const lines = rawDataStr.split(/\r?\n/);
+                let newLines = [];
+                let inEvent = false;
+                
+                for (let line of lines) {
+                  // Track when we're inside a VEVENT block
+                  if (line.startsWith('BEGIN:VEVENT')) {
+                    inEvent = true;
+                    newLines.push(line);
+                    continue;
+                  }
+                  
+                  if (line.startsWith('END:VEVENT')) {
+                    inEvent = false;
+                    newLines.push(line);
+                    continue;
+                  }
+                  
+                  // Only modify lines inside the VEVENT block
+                  if (inEvent) {
+                    // Update core properties that might have changed
+                    if (line.startsWith('SUMMARY:')) {
+                      newLines.push(`SUMMARY:${event.title || "Untitled Event"}`);
+                    } 
+                    else if (line.startsWith('DTSTART')) {
+                      newLines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.startDate, event.allDay === true)}`);
+                    } 
+                    else if (line.startsWith('DTEND')) {
+                      newLines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.endDate, event.allDay === true)}`);
+                    }
+                    else if (line.startsWith('LOCATION:') && event.location !== undefined) {
+                      newLines.push(event.location ? `LOCATION:${event.location}` : '');
+                    }
+                    else if (line.startsWith('DESCRIPTION:') && event.description !== undefined) {
+                      newLines.push(event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}` : '');
+                    }
+                    // Update SEQUENCE
+                    else if (line.startsWith('SEQUENCE:')) {
+                      newLines.push(`SEQUENCE:${currentSequence}`);
+                    }
+                    // Update timestamps
+                    else if (line.startsWith('DTSTAMP:')) {
+                      newLines.push(`DTSTAMP:${currentTimestamp}`);
+                    }
+                    else if (line.startsWith('LAST-MODIFIED:')) {
+                      newLines.push(`LAST-MODIFIED:${currentTimestamp}`);
+                    }
+                    else if (line.startsWith('CREATED:')) {
+                      // Keep the original CREATED timestamp
+                      newLines.push(line);
+                    }
+                    // Keep UID exactly as is
+                    else if (line.startsWith('UID:')) {
+                      newLines.push(line);
+                    }
+                    // For RRULE, use our updated version if available
+                    else if (line.startsWith('RRULE:') && event.recurrenceRule) {
+                      newLines.push(`RRULE:${this.formatRecurrenceRule(event.recurrenceRule)}`);
+                    }
+                    // Skip attendee and resource lines - we'll add them back if needed
+                    else if (!line.startsWith('ATTENDEE')) {
+                      newLines.push(line);
+                    }
+                  } else {
+                    // Outside VEVENT, keep lines as they are
+                    newLines.push(line);
+                  }
+                }
+                
+                // Process attendees and add them after existing props
+                let attendeesAndResourcesSection = '';
+                
+                // Process attendees if present
+                if (event.attendees) {
+                  try {
+                    const attendeesArray = typeof event.attendees === 'string' 
+                      ? JSON.parse(event.attendees) 
+                      : event.attendees;
+                      
+                    if (Array.isArray(attendeesArray)) {
+                      attendeesArray.forEach(attendee => {
+                        if (attendee && attendee.email) {
+                          // Format: ATTENDEE;CN=Name;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:email@example.com
+                          const cn = attendee.name ? `;CN=${attendee.name}` : '';
+                          const role = attendee.role ? `;ROLE=${attendee.role}` : ';ROLE=REQ-PARTICIPANT';
+                          const status = attendee.status ? `;PARTSTAT=${attendee.status}` : ';PARTSTAT=NEEDS-ACTION';
+                          attendeesAndResourcesSection += `ATTENDEE${cn}${role}${status}:mailto:${attendee.email}\r\n`;
+                        }
+                      });
+                    }
+                  } catch (e) {
+                    console.error(`Error processing attendees for event ${event.id}:`, e);
+                  }
+                }
+                
+                // Process resources if present
+                if (event.resources) {
+                  try {
+                    const resourcesArray = typeof event.resources === 'string' 
+                      ? JSON.parse(event.resources) 
+                      : event.resources;
+                      
+                    if (Array.isArray(resourcesArray)) {
+                      resourcesArray.forEach(resource => {
+                        if (resource && resource.adminEmail) {
+                          // Format: ATTENDEE;CN=Resource Name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT:mailto:resource@example.com
+                          const cn = resource.adminName ? `;CN=${resource.adminName}` : '';
+                          const subType = resource.subType ? `;X-RESOURCE-TYPE=${resource.subType}` : '';
+                          attendeesAndResourcesSection += `ATTENDEE${cn};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${subType}:mailto:${resource.adminEmail}\r\n`;
+                        }
+                      });
+                    }
+                  } catch (e) {
+                    console.error(`Error processing resources for event ${event.id}:`, e);
+                  }
+                }
+                
+                // Add SEQUENCE if it wasn't there before
+                if (!rawDataStr.includes('SEQUENCE:')) {
+                  // Find position of END:VEVENT
+                  const endEventPos = newLines.findIndex(line => line.startsWith('END:VEVENT'));
+                  if (endEventPos > -1) {
+                    // Insert before END:VEVENT
+                    newLines.splice(endEventPos, 0, `SEQUENCE:${currentSequence}`);
+                  }
+                }
+                
+                // Add LAST-MODIFIED if it wasn't there before
+                if (!rawDataStr.includes('LAST-MODIFIED:')) {
+                  // Find position of END:VEVENT
+                  const endEventPos = newLines.findIndex(line => line.startsWith('END:VEVENT'));
+                  if (endEventPos > -1) {
+                    // Insert before END:VEVENT
+                    newLines.splice(endEventPos, 0, `LAST-MODIFIED:${currentTimestamp}`);
+                  }
+                }
+                
+                // Insert the attendees and resources section before END:VEVENT
+                if (attendeesAndResourcesSection) {
+                  const endEventPos = newLines.findIndex(line => line.startsWith('END:VEVENT'));
+                  if (endEventPos > -1) {
+                    // Insert attendees before END:VEVENT
+                    newLines.splice(endEventPos, 0, attendeesAndResourcesSection);
+                  }
+                }
+                
+                // Join lines back into iCalendar format
+                icalData = newLines.join('\r\n');
+                
               } catch (e) {
-                // If parsing fails, just use the raw data as is
-                icalData = String(event.rawData);
+                console.error(`Error updating raw ICS data for event ${event.id}:`, e);
+                // Fallback to creating new iCalendar data
+                icalData = this.createNewICalData(event, job.connection.username, currentSequence, currentTimestamp);
               }
             } else {
-              // Create new iCalendar data
-              let attendeesSection = '';
-              let resourcesSection = '';
-              
-              // Process attendees if present
-              if (event.attendees) {
-                try {
-                  const attendeesArray = typeof event.attendees === 'string' 
-                    ? JSON.parse(event.attendees) 
-                    : event.attendees;
-                    
-                  if (Array.isArray(attendeesArray)) {
-                    attendeesArray.forEach(attendee => {
-                      if (attendee && attendee.email) {
-                        // Format: ATTENDEE;CN=Name;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:email@example.com
-                        const cn = attendee.name ? `;CN=${attendee.name}` : '';
-                        const role = attendee.role ? `;ROLE=${attendee.role}` : ';ROLE=REQ-PARTICIPANT';
-                        const status = attendee.status ? `;PARTSTAT=${attendee.status}` : ';PARTSTAT=NEEDS-ACTION';
-                        attendeesSection += `ATTENDEE${cn}${role}${status}:mailto:${attendee.email}\n`;
-                      }
-                    });
-                  }
-                } catch (e) {
-                  console.error(`Error processing attendees for event ${event.id}:`, e);
-                }
-              }
-              
-              // Process resources if present
-              if (event.resources) {
-                try {
-                  const resourcesArray = typeof event.resources === 'string' 
-                    ? JSON.parse(event.resources) 
-                    : event.resources;
-                    
-                  if (Array.isArray(resourcesArray)) {
-                    resourcesArray.forEach(resource => {
-                      if (resource && resource.adminEmail) {
-                        // Format: ATTENDEE;CN=Resource Name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT:mailto:resource@example.com
-                        const cn = resource.adminName ? `;CN=${resource.adminName}` : '';
-                        const subType = resource.subType ? `;X-RESOURCE-TYPE=${resource.subType}` : '';
-                        resourcesSection += `ATTENDEE${cn};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${subType}:mailto:${resource.adminEmail}\n`;
-                      }
-                    });
-                  }
-                } catch (e) {
-                  console.error(`Error processing resources for event ${event.id}:`, e);
-                }
-              }
-              
-              // Add organizer using username as both name and email (if not available)
-              const username = job.connection.username;
-              // Extract email from username if it looks like an email
-              const emailMatch = username.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/);
-              const email = emailMatch ? username : `${username}@caldavclient.local`;
-              const orgSection = `ORGANIZER;CN=${username}:mailto:${email}\n`;
-              
-              icalData = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//CalDAV Client//NONSGML v1.0//EN
-BEGIN:VEVENT
-UID:${event.uid}
-SUMMARY:${event.title || "Untitled Event"}
-DTSTART:${this.formatICalDate(event.startDate, event.allDay === true)}
-DTEND:${this.formatICalDate(event.endDate, event.allDay === true)}
-${event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\n` : ''}
-${event.location ? `LOCATION:${event.location}\n` : ''}
-DTSTAMP:${this.formatICalDate(new Date())}
-${event.recurrenceRule ? `RRULE:${this.formatRecurrenceRule(event.recurrenceRule)}\n` : ''}
-${orgSection}${attendeesSection}${resourcesSection}END:VEVENT
-END:VCALENDAR`;
+              // No existing raw data, create new iCalendar data
+              icalData = this.createNewICalData(event, job.connection.username, currentSequence, currentTimestamp);
             }
             
             // Determine if we're creating or updating
@@ -1008,6 +1109,89 @@ END:VCALENDAR`;
       console.error('Error extracting SEQUENCE from iCalendar data:', error);
       return 0; // Safe default
     }
+  }
+  
+  /**
+   * Create new iCalendar data for an event when no existing template is available
+   * @param event The event to create iCalendar data for
+   * @param organizer The username of the organizer
+   * @param sequence The sequence number for the event
+   * @param timestamp The timestamp to use for DTSTAMP and LAST-MODIFIED
+   * @returns iCalendar data as a string
+   */
+  private createNewICalData(event: any, organizer: string, sequence: number, timestamp: string): string {
+    let attendeesSection = '';
+    let resourcesSection = '';
+    
+    // Process attendees if present
+    if (event.attendees) {
+      try {
+        const attendeesArray = typeof event.attendees === 'string' 
+          ? JSON.parse(event.attendees) 
+          : event.attendees;
+          
+        if (Array.isArray(attendeesArray)) {
+          attendeesArray.forEach(attendee => {
+            if (attendee && attendee.email) {
+              // Format: ATTENDEE;CN=Name;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:email@example.com
+              const cn = attendee.name ? `;CN=${attendee.name}` : '';
+              const role = attendee.role ? `;ROLE=${attendee.role}` : ';ROLE=REQ-PARTICIPANT';
+              const status = attendee.status ? `;PARTSTAT=${attendee.status}` : ';PARTSTAT=NEEDS-ACTION';
+              attendeesSection += `ATTENDEE${cn}${role}${status}:mailto:${attendee.email}\r\n`;
+            }
+          });
+        }
+      } catch (e) {
+        console.error(`Error processing attendees for event ${event.id}:`, e);
+      }
+    }
+    
+    // Process resources if present
+    if (event.resources) {
+      try {
+        const resourcesArray = typeof event.resources === 'string' 
+          ? JSON.parse(event.resources) 
+          : event.resources;
+          
+        if (Array.isArray(resourcesArray)) {
+          resourcesArray.forEach(resource => {
+            if (resource && resource.adminEmail) {
+              // Format: ATTENDEE;CN=Resource Name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT:mailto:resource@example.com
+              const cn = resource.adminName ? `;CN=${resource.adminName}` : '';
+              const subType = resource.subType ? `;X-RESOURCE-TYPE=${resource.subType}` : '';
+              resourcesSection += `ATTENDEE${cn};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${subType}:mailto:${resource.adminEmail}\r\n`;
+            }
+          });
+        }
+      } catch (e) {
+        console.error(`Error processing resources for event ${event.id}:`, e);
+      }
+    }
+    
+    // Add organizer using username as both name and email (if not available)
+    // Extract email from username if it looks like an email
+    const emailMatch = organizer.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/);
+    const email = emailMatch ? organizer : `${organizer}@caldavclient.local`;
+    const orgSection = `ORGANIZER;CN=${organizer}:mailto:${email}\r\n`;
+    
+    // Build the iCalendar data
+    return `BEGIN:VCALENDAR\r
+VERSION:2.0\r
+PRODID:-//CalDAV Client//NONSGML v1.0//EN\r
+BEGIN:VEVENT\r
+UID:${event.uid}\r
+SUMMARY:${event.title || "Untitled Event"}\r
+DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.startDate, event.allDay === true)}\r
+DTEND${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.endDate, event.allDay === true)}\r
+${event.description ? `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\r\n` : ''}\
+${event.location ? `LOCATION:${event.location}\r\n` : ''}\
+DTSTAMP:${timestamp}\r
+CREATED:${timestamp}\r
+LAST-MODIFIED:${timestamp}\r
+SEQUENCE:${sequence}\r
+${event.recurrenceRule ? `RRULE:${this.formatRecurrenceRule(event.recurrenceRule)}\r\n` : ''}\
+${orgSection}${attendeesSection}${resourcesSection}END:VEVENT\r
+END:VCALENDAR`;
   }
 
   /**
