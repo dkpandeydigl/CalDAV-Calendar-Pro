@@ -459,9 +459,18 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   <span>Description</span>
                 </div>
                 <div 
-                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 max-h-[12em] overflow-y-auto pr-2"
+                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 overflow-hidden line-clamp-3"
                   dangerouslySetInnerHTML={{ __html: event.description }}
                 />
+                {event.description.length > 150 && (
+                  <button 
+                    onClick={() => window.open(`#view-full-description-${event.id}`, '_blank')}
+                    className="text-xs text-primary hover:text-primary/80 mt-1 flex items-center"
+                  >
+                    <span className="material-icons text-xs mr-1">unfold_more</span>
+                    Show full description
+                  </button>
+                )}
               </div>
             )}
             
@@ -475,9 +484,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <span>Attendees ({attendees.length})</span>
                     </div>
                     <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                      <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
+                      <ul className="space-y-2">
                         {attendees
                           .filter(Boolean)
+                          .slice(0, 2) // Show only the first 2 attendees
                           .map((attendee, index) => {
                             // Handle both string and object formats
                             if (typeof attendee === 'object' && attendee !== null) {
@@ -512,6 +522,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               );
                             }
                           })}
+                        {attendees.length > 2 && (
+                          <li className="text-xs text-center mt-2">
+                            <button 
+                              onClick={() => window.open(`#view-all-attendees-${event.id}`, '_blank')}
+                              className="inline-flex items-center bg-slate-200 px-2 py-1 rounded-full text-slate-600 hover:bg-slate-300"
+                            >
+                              <span className="material-icons text-xs mr-1">people</span>
+                              + {attendees.length - 2} more
+                            </button>
+                          </li>
+                        )}
                       </ul>
                     </div>
                   </div>
@@ -592,8 +613,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <span>Resources ({parsedResources.length})</span>
                     </div>
                     <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                      <ul className="space-y-1 max-h-[10em] overflow-y-auto pr-2">
+                      <ul className="space-y-1">
                         {parsedResources
+                          .slice(0, 1) // Show only the first resource
                           .map((resource: any, index) => {
                           try {
                             // Parse resource if it's a string that might be JSON
@@ -696,6 +718,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             );
                           }
                         })}
+                        {parsedResources.length > 1 && (
+                          <li className="text-xs text-center mt-2">
+                            <button 
+                              onClick={() => window.open(`#view-all-resources-${event.id}`, '_blank')}
+                              className="inline-flex items-center bg-slate-200 px-2 py-1 rounded-full text-slate-600 hover:bg-slate-300"
+                            >
+                              <span className="material-icons text-xs mr-1">room</span>
+                              + {parsedResources.length - 1} more
+                            </button>
+                          </li>
+                        )}
                       </ul>
                     </div>
                   </div>
