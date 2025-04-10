@@ -52,6 +52,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const [areAttendeesExpanded, setAreAttendeesExpanded] = useState(false);
+  const [areResourcesExpanded, setAreResourcesExpanded] = useState(false);
   
   // Add a timeout to prevent infinite loading state
   useEffect(() => {
