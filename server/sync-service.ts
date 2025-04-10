@@ -422,18 +422,52 @@ export class SyncService {
                   console.log(`Detected Thunderbird event with suspicious date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
                   console.log(`Fixing event ${caldavEvent.summary || 'Untitled'} with UID ${caldavEvent.uid}`);
                   
+                  // Extract timezone information from raw iCalendar data
+                  let tzid = 'UTC';
+                  const tzidMatch = rawIcalData.match(/TZID:([^\r\n]+)/i);
+                  if (tzidMatch && tzidMatch[1]) {
+                    tzid = tzidMatch[1].trim();
+                    console.log(`Found timezone in event: ${tzid}`);
+                  }
+                  
                   // Use the end date as the single date for this event
                   const endDate = new Date(caldavEvent.endDate);
                   
-                  // Set start date to the same day as end date, but one hour earlier
-                  const fixedStartDate = new Date(endDate);
-                  fixedStartDate.setHours(fixedStartDate.getHours() - 1);
+                  // Extract the exact event time from the end date (hours, minutes, seconds)
+                  const endHours = endDate.getUTCHours();
+                  const endMinutes = endDate.getUTCMinutes();
+                  const endSeconds = endDate.getUTCSeconds();
+                  
+                  // Get the end date components (year, month, day)
+                  const endYear = endDate.getUTCFullYear();
+                  const endMonth = endDate.getUTCMonth();
+                  const endDay = endDate.getUTCDate();
+                  
+                  // Create new dates using these components
+                  // This ensures we're working with the actual event day (March 31, 2025)
+                  // We'll set it to start 1 hour before the end time
+                  const fixedStartDate = new Date(Date.UTC(endYear, endMonth, endDay, 
+                      endHours > 0 ? endHours - 1 : 23, endMinutes, endSeconds));
+                  
+                  // Make sure both dates are the same date if it's a single-day event
+                  const fixedEndDate = new Date(Date.UTC(endYear, endMonth, endDay, 
+                      endHours, endMinutes, endSeconds));
                   
                   // Update the dates
                   caldavEvent.startDate = fixedStartDate;
-                  caldavEvent.endDate = endDate;
+                  caldavEvent.endDate = fixedEndDate;
                   
-                  console.log(`Fixed date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
+                  // Preserve the timezone information
+                  caldavEvent.timezone = tzid;
+                  
+                  console.log(`Fixed date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()} with timezone ${tzid}`);
+                  
+                  // Check if it's an all-day event
+                  const isAllDay = endHours === 0 && endMinutes === 0 && endSeconds === 0;
+                  if (isAllDay) {
+                    console.log(`Detected all-day event, setting allDay flag`);
+                    caldavEvent.allDay = true;
+                  }
                   
                   // Set a note that this is a fixed event (using a custom property)
                   (caldavEvent as any).fixedThunderbirdEvent = true;
@@ -676,18 +710,52 @@ export class SyncService {
                       console.log(`Detected Thunderbird event with suspicious date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
                       console.log(`Fixing event ${caldavEvent.summary || 'Untitled'} with UID ${caldavEvent.uid}`);
                       
+                      // Extract timezone information from raw iCalendar data
+                      let tzid = 'UTC';
+                      const tzidMatch = rawIcalData.match(/TZID:([^\r\n]+)/i);
+                      if (tzidMatch && tzidMatch[1]) {
+                        tzid = tzidMatch[1].trim();
+                        console.log(`Found timezone in event: ${tzid}`);
+                      }
+                      
                       // Use the end date as the single date for this event
                       const endDate = new Date(caldavEvent.endDate);
                       
-                      // Set start date to the same day as end date, but one hour earlier
-                      const fixedStartDate = new Date(endDate);
-                      fixedStartDate.setHours(fixedStartDate.getHours() - 1);
+                      // Extract the exact event time from the end date (hours, minutes, seconds)
+                      const endHours = endDate.getUTCHours();
+                      const endMinutes = endDate.getUTCMinutes();
+                      const endSeconds = endDate.getUTCSeconds();
+                      
+                      // Get the end date components (year, month, day)
+                      const endYear = endDate.getUTCFullYear();
+                      const endMonth = endDate.getUTCMonth();
+                      const endDay = endDate.getUTCDate();
+                      
+                      // Create new dates using these components
+                      // This ensures we're working with the actual event day (March 31, 2025)
+                      // We'll set it to start 1 hour before the end time
+                      const fixedStartDate = new Date(Date.UTC(endYear, endMonth, endDay, 
+                          endHours > 0 ? endHours - 1 : 23, endMinutes, endSeconds));
+                      
+                      // Make sure both dates are the same date if it's a single-day event
+                      const fixedEndDate = new Date(Date.UTC(endYear, endMonth, endDay, 
+                          endHours, endMinutes, endSeconds));
                       
                       // Update the dates
                       caldavEvent.startDate = fixedStartDate;
-                      caldavEvent.endDate = endDate;
+                      caldavEvent.endDate = fixedEndDate;
                       
-                      console.log(`Fixed date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
+                      // Preserve the timezone information
+                      caldavEvent.timezone = tzid;
+                      
+                      console.log(`Fixed date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()} with timezone ${tzid}`);
+                      
+                      // Check if it's an all-day event
+                      const isAllDay = endHours === 0 && endMinutes === 0 && endSeconds === 0;
+                      if (isAllDay) {
+                        console.log(`Detected all-day event, setting allDay flag`);
+                        caldavEvent.allDay = true;
+                      }
                       
                       // Set a note that this is a fixed event (using a custom property)
                       (caldavEvent as any).fixedThunderbirdEvent = true;
