@@ -9,7 +9,7 @@ import { SyncSettingsModal } from '@/components/modals/SyncSettingsModal';
 import ShareCalendarModal from '@/components/modals/ShareCalendarModal';
 import ExportCalendarModal from '@/components/modals/ExportCalendarModal';
 import ImportCalendarModal from '@/components/modals/ImportCalendarModal';
-import BulkDeleteModal from '@/components/modals/BulkDeleteModal';
+import { BulkDeleteModal } from '@/components/modals/BulkDeleteModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Event, Calendar as CalendarType } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -18,7 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
-import { Loader2, RefreshCcw } from 'lucide-react';
+import { Loader2, RefreshCcw, Trash } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -351,6 +351,10 @@ function CalendarContent() {
     setImportCalendarOpen(true);
   };
   
+  const handleBulkDelete = () => {
+    setBulkDeleteOpen(true);
+  };
+  
   const handleSync = async () => {
     try {
       setIsSyncing(true);
@@ -401,20 +405,32 @@ function CalendarContent() {
             <h1 className="text-2xl font-semibold">Calendar</h1>
             
             <div className="flex items-center gap-4">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleSync}
-                disabled={isSyncing}
-                className="text-sm"
-              >
-                {isSyncing ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCcw className="mr-2 h-4 w-4" />
-                )}
-                Sync
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleSync}
+                  disabled={isSyncing}
+                  className="text-sm"
+                >
+                  {isSyncing ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                  )}
+                  Sync
+                </Button>
+                
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleBulkDelete}
+                  className="text-sm"
+                >
+                  <Trash className="mr-2 h-4 w-4" />
+                  Bulk Delete
+                </Button>
+              </div>
               
               <Tabs defaultValue={viewType} onValueChange={(value) => setViewType(value as CalendarViewType)}>
                 <TabsList>
@@ -486,6 +502,11 @@ function CalendarContent() {
       <ImportCalendarModal
         open={importCalendarOpen}
         onOpenChange={setImportCalendarOpen}
+      />
+      
+      <BulkDeleteModal
+        isOpen={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
       />
     </div>
   );

@@ -157,7 +157,7 @@ export function BulkDeleteModal({ isOpen, onClose }: BulkDeleteModalProps) {
         <div className="grid gap-2">
           <Label>Select {dateFilterType === "month" ? "Month" : "Date"}</Label>
           <Calendar
-            mode={dateFilterType === "month" ? "month" : "single"}
+            mode="single"
             selected={selectedDate}
             onSelect={setSelectedDate}
             className="rounded-md border"
