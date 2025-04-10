@@ -993,6 +993,24 @@ END:VCALENDAR`;
   }
 
   /**
+   * Extract the SEQUENCE value from an iCalendar event string
+   * @param icalData The raw iCalendar data string
+   * @returns The SEQUENCE value as a number (defaults to 0 if not found)
+   */
+  private extractSequenceFromICal(icalData: string): number {
+    try {
+      const sequenceMatch = icalData.match(/SEQUENCE:(\d+)/);
+      if (sequenceMatch && sequenceMatch[1]) {
+        return parseInt(sequenceMatch[1], 10);
+      }
+      return 0; // Default if no SEQUENCE is found
+    } catch (error) {
+      console.error('Error extracting SEQUENCE from iCalendar data:', error);
+      return 0; // Safe default
+    }
+  }
+
+  /**
    * Shut down all sync jobs, used when the server is shutting down
    */
   shutdownAll() {
