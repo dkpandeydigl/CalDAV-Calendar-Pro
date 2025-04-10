@@ -4,6 +4,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -1095,13 +1097,27 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         </Select>
                       </div>
                     </div>
-                    <Textarea
-                      id="description"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      placeholder="Event Description"
-                      className="min-h-[120px]"
-                    />
+                    <div className="rich-text-editor-container">
+                      <ReactQuill
+                        id="description"
+                        value={description}
+                        onChange={setDescription}
+                        placeholder="Event Description"
+                        className="min-h-[120px]"
+                        theme="snow"
+                        modules={{
+                          toolbar: [
+                            [{ 'header': [1, 2, 3, false] }],
+                            ['bold', 'italic', 'underline', 'strike'],
+                            [{'list': 'ordered'}, {'list': 'bullet'}],
+                            [{'indent': '-1'}, {'indent': '+1'}],
+                            [{'color': []}, {'background': []}],
+                            ['link'],
+                            ['clean']
+                          ],
+                        }}
+                      />
+                    </div>
                   </div>
                   
                   <div className="flex items-center space-x-2">
