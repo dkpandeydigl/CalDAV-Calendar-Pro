@@ -117,13 +117,24 @@ export function generateICalEvent(event: any, options: {
   organizer: string;
   sequence: number;
   timestamp: string;
+  additionalOptions?: {
+    method?: string;
+    includeTimezone?: boolean;
+    useSequence?: boolean;
+  };
 }): string {
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
-    'BEGIN:VEVENT'
+    'PRODID:-//CalDAV Client//NONSGML v1.0//EN'
   ];
+  
+  // Add METHOD if specified in additionalOptions
+  if (options.additionalOptions?.method) {
+    lines.push(`METHOD:${options.additionalOptions.method}`);
+  }
+  
+  lines.push('BEGIN:VEVENT');
   
   // Add required properties
   lines.push(formatContentLine('UID', event.uid));
@@ -324,9 +335,15 @@ export function extractSequenceFromICal(icalData: string): number {
 export function generateThunderbirdCompatibleICS(event: any): string {
   // Basic format is the same but we add additional properties for Thunderbird compatibility
   const icsData = generateICalEvent(event, {
-    method: 'REQUEST', // Use REQUEST method for invitations
-    includeTimezone: true, // Always include timezone for Thunderbird
-    useSequence: true // Use sequence to help with updates
+    organizer: event.organizer?.email || event.organizerEmail || 'unknown@example.com',
+    sequence: event.sequence || 0,
+    timestamp: new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, ''),
+    // Additional options specific to Thunderbird
+    additionalOptions: {
+      method: 'REQUEST', // Use REQUEST method for invitations
+      includeTimezone: true, // Always include timezone for Thunderbird
+      useSequence: true // Use sequence to help with updates
+    }
   });
   
   // Additional Thunderbird-specific properties could be added here if needed
