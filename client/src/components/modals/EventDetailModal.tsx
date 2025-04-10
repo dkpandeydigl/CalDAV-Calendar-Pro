@@ -441,52 +441,48 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   {formatDayOfWeekDate(startDate, event.timezone || undefined)}
                 </div>
                 
-                {/* Show different representations of the event time based on origin */}
+                {/* STANDARDIZED TIMEZONE DISPLAY */}
                 {event.allDay ? (
-                  <div className="text-sm text-primary/80">
-                    🕒 All Day
+                  <div className="text-sm text-primary/80 bg-neutral-100 px-2 py-1 rounded-md inline-block">
+                    <span className="font-medium">🕒 All Day</span>
                   </div>
-                ) : event.timezone === 'Asia/Kolkata' ? (
-                  <>
-                    {/* For events with explicit Asia/Kolkata timezone, show exact original time */}
-                    <div className="text-sm text-primary/80">
-                      🕒 {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
-                      <span className="font-medium"> (Original Asia/Kolkata Time)</span>
-                    </div>
-                  </>
-                ) : event.timezone === 'UTC' ? (
-                  <>
-                    {/* For events in UTC, show both UTC and local time */}
-                    <div className="text-sm text-primary/80">
-                      🕒 {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
-                      <span className="font-medium"> (Original UTC Time)</span>
-                    </div>
-                    
-                    {/* Always show converted time for UTC events */}
-                    <div className="text-sm text-blue-600 italic mt-1">
-                      🕒 {format(
-                        new Date(startDate.getTime() + (5.5 * 60 * 60 * 1000)), 
-                        'h:mm a'
-                      )} - {format(
-                        new Date(endDate.getTime() + (5.5 * 60 * 60 * 1000)), 
-                        'h:mm a'
-                      )}
-                      <span className="font-medium"> (Your Time in {getUserTimezone()})</span>
-                    </div>
-                  </>
                 ) : (
                   <>
-                    {/* Default case for other timezones */}
-                    <div className="text-sm text-primary/80">
-                      🕒 {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
-                      <span className="font-medium">{event.timezone ? ` (Original ${event.timezone} Time)` : ''}</span>
+                    {/* Display original event time in a consistent way */}
+                    <div className="text-sm">
+                      <div className="flex items-center mt-1 bg-neutral-100 p-1.5 pl-2 rounded-md border border-neutral-200">
+                        <span className="flex-shrink-0 mr-1">🕒</span>
+                        <div className="flex flex-col">
+                          <div className="text-primary font-medium">
+                            {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
+                            <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded ml-1.5">
+                              {event.timezone || 'Original Time'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            Time as recorded in event
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     
-                    {/* Display converted time when event timezone differs from user timezone */}
+                    {/* If needed, display converted time */}
                     {event.timezone && event.timezone !== getUserTimezone() && (
-                      <div className="text-sm text-blue-600 italic mt-1">
-                        🕒 {formatEventTimeRange(startDate, endDate, false, event.timezone)}
-                        <span className="font-medium"> (Your Time in {getUserTimezone()})</span>
+                      <div className="text-sm">
+                        <div className="flex items-center mt-2 bg-blue-50 p-1.5 pl-2 rounded-md border border-blue-200">
+                          <span className="flex-shrink-0 mr-1">🕒</span>
+                          <div className="flex flex-col">
+                            <div className="text-blue-700 font-medium">
+                              {formatEventTimeRange(startDate, endDate, false, event.timezone)}
+                              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1.5">
+                                {getUserTimezone()}
+                              </span>
+                            </div>
+                            <div className="text-xs text-blue-600 mt-0.5">
+                              Your local time
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </>
