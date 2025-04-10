@@ -596,6 +596,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // EMAIL PREVIEW ENDPOINT
+  app.post("/api/email-preview", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const user = await storage.getUser(userId);
+      
+      if (!user?.email) {
+        return res.status(400).json({ 
+          message: "User email not available. Please update your profile with a valid email."
+        });
+      }
+      
+      // Get the event data from the request
+      const { 
+        title, 
+        description, 
+        location, 
+        startDate, 
+        endDate, 
+        attendees,
+        resources 
+      } = req.body;
+      
+      // Validate required fields
+      if (!title || !startDate || !endDate || !attendees) {
+        return res.status(400).json({
+          message: "Missing required fields (title, startDate, endDate, attendees)"
+        });
+      }
+      
+      // Parse the attendees if they're sent as a string
+      let parsedAttendees;
+      try {
+        parsedAttendees = typeof attendees === 'string' ? JSON.parse(attendees) : attendees;
+        if (!Array.isArray(parsedAttendees)) {
+          throw new Error("Attendees must be an array");
+        }
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid attendees format",
+          error: (error instanceof Error) ? error.message : String(error)
+        });
+      }
+      
+      // Initialize with the user's SMTP configuration
+      const initialized = await emailService.initialize(userId);
+      
+      if (!initialized) {
+        // We'll still generate a preview even without valid SMTP config
+        console.log("No valid SMTP configuration, but generating preview anyway");
+      }
+      
+      // Format the dates to make them valid Date objects
+      let parsedStartDate, parsedEndDate;
+      try {
+        parsedStartDate = new Date(startDate);
+        parsedEndDate = new Date(endDate);
+        
+        if (isNaN(parsedStartDate.getTime()) || isNaN(parsedEndDate.getTime())) {
+          throw new Error("Invalid date format");
+        }
+      } catch (error) {
+        return res.status(400).json({
+          message: "Invalid date format",
+          error: (error instanceof Error) ? error.message : String(error)
+        });
+      }
+      
+      // Generate a unique ID for this event
+      const uid = `preview-${Date.now()}@caldav-app`;
+      
+      // Parse resources if they're sent as a string
+      let parsedResources = [];
+      if (resources) {
+        try {
+          parsedResources = typeof resources === 'string' ? JSON.parse(resources) : resources;
+          if (!Array.isArray(parsedResources)) {
+            throw new Error("Resources must be an array");
+          }
+        } catch (error) {
+          return res.status(400).json({
+            message: "Invalid resources format",
+            error: (error instanceof Error) ? error.message : String(error)
+          });
+        }
+      }
+      
+      // Prepare the event invitation data
+      const invitationData = {
+        eventId: 0, // This is just a preview, not a real event
+        uid,
+        title,
+        description,
+        location,
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
+        organizer: {
+          email: user.email,
+          name: user.username || undefined
+        },
+        attendees: parsedAttendees,
+        resources: parsedResources
+      };
+      
+      // Generate the HTML preview of the email
+      const htmlPreview = emailService.generateEmailPreview(invitationData);
+      
+      // Return the HTML preview to the client
+      res.json({ html: htmlPreview });
+    } catch (error) {
+      console.error("Error generating email preview:", error);
+      return res.status(500).json({ 
+        message: "Failed to generate email preview", 
+        error: (error instanceof Error) ? error.message : String(error)
+      });
+    }
+  });
+  
   // EVENTS API
   app.get("/api/events", isAuthenticated, async (req, res) => {
     try {
