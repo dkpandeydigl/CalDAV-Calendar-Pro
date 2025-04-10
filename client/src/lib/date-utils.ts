@@ -36,7 +36,15 @@ export const formatFullDate = (date: Date | string, timezone?: string): string =
   // Don't do any timezone conversion if:
   // 1. No timezone is provided, or
   // 2. The timezone matches the user's timezone (no conversion needed)
+  // 3. Special case for Asia/Kolkata - never convert, use direct format
   const userTimezone = getUserTimezone();
+  
+  // CRITICAL BUGFIX: Special handling for Asia/Kolkata - never convert these dates
+  // This fixes issues with Thunderbird events created in this timezone
+  if (timezone === 'Asia/Kolkata') {
+    console.log('Using direct format for Asia/Kolkata full date without conversion');
+    return format(dateObj, 'MMMM d, yyyy');
+  }
   
   // Direct formatting with no timezone conversion 
   if (!timezone || timezone === userTimezone) {
@@ -54,9 +62,17 @@ export const formatTime = (date: Date | string, timezone?: string): string => {
   // Don't do any timezone conversion if:
   // 1. No timezone is provided, or
   // 2. The timezone matches the user's timezone (no conversion needed)
+  // 3. Special case for Asia/Kolkata - never convert, use direct format
   const userTimezone = getUserTimezone();
   
-  // Direct formatting with no timezone conversion
+  // CRITICAL BUGFIX: Special handling for Asia/Kolkata - never convert these dates
+  // This fixes issues with Thunderbird events created in this timezone
+  if (timezone === 'Asia/Kolkata') {
+    console.log('Using direct format for Asia/Kolkata event time without conversion');
+    return format(dateObj, 'h:mm a');
+  }
+  
+  // Direct formatting with no timezone conversion for other conditions
   if (!timezone || timezone === userTimezone) {
     return format(dateObj, 'h:mm a');
   }
@@ -72,7 +88,15 @@ export const formatDayOfWeekDate = (date: Date | string, timezone?: string): str
   // Don't do any timezone conversion if:
   // 1. No timezone is provided, or
   // 2. The timezone matches the user's timezone (no conversion needed)
+  // 3. Special case for Asia/Kolkata - never convert, use direct format
   const userTimezone = getUserTimezone();
+  
+  // CRITICAL BUGFIX: Special handling for Asia/Kolkata - never convert these dates
+  // This fixes issues with Thunderbird events created in this timezone
+  if (timezone === 'Asia/Kolkata') {
+    console.log('Using direct format for Asia/Kolkata date without conversion');
+    return format(dateObj, 'EEEE, MMMM d, yyyy');
+  }
   
   // Direct formatting with no timezone conversion
   if (!timezone || timezone === userTimezone) {
@@ -97,6 +121,21 @@ export const formatEventTimeRange = (
     return 'All Day';
   }
   
+  // CRITICAL BUGFIX: Special handling for Asia/Kolkata - never convert these dates
+  // This fixes issues with Thunderbird events created in this timezone
+  if (timezone === 'Asia/Kolkata') {
+    console.log('Using direct format for Asia/Kolkata event time range without conversion');
+    // Use direct formatting without timezone conversion
+    const isSameDayDirectly = format(startDate, 'yyyy-MM-dd') === format(endDate, 'yyyy-MM-dd');
+    
+    if (isSameDayDirectly) {
+      return `${format(startDate, 'h:mm a')} - ${format(endDate, 'h:mm a')}`;
+    }
+    
+    return `${format(startDate, 'MMMM d, yyyy')} ${format(startDate, 'h:mm a')} - ${format(endDate, 'MMMM d, yyyy')} ${format(endDate, 'h:mm a')}`;
+  }
+  
+  // Standard handling for other timezones
   // Get user timezone for comparison
   const userTimezone = getUserTimezone();
   
