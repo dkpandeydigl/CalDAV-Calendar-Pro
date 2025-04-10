@@ -459,7 +459,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   <span>Description</span>
                 </div>
                 <div 
-                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 max-h-[12em] overflow-y-auto pr-2"
+                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 line-clamp-3 hover:line-clamp-none hover:max-h-[12em] hover:overflow-y-auto pr-2"
                   dangerouslySetInnerHTML={{ __html: event.description }}
                 />
               </div>
@@ -478,6 +478,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
                         {attendees
                           .filter(Boolean)
+                          .slice(0, 2) // Show only the first 2 attendees
                           .map((attendee, index) => {
                             // Handle both string and object formats
                             if (typeof attendee === 'object' && attendee !== null) {
@@ -512,6 +513,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               );
                             }
                           })}
+                        {attendees.length > 2 && (
+                          <li className="text-xs text-muted-foreground italic text-center py-1">
+                            <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
+                              + {attendees.length - 2} more attendee{attendees.length > 3 ? 's' : ''}
+                            </span>
+                          </li>
+                        )}
                       </ul>
                     </div>
                   </div>
@@ -594,6 +602,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
                       <ul className="space-y-1 max-h-[10em] overflow-y-auto pr-2">
                         {parsedResources
+                          .slice(0, 1) // Show only the first resource
                           .map((resource: any, index) => {
                           try {
                             // Parse resource if it's a string that might be JSON
@@ -696,6 +705,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             );
                           }
                         })}
+                        {parsedResources.length > 1 && (
+                          <li className="text-xs text-muted-foreground italic text-center py-1">
+                            <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
+                              + {parsedResources.length - 1} more resource{parsedResources.length > 2 ? 's' : ''}
+                            </span>
+                          </li>
+                        )}
                       </ul>
                     </div>
                   </div>
