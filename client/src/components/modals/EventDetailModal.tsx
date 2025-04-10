@@ -558,9 +558,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               );
                             }
                           })}
-                        {!areAttendeesExpanded && attendees.length > 1 && (
+                        {!areAttendeesExpanded && attendees.length > 3 && (
                           <li className="text-xs text-muted-foreground italic">
-                            + {attendees.length - 1} more attendee{attendees.length > 2 ? 's' : ''}
+                            + {attendees.length - 3} more attendee{attendees.length > 4 ? 's' : ''}
                           </li>
                         )}
                       </ul>
@@ -657,8 +657,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                           : ''
                       }`}>
                         {parsedResources
-                          // If not expanded, show only the first resource
-                          .slice(0, areResourcesExpanded ? undefined : 1)
+                          // If not expanded, show only the first 2 resources
+                          .slice(0, areResourcesExpanded ? undefined : 2)
                           .map((resource: any, index) => {
                           try {
                             // Parse resource if it's a string that might be JSON
@@ -761,9 +761,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             );
                           }
                         })}
-                        {!areResourcesExpanded && parsedResources.length > 1 && (
+                        {!areResourcesExpanded && parsedResources.length > 2 && (
                           <li className="text-xs text-muted-foreground italic">
-                            + {parsedResources.length - 1} more resource{parsedResources.length > 2 ? 's' : ''}
+                            + {parsedResources.length - 2} more resource{parsedResources.length > 3 ? 's' : ''}
                           </li>
                         )}
                       </ul>
