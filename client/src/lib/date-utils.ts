@@ -6,13 +6,26 @@ export const formatMonthYear = (date: Date): string => {
   return format(date, 'MMMM yyyy');
 };
 
-// Get user's timezone preference or default to browser timezone
+// Access user timezone preference through a global variable that we'll set
+// This can be updated by components that have access to the user's preference
+let userTimezonePreference: string | null = null;
+
+export const setUserTimezonePreference = (timezone: string): void => {
+  userTimezonePreference = timezone;
+};
+
+// Get user's timezone preference
 const getUserTimezone = (): string => {
+  // First priority: Use the explicitly set user preference if available
+  if (userTimezonePreference) {
+    return userTimezonePreference;
+  }
+  
+  // Fallback: Use browser timezone
   try {
-    // Use Intl API to get the browser's timezone
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch (e) {
-    return 'UTC'; // Fallback to UTC
+    return 'UTC'; // Ultimate fallback
   }
 };
 

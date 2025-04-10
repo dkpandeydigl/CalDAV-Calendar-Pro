@@ -24,11 +24,18 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
   const isLastDay = calendarMetadata?.isLastDay;
   const totalDays = calendarMetadata?.totalDays || 1;
   
-  // Format event time with timezone awareness
-  // Only use event timezone if it exists, otherwise use local browser timezone
-  // This prevents unnecessary conversions when displaying events
-  const eventTimezone = event.timezone || undefined; // Use undefined to trigger local time format
-  const startTime = formatTime(new Date(event.startDate), eventTimezone);
+  // Format event time with direct date object handling
+  // For events with an Asia/Kolkata timezone, we need to directly format the date
+  // without any conversions since both the event and user are in the same timezone
+  const eventTimezone = event.timezone || undefined;
+  
+  // Get the raw UTC date
+  const rawStartDate = new Date(event.startDate);
+  
+  // Special case for Asia/Kolkata events to prevent double-conversion
+  const startTime = event.timezone === 'Asia/Kolkata' 
+    ? format(rawStartDate, 'h:mm a') // Direct format without any timezone conversion
+    : formatTime(rawStartDate, eventTimezone);
   
   // Determine what to display based on multi-day status
   let eventDisplay;
