@@ -326,27 +326,17 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         console.log(`[DATE DEBUG] Received selectedDate: ${selectedDate instanceof Date ? selectedDate.toString() : selectedDate}`);
         console.log(`[DATE DEBUG] Using simplified UTC approach for all-day events`);
         
-        // IMPROVED TIMEZONE HANDLING: Convert the date properly to prevent off-by-one errors
-        const originalDate = new Date(selectedDate);
+        // First get the date in the format needed for display (YYYY-MM-DD)
+        const localDate = new Date(selectedDate);
         
-        if (!isNaN(originalDate.getTime())) {
-          console.log(`[DATE DEBUG] Original Date Object: ${originalDate.toString()}`);
-          
-          // Get the date in user's timezone without any conversion
-          // This ensures correct day regardless of time component
-          const userTimezoneDate = new Date(
-            originalDate.toLocaleString('en-US', { 
-              timeZone: selectedTimezone 
-            })
-          );
-          
-          // Extract date components directly from the timezone-adjusted date
-          const year = userTimezoneDate.getFullYear();
-          const month = (userTimezoneDate.getMonth() + 1).toString().padStart(2, '0');
-          const day = userTimezoneDate.getDate().toString().padStart(2, '0');
+        if (!isNaN(localDate.getTime())) {
+          // Extract date components directly from the date 
+          const year = localDate.getFullYear();
+          const month = (localDate.getMonth() + 1).toString().padStart(2, '0');
+          const day = localDate.getDate().toString().padStart(2, '0');
           const formattedDate = `${year}-${month}-${day}`;
           
-          console.log(`[DATE DEBUG] Timezone-corrected date components: year=${year}, month=${month}, day=${day}`);
+          console.log(`[DATE DEBUG] Selected date components: year=${year}, month=${month}, day=${day}`);
           console.log(`[DATE DEBUG] Formatted as YYYY-MM-DD: ${formattedDate}`);
           
           // Set the same date for both start and end

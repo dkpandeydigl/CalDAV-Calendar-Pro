@@ -2,7 +2,6 @@ import React from 'react';
 import { formatTime } from '@/lib/date-utils';
 import type { Event } from '@shared/schema';
 import { useCalendars } from '@/hooks/useCalendars';
-import { format } from 'date-fns';
 
 interface CalendarEventProps {
   event: Event;
@@ -26,10 +25,7 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
   const totalDays = calendarMetadata?.totalDays || 1;
   
   // Format event time
-  // Use our utility function which already handles timezone conversion correctly
-  const eventTimezone = event.timezone || undefined;
-  const rawStartDate = new Date(event.startDate);
-  const startTime = formatTime(rawStartDate, eventTimezone);
+  const startTime = formatTime(new Date(event.startDate));
   
   // Determine what to display based on multi-day status
   let eventDisplay;

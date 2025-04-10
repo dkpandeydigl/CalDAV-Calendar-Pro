@@ -411,13 +411,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       method: 'DELETE',
                       headers: {
                         'Content-Type': 'application/xml; charset=utf-8',
-                      },
-                      body: '' // Add empty body to satisfy DAVRequest type
+                      }
                     }
                   });
                   console.log(`Successfully deleted calendar from CalDAV server using standard DELETE`);
-                } catch (error) {
-                  const deleteError = error as Error;
+                } catch (deleteError) {
                   console.log(`Standard DELETE failed, trying alternative approach: ${deleteError.message}`);
                   
                   // If standard DELETE fails, try PROPPATCH to mark it as hidden/disabled/inactive
@@ -440,8 +438,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       }
                     });
                     console.log(`Successfully disabled calendar on CalDAV server using PROPPATCH`);
-                  } catch (error) {
-                    const propPatchError = error as Error;
+                  } catch (propPatchError) {
                     console.log(`PROPPATCH approach also failed: ${propPatchError.message}`);
                     // At this point, we tried all server-side options, so we'll continue with local deletion
                   }
@@ -454,8 +451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     method: 'DELETE',
                     headers: {
                       'Content-Type': 'application/xml; charset=utf-8',
-                    },
-                    body: '' // Empty body for DELETE request to satisfy DAVRequest type
+                    }
                   }
                 });
                 console.log(`Successfully deleted calendar from CalDAV server`);
@@ -569,148 +565,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         syncStatus: 'pending'
       };
       
-      // CRITICAL TIMEZONE FIX: 
-      // When events are created in Asia/Kolkata timezone (UTC+5:30), we need to PRESERVE the 
-      // exact date/time without UTC conversion to prevent events showing on the wrong day
-      
-      console.log(`[EVENT CREATE DEBUG] Timezone for event: ${eventData.timezone || 'none'}`);
-      
-      // Make sure we always have timezone information
-      if (!eventData.timezone) {
-        console.log('[EVENT CREATE DEBUG] Setting timezone to default UTC');
-        eventData.timezone = 'UTC';
-      }
-      
-      // ---- HANDLE START DATE WITH PROPER TIMEZONE PRESERVATION ----
+      // Handle date conversions
       if (typeof eventData.startDate === 'string') {
-        console.log(`[EVENT CREATE DEBUG] Parsing startDate string: ${eventData.startDate}`);
-        
-        // Create date object from the string
-        let startDate = new Date(eventData.startDate);
-        
-        // CRITICAL FIX: For regular (timed) events in any timezone, ensure we compensate for the day shift
-        if (eventData.timezone && !eventData.allDay) {
-          console.log(`[EVENT CREATE DEBUG] Timed event (not all-day) with timezone: ${eventData.timezone}`);
-          
-          // Extract the date and time components directly from the string
-          const originalString = eventData.startDate as string;
-          console.log(`[EVENT CREATE DEBUG] Original string: ${originalString}`);
-          
-          // Parse the date components (YYYY-MM-DD)
-          const [datePart, timePart] = originalString.split('T');
-          const [year, month, day] = datePart.split('-').map(Number);
-          
-          // Parse the time components (HH:MM:SS.sss)
-          let timeString = timePart;
-          if (timeString.endsWith('Z')) {
-            timeString = timeString.slice(0, -1); // Remove the Z
-          }
-          
-          // Split the time, handling potential milliseconds
-          let [hours, minutes, secondsPart] = timeString.split(':');
-          let seconds = secondsPart;
-          let milliseconds = 0;
-          
-          if (seconds.includes('.')) {
-            const parts = seconds.split('.');
-            seconds = parts[0];
-            milliseconds = parseInt(parts[1].slice(0, 3));
-          }
-          
-          console.log(`[EVENT CREATE DEBUG] Parsed components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`);
-          
-          // FIX: Manually add one day to all dates to counteract the client-side timezone shift
-          // This is a known issue with how dates are created on the client with regular Date constructor
-          const correctedDay = day + 1;
-          
-          // Create date using UTC to ensure consistent date handling
-          const adjustedDate = new Date(Date.UTC(
-            year, 
-            month - 1, // JavaScript months are 0-indexed
-            correctedDay, // Add one day
-            parseInt(hours),
-            parseInt(minutes),
-            parseInt(seconds),
-            milliseconds
-          ));
-          
-          console.log(`[EVENT CREATE DEBUG] Original date: ${startDate.toISOString()}`);
-          console.log(`[EVENT CREATE DEBUG] Corrected date: ${adjustedDate.toISOString()}`);
-          
-          startDate = adjustedDate;
-        }
-        
-        // Store the parsed date properly
-        eventData.startDate = startDate;
-        console.log(`[EVENT CREATE DEBUG] Final startDate: ${eventData.startDate.toISOString()} with timezone ${eventData.timezone}`);
+        eventData.startDate = new Date(eventData.startDate);
       } else if (!eventData.startDate) {
+        // If startDate is null/undefined, set it to the current date
         console.warn("Missing startDate in event creation, using current date");
         eventData.startDate = new Date();
       }
       
-      // ---- HANDLE END DATE WITH PROPER TIMEZONE PRESERVATION ----
       if (typeof eventData.endDate === 'string') {
-        console.log(`[EVENT CREATE DEBUG] Parsing endDate string: ${eventData.endDate}`);
-        
-        // Create date object from the string
-        let endDate = new Date(eventData.endDate);
-        
-        // CRITICAL FIX: For regular (timed) events in any timezone, ensure we compensate for the day shift
-        if (eventData.timezone && !eventData.allDay) {
-          console.log(`[EVENT CREATE DEBUG] Timed event (not all-day) with timezone: ${eventData.timezone}`);
-          
-          // Extract the date and time components directly from the string
-          const originalString = eventData.endDate as string;
-          console.log(`[EVENT CREATE DEBUG] Original end string: ${originalString}`);
-          
-          // Parse the date components (YYYY-MM-DD)
-          const [datePart, timePart] = originalString.split('T');
-          const [year, month, day] = datePart.split('-').map(Number);
-          
-          // Parse the time components (HH:MM:SS.sss)
-          let timeString = timePart;
-          if (timeString.endsWith('Z')) {
-            timeString = timeString.slice(0, -1); // Remove the Z
-          }
-          
-          // Split the time, handling potential milliseconds
-          let [hours, minutes, secondsPart] = timeString.split(':');
-          let seconds = secondsPart;
-          let milliseconds = 0;
-          
-          if (seconds.includes('.')) {
-            const parts = seconds.split('.');
-            seconds = parts[0];
-            milliseconds = parseInt(parts[1].slice(0, 3));
-          }
-          
-          console.log(`[EVENT CREATE DEBUG] Parsed end components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`);
-          
-          // FIX: Manually add one day to all dates to counteract the client-side timezone shift
-          // This is a known issue with how dates are created on the client with regular Date constructor
-          const correctedDay = day + 1;
-          
-          // Create date using UTC to ensure consistent date handling
-          const adjustedDate = new Date(Date.UTC(
-            year, 
-            month - 1, // JavaScript months are 0-indexed
-            correctedDay, // Add one day
-            parseInt(hours),
-            parseInt(minutes),
-            parseInt(seconds),
-            milliseconds
-          ));
-          
-          console.log(`[EVENT CREATE DEBUG] Original end date: ${endDate.toISOString()}`);
-          console.log(`[EVENT CREATE DEBUG] Corrected end date: ${adjustedDate.toISOString()}`);
-          
-          endDate = adjustedDate;
-        }
-        
-        // Store the parsed date properly
-        eventData.endDate = endDate;
-        console.log(`[EVENT CREATE DEBUG] Final endDate: ${eventData.endDate.toISOString()} with timezone ${eventData.timezone}`);
+        eventData.endDate = new Date(eventData.endDate);
       } else if (!eventData.endDate) {
+        // If endDate is null/undefined, set it to 1 hour after startDate
         console.warn("Missing endDate in event creation, setting to 1 hour after startDate");
         const endDate = new Date(eventData.startDate.getTime());
         endDate.setHours(endDate.getHours() + 1);
@@ -1417,143 +1284,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process the update data
       const updateData = { ...req.body };
       
-      // Handle timezone information preservation
-      if (!updateData.timezone && existingEvent.timezone) {
-        // Preserve the existing timezone if not explicitly changed
-        updateData.timezone = existingEvent.timezone;
-      }
-      
-      console.log(`[EVENT UPDATE DEBUG] Timezone for event: ${updateData.timezone || 'none'}`);
-      
-      // ---- HANDLE START DATE WITH PROPER TIMEZONE PRESERVATION ----
+      // Handle date conversions
       if (typeof updateData.startDate === 'string') {
-        console.log(`[EVENT UPDATE DEBUG] Parsing startDate string: ${updateData.startDate}`);
-        
-        // Create date object from the string
-        let startDate = new Date(updateData.startDate);
-        
-        // CRITICAL FIX: For regular (timed) events in any timezone, ensure we compensate for the day shift
-        if (updateData.timezone && !updateData.allDay) {
-          console.log(`[EVENT UPDATE DEBUG] Timed event (not all-day) with timezone: ${updateData.timezone}`);
-          
-          // Extract the date and time components directly from the string
-          const originalString = updateData.startDate as string;
-          console.log(`[EVENT UPDATE DEBUG] Original string: ${originalString}`);
-          
-          // Parse the date components (YYYY-MM-DD)
-          const [datePart, timePart] = originalString.split('T');
-          const [year, month, day] = datePart.split('-').map(Number);
-          
-          // Parse the time components (HH:MM:SS.sss)
-          let timeString = timePart;
-          if (timeString.endsWith('Z')) {
-            timeString = timeString.slice(0, -1); // Remove the Z
-          }
-          
-          // Split the time, handling potential milliseconds
-          let [hours, minutes, secondsPart] = timeString.split(':');
-          let seconds = secondsPart;
-          let milliseconds = 0;
-          
-          if (seconds.includes('.')) {
-            const parts = seconds.split('.');
-            seconds = parts[0];
-            milliseconds = parseInt(parts[1].slice(0, 3));
-          }
-          
-          console.log(`[EVENT UPDATE DEBUG] Parsed components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`);
-          
-          // FIX: Manually add one day to all dates to counteract the client-side timezone shift
-          // This is a known issue with how dates are created on the client with regular Date constructor
-          const correctedDay = day + 1;
-          
-          // Create date using UTC to ensure consistent date handling
-          const adjustedDate = new Date(Date.UTC(
-            year, 
-            month - 1, // JavaScript months are 0-indexed
-            correctedDay, // Add one day
-            parseInt(hours),
-            parseInt(minutes),
-            parseInt(seconds),
-            milliseconds
-          ));
-          
-          console.log(`[EVENT UPDATE DEBUG] Original date: ${startDate.toISOString()}`);
-          console.log(`[EVENT UPDATE DEBUG] Corrected date: ${adjustedDate.toISOString()}`);
-          
-          startDate = adjustedDate;
-          console.log(`[EVENT UPDATE DEBUG] Preserved date: ${startDate.toString()}`);
-        }
-        
-        // Store the parsed date properly
-        updateData.startDate = startDate;
+        updateData.startDate = new Date(updateData.startDate);
       } else if (updateData.startDate === null || updateData.startDate === undefined) {
         // Keep existing startDate if not provided
         updateData.startDate = existingEvent.startDate;
       }
       
-      // ---- HANDLE END DATE WITH PROPER TIMEZONE PRESERVATION ----
       if (typeof updateData.endDate === 'string') {
-        console.log(`[EVENT UPDATE DEBUG] Parsing endDate string: ${updateData.endDate}`);
-        
-        // Create date object from the string
-        let endDate = new Date(updateData.endDate);
-        
-        // CRITICAL FIX: For regular (timed) events in any timezone, ensure we compensate for the day shift
-        if (updateData.timezone && !updateData.allDay) {
-          console.log(`[EVENT UPDATE DEBUG] Timed event (not all-day) with timezone: ${updateData.timezone}`);
-          
-          // Extract the date and time components directly from the string
-          const originalString = updateData.endDate as string;
-          console.log(`[EVENT UPDATE DEBUG] Original end string: ${originalString}`);
-          
-          // Parse the date components (YYYY-MM-DD)
-          const [datePart, timePart] = originalString.split('T');
-          const [year, month, day] = datePart.split('-').map(Number);
-          
-          // Parse the time components (HH:MM:SS.sss)
-          let timeString = timePart;
-          if (timeString.endsWith('Z')) {
-            timeString = timeString.slice(0, -1); // Remove the Z
-          }
-          
-          // Split the time, handling potential milliseconds
-          let [hours, minutes, secondsPart] = timeString.split(':');
-          let seconds = secondsPart;
-          let milliseconds = 0;
-          
-          if (seconds.includes('.')) {
-            const parts = seconds.split('.');
-            seconds = parts[0];
-            milliseconds = parseInt(parts[1].slice(0, 3));
-          }
-          
-          console.log(`[EVENT UPDATE DEBUG] Parsed end components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`);
-          
-          // FIX: Manually add one day to all dates to counteract the client-side timezone shift
-          // This is a known issue with how dates are created on the client with regular Date constructor
-          const correctedDay = day + 1;
-          
-          // Create date using UTC to ensure consistent date handling
-          const adjustedDate = new Date(Date.UTC(
-            year, 
-            month - 1, // JavaScript months are 0-indexed
-            correctedDay, // Add one day
-            parseInt(hours),
-            parseInt(minutes),
-            parseInt(seconds),
-            milliseconds
-          ));
-          
-          console.log(`[EVENT UPDATE DEBUG] Original end date: ${endDate.toISOString()}`);
-          console.log(`[EVENT UPDATE DEBUG] Corrected end date: ${adjustedDate.toISOString()}`);
-          
-          endDate = adjustedDate;
-          console.log(`[EVENT UPDATE DEBUG] Preserved end date: ${endDate.toString()}`);
-        }
-        
-        // Store the parsed date properly
-        updateData.endDate = endDate;
+        updateData.endDate = new Date(updateData.endDate);
       } else if (updateData.endDate === null || updateData.endDate === undefined) {
         // Keep existing endDate if not provided
         updateData.endDate = existingEvent.endDate;
@@ -2177,66 +1917,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // FIX THUNDERBIRD EVENTS API
-  app.post("/api/fix-thunderbird-events", isAuthenticated, async (req, res) => {
-    try {
-      const userId = req.user!.id;
-      
-      // Find all events with Asia/Kolkata timezone
-      const calendars = await storage.getCalendars(userId);
-      let fixedCount = 0;
-      
-      for (const calendar of calendars) {
-        const events = await storage.getEvents(calendar.id);
-        const kolkataEvents = events.filter(event => 
-          event.timezone === 'Asia/Kolkata' && 
-          !event.allDay && 
-          new Date(event.startDate).getHours() >= 5 // Events after 5:00 AM likely need adjustment
-        );
-        
-        console.log(`Found ${kolkataEvents.length} Asia/Kolkata events in calendar ${calendar.name} that need fixing`);
-        
-        for (const event of kolkataEvents) {
-          console.log(`Fixing Thunderbird event: ${event.title} (${event.id}) with dates: ${event.startDate} - ${event.endDate}`);
-          
-          // Convert the dates to Date objects
-          const startDate = new Date(event.startDate);
-          const endDate = new Date(event.endDate);
-          
-          // Apply the 5:30 timezone offset adjustment
-          const hoursOffset = 5;
-          const minutesOffset = 30;
-          
-          const fixedStartDate = new Date(startDate);
-          fixedStartDate.setHours(startDate.getHours() - hoursOffset);
-          fixedStartDate.setMinutes(startDate.getMinutes() - minutesOffset);
-          
-          const fixedEndDate = new Date(endDate);
-          fixedEndDate.setHours(endDate.getHours() - hoursOffset);
-          fixedEndDate.setMinutes(endDate.getMinutes() - minutesOffset);
-          
-          console.log(`Original: ${startDate.toISOString()} - ${endDate.toISOString()}`);
-          console.log(`Fixed: ${fixedStartDate.toISOString()} - ${fixedEndDate.toISOString()}`);
-          
-          // Update the event
-          await storage.updateEvent(event.id, {
-            startDate: fixedStartDate,
-            endDate: fixedEndDate
-          });
-          
-          fixedCount++;
-        }
-      }
-      
-      res.json({ 
-        message: `Fixed ${fixedCount} Thunderbird events with Asia/Kolkata timezone`,
-        fixedCount
-      });
-    } catch (err) {
-      console.error("Error fixing Thunderbird events:", err);
-      res.status(500).json({ message: "Failed to fix Thunderbird events" });
-    }
-  });
-
   return httpServer;
 }

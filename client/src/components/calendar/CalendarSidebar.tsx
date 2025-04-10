@@ -13,7 +13,6 @@ import { useServerConnection } from '@/hooks/useServerConnection';
 import { CalendarIcon, Download, Edit, MoreVertical, Share2, Trash2, UploadCloud } from 'lucide-react';
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 import { useQueryClient } from '@tanstack/react-query';
-import { useToast } from '@/hooks/use-toast';
 import {
   Popover,
   PopoverContent,
@@ -39,7 +38,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-
+import { queryClient } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 
 interface CalendarSidebarProps {
   visible: boolean;
@@ -605,45 +605,6 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                 disabled={isSavingTimezone}
               >
                 {isSavingTimezone ? 'Saving...' : 'Save Timezone Preference'}
-              </Button>
-              
-              {/* Fix Timezone Issues Button */}
-              <Button 
-                size="sm" 
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  fetch('/api/fix-thunderbird-events', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json'
-                    }
-                  })
-                  .then(res => res.json())
-                  .then(data => {
-                    // Show a success toast
-                    toast({
-                      title: "Timezone Fix Applied",
-                      description: `${data.fixedCount} events were adjusted for proper timezone display.`,
-                      variant: data.fixedCount > 0 ? 'default' : 'default', 
-                    });
-                    
-                    // Refresh events if any were fixed
-                    if (data.fixedCount > 0) {
-                      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-                    }
-                  })
-                  .catch(err => {
-                    console.error('Error fixing timezone issues:', err);
-                    toast({
-                      title: "Error Fixing Timezones",
-                      description: "There was a problem applying the timezone fix.",
-                      variant: 'destructive'
-                    });
-                  });
-                }}
-              >
-                Fix Timezone Issues
               </Button>
             </div>
           </div>

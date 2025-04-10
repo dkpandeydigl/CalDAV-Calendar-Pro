@@ -4,9 +4,8 @@ import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
-import { formatDayOfWeekDate, formatEventTimeRange, getUserTimezone } from '@/lib/date-utils';
+import { formatDayOfWeekDate, formatEventTimeRange } from '@/lib/date-utils';
 import type { Event } from '@shared/schema';
-import { format } from 'date-fns';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
@@ -437,56 +436,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
               <span className="material-icons text-primary mr-2 bg-white p-1 rounded-md shadow-sm">schedule</span>
               <div>
-                <div className="text-sm font-medium text-primary/90">
-                  {formatDayOfWeekDate(startDate, event.timezone || undefined)}
+                <div className="text-sm font-medium text-primary/90">{formatDayOfWeekDate(startDate)}</div>
+                <div className="text-sm text-primary/80">
+                  {event.allDay 
+                    ? '🕒 All Day' 
+                    : `🕒 ${formatEventTimeRange(startDate, endDate)}`}
+                  {' '}({event.timezone})
                 </div>
-                
-                {/* STANDARDIZED TIMEZONE DISPLAY */}
-                {event.allDay ? (
-                  <div className="text-sm text-primary/80 bg-neutral-100 px-2 py-1 rounded-md inline-block">
-                    <span className="font-medium">🕒 All Day</span>
-                  </div>
-                ) : (
-                  <>
-                    {/* Display original event time in a consistent way */}
-                    <div className="text-sm">
-                      <div className="flex items-center mt-1 bg-neutral-100 p-1.5 pl-2 rounded-md border border-neutral-200">
-                        <span className="flex-shrink-0 mr-1">🕒</span>
-                        <div className="flex flex-col">
-                          <div className="text-primary font-medium">
-                            {format(startDate, 'h:mm a')} - {format(endDate, 'h:mm a')}
-                            <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded ml-1.5">
-                              {event.timezone || 'Original Time'}
-                            </span>
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-0.5">
-                            Time as recorded in event
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* If needed, display converted time */}
-                    {event.timezone && event.timezone !== getUserTimezone() && (
-                      <div className="text-sm">
-                        <div className="flex items-center mt-2 bg-blue-50 p-1.5 pl-2 rounded-md border border-blue-200">
-                          <span className="flex-shrink-0 mr-1">🕒</span>
-                          <div className="flex flex-col">
-                            <div className="text-blue-700 font-medium">
-                              {formatEventTimeRange(startDate, endDate, false, event.timezone)}
-                              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded ml-1.5">
-                                {getUserTimezone()}
-                              </span>
-                            </div>
-                            <div className="text-xs text-blue-600 mt-0.5">
-                              Your local time
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             </div>
             

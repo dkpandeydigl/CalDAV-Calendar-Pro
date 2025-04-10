@@ -414,65 +414,6 @@ export class SyncService {
                   }
                 }
                 
-                // Special handling for Thunderbird events with bizarre date ranges
-                // Fix for the issue where Thunderbird creates events with start dates in the 1800s
-                if (caldavEvent.startDate && caldavEvent.endDate &&
-                    caldavEvent.startDate.getFullYear() < 1900 && 
-                    caldavEvent.endDate.getFullYear() > 2000) {
-                  console.log(`Detected Thunderbird event with suspicious date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
-                  console.log(`Fixing event ${caldavEvent.summary || 'Untitled'} with UID ${caldavEvent.uid}`);
-                  
-                  // Extract timezone information from raw iCalendar data
-                  let tzid = 'UTC';
-                  const tzidMatch = rawIcalData.match(/TZID:([^\r\n]+)/i);
-                  if (tzidMatch && tzidMatch[1]) {
-                    tzid = tzidMatch[1].trim();
-                    console.log(`Found timezone in event: ${tzid}`);
-                  }
-                  
-                  // Use the end date as the single date for this event
-                  const endDate = new Date(caldavEvent.endDate);
-                  
-                  // Extract the exact event time from the end date (hours, minutes, seconds)
-                  const endHours = endDate.getUTCHours();
-                  const endMinutes = endDate.getUTCMinutes();
-                  const endSeconds = endDate.getUTCSeconds();
-                  
-                  // Get the end date components (year, month, day)
-                  const endYear = endDate.getUTCFullYear();
-                  const endMonth = endDate.getUTCMonth();
-                  const endDay = endDate.getUTCDate();
-                  
-                  // Create new dates using these components
-                  // This ensures we're working with the actual event day (March 31, 2025)
-                  // We'll set it to start 1 hour before the end time
-                  const fixedStartDate = new Date(Date.UTC(endYear, endMonth, endDay, 
-                      endHours > 0 ? endHours - 1 : 23, endMinutes, endSeconds));
-                  
-                  // Make sure both dates are the same date if it's a single-day event
-                  const fixedEndDate = new Date(Date.UTC(endYear, endMonth, endDay, 
-                      endHours, endMinutes, endSeconds));
-                  
-                  // Update the dates
-                  caldavEvent.startDate = fixedStartDate;
-                  caldavEvent.endDate = fixedEndDate;
-                  
-                  // Preserve the timezone information
-                  caldavEvent.timezone = tzid;
-                  
-                  console.log(`Fixed date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()} with timezone ${tzid}`);
-                  
-                  // Check if it's an all-day event
-                  const isAllDay = endHours === 0 && endMinutes === 0 && endSeconds === 0;
-                  if (isAllDay) {
-                    console.log(`Detected all-day event, setting allDay flag`);
-                    caldavEvent.allDay = true;
-                  }
-                  
-                  // Set a note that this is a fixed event (using a custom property)
-                  (caldavEvent as any).fixedThunderbirdEvent = true;
-                }
-                
                 // Store the raw data for debugging
                 caldavEvent.data = rawIcalData;
               }
@@ -700,98 +641,6 @@ export class SyncService {
                           console.error(`Error parsing end date from raw data:`, dateError);
                         }
                       }
-                    }
-                    
-                    // Special handling for Thunderbird events with bizarre date ranges
-                    // Fix for the issue where Thunderbird creates events with start dates in the 1800s
-                    if (caldavEvent.startDate && caldavEvent.endDate &&
-                        caldavEvent.startDate.getFullYear() < 1900 && 
-                        caldavEvent.endDate.getFullYear() > 2000) {
-                      console.log(`Detected Thunderbird event with suspicious date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
-                      console.log(`Fixing event ${caldavEvent.summary || 'Untitled'} with UID ${caldavEvent.uid}`);
-                      
-                      // Extract timezone information from raw iCalendar data
-                      let tzid = 'UTC';
-                      const tzidMatch = rawIcalData.match(/TZID:([^\r\n]+)/i);
-                      if (tzidMatch && tzidMatch[1]) {
-                        tzid = tzidMatch[1].trim();
-                        console.log(`Found timezone in event: ${tzid}`);
-                      }
-                      
-                      // Use the end date as the single date for this event
-                      const endDate = new Date(caldavEvent.endDate);
-                      
-                      // Extract the exact event time from the end date (hours, minutes, seconds)
-                      const endHours = endDate.getUTCHours();
-                      const endMinutes = endDate.getUTCMinutes();
-                      const endSeconds = endDate.getUTCSeconds();
-                      
-                      // Get the end date components (year, month, day)
-                      const endYear = endDate.getUTCFullYear();
-                      const endMonth = endDate.getUTCMonth();
-                      const endDay = endDate.getUTCDate();
-                      
-                      // CRITICAL BUGFIX: Handle Asia/Kolkata timezone specially
-                      // For Asia/Kolkata (IST, UTC+5:30), we need to adjust the hours back properly
-                      // Because India's timezone is 5.5 hours ahead of UTC, we need to adjust UTC time
-                      let fixedStartDate, fixedEndDate;
-                      
-                      if (tzid === 'Asia/Kolkata') {
-                        console.log(`Handling Asia/Kolkata event specially to preserve local time`);
-                        // CRITICAL FIX: For Asia/Kolkata, we must preserve the exact time as shown in the calendar
-                        // without applying the 5:30 offset again, as the dates are already in UTC
-                        
-                        // Instead of applying additional adjustments, just use the dates directly
-                        // but set them 1 hour apart as needed for start/end
-                        
-                        // First, create proper UTC dates from the components
-                        const baseEndDate = new Date(Date.UTC(endYear, endMonth, endDay,
-                            endHours, endMinutes, endSeconds));
-                        
-                        // If we have a valid start date from the event (DTSTART), use that
-                        // Otherwise, set start date as 1 hour before end date
-                        const baseStartDate = new Date(Date.UTC(endYear, endMonth, endDay, 
-                            endHours > 0 ? endHours - 1 : 23, endMinutes, endSeconds));
-                        
-                        // Just use these dates directly without further timezone adjustments
-                        // This preserves the exact times as they appear in Thunderbird
-                        fixedStartDate = new Date(baseStartDate);
-                        fixedEndDate = new Date(baseEndDate);
-                        
-                        // Just log the dates we're using without any adjustments
-                        console.log(`Original dates: ${baseStartDate.toISOString()} to ${baseEndDate.toISOString()}`);
-                        console.log(`Preserved for Asia/Kolkata: ${fixedStartDate.toISOString()} to ${fixedEndDate.toISOString()}`);
-                      } else {
-                        // For all other timezones, use the previous approach
-                        // Create new dates using these components
-                        // This ensures we're working with the actual event day (March 31, 2025)
-                        // We'll set it to start 1 hour before the end time
-                        fixedStartDate = new Date(Date.UTC(endYear, endMonth, endDay, 
-                            endHours > 0 ? endHours - 1 : 23, endMinutes, endSeconds));
-                        
-                        // Make sure both dates are the same date if it's a single-day event
-                        fixedEndDate = new Date(Date.UTC(endYear, endMonth, endDay, 
-                            endHours, endMinutes, endSeconds));
-                      }
-                      
-                      // Update the dates
-                      caldavEvent.startDate = fixedStartDate;
-                      caldavEvent.endDate = fixedEndDate;
-                      
-                      // Preserve the timezone information
-                      caldavEvent.timezone = tzid;
-                      
-                      console.log(`Fixed date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()} with timezone ${tzid}`);
-                      
-                      // Check if it's an all-day event
-                      const isAllDay = endHours === 0 && endMinutes === 0 && endSeconds === 0;
-                      if (isAllDay) {
-                        console.log(`Detected all-day event, setting allDay flag`);
-                        caldavEvent.allDay = true;
-                      }
-                      
-                      // Set a note that this is a fixed event (using a custom property)
-                      (caldavEvent as any).fixedThunderbirdEvent = true;
                     }
                     
                     // Store the raw data for debugging
@@ -1670,7 +1519,7 @@ END:VCALENDAR`;
         const dbCalendar = await storage.getCalendar(calendarId);
         if (dbCalendar && dbCalendar.url) {
           // Match the calendar URL with those from the server
-          const matchingCalendar = calendars.find((cal: { url: string }) => cal.url === dbCalendar.url);
+          const matchingCalendar = calendars.find(cal => cal.url === dbCalendar.url);
           if (matchingCalendar) {
             calendarToSearch = [matchingCalendar];
           }

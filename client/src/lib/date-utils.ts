@@ -1,101 +1,30 @@
 import { format, isSameDay, isSameMonth, isToday, parseISO, startOfWeek, endOfWeek, addDays } from 'date-fns';
-import { toZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 // Format date as "September 2023"
 export const formatMonthYear = (date: Date): string => {
   return format(date, 'MMMM yyyy');
 };
 
-// Access user timezone preference through a global variable that we'll set
-// This can be updated by components that have access to the user's preference
-let userTimezonePreference: string | null = null;
-
-export const setUserTimezonePreference = (timezone: string): void => {
-  userTimezonePreference = timezone;
-};
-
-// Get user's timezone preference
-export const getUserTimezone = (): string => {
-  // First priority: Use the explicitly set user preference if available
-  if (userTimezonePreference) {
-    return userTimezonePreference;
-  }
-  
-  // Fallback: Use browser timezone
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch (e) {
-    return 'UTC'; // Ultimate fallback
-  }
-};
-
 // Format date as "September 4, 2023"
-export const formatFullDate = (date: Date | string, timezone?: string): string => {
+export const formatFullDate = (date: Date | string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
-  
-  // Don't do any timezone conversion if:
-  // 1. No timezone is provided, or
-  // 2. The timezone matches the user's timezone (no conversion needed)
-  const userTimezone = getUserTimezone();
-  
-  // Direct formatting with no timezone conversion 
-  if (!timezone || timezone === userTimezone) {
-    console.log(`Using direct format without conversion. Event TZ: ${timezone || 'none'}, User TZ: ${userTimezone}`);
-    return format(dateObj, 'MMMM d, yyyy');
-  }
-  
-  // Only convert if timezone differs from user timezone
-  console.log(`Converting from ${timezone} to ${userTimezone}`);
-  return formatInTimeZone(dateObj, timezone, 'MMMM d, yyyy');
+  return format(dateObj, 'MMMM d, yyyy');
 };
 
 // Format time as "9:00 AM"
-export const formatTime = (date: Date | string, timezone?: string): string => {
+export const formatTime = (date: Date | string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
-  
-  // Don't do any timezone conversion if:
-  // 1. No timezone is provided, or
-  // 2. The timezone matches the user's timezone (no conversion needed)
-  const userTimezone = getUserTimezone();
-  
-  // Direct formatting with no timezone conversion
-  if (!timezone || timezone === userTimezone) {
-    console.log(`Using direct format for time without conversion. Event TZ: ${timezone || 'none'}, User TZ: ${userTimezone}`);
-    return format(dateObj, 'h:mm a');
-  }
-  
-  // Only convert if timezone differs from user timezone
-  console.log(`Converting time from ${timezone} to ${userTimezone}`);
-  return formatInTimeZone(dateObj, timezone, 'h:mm a');
+  return format(dateObj, 'h:mm a');
 };
 
 // Format date and time as "Monday, September 4, 2023"
-export const formatDayOfWeekDate = (date: Date | string, timezone?: string): string => {
+export const formatDayOfWeekDate = (date: Date | string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
-  
-  // Don't do any timezone conversion if:
-  // 1. No timezone is provided, or
-  // 2. The timezone matches the user's timezone (no conversion needed)
-  const userTimezone = getUserTimezone();
-  
-  // Direct formatting with no timezone conversion
-  if (!timezone || timezone === userTimezone) {
-    console.log(`Using direct format for weekday without conversion. Event TZ: ${timezone || 'none'}, User TZ: ${userTimezone}`);
-    return format(dateObj, 'EEEE, MMMM d, yyyy');
-  }
-  
-  // Only convert if timezone differs from user timezone
-  console.log(`Converting weekday from ${timezone} to ${userTimezone}`);
-  return formatInTimeZone(dateObj, timezone, 'EEEE, MMMM d, yyyy');
+  return format(dateObj, 'EEEE, MMMM d, yyyy');
 };
 
 // Format date and time range for event display
-export const formatEventTimeRange = (
-  start: Date | string, 
-  end: Date | string, 
-  allDay: boolean = false, 
-  timezone?: string
-): string => {
+export const formatEventTimeRange = (start: Date | string, end: Date | string, allDay: boolean = false): string => {
   const startDate = typeof start === 'string' ? parseISO(start) : start;
   const endDate = typeof end === 'string' ? parseISO(end) : end;
 
@@ -103,34 +32,13 @@ export const formatEventTimeRange = (
     return 'All Day';
   }
   
-  // Get user timezone for comparison
-  const userTimezone = getUserTimezone();
-  
-  // Check if we need to do timezone conversion
-  const shouldConvert = timezone && timezone !== userTimezone;
-  
-  console.log(`Event time range check - Event TZ: ${timezone || 'none'}, User TZ: ${userTimezone}, Should convert: ${shouldConvert}`);
-  
-  // Check same day in appropriate timezone context
-  let isSameDayInTZ;
-  if (shouldConvert) {
-    // Using timezone conversion only if needed
-    isSameDayInTZ = formatInTimeZone(startDate, timezone, 'yyyy-MM-dd') === 
-                   formatInTimeZone(endDate, timezone, 'yyyy-MM-dd');
-    console.log(`Converting time range from ${timezone} to ${userTimezone}, same day: ${isSameDayInTZ}`);
-  } else {
-    // No conversion needed for timezone - direct formatting
-    isSameDayInTZ = isSameDay(startDate, endDate);
-    console.log(`Using direct format without conversion, same day: ${isSameDayInTZ}`);
-  }
-  
   // Same day event
-  if (isSameDayInTZ) {
-    return `${formatTime(startDate, timezone)} - ${formatTime(endDate, timezone)}`;
+  if (isSameDay(startDate, endDate)) {
+    return `${formatTime(startDate)} - ${formatTime(endDate)}`;
   }
   
   // Multi-day event
-  return `${formatFullDate(startDate, timezone)} ${formatTime(startDate, timezone)} - ${formatFullDate(endDate, timezone)} ${formatTime(endDate, timezone)}`;
+  return `${formatFullDate(startDate)} ${formatTime(startDate)} - ${formatFullDate(endDate)} ${formatTime(endDate)}`;
 };
 
 // Get week day headers for calendar grid

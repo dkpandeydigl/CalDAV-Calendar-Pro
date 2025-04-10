@@ -533,22 +533,6 @@ function CalendarContent() {
   );
 }
 
-import { setUserTimezonePreference } from '@/lib/date-utils';
-
 export default function Calendar() {
-  const { user } = useAuth();
-  const { selectedTimezone } = useCalendarContext();
-  
-  // Set the user's timezone when the component mounts or timezone changes
-  useEffect(() => {
-    if (user?.preferredTimezone) {
-      console.log('Setting user timezone preference to:', user.preferredTimezone);
-      setUserTimezonePreference(user.preferredTimezone);
-    } else if (selectedTimezone) {
-      console.log('Using calendar context timezone:', selectedTimezone);
-      setUserTimezonePreference(selectedTimezone);
-    }
-  }, [user?.preferredTimezone, selectedTimezone]);
-  
   return <CalendarContent />;
 }
