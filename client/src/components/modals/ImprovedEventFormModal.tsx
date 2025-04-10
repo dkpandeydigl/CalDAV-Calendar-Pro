@@ -807,21 +807,21 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             className="flex-1 overflow-hidden flex flex-col"
           >
             <div className="w-full overflow-x-auto border-b bg-gray-50 px-2">
-              <TabsList className="flex h-12">
+              <TabsList className="flex h-12 w-full overflow-x-auto">
                 <TabsTrigger 
                   value="basic" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium"
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium px-4"
                 >
                   <Calendar className="h-4 w-4" />
-                  <span>Basic Details</span>
+                  <span className="font-semibold">Basic Details</span>
                 </TabsTrigger>
                 
                 <TabsTrigger 
                   value="attendees" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium"
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium px-4"
                 >
                   <Users className="h-4 w-4" />
-                  <span>Attendees</span>
+                  <span className="font-semibold">Attendees</span>
                   {attendees.length > 0 && (
                     <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary font-semibold">
                       {attendees.length}
@@ -831,10 +831,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 <TabsTrigger 
                   value="resources" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium"
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium px-4"
                 >
                   <Package className="h-4 w-4" />
-                  <span>Resources</span>
+                  <span className="font-semibold">Resources</span>
                   {resources.length > 0 && (
                     <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary font-semibold">
                       {resources.length}
@@ -844,12 +844,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 
                 <TabsTrigger 
                   value="recurrence" 
-                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium"
+                  className="flex items-center gap-1.5 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:text-primary font-medium px-4"
                 >
                   <Repeat className="h-4 w-4" />
-                  <span>Recurrence</span>
+                  <span className="font-semibold">Recurrence</span>
                   {recurrence.pattern !== 'None' && (
-                    <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary">
+                    <Badge variant="secondary" className="ml-1 bg-primary/10 text-primary font-semibold">
                       {recurrence.pattern}
                     </Badge>
                   )}
