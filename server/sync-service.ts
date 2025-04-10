@@ -414,6 +414,31 @@ export class SyncService {
                   }
                 }
                 
+                // Special handling for Thunderbird events with bizarre date ranges
+                // Fix for the issue where Thunderbird creates events with start dates in the 1800s
+                if (caldavEvent.startDate && caldavEvent.endDate &&
+                    caldavEvent.startDate.getFullYear() < 1900 && 
+                    caldavEvent.endDate.getFullYear() > 2000) {
+                  console.log(`Detected Thunderbird event with suspicious date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
+                  console.log(`Fixing event ${caldavEvent.summary || 'Untitled'} with UID ${caldavEvent.uid}`);
+                  
+                  // Use the end date as the single date for this event
+                  const endDate = new Date(caldavEvent.endDate);
+                  
+                  // Set start date to the same day as end date, but one hour earlier
+                  const fixedStartDate = new Date(endDate);
+                  fixedStartDate.setHours(fixedStartDate.getHours() - 1);
+                  
+                  // Update the dates
+                  caldavEvent.startDate = fixedStartDate;
+                  caldavEvent.endDate = endDate;
+                  
+                  console.log(`Fixed date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
+                  
+                  // Set a note that this is a fixed event (using a custom property)
+                  (caldavEvent as any).fixedThunderbirdEvent = true;
+                }
+                
                 // Store the raw data for debugging
                 caldavEvent.data = rawIcalData;
               }
@@ -641,6 +666,31 @@ export class SyncService {
                           console.error(`Error parsing end date from raw data:`, dateError);
                         }
                       }
+                    }
+                    
+                    // Special handling for Thunderbird events with bizarre date ranges
+                    // Fix for the issue where Thunderbird creates events with start dates in the 1800s
+                    if (caldavEvent.startDate && caldavEvent.endDate &&
+                        caldavEvent.startDate.getFullYear() < 1900 && 
+                        caldavEvent.endDate.getFullYear() > 2000) {
+                      console.log(`Detected Thunderbird event with suspicious date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
+                      console.log(`Fixing event ${caldavEvent.summary || 'Untitled'} with UID ${caldavEvent.uid}`);
+                      
+                      // Use the end date as the single date for this event
+                      const endDate = new Date(caldavEvent.endDate);
+                      
+                      // Set start date to the same day as end date, but one hour earlier
+                      const fixedStartDate = new Date(endDate);
+                      fixedStartDate.setHours(fixedStartDate.getHours() - 1);
+                      
+                      // Update the dates
+                      caldavEvent.startDate = fixedStartDate;
+                      caldavEvent.endDate = endDate;
+                      
+                      console.log(`Fixed date range: ${caldavEvent.startDate.toISOString()} to ${caldavEvent.endDate.toISOString()}`);
+                      
+                      // Set a note that this is a fixed event (using a custom property)
+                      (caldavEvent as any).fixedThunderbirdEvent = true;
                     }
                     
                     // Store the raw data for debugging
