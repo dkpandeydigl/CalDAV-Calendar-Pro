@@ -22,7 +22,10 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { parse, formatISO } from "date-fns";
 import { ZodError } from "zod";
 import session from "express-session";
-import { WebSocketServer } from 'ws';
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import bcrypt from "bcryptjs";
+import { WebSocketServer, WebSocket } from 'ws';
 
 // Extend the session interface to include our custom properties
 declare module "express-session" {
@@ -48,9 +51,93 @@ declare global {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Set up authentication
+  setupAuth(app);
+  
   // Register export/import routes
   registerExportRoutes(app);
   registerImportRoutes(app);
+  
+  // Setup auth with passport
+  function setupAuth(app: Express) {
+    const MemoryStore = session.MemoryStore;
+    
+    const sessionSettings: session.SessionOptions = {
+      secret: process.env.SESSION_SECRET || 'your-session-secret',
+      resave: false,
+      saveUninitialized: false,
+      store: new MemoryStore(),
+      cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      }
+    };
+    
+    app.use(session(sessionSettings));
+    app.use(passport.initialize());
+    app.use(passport.session());
+    
+    // Configure Passport to use local strategy
+    passport.use(new LocalStrategy(async (username, password, done) => {
+      try {
+        // First check if the user exists in the users table
+        const user = await storage.getUserByUsername(username);
+        
+        if (user) {
+          // Check if the password is stored in bcrypt format
+          if (user.password && user.password.startsWith('$2')) {
+            // Compare with bcrypt
+            const match = await bcrypt.compare(password, user.password);
+            if (match) {
+              return done(null, user);
+            }
+          }
+        }
+        
+        // If user not found or bcrypt password doesn't match, try server_connections
+        const serverConnection = await storage.getServerConnectionByUsername(username);
+        if (serverConnection && serverConnection.password === password) {
+          // If connection credentials match, get the associated user
+          const connectionUser = await storage.getUser(serverConnection.userId);
+          if (connectionUser) {
+            return done(null, connectionUser);
+          }
+        }
+        
+        // If we get here, authentication failed
+        return done(null, false);
+      } catch (error) {
+        return done(error);
+      }
+    }));
+    
+    // Serialize user to the session
+    passport.serializeUser((user, done) => {
+      done(null, user.id);
+    });
+    
+    // Deserialize user from the session
+    passport.deserializeUser(async (id: number, done) => {
+      try {
+        const user = await storage.getUser(id);
+        done(null, user);
+      } catch (error) {
+        done(error);
+      }
+    });
+    
+    // Authentication routes
+    app.post('/api/login', passport.authenticate('local'), (req, res) => {
+      res.json(req.user);
+    });
+    
+    app.post('/api/logout', (req, res, next) => {
+      req.logout((err) => {
+        if (err) return next(err);
+        res.sendStatus(200);
+      });
+    });
+  }
   
   // Middleware to check if user is authenticated
   function isAuthenticated(req: Request, res: Response, next: NextFunction) {
