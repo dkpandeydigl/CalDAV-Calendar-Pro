@@ -53,12 +53,14 @@ export const formatEventTimeRange = (
     return 'All Day';
   }
   
-  // Convert to zoned time if timezone is provided
-  const startDateWithTZ = timezone ? toZonedTime(startDate, timezone) : startDate;
-  const endDateWithTZ = timezone ? toZonedTime(endDate, timezone) : endDate;
+  // We'll check same day status by comparing dates in the target timezone
+  // but won't convert the actual dates yet to avoid double-conversion
+  const isSameDayInTZ = timezone
+    ? formatInTimeZone(startDate, timezone, 'yyyy-MM-dd') === formatInTimeZone(endDate, timezone, 'yyyy-MM-dd')
+    : isSameDay(startDate, endDate);
   
   // Same day event
-  if (isSameDay(startDateWithTZ, endDateWithTZ)) {
+  if (isSameDayInTZ) {
     return `${formatTime(startDate, timezone)} - ${formatTime(endDate, timezone)}`;
   }
   

@@ -436,11 +436,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
               <span className="material-icons text-primary mr-2 bg-white p-1 rounded-md shadow-sm">schedule</span>
               <div>
-                <div className="text-sm font-medium text-primary/90">{formatDayOfWeekDate(startDate, event.timezone)}</div>
+                <div className="text-sm font-medium text-primary/90">{formatDayOfWeekDate(startDate, event.timezone || undefined)}</div>
                 <div className="text-sm text-primary/80">
                   {event.allDay 
                     ? '🕒 All Day' 
-                    : `🕒 ${formatEventTimeRange(startDate, endDate, false, event.timezone)}`}
+                    : `🕒 ${formatEventTimeRange(startDate, endDate, false, event.timezone || undefined)}`}
                   {event.timezone && ` (${event.timezone})`}
                 </div>
               </div>
