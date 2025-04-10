@@ -1380,7 +1380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Create a new date with exact same components (NO UTC CONVERSION)
           // Month is 0-indexed in JavaScript Date constructor
-          startDate = new Date(year, month - 1, day, hours, minutes, seconds);
+          startDate = new Date(year, month - 1, day, parseInt(hours), parseInt(minutes), parseInt(seconds));
           console.log(`[EVENT UPDATE DEBUG] Preserved Asia/Kolkata date: ${startDate.toString()}`);
         }
         
@@ -1414,7 +1414,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Create a new date with exact same components (NO UTC CONVERSION)
           // Month is 0-indexed in JavaScript Date constructor
-          endDate = new Date(year, month - 1, day, hours, minutes, seconds);
+          endDate = new Date(year, month - 1, day, parseInt(hours), parseInt(minutes), parseInt(seconds));
           console.log(`[EVENT UPDATE DEBUG] Preserved Asia/Kolkata end date: ${endDate.toString()}`);
         }
         
