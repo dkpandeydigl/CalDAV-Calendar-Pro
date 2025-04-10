@@ -714,6 +714,275 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Helper function to check calendar permissions
+  async function checkCalendarPermission(
+    userId: number, 
+    calendarId: number, 
+    requiredPermission: 'view' | 'edit' = 'edit',
+    req: Request
+  ): Promise<{ permitted: boolean; message?: string }> {
+    // Get the user email and username from the request for strict checking
+    const userEmail = (req.user as any)?.email;
+    const userUsername = (req.user as any)?.username;
+    
+    console.log(`STRICT PERMISSION CHECK: User ${userId} (${userEmail || userUsername}) requesting ${requiredPermission} access to calendar ${calendarId}`);
+    
+    try {
+      // Check if the calendar exists
+      const calendar = await storage.getCalendar(calendarId);
+      
+      if (!calendar) {
+        return { permitted: false, message: "Calendar not found" };
+      }
+      
+      // If user is the owner of the calendar, they have all permissions
+      if (calendar.userId === userId) {
+        console.log(`User ${userId} (${userEmail || userUsername}) is the owner of calendar ${calendarId}, granting ${requiredPermission} permission`);
+        return { permitted: true };
+      }
+      
+      // If not the owner, check sharing permissions
+      console.log(`STRICT SHARING: Looking for calendars EXPLICITLY shared with user ID: ${userId}, username: ${userUsername}, email: ${userEmail}`);
+      
+      // First look for all calendar sharings for this calendar
+      const allSharings = await storage.getCalendarSharing(calendarId);
+      
+      if (!allSharings || allSharings.length === 0) {
+        console.log(`STRICT SHARING: No sharing records found for calendar ${calendarId}`);
+        return { permitted: false, message: "This calendar is not shared with you" };
+      }
+      
+      // Look for exact matches on userId or email
+      const exactMatches = allSharings.filter(sharing => 
+        sharing.userId === userId || 
+        (sharing.email && userEmail && sharing.email.toLowerCase() === userEmail.toLowerCase()) ||
+        (sharing.email && userUsername && sharing.email.toLowerCase() === userUsername.toLowerCase())
+      );
+      
+      console.log(`STRICT SHARING: Found ${exactMatches.length} exact calendar sharing matches for user ${userEmail || userUsername}`);
+      
+      if (exactMatches.length === 0) {
+        console.log(`STRICT SHARING: No sharing records found for user ${userEmail || userUsername}, returning false`);
+        return { permitted: false, message: "This calendar is not shared with you" };
+      }
+      
+      // For 'view' permission, any sharing type is enough
+      if (requiredPermission === 'view') {
+        return { permitted: true };
+      }
+      
+      // For 'edit' permission, must have an 'edit' type sharing
+      const editSharings = exactMatches.filter(sharing => sharing.permission === 'edit');
+      if (editSharings.length > 0) {
+        return { permitted: true };
+      }
+      
+      return { 
+        permitted: false, 
+        message: "You have view-only access to this calendar" 
+      };
+    } catch (error) {
+      console.error("Error checking calendar permissions:", error);
+      return { permitted: false, message: "Error checking permissions" };
+    }
+  }
+
+  // EVENT ENDPOINTS
+  app.post("/api/events", isAuthenticated, async (req, res) => {
+    try {
+      // Get authenticated user ID 
+      const userId = req.user!.id;
+      console.log(`Event create request. Authenticated User ID: ${userId}`);
+      console.log(`Event create payload:`, JSON.stringify(req.body, null, 2));
+      
+      // Check if user has permission to create events in this calendar
+      const calendarId = req.body.calendarId;
+      const permissionCheck = await checkCalendarPermission(userId, calendarId, 'edit', req);
+      
+      if (!permissionCheck.permitted) {
+        return res.status(403).json({ message: permissionCheck.message || "Permission denied" });
+      }
+      
+      // Generate a unique UID for the event if not provided
+      const eventData = {
+        ...req.body,
+        uid: req.body.uid || `event-${Date.now()}-${Math.random().toString(36).substring(2, 9)}@caldavclient.local`
+      };
+      
+      // Properly handle date conversions, preserving the exact date/time
+      if (typeof eventData.startDate === 'string') {
+        eventData.startDate = new Date(eventData.startDate);
+        console.log(`Event creation: ${eventData.title} - Start date string: ${req.body.startDate}, Converted: ${eventData.startDate.toISOString()}`);
+      }
+      
+      if (typeof eventData.endDate === 'string') {
+        eventData.endDate = new Date(eventData.endDate);
+        console.log(`Event creation: ${eventData.title} - End date string: ${req.body.endDate}, Converted: ${eventData.endDate.toISOString()}`);
+      }
+      
+      // Validate with zod
+      const validatedData = insertEventSchema.parse(eventData);
+      
+      // First save to our local database with initial sync status
+      const eventWithSyncStatus = {
+        ...validatedData,
+        syncStatus: 'local', // Mark as local initially
+        syncError: null,
+        lastSyncAttempt: null
+      };
+      
+      const newEvent = await storage.createEvent(eventWithSyncStatus);
+      
+      // If user is authenticated, sync with CalDAV server
+      if (userId) {
+        try {
+          // Get user's CalDAV server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection && connection.status === 'connected') {
+            console.log(`Attempting to sync new event "${eventData.title}" to CalDAV server...`);
+            
+            // Get the calendar for this event
+            const calendar = await storage.getCalendar(eventData.calendarId);
+            
+            if (calendar && calendar.url) {
+              // For now, send a simple response back to the client
+              res.status(200).json(newEvent);
+              
+              // Then continue processing in the background
+              try {
+                console.log(`Creating event in calendar: ${calendar.name} at URL: ${calendar.url}`);
+                
+                // Create iCalendar data for this event
+                let icsData = '';
+                
+                // Different handling for all-day events vs regular events
+                const isAllDay = eventData.allDay;
+                console.log(`Creating ${isAllDay ? 'all-day' : 'regular'} event: ${eventData.title}`);
+                
+                if (isAllDay) {
+                  // All-day events have special handling
+                  const startDateStr = eventData.startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+                  const endDateStr = eventData.endDate.toISOString().split('T')[0]; // YYYY-MM-DD
+                  
+                  // For all-day events, end date should be next day in iCal format
+                  const endDateObj = new Date(eventData.endDate);
+                  endDateObj.setDate(endDateObj.getDate() + 1);
+                  const adjustedEndDateStr = endDateObj.toISOString().split('T')[0];
+                  
+                  console.log(`All-day event: ${startDateStr} to ${endDateStr}, adjusted end: ${adjustedEndDateStr}`);
+                  
+                  icsData = `BEGIN:VCALENDAR
+PRODID:-//CalDAV Client//EN
+VERSION:2.0
+BEGIN:VEVENT
+UID:${eventData.uid}
+SUMMARY:${eventData.title}
+DTSTART;VALUE=DATE:${startDateStr.replace(/-/g, '')}
+DTEND;VALUE=DATE:${adjustedEndDateStr.replace(/-/g, '')}
+${eventData.description ? `DESCRIPTION:${eventData.description.replace(/\n/g, '\\n')}` : ''}
+${eventData.location ? `LOCATION:${eventData.location}` : ''}
+STATUS:CONFIRMED
+SEQUENCE:0
+END:VEVENT
+END:VCALENDAR`;
+                } else {
+                  // Regular event with time
+                  const startDate = eventData.startDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+                  const endDate = eventData.endDate.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+                  
+                  icsData = `BEGIN:VCALENDAR
+PRODID:-//CalDAV Client//EN
+VERSION:2.0
+BEGIN:VEVENT
+UID:${eventData.uid}
+SUMMARY:${eventData.title}
+DTSTART:${startDate}
+DTEND:${endDate}
+${eventData.description ? `DESCRIPTION:${eventData.description.replace(/\n/g, '\\n')}` : ''}
+${eventData.location ? `LOCATION:${eventData.location}` : ''}
+STATUS:CONFIRMED
+SEQUENCE:0
+END:VEVENT
+END:VCALENDAR`;
+                }
+                
+                console.log(`Prepared iCalendar data for event: ${eventData.title}`);
+                console.log(`Calendar URL: ${calendar.url}`);
+                
+                // Send the request to the CalDAV server
+                const eventUrl = `${calendar.url}${eventData.uid}.ics`;
+                console.log(`Creating event at URL: ${eventUrl}`);
+                
+                const response = await fetch(eventUrl, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Authorization': 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64')
+                  },
+                  body: icsData
+                });
+                
+                console.log(`CalDAV response status: ${response.status}`);
+                
+                if (response.ok) {
+                  // Update event sync status
+                  await storage.updateEvent(newEvent.id, {
+                    syncStatus: 'synced',
+                    lastSyncAttempt: new Date(),
+                    url: eventUrl
+                  });
+                  console.log(`Successfully synced event ${eventData.title} with CalDAV server`);
+                } else {
+                  // Update event with sync error
+                  const errorText = await response.text();
+                  await storage.updateEvent(newEvent.id, {
+                    syncStatus: 'error',
+                    lastSyncAttempt: new Date(),
+                    syncError: `Status: ${response.status}, Error: ${errorText}`
+                  });
+                  console.error(`Error syncing event with CalDAV server: ${response.status} ${response.statusText}`);
+                  console.error(`Response body: ${errorText}`);
+                }
+              } catch (syncError) {
+                console.error(`Error syncing event with CalDAV server:`, syncError);
+                
+                // Update event with sync error
+                await storage.updateEvent(newEvent.id, {
+                  syncStatus: 'error',
+                  lastSyncAttempt: new Date(),
+                  syncError: syncError instanceof Error ? syncError.message : String(syncError)
+                });
+              }
+            } else {
+              console.log(`Calendar ${eventData.calendarId} not found or doesn't have a URL, can't sync event`);
+              res.status(200).json(newEvent);
+            }
+          } else {
+            // No active connection
+            console.log(`User ${userId} doesn't have an active server connection, can't sync event`);
+            res.status(200).json(newEvent);
+          }
+        } catch (syncSetupError) {
+          console.error("Error preparing to sync event:", syncSetupError);
+          res.status(200).json(newEvent);
+        }
+      } else {
+        // Just return the event without syncing
+        res.status(200).json(newEvent);
+      }
+    } catch (err) {
+      console.error("Error creating event:", err);
+      if (err instanceof ZodError) {
+        return res.status(400).json({ 
+          message: "Validation failed", 
+          errors: err.errors 
+        });
+      }
+      res.status(500).json({ message: "Failed to create event" });
+    }
+  });
+  
   // EVENTS API
   app.get("/api/events", isAuthenticated, async (req, res) => {
     try {
