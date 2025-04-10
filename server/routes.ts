@@ -400,26 +400,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Some servers support calendar deletion, but it's not universally supported
               // This might throw an error on servers that don't allow it
               if (existingCalendar.url.includes('/caldav.php/')) {
-                // For DaviCal servers, we need to try different approaches
+                // For DaviCal servers, we need to try multiple aggressive approaches
                 console.log(`Attempting to delete DaviCal calendar: ${existingCalendar.url}`);
                 
+                // Parse the calendar URL to extract components for more targeted operations
+                const urlParts = existingCalendar.url.split('/');
+                const calendarName = urlParts[urlParts.length - 2] || ''; // Calendar name is usually second-to-last part
+                console.log(`Parsed calendar name: ${calendarName}`);
+                
+                // Construct the principal URL (used for admin operations)
+                let principalUrl = '';
+                if (existingCalendar.url.includes('/caldav.php/')) {
+                  const caldavIndex = urlParts.findIndex(p => p === 'caldav.php');
+                  if (caldavIndex >= 0 && caldavIndex + 1 < urlParts.length) {
+                    // Get principal URL (up to username)
+                    principalUrl = urlParts.slice(0, caldavIndex + 2).join('/') + '/';
+                  }
+                }
+                console.log(`Principal URL: ${principalUrl}`);
+                
+                // Try all approaches in sequence - if one fails, try the next one
+                
+                // 1. First try the standard DELETE request
                 try {
-                  // First, try standard DELETE method
                   await davClient.davRequest({
                     url: existingCalendar.url,
                     init: {
                       method: 'DELETE',
                       headers: {
                         'Content-Type': 'application/xml; charset=utf-8',
-                      }
+                      },
+                      body: '' // Empty body but required by type
                     }
                   });
                   console.log(`Successfully deleted calendar from CalDAV server using standard DELETE`);
-                } catch (deleteError) {
-                  console.log(`Standard DELETE failed, trying alternative approach: ${deleteError.message}`);
+                } catch (deleteError: any) {
+                  console.log(`Standard DELETE failed: ${deleteError.message}`);
                   
-                  // If standard DELETE fails, try PROPPATCH to mark it as hidden/disabled/inactive
+                  // 2. Try to mark calendar as disabled
                   try {
+                    console.log(`Attempting to disable calendar`);
                     await davClient.davRequest({
                       url: existingCalendar.url,
                       init: {
@@ -438,9 +458,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       }
                     });
                     console.log(`Successfully disabled calendar on CalDAV server using PROPPATCH`);
-                  } catch (propPatchError) {
-                    console.log(`PROPPATCH approach also failed: ${propPatchError.message}`);
-                    // At this point, we tried all server-side options, so we'll continue with local deletion
+                  } catch (propPatchError: any) {
+                    console.log(`PROPPATCH approach failed: ${propPatchError.message}`);
+
+                    // 3. Try PROPFIND to get more detailed information about the calendar
+                    try {
+                      console.log(`Getting calendar details with PROPFIND`);
+                      const calendarDetails = await davClient.davRequest({
+                        url: existingCalendar.url,
+                        init: {
+                          method: 'PROPFIND',
+                          headers: {
+                            'Content-Type': 'application/xml; charset=utf-8',
+                            'Depth': '0'
+                          },
+                          body: `<?xml version="1.0" encoding="utf-8" ?>
+                            <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                              <D:prop>
+                                <D:resourcetype />
+                                <D:displayname />
+                                <C:calendar-enabled />
+                              </D:prop>
+                            </D:propfind>`
+                        }
+                      });
+                      // DAVResponse is an array of responses, so we check if we got any responses
+                      console.log(`Calendar PROPFIND response received: ${Array.isArray(calendarDetails) && calendarDetails.length > 0}`);
+                      
+                      // 4. Try to set the calendar display name to "(deleted)" to indicate it's deleted
+                      try {
+                        console.log(`Marking calendar as deleted by changing display name`);
+                        await davClient.davRequest({
+                          url: existingCalendar.url,
+                          init: {
+                            method: 'PROPPATCH',
+                            headers: {
+                              'Content-Type': 'application/xml; charset=utf-8',
+                            },
+                            body: `<?xml version="1.0" encoding="utf-8" ?>
+                              <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                                <D:set>
+                                  <D:prop>
+                                    <D:displayname>(DELETED) ${existingCalendar.name}</D:displayname>
+                                  </D:prop>
+                                </D:set>
+                              </D:propertyupdate>`
+                          }
+                        });
+                        console.log(`Successfully marked calendar as deleted by changing display name`);
+                      } catch (displayNameError: any) {
+                        console.log(`Failed to change display name: ${displayNameError.message}`);
+                      }
+                    } catch (propFindError: any) {
+                      console.log(`PROPFIND approach failed: ${propFindError.message}`);
+                    }
                   }
                 }
               } else {
@@ -451,7 +522,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     method: 'DELETE',
                     headers: {
                       'Content-Type': 'application/xml; charset=utf-8',
-                    }
+                    },
+                    body: '' // Empty body but required by type
                   }
                 });
                 console.log(`Successfully deleted calendar from CalDAV server`);
