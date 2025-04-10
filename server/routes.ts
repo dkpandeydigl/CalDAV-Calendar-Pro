@@ -416,7 +416,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     }
                   });
                   console.log(`Successfully deleted calendar from CalDAV server using standard DELETE`);
-                } catch (deleteError) {
+                } catch (error) {
+                  const deleteError = error as Error;
                   console.log(`Standard DELETE failed, trying alternative approach: ${deleteError.message}`);
                   
                   // If standard DELETE fails, try PROPPATCH to mark it as hidden/disabled/inactive
@@ -439,7 +440,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       }
                     });
                     console.log(`Successfully disabled calendar on CalDAV server using PROPPATCH`);
-                  } catch (propPatchError) {
+                  } catch (error) {
+                    const propPatchError = error as Error;
                     console.log(`PROPPATCH approach also failed: ${propPatchError.message}`);
                     // At this point, we tried all server-side options, so we'll continue with local deletion
                   }

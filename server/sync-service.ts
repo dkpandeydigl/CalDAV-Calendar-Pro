@@ -1670,7 +1670,7 @@ END:VCALENDAR`;
         const dbCalendar = await storage.getCalendar(calendarId);
         if (dbCalendar && dbCalendar.url) {
           // Match the calendar URL with those from the server
-          const matchingCalendar = calendars.find(cal => cal.url === dbCalendar.url);
+          const matchingCalendar = calendars.find((cal: { url: string }) => cal.url === dbCalendar.url);
           if (matchingCalendar) {
             calendarToSearch = [matchingCalendar];
           }
