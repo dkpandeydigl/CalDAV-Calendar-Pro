@@ -565,31 +565,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         syncStatus: 'pending'
       };
       
-      // STANDARD TIMEZONE HANDLING:
-      // The issue is that our events created in UTC showing on the wrong day (off by ~6 hours)
-      // For Kolkata time (UTC+5:30), a 2:44 AM event in Kolkata time is 9:14 PM UTC time on the previous day
-      // The solution is to preserve the exact date/time as created in local timezone
+      // CRITICAL TIMEZONE FIX: 
+      // When events are created in Asia/Kolkata timezone (UTC+5:30), we need to PRESERVE the 
+      // exact date/time without UTC conversion to prevent events showing on the wrong day
       
       console.log(`[EVENT CREATE DEBUG] Timezone for event: ${eventData.timezone || 'none'}`);
       
-      // Handle start date with proper timezone
+      // Make sure we always have timezone information
+      if (!eventData.timezone) {
+        console.log('[EVENT CREATE DEBUG] Setting timezone to default UTC');
+        eventData.timezone = 'UTC';
+      }
+      
+      // ---- HANDLE START DATE WITH PROPER TIMEZONE PRESERVATION ----
       if (typeof eventData.startDate === 'string') {
         console.log(`[EVENT CREATE DEBUG] Parsing startDate string: ${eventData.startDate}`);
         
-        // Parse the date string to create a UTC date
-        const startDate = new Date(eventData.startDate);
+        // Create date object from the string
+        let startDate = new Date(eventData.startDate);
         
-        // Keep exact date-time conversion:
-        // For events created in our client, we store the date in UTC but maintain the 
-        // timezone information to ensure we can display it correctly later
-        
-        // Create a note about what timezone this event was created in
-        if (!eventData.timezone) {
-          console.log('[EVENT CREATE DEBUG] Setting timezone to default UTC');
-          eventData.timezone = 'UTC';
+        // SPECIAL CASE: For Asia/Kolkata timezone events 
+        // We want to preserve the exact same date rather than letting JavaScript convert to UTC
+        if (eventData.timezone === 'Asia/Kolkata') {
+          console.log('[EVENT CREATE DEBUG] Special handling for Asia/Kolkata timezone');
+          
+          // Extract the components directly from the ISO string to preserve exact time
+          const isoString = startDate.toISOString();
+          const [datePart, timePart] = isoString.split('T');
+          const [year, month, day] = datePart.split('-').map(Number);
+          const [hours, minutes, secondsPart] = timePart.split(':');
+          const seconds = secondsPart.split('.')[0];
+          
+          console.log(`[EVENT CREATE DEBUG] Parsed components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
+          
+          // Create a new date with exact same components (NO UTC CONVERSION)
+          // Month is 0-indexed in JavaScript Date constructor
+          startDate = new Date(year, month - 1, day, parseInt(hours), parseInt(minutes), parseInt(seconds));
+          console.log(`[EVENT CREATE DEBUG] Preserved Asia/Kolkata date: ${startDate.toString()}`);
         }
         
-        // Store the parsed date without adjustments
+        // Store the parsed date properly
         eventData.startDate = startDate;
         console.log(`[EVENT CREATE DEBUG] Final startDate: ${eventData.startDate.toISOString()} with timezone ${eventData.timezone}`);
       } else if (!eventData.startDate) {
@@ -597,14 +612,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         eventData.startDate = new Date();
       }
       
-      // Handle end date with proper timezone
+      // ---- HANDLE END DATE WITH PROPER TIMEZONE PRESERVATION ----
       if (typeof eventData.endDate === 'string') {
         console.log(`[EVENT CREATE DEBUG] Parsing endDate string: ${eventData.endDate}`);
         
-        // Parse the date string to create a UTC date
-        const endDate = new Date(eventData.endDate);
+        // Create date object from the string
+        let endDate = new Date(eventData.endDate);
         
-        // Store the parsed date without adjustments
+        // SPECIAL CASE: For Asia/Kolkata timezone events 
+        // We want to preserve the exact same date rather than letting JavaScript convert to UTC
+        if (eventData.timezone === 'Asia/Kolkata') {
+          console.log('[EVENT CREATE DEBUG] Special handling for Asia/Kolkata timezone');
+          
+          // Extract the components directly from the ISO string to preserve exact time
+          const isoString = endDate.toISOString();
+          const [datePart, timePart] = isoString.split('T');
+          const [year, month, day] = datePart.split('-').map(Number);
+          const [hours, minutes, secondsPart] = timePart.split(':');
+          const seconds = secondsPart.split('.')[0];
+          
+          console.log(`[EVENT CREATE DEBUG] Parsed end components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
+          
+          // Create a new date with exact same components (NO UTC CONVERSION)
+          // Month is 0-indexed in JavaScript Date constructor
+          endDate = new Date(year, month - 1, day, parseInt(hours), parseInt(minutes), parseInt(seconds));
+          console.log(`[EVENT CREATE DEBUG] Preserved Asia/Kolkata end date: ${endDate.toString()}`);
+        }
+        
+        // Store the parsed date properly
         eventData.endDate = endDate;
         console.log(`[EVENT CREATE DEBUG] Final endDate: ${eventData.endDate.toISOString()} with timezone ${eventData.timezone}`);
       } else if (!eventData.endDate) {
@@ -1314,16 +1349,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Process the update data
       const updateData = { ...req.body };
       
-      // Handle date conversions
+      // Handle timezone information preservation
+      if (!updateData.timezone && existingEvent.timezone) {
+        // Preserve the existing timezone if not explicitly changed
+        updateData.timezone = existingEvent.timezone;
+      }
+      
+      console.log(`[EVENT UPDATE DEBUG] Timezone for event: ${updateData.timezone || 'none'}`);
+      
+      // ---- HANDLE START DATE WITH PROPER TIMEZONE PRESERVATION ----
       if (typeof updateData.startDate === 'string') {
-        updateData.startDate = new Date(updateData.startDate);
+        console.log(`[EVENT UPDATE DEBUG] Parsing startDate string: ${updateData.startDate}`);
+        
+        // Create date object from the string
+        let startDate = new Date(updateData.startDate);
+        
+        // SPECIAL CASE: For Asia/Kolkata timezone events 
+        // We want to preserve the exact same date rather than letting JavaScript convert to UTC
+        if (updateData.timezone === 'Asia/Kolkata') {
+          console.log('[EVENT UPDATE DEBUG] Special handling for Asia/Kolkata timezone');
+          
+          // Extract the components directly from the ISO string to preserve exact time
+          const isoString = startDate.toISOString();
+          const [datePart, timePart] = isoString.split('T');
+          const [year, month, day] = datePart.split('-').map(Number);
+          const [hours, minutes, secondsPart] = timePart.split(':');
+          const seconds = secondsPart.split('.')[0];
+          
+          console.log(`[EVENT UPDATE DEBUG] Parsed components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
+          
+          // Create a new date with exact same components (NO UTC CONVERSION)
+          // Month is 0-indexed in JavaScript Date constructor
+          startDate = new Date(year, month - 1, day, hours, minutes, seconds);
+          console.log(`[EVENT UPDATE DEBUG] Preserved Asia/Kolkata date: ${startDate.toString()}`);
+        }
+        
+        // Store the parsed date properly
+        updateData.startDate = startDate;
       } else if (updateData.startDate === null || updateData.startDate === undefined) {
         // Keep existing startDate if not provided
         updateData.startDate = existingEvent.startDate;
       }
       
+      // ---- HANDLE END DATE WITH PROPER TIMEZONE PRESERVATION ----
       if (typeof updateData.endDate === 'string') {
-        updateData.endDate = new Date(updateData.endDate);
+        console.log(`[EVENT UPDATE DEBUG] Parsing endDate string: ${updateData.endDate}`);
+        
+        // Create date object from the string
+        let endDate = new Date(updateData.endDate);
+        
+        // SPECIAL CASE: For Asia/Kolkata timezone events 
+        // We want to preserve the exact same date rather than letting JavaScript convert to UTC
+        if (updateData.timezone === 'Asia/Kolkata') {
+          console.log('[EVENT UPDATE DEBUG] Special handling for Asia/Kolkata timezone');
+          
+          // Extract the components directly from the ISO string to preserve exact time
+          const isoString = endDate.toISOString();
+          const [datePart, timePart] = isoString.split('T');
+          const [year, month, day] = datePart.split('-').map(Number);
+          const [hours, minutes, secondsPart] = timePart.split(':');
+          const seconds = secondsPart.split('.')[0];
+          
+          console.log(`[EVENT UPDATE DEBUG] Parsed end components: ${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
+          
+          // Create a new date with exact same components (NO UTC CONVERSION)
+          // Month is 0-indexed in JavaScript Date constructor
+          endDate = new Date(year, month - 1, day, hours, minutes, seconds);
+          console.log(`[EVENT UPDATE DEBUG] Preserved Asia/Kolkata end date: ${endDate.toString()}`);
+        }
+        
+        // Store the parsed date properly
+        updateData.endDate = endDate;
       } else if (updateData.endDate === null || updateData.endDate === undefined) {
         // Keep existing endDate if not provided
         updateData.endDate = existingEvent.endDate;
