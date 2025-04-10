@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
-import { formatDayOfWeekDate, formatEventTimeRange } from '@/lib/date-utils';
+import { formatDayOfWeekDate, formatEventTimeRange, getUserTimezone } from '@/lib/date-utils';
 import type { Event } from '@shared/schema';
 import { format } from 'date-fns';
 import { useQueryClient } from '@tanstack/react-query';
@@ -438,18 +438,24 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               <span className="material-icons text-primary mr-2 bg-white p-1 rounded-md shadow-sm">schedule</span>
               <div>
                 <div className="text-sm font-medium text-primary/90">
-                  {event.timezone === 'Asia/Kolkata' 
-                    ? format(startDate, 'EEEE, MMMM d, yyyy') // Direct format for Asia/Kolkata
-                    : formatDayOfWeekDate(startDate, event.timezone || undefined)}
+                  {formatDayOfWeekDate(startDate, event.timezone || undefined)}
                 </div>
+                
+                {/* Always show original time as stored */}
                 <div className="text-sm text-primary/80">
                   {event.allDay 
                     ? '🕒 All Day' 
-                    : event.timezone === 'Asia/Kolkata'
-                      ? `🕒 ${format(startDate, 'h:mm a')} - ${format(endDate, 'h:mm a')}` // Direct format for Asia/Kolkata
-                      : `🕒 ${formatEventTimeRange(startDate, endDate, false, event.timezone || undefined)}`}
-                  {event.timezone && ` (${event.timezone})`}
+                    : `🕒 ${format(startDate, 'h:mm a')} - ${format(endDate, 'h:mm a')}`} 
+                  <span className="font-medium">{event.timezone && ` (Original ${event.timezone} Time)`}</span>
                 </div>
+                
+                {/* Display converted time when event timezone differs from user timezone */}
+                {!event.allDay && event.timezone && event.timezone !== getUserTimezone() && (
+                  <div className="text-sm text-blue-600 italic mt-1">
+                    🕒 {formatEventTimeRange(startDate, endDate, false, event.timezone)}
+                    <span className="font-medium"> (Your Time in {getUserTimezone()})</span>
+                  </div>
+                )}
               </div>
             </div>
             

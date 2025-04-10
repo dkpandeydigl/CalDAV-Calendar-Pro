@@ -15,7 +15,7 @@ export const setUserTimezonePreference = (timezone: string): void => {
 };
 
 // Get user's timezone preference
-const getUserTimezone = (): string => {
+export const getUserTimezone = (): string => {
   // First priority: Use the explicitly set user preference if available
   if (userTimezonePreference) {
     return userTimezonePreference;
