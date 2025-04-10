@@ -314,3 +314,21 @@ export function extractSequenceFromICal(icalData: string): number {
     return 0; // Safe default
   }
 }
+
+/**
+ * Generate Thunderbird compatible ICS data
+ * Specific for Thunderbird compatibility requirements
+ * @param event The event data
+ * @returns Properly formatted iCalendar data with Thunderbird compatibility considerations
+ */
+export function generateThunderbirdCompatibleICS(event: any): string {
+  // Basic format is the same but we add additional properties for Thunderbird compatibility
+  const icsData = generateICalEvent(event, {
+    method: 'REQUEST', // Use REQUEST method for invitations
+    includeTimezone: true, // Always include timezone for Thunderbird
+    useSequence: true // Use sequence to help with updates
+  });
+  
+  // Additional Thunderbird-specific properties could be added here if needed
+  return icsData;
+}
