@@ -753,6 +753,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bulk event deletion with filters
   app.delete("/api/events/bulk", isAuthenticated, async (req, res) => {
     try {
+      console.log("Bulk delete request received:", req.body);
+      
       const userId = req.user!.id;
       const { 
         calendarIds, 
@@ -796,24 +798,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Apply date filters if provided
       if (deleteScope !== 'all') {
         filteredEvents = filteredEvents.filter(event => {
-          const eventDate = new Date(event.startDate);
-          
-          // Filter by year if specified
-          if (year !== undefined && eventDate.getFullYear() !== year) {
+          // Handle case when startDate might be null or invalid
+          if (!event.startDate) {
+            console.log(`Skipping event ${event.id} with no startDate`);
             return false;
           }
           
-          // Filter by month if specified (note: JavaScript months are 0-based)
-          if (month !== undefined && eventDate.getMonth() !== month - 1) {
+          try {
+            const eventDate = new Date(event.startDate);
+            
+            // Check if date is valid
+            if (isNaN(eventDate.getTime())) {
+              console.log(`Skipping event ${event.id} with invalid date: ${event.startDate}`);
+              return false;
+            }
+            
+            // Filter by year if specified
+            if (year !== undefined && eventDate.getFullYear() !== year) {
+              return false;
+            }
+            
+            // Filter by month if specified (note: JavaScript months are 0-based)
+            if (month !== undefined && eventDate.getMonth() !== month - 1) {
+              return false;
+            }
+            
+            // Filter by day if specified
+            if (day !== undefined && eventDate.getDate() !== day) {
+              return false;
+            }
+            
+            return true;
+          } catch (error) {
+            console.error(`Error filtering event ${event.id}:`, error);
             return false;
           }
-          
-          // Filter by day if specified
-          if (day !== undefined && eventDate.getDate() !== day) {
-            return false;
-          }
-          
-          return true;
         });
       }
       
