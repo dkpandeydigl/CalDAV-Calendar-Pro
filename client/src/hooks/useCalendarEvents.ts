@@ -51,6 +51,25 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       // Short delay to ensure UI updates finish before server request
       await new Promise(resolve => setTimeout(resolve, 10));
       
+      // TIMEZONE HANDLING: Make sure we always include timezone information
+      // If no timezone is provided, use the user's timezone
+      if (!newEvent.timezone) {
+        // Use browser timezone as default
+        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        console.log(`No timezone provided, using browser default: ${userTimezone}`);
+        newEvent = {
+          ...newEvent,
+          timezone: userTimezone
+        };
+      }
+      
+      // Handle dates properly
+      if (newEvent.startDate instanceof Date) {
+        // We're sending the Date object which will be converted to ISO string
+        // Our server code will keep track of the timezone information
+        console.log(`Creating event with start date ${newEvent.startDate.toISOString()} in timezone ${newEvent.timezone}`);
+      }
+      
       // Handle the rawData object that might contain attendees and other information from the advanced form
       // Make sure rawData is properly serialized if it's present
       if (newEvent.rawData && typeof newEvent.rawData === 'object') {
@@ -381,6 +400,25 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     mutationFn: async ({ id, data }) => {
       // Short delay to ensure UI updates finish before server request
       await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // TIMEZONE HANDLING: Make sure we always include timezone information
+      // If no timezone is provided, use the user's timezone
+      if (!data.timezone) {
+        // Use browser timezone as default
+        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        console.log(`No timezone provided for update, using browser default: ${userTimezone}`);
+        data = {
+          ...data,
+          timezone: userTimezone
+        };
+      }
+      
+      // Handle dates properly for event updates
+      if (data.startDate instanceof Date) {
+        // We're sending the Date object which will be converted to ISO string
+        // Our server code will keep track of the timezone information
+        console.log(`Updating event with start date ${data.startDate.toISOString()} in timezone ${data.timezone}`);
+      }
       
       // Handle the rawData object that might contain attendees and other information from the advanced form
       // Make sure rawData is properly serialized if it's present
