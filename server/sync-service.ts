@@ -321,27 +321,119 @@ export class SyncService {
             
             // Process the events
             for (const event of events) {
-              // Cast DAVObject to our CalDAVEvent interface for type safety
+              // Cast DAVObject to our CalDAVEvent interface
               const caldavEvent = event as unknown as CalDAVEvent;
+              
+              // Enhanced parsing for Thunderbird compatibility
+              if (event.data && typeof event.data === 'string') {
+                const rawIcalData = event.data.toString();
+                console.log(`Processing raw iCal data for event: ${caldavEvent.uid || 'Unknown UID'}`);
+                
+                // Extract UID if missing in parsed event
+                if (!caldavEvent.uid) {
+                  const uidMatch = rawIcalData.match(/UID:([^\r\n]+)/i);
+                  if (uidMatch && uidMatch[1]) {
+                    caldavEvent.uid = uidMatch[1].trim();
+                    console.log(`Extracted UID from raw data: ${caldavEvent.uid}`);
+                  }
+                }
+                
+                // Extract summary if missing in parsed event
+                if (!caldavEvent.summary) {
+                  const summaryMatch = rawIcalData.match(/SUMMARY:([^\r\n]+)/i);
+                  if (summaryMatch && summaryMatch[1]) {
+                    caldavEvent.summary = summaryMatch[1].trim();
+                    console.log(`Extracted summary from raw data: ${caldavEvent.summary}`);
+                  }
+                }
+                
+                // Extract dates if missing
+                if (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime())) {
+                  const dtStartMatch = rawIcalData.match(/DTSTART(?:[^:]*):([^\r\n]+)/i);
+                  if (dtStartMatch && dtStartMatch[1]) {
+                    const dtStartStr = dtStartMatch[1].trim();
+                    try {
+                      // Handle different date formats
+                      if (dtStartStr.includes('T')) {
+                        // ISO format: 20230101T120000Z
+                        const year = parseInt(dtStartStr.substring(0, 4));
+                        const month = parseInt(dtStartStr.substring(4, 6)) - 1;
+                        const day = parseInt(dtStartStr.substring(6, 8));
+                        const hour = parseInt(dtStartStr.substring(9, 11));
+                        const minute = parseInt(dtStartStr.substring(11, 13));
+                        const second = parseInt(dtStartStr.substring(13, 15));
+                        
+                        caldavEvent.startDate = new Date(Date.UTC(year, month, day, hour, minute, second));
+                        console.log(`Parsed start date from raw data: ${caldavEvent.startDate.toISOString()}`);
+                      } else {
+                        // Date-only format: 20230101
+                        const year = parseInt(dtStartStr.substring(0, 4));
+                        const month = parseInt(dtStartStr.substring(4, 6)) - 1;
+                        const day = parseInt(dtStartStr.substring(6, 8));
+                        
+                        caldavEvent.startDate = new Date(Date.UTC(year, month, day));
+                        caldavEvent.allDay = true;
+                        console.log(`Parsed start date (all-day) from raw data: ${caldavEvent.startDate.toISOString()}`);
+                      }
+                    } catch (dateError) {
+                      console.error(`Error parsing start date from raw data:`, dateError);
+                    }
+                  }
+                }
+                
+                // Extract end date if missing
+                if (!caldavEvent.endDate || isNaN(caldavEvent.endDate.getTime())) {
+                  const dtEndMatch = rawIcalData.match(/DTEND(?:[^:]*):([^\r\n]+)/i);
+                  if (dtEndMatch && dtEndMatch[1]) {
+                    const dtEndStr = dtEndMatch[1].trim();
+                    try {
+                      // Handle different date formats
+                      if (dtEndStr.includes('T')) {
+                        // ISO format: 20230101T120000Z
+                        const year = parseInt(dtEndStr.substring(0, 4));
+                        const month = parseInt(dtEndStr.substring(4, 6)) - 1;
+                        const day = parseInt(dtEndStr.substring(6, 8));
+                        const hour = parseInt(dtEndStr.substring(9, 11));
+                        const minute = parseInt(dtEndStr.substring(11, 13));
+                        const second = parseInt(dtEndStr.substring(13, 15));
+                        
+                        caldavEvent.endDate = new Date(Date.UTC(year, month, day, hour, minute, second));
+                        console.log(`Parsed end date from raw data: ${caldavEvent.endDate.toISOString()}`);
+                      } else {
+                        // Date-only format: 20230101
+                        const year = parseInt(dtEndStr.substring(0, 4));
+                        const month = parseInt(dtEndStr.substring(4, 6)) - 1;
+                        const day = parseInt(dtEndStr.substring(6, 8));
+                        
+                        caldavEvent.endDate = new Date(Date.UTC(year, month, day));
+                        console.log(`Parsed end date (all-day) from raw data: ${caldavEvent.endDate.toISOString()}`);
+                      }
+                    } catch (dateError) {
+                      console.error(`Error parsing end date from raw data:`, dateError);
+                    }
+                  }
+                }
+                
+                // Store the raw data for debugging
+                caldavEvent.data = rawIcalData;
+              }
               
               // Check if we already have this event in our database
               const existingEvent = await storage.getEventByUID(caldavEvent.uid);
               
-              // Skip events that don't have essential data (summary, dates)
-              // Check if this is just a placeholder or empty event
-              const isEmptyEvent = !caldavEvent.summary && (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime()));
-              const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
-                                     caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
-                                     
               // Generate UID first if missing, before we skip anything
               if (!caldavEvent.uid) {
-                console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
+                console.warn(`Event is missing a UID even after parsing, generating one`);
                 caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
               }
               
-              // Only skip completely empty events - be more lenient with events from other clients
-              if (isEmptyEvent && !hasValidDates) {
-                console.log(`Skipping completely empty event with no title and no valid dates: ${caldavEvent.uid}`);
+              // Check if this is a valid event after our enhanced parsing
+              const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
+                                     caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
+              
+              // Skip only if we still have no valid data after our enhanced parsing
+              if (!hasValidDates && !caldavEvent.summary) {
+                console.log(`Skipping completely invalid event even after enhanced parsing: ${caldavEvent.uid}`);
                 continue; // Skip to the next event
               }
               
@@ -458,27 +550,119 @@ export class SyncService {
               // Process the events
               for (const event of events) {
                 try {
-                  // Cast DAVObject to our CalDAVEvent interface for type safety
+                  // Cast DAVObject to our CalDAVEvent interface
                   const caldavEvent = event as unknown as CalDAVEvent;
+                  
+                  // Enhanced parsing for Thunderbird compatibility
+                  if (event.data && typeof event.data === 'string') {
+                    const rawIcalData = event.data.toString();
+                    console.log(`Processing raw iCal data for event: ${caldavEvent.uid || 'Unknown UID'}`);
+                    
+                    // Extract UID if missing in parsed event
+                    if (!caldavEvent.uid) {
+                      const uidMatch = rawIcalData.match(/UID:([^\r\n]+)/i);
+                      if (uidMatch && uidMatch[1]) {
+                        caldavEvent.uid = uidMatch[1].trim();
+                        console.log(`Extracted UID from raw data: ${caldavEvent.uid}`);
+                      }
+                    }
+                    
+                    // Extract summary if missing in parsed event
+                    if (!caldavEvent.summary) {
+                      const summaryMatch = rawIcalData.match(/SUMMARY:([^\r\n]+)/i);
+                      if (summaryMatch && summaryMatch[1]) {
+                        caldavEvent.summary = summaryMatch[1].trim();
+                        console.log(`Extracted summary from raw data: ${caldavEvent.summary}`);
+                      }
+                    }
+                    
+                    // Extract dates if missing
+                    if (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime())) {
+                      const dtStartMatch = rawIcalData.match(/DTSTART(?:[^:]*):([^\r\n]+)/i);
+                      if (dtStartMatch && dtStartMatch[1]) {
+                        const dtStartStr = dtStartMatch[1].trim();
+                        try {
+                          // Handle different date formats
+                          if (dtStartStr.includes('T')) {
+                            // ISO format: 20230101T120000Z
+                            const year = parseInt(dtStartStr.substring(0, 4));
+                            const month = parseInt(dtStartStr.substring(4, 6)) - 1;
+                            const day = parseInt(dtStartStr.substring(6, 8));
+                            const hour = parseInt(dtStartStr.substring(9, 11));
+                            const minute = parseInt(dtStartStr.substring(11, 13));
+                            const second = parseInt(dtStartStr.substring(13, 15));
+                            
+                            caldavEvent.startDate = new Date(Date.UTC(year, month, day, hour, minute, second));
+                            console.log(`Parsed start date from raw data: ${caldavEvent.startDate.toISOString()}`);
+                          } else {
+                            // Date-only format: 20230101
+                            const year = parseInt(dtStartStr.substring(0, 4));
+                            const month = parseInt(dtStartStr.substring(4, 6)) - 1;
+                            const day = parseInt(dtStartStr.substring(6, 8));
+                            
+                            caldavEvent.startDate = new Date(Date.UTC(year, month, day));
+                            caldavEvent.allDay = true;
+                            console.log(`Parsed start date (all-day) from raw data: ${caldavEvent.startDate.toISOString()}`);
+                          }
+                        } catch (dateError) {
+                          console.error(`Error parsing start date from raw data:`, dateError);
+                        }
+                      }
+                    }
+                    
+                    // Extract end date if missing
+                    if (!caldavEvent.endDate || isNaN(caldavEvent.endDate.getTime())) {
+                      const dtEndMatch = rawIcalData.match(/DTEND(?:[^:]*):([^\r\n]+)/i);
+                      if (dtEndMatch && dtEndMatch[1]) {
+                        const dtEndStr = dtEndMatch[1].trim();
+                        try {
+                          // Handle different date formats
+                          if (dtEndStr.includes('T')) {
+                            // ISO format: 20230101T120000Z
+                            const year = parseInt(dtEndStr.substring(0, 4));
+                            const month = parseInt(dtEndStr.substring(4, 6)) - 1;
+                            const day = parseInt(dtEndStr.substring(6, 8));
+                            const hour = parseInt(dtEndStr.substring(9, 11));
+                            const minute = parseInt(dtEndStr.substring(11, 13));
+                            const second = parseInt(dtEndStr.substring(13, 15));
+                            
+                            caldavEvent.endDate = new Date(Date.UTC(year, month, day, hour, minute, second));
+                            console.log(`Parsed end date from raw data: ${caldavEvent.endDate.toISOString()}`);
+                          } else {
+                            // Date-only format: 20230101
+                            const year = parseInt(dtEndStr.substring(0, 4));
+                            const month = parseInt(dtEndStr.substring(4, 6)) - 1;
+                            const day = parseInt(dtEndStr.substring(6, 8));
+                            
+                            caldavEvent.endDate = new Date(Date.UTC(year, month, day));
+                            console.log(`Parsed end date (all-day) from raw data: ${caldavEvent.endDate.toISOString()}`);
+                          }
+                        } catch (dateError) {
+                          console.error(`Error parsing end date from raw data:`, dateError);
+                        }
+                      }
+                    }
+                    
+                    // Store the raw data for debugging
+                    caldavEvent.data = rawIcalData;
+                  }
                   
                   // Check if we already have this event in our database
                   const existingEvent = await storage.getEventByUID(caldavEvent.uid);
                   
-                  // Skip events that don't have essential data (summary, dates)
-                  // Check if this is just a placeholder or empty event
-                  const isEmptyEvent = !caldavEvent.summary && (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime()));
-                  const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
-                                         caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
-                  
                   // Generate UID first if missing, before we skip anything
                   if (!caldavEvent.uid) {
-                    console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
+                    console.warn(`Event is missing a UID even after parsing, generating one`);
                     caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
                   }
                   
-                  // Only skip completely empty events - be more lenient with events from other clients
-                  if (isEmptyEvent && !hasValidDates) {
-                    console.log(`Skipping completely empty event with no title and no valid dates: ${caldavEvent.uid}`);
+                  // Check if this is a valid event after our enhanced parsing
+                  const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
+                                         caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
+                  
+                  // Skip only if we still have no valid data after our enhanced parsing
+                  if (!hasValidDates && !caldavEvent.summary) {
+                    console.log(`Skipping completely invalid event even after enhanced parsing: ${caldavEvent.uid}`);
                     continue; // Skip to the next event
                   }
                   
