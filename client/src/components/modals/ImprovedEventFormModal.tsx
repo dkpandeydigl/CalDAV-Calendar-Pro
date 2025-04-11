@@ -130,6 +130,46 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const [attendeeInput, setAttendeeInput] = useState('');
   const [attendeeRole, setAttendeeRole] = useState<AttendeeRole>('Member');
   const [resources, setResources] = useState<Resource[]>([]);
+  // This works around a bug in the rendering by creating a useEffect that runs once
+  // and sets the resources directly from the raw event data
+  useEffect(() => {
+    if (event && event.rawData && open) {
+      const rawData = event.rawData.toString();
+      // Now look for resource entries in the raw data
+      const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:]*?mailto:([^\s\r\n]+)/g;
+      const resourceMatches = [...rawData.matchAll(resourceRegex)];
+      
+      if (resourceMatches.length > 0) {
+        console.log('Found resource matches in raw data:', resourceMatches);
+        
+        const extractedResources = resourceMatches.map((match, index) => {
+          const line = match[0];
+          const email = match[1]; // The captured group for the email
+          
+          // Extract resource name from CN
+          const cnMatch = line.match(/CN=([^;:]+)/);
+          const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
+          
+          // Extract resource type
+          const typeMatch = line.match(/X-RESOURCE-TYPE=([^;:]+)/);
+          const subType = typeMatch ? typeMatch[1].trim() : '';
+          
+          return {
+            id: `resource-${index}-${Date.now()}`,
+            name,
+            adminEmail: email,
+            subType,
+            capacity: 1
+          };
+        });
+        
+        console.log('Directly extracted resources:', extractedResources);
+        if (extractedResources.length > 0) {
+          setResources(extractedResources);
+        }
+      }
+    }
+  }, [event, open]);
   const [alertDialogOpen, setAlertDialogOpen] = useState(false);
   const [previewEventData, setPreviewEventData] = useState<any>(null);
   
