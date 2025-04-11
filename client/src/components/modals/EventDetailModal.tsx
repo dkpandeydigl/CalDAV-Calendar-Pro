@@ -684,12 +684,51 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       
                       const description = String(event.description);
                       
-                      // Case 1: It's already valid HTML with tags
+                      // Case 1: Thunderbird special JSON-like format with ALTREP
+                      if (description.includes('"ALTREP"') || description.includes('"params"')) {
+                        try {
+                          // Extract the actual content
+                          // Format is typically: ["params":["ALTREP":"data:text/html..."],"val":"actual text"]
+                          
+                          // First try to find the "val" property
+                          const valMatch = description.match(/"val"\s*:\s*"([^"]+)"/);
+                          if (valMatch && valMatch[1]) {
+                            return valMatch[1]
+                              .replace(/\\n/g, '<br>')
+                              .replace(/\\/g, ''); // Remove any remaining backslashes
+                          }
+                          
+                          // Try to extract from ALTREP if val wasn't found
+                          const altrepMatch = description.match(/"ALTREP"\s*:\s*"data:text\/html[^"]*,([^"]+)"/);
+                          if (altrepMatch && altrepMatch[1]) {
+                            // It's URL encoded, so decode it
+                            try {
+                              return decodeURIComponent(altrepMatch[1]);
+                            } catch (e) {
+                              // If decoding fails, just return it as is
+                              return altrepMatch[1];
+                            }
+                          }
+                          
+                          // Fallback - use whatever text is available
+                          const textContent = description
+                            .replace(/["[\]{}]/g, '') // Remove JSON-like symbols
+                            .replace(/params:|ALTREP:|val:/g, '') // Remove JSON keys
+                            .replace(/data:text\/html[^,]*,/g, '') // Remove MIME type info
+                            .trim();
+                            
+                          return textContent;
+                        } catch (e) {
+                          console.error('Error parsing Thunderbird special format:', e);
+                        }
+                      }
+                      
+                      // Case 2: It's already valid HTML with tags
                       if (description.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
                         return description;
                       }
                       
-                      // Case 2: It has escaped HTML tags (from Thunderbird)
+                      // Case 3: It has escaped HTML tags (from Thunderbird)
                       if (description.includes('&lt;') && description.includes('&gt;')) {
                         // First unescape the HTML entities
                         const unescaped = description
@@ -704,7 +743,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         }
                       }
                       
-                      // Case 3: Plain text with escaped newlines
+                      // Case 4: Plain text with escaped newlines
                       return description
                         .replace(/\\n/g, '<br>')
                         .replace(/\n/g, '<br>');
