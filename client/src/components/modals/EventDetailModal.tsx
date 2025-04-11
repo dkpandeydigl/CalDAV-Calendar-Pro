@@ -9,7 +9,7 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { MailCheck, AlertTriangle } from 'lucide-react';
+import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Laptop, Wrench, Settings } from 'lucide-react';
 import DirectResourceExtractor from './DirectResourceExtractor';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
@@ -663,7 +663,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               const { email, role } = attendee as { email: string; role?: string };
                               return (
                                 <li key={index} className="flex items-start">
-                                  <span className="material-icons text-neutral-500 mr-2 text-sm mt-0.5">person</span>
+                                  <User className="text-neutral-500 mr-2 h-4 w-4" />
                                   <div>
                                     <div className="font-medium">{email}</div>
                                     {role && (
@@ -684,7 +684,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               // Fallback for string format
                               return (
                                 <li key={index} className="flex items-center">
-                                  <span className="material-icons text-neutral-500 mr-2 text-sm">person</span>
+                                  <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
                                   {String(attendee)}
                                 </li>
                               );
