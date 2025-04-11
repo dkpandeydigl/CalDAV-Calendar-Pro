@@ -361,9 +361,13 @@ function CalendarContent() {
       const response = await apiRequest('POST', '/api/sync');
       const result = await response.json();
       
+      // Get calendar and event counts from the response or use default values
+      const calendarsCount = result.calendarsCount || 0;
+      const eventsCount = result.eventsCount || 0;
+      
       toast({
         title: "Sync Successful",
-        description: `Found ${result.calendarsCount} calendars with ${result.eventsCount || 0} events.`,
+        description: `Found ${calendarsCount} calendars with ${eventsCount} events.`,
       });
       
       // Refetch calendars and events

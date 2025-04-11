@@ -18,7 +18,7 @@ import { z } from "zod";
 import { registerExportRoutes } from "./export-routes";
 import { registerImportRoutes } from "./import-routes";
 import fetch from "node-fetch";
-import { generateThunderbirdCompatibleICS } from "./ical-utils";
+import { escapeICalString, formatICalDate, formatContentLine, formatRecurrenceRule, generateICalEvent } from "./ical-utils";
 import { syncService } from "./sync-service";
 
 // Using directly imported syncService
@@ -1507,9 +1507,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Trigger an immediate sync
       const success = await syncService.requestSync(userId, { forceRefresh, calendarId });
       
+      // Get calendar and event counts for a more informative response
+      const userCalendars = await storage.getCalendars(userId);
+      let totalEvents = 0;
+      
+      // Count total events across all calendars
+      for (const calendar of userCalendars) {
+        if (calendar && calendar.id) {
+          const events = await storage.getEvents(calendar.id);
+          totalEvents += events.length;
+        }
+      }
+      
       res.setHeader('Content-Type', 'application/json');
       if (success) {
-        res.json({ message: "Sync initiated" });
+        res.json({ 
+          message: "Sync initiated",
+          calendarsCount: userCalendars.length,
+          eventsCount: totalEvents
+        });
       } else {
         res.setHeader('Content-Type', 'application/json');
         res.status(500).json({ message: "Failed to initiate sync" });
