@@ -25,6 +25,7 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
 }) => {
   const [linkUrl, setLinkUrl] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
+  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
   
   // Process template tags if eventData is available
   useEffect(() => {
@@ -97,6 +98,12 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
   // Handle undo/redo
   const handleUndo = () => editor.chain().focus().undo().run();
   const handleRedo = () => editor.chain().focus().redo().run();
+  
+  // Handle template selection
+  const handleSelectTemplate = (template: DescriptionTemplate) => {
+    editor.chain().focus().setContent(template.content).run();
+    setTemplateManagerOpen(false);
+  };
 
   return (
     <div className="editor-container">
@@ -262,11 +269,30 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
         >
           <Redo size={18} />
         </button>
+        
+        <div className="toolbar-divider" />
+        
+        {/* Templates */}
+        <button
+          type="button"
+          onClick={() => setTemplateManagerOpen(true)}
+          className="toolbar-button"
+          title="Templates"
+        >
+          <FileText size={18} />
+        </button>
       </div>
       
       <div className="editor-content">
         <EditorContent editor={editor} />
       </div>
+      
+      {/* Template Manager */}
+      <SavedTemplateManager 
+        open={templateManagerOpen}
+        onOpenChange={setTemplateManagerOpen}
+        onSelectTemplate={handleSelectTemplate}
+      />
       
       {editor && (
         <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }}>
