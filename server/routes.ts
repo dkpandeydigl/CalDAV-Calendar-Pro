@@ -401,11 +401,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // This might throw an error on servers that don't allow it
               // DIRECT DELETION APPROACH - Handle all CalDAV server types with specialized methods
               console.log(`Attempting to delete calendar: ${existingCalendar.url}`);
-
-              // For more reliable deletion, first delete ALL events in calendar
-              console.log(`First ensuring all events are deleted from the server`);
+              
+              // Flag to track successful server-side deletion
+              let serverDeletionSuccessful = false;
               
               try {
+                // First, check if the calendar has any restrictions that would prevent deletion
+                console.log('Checking calendar permissions and restrictions...');
+                try {
+                  const props = await davClient.propfind({
+                    url: existingCalendar.url,
+                    props: [
+                      '{DAV:}current-user-privilege-set',
+                      '{DAV:}resourcetype',
+                      '{urn:ietf:params:xml:ns:caldav}calendar-home-set'
+                    ],
+                    depth: '0'
+                  });
+                  
+                  // Extract privilege information
+                  const privileges = props?.[0]?.props?.['current-user-privilege-set'] || [];
+                  const hasWriteContent = privileges.some((p: any) => 
+                    (p?.privilege?.['write-content'] !== undefined) || 
+                    (p?.privilege?.['all'] !== undefined));
+                    
+                  console.log(`Calendar permissions check: hasWriteContent=${hasWriteContent}`);
+                  
+                  if (!hasWriteContent) {
+                    console.log('WARNING: User may not have permission to delete this calendar');
+                  }
+                } catch (permError) {
+                  console.log('Could not check calendar permissions:', permError);
+                }
+                
+                // For more reliable deletion, first delete ALL events in calendar
+                console.log(`First ensuring all events are deleted from the server`);
+                
                 // Step 1: Find all events in this calendar on the server
                 const calendarObjects = await davClient.fetchCalendarObjects({
                   calendar: { url: existingCalendar.url }
@@ -447,68 +478,191 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 
                 console.log(`All calendar objects deletion attempts completed`);
                 
-                // Step 3: Now try to delete the actual calendar with multiple approaches
+                // Step 3: Double-check for any remaining hidden .ics files
+                let remainingObjects = [];
                 try {
-                  // Try DELETE with specially crafted XML body - works on some servers
-                  await davClient.davRequest({
+                  remainingObjects = await davClient.fetchCalendarObjects({
+                    calendar: { url: existingCalendar.url }
+                  });
+                  
+                  if (remainingObjects.length > 0) {
+                    console.log(`WARNING: ${remainingObjects.length} objects still remain in the calendar`);
+                    // Try one more forceful deletion pass with a different approach
+                    for (const obj of remainingObjects) {
+                      try {
+                        if (obj.url) {
+                          // Direct DELETE with Depth header
+                          await davClient.davRequest({
+                            url: obj.url,
+                            init: {
+                              method: 'DELETE',
+                              headers: {
+                                'Content-Type': 'text/plain',
+                                'Depth': 'infinity'
+                              },
+                              body: ''
+                            }
+                          });
+                        }
+                      } catch (hiddenObjErr) {
+                        console.log(`Failed to remove hidden object: ${obj.url}`);
+                      }
+                    }
+                  } else {
+                    console.log('No remaining objects in calendar - ready for collection deletion');
+                  }
+                } catch (checkErr) {
+                  console.log('Could not verify remaining objects:', checkErr);
+                }
+                
+                // Step 4: Now try to delete the actual calendar with multiple approaches
+                // Track raw responses to confirm server acceptance
+                let deleteResponse = null;
+                
+                // Try DELETE with specially crafted XML body and infinity depth - works on some servers
+                try {
+                  console.log('Attempting DELETE with XML body and Depth: infinity');
+                  deleteResponse = await davClient.davRequest({
                     url: existingCalendar.url,
                     init: {
                       method: 'DELETE',
                       headers: {
                         'Content-Type': 'application/xml; charset=utf-8',
-                        'Depth': '0'
+                        'Depth': 'infinity'
                       },
                       body: '<?xml version="1.0" encoding="utf-8" ?><D:remove xmlns:D="DAV:"/>'
                     }
                   });
-                  console.log(`Successfully deleted calendar using DELETE with XML body`);
+                  
+                  console.log(`Response status: ${deleteResponse?.status}`);
+                  if (deleteResponse?.status >= 200 && deleteResponse?.status < 300) {
+                    console.log('Server confirmed calendar deletion with status code:', deleteResponse.status);
+                    serverDeletionSuccessful = true;
+                  } else {
+                    throw new Error(`Unexpected response status: ${deleteResponse?.status}`);
+                  }
                 } catch (xmlDelError) {
                   console.log(`XML DELETE failed: ${xmlDelError.message}`);
                   
+                  // Try standard empty DELETE request with infinity depth
                   try {
-                    // Try standard empty DELETE request
-                    await davClient.davRequest({
+                    console.log('Attempting standard DELETE with Depth: infinity');
+                    deleteResponse = await davClient.davRequest({
                       url: existingCalendar.url,
                       init: {
                         method: 'DELETE',
                         headers: {
                           'Content-Type': 'text/plain',
-                          'Depth': '0'
+                          'Depth': 'infinity'
                         },
                         body: ''
                       }
                     });
-                    console.log(`Successfully deleted calendar using standard DELETE`);
-                  } catch (stdDelError) {
-                    console.log(`Standard DELETE failed: ${stdDelError.message}`);
                     
-                    // If DELETE failed, try marking as disabled/hidden
+                    console.log(`Response status: ${deleteResponse?.status}`);
+                    if (deleteResponse?.status >= 200 && deleteResponse?.status < 300) {
+                      console.log('Server confirmed calendar deletion with status code:', deleteResponse.status);
+                      serverDeletionSuccessful = true;
+                    } else {
+                      throw new Error(`Unexpected response status: ${deleteResponse?.status}`);
+                    }
+                  } catch (stdDelError) {
+                    console.log(`Standard DELETE with infinity depth failed: ${stdDelError.message}`);
+                    
+                    // Last resort: try different DELETE variants
                     try {
-                      await davClient.davRequest({
+                      console.log('Attempting DELETE with Depth: 0');
+                      deleteResponse = await davClient.davRequest({
                         url: existingCalendar.url,
                         init: {
-                          method: 'PROPPATCH',
+                          method: 'DELETE',
                           headers: {
-                            'Content-Type': 'application/xml; charset=utf-8',
-                          },
-                          body: `<?xml version="1.0" encoding="utf-8" ?>
-                            <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                              <D:set>
-                                <D:prop>
-                                  <C:calendar-enabled>false</C:calendar-enabled>
-                                </D:prop>
-                              </D:set>
-                            </D:propertyupdate>`
+                            'Depth': '0'
+                          }
                         }
                       });
-                      console.log(`Successfully disabled calendar via PROPPATCH`);
-                    } catch (propError) {
-                      console.log(`All deletion approaches failed for this calendar: ${propError.message}`);
+                      
+                      console.log(`Response status: ${deleteResponse?.status}`);
+                      if (deleteResponse?.status >= 200 && deleteResponse?.status < 300) {
+                        console.log('Server confirmed calendar deletion with status code:', deleteResponse.status);
+                        serverDeletionSuccessful = true;
+                      } else {
+                        throw new Error(`Unexpected response status: ${deleteResponse?.status}`);
+                      }
+                    } catch (depthZeroError) {
+                      console.log(`DELETE with Depth: 0 failed: ${depthZeroError.message}`);
+                      
+                      // If DELETE failed, try marking as disabled/hidden
+                      try {
+                        console.log('All DELETE attempts failed, trying to disable via PROPPATCH');
+                        const propResponse = await davClient.davRequest({
+                          url: existingCalendar.url,
+                          init: {
+                            method: 'PROPPATCH',
+                            headers: {
+                              'Content-Type': 'application/xml; charset=utf-8',
+                            },
+                            body: `<?xml version="1.0" encoding="utf-8" ?>
+                              <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                                <D:set>
+                                  <D:prop>
+                                    <C:calendar-enabled>false</C:calendar-enabled>
+                                  </D:prop>
+                                </D:set>
+                              </D:propertyupdate>`
+                          }
+                        });
+                        
+                        console.log(`PROPPATCH response status: ${propResponse?.status}`);
+                        if (propResponse?.status >= 200 && propResponse?.status < 300) {
+                          console.log('Calendar successfully disabled via PROPPATCH');
+                          // Not a true deletion, but the best we could do
+                          serverDeletionSuccessful = true;
+                        }
+                      } catch (propError) {
+                        console.log(`All deletion approaches failed for this calendar: ${propError.message}`);
+                      }
+                    }
+                  }
+                }
+                
+                // Step 5: Verify the calendar is actually gone by attempting to fetch it
+                if (serverDeletionSuccessful) {
+                  try {
+                    console.log('Verifying calendar deletion by attempting to fetch it...');
+                    const verifyResponse = await davClient.davRequest({
+                      url: existingCalendar.url,
+                      init: {
+                        method: 'PROPFIND',
+                        headers: {
+                          'Content-Type': 'application/xml; charset=utf-8',
+                          'Depth': '0'
+                        },
+                        body: '<?xml version="1.0" encoding="utf-8" ?><D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/></D:prop></D:propfind>'
+                      }
+                    });
+                    
+                    if (verifyResponse.status === 404) {
+                      console.log('Verification confirmed: Calendar is gone (404 Not Found)');
+                    } else {
+                      console.log(`Warning: Calendar may still exist (status ${verifyResponse.status})`);
+                      serverDeletionSuccessful = false;
+                    }
+                  } catch (verifyError) {
+                    if (verifyError.message && verifyError.message.includes('404')) {
+                      console.log('Verification confirmed: Calendar is gone (404 Not Found)');
+                    } else {
+                      console.log(`Verification error: ${verifyError.message}`);
                     }
                   }
                 }
               } catch (calErr) {
                 console.error(`Error during calendar deletion process: ${calErr.message}`);
+                serverDeletionSuccessful = false;
+              }
+              
+              if (!serverDeletionSuccessful) {
+                console.log('WARNING: Could not confirm successful server-side calendar deletion');
               }
             } catch (calendarDeleteError) {
               console.error(`Error deleting calendar from server:`, calendarDeleteError);
