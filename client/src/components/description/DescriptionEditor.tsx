@@ -1,81 +1,56 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
-import { 
-  Bold, 
-  Italic, 
-  Underline as UnderlineIcon, 
-  List, 
-  ListOrdered, 
-  Link as LinkIcon, 
-  Heading1, 
-  Heading2, 
-  Maximize, 
-  Minimize, 
-  Code, 
-  Eye, 
-  Edit3, 
-  FileText,
-  Save
-} from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/utils';
-import TemplateTagExtension from './TemplateTagExtension';
-import { 
-  AVAILABLE_TAGS, 
-  PLACEHOLDER_DATA, 
-  PREDEFINED_TEMPLATES, 
-  loadCustomTemplates, 
-  replaceTemplateTags, 
-  type DescriptionTemplate 
-} from './templates';
+import Underline from '@tiptap/extension-underline';
+import { Bold, Italic, Underline as UnderlineIcon, Strikethrough, List, ListOrdered, Link as LinkIcon, Heading1, Heading2, Quote, Undo, Redo, FileText } from 'lucide-react';
+import { TemplateTagExtension } from './TemplateTagExtension';
+import { processTemplateTags } from './templates';
 import SavedTemplateManager from './SavedTemplateManager';
+import { type DescriptionTemplate } from './templates';
 import './description-editor.css';
 
 interface DescriptionEditorProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  eventData?: any; // Event data for template tag replacement
 }
 
 const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
   value,
   onChange,
-  placeholder = 'Event Description'
+  placeholder = 'Start typing...',
+  eventData
 }) => {
-  const [isPreviewMode, setIsPreviewMode] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [editorHeight, setEditorHeight] = useState('300px');
   const [linkUrl, setLinkUrl] = useState('');
-  const [linkMenuOpen, setLinkMenuOpen] = useState(false);
-  const editorContainerRef = useRef<HTMLDivElement | null>(null);
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  
+  // Process template tags if eventData is available
+  useEffect(() => {
+    if (eventData && value.includes('{{')) {
+      const processedContent = processTemplateTags(value, eventData);
+      if (processedContent !== value) {
+        onChange(processedContent);
+      }
+    }
+  }, [eventData, value, onChange]);
 
-  // Initialize TipTap editor
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Link,
       Underline,
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          class: 'text-blue-500 underline',
-        },
-      }),
       TemplateTagExtension,
     ],
-    content: value || '',
+    content: value,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm sm:prose-base mx-auto focus:outline-none min-h-[200px] p-4',
+        class: 'prose max-w-none focus:outline-none',
+        placeholder,
       },
     },
   });
@@ -83,269 +58,256 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
   // Update editor content when value prop changes
   useEffect(() => {
     if (editor && value !== editor.getHTML()) {
-      editor.commands.setContent(value || '');
+      editor.commands.setContent(value);
     }
   }, [editor, value]);
 
-  // Handle tag insertion
-  const insertTag = useCallback((tagName: string) => {
-    if (editor) {
-      editor.chain().focus().insertContent(`{{${tagName}}}`).run();
-    }
-  }, [editor]);
-
-  // Handle template insertion
-  const insertTemplate = useCallback((templateName: string) => {
-    const template = PREDEFINED_TEMPLATES.find(t => t.name === templateName);
-    if (editor && template) {
-      editor.commands.setContent(template.content);
-    }
-  }, [editor]);
-
-  // Handle link insertion
-  const setLink = useCallback(() => {
-    if (editor && linkUrl) {
-      editor
-        .chain()
-        .focus()
-        .extendMarkRange('link')
-        .setLink({ href: linkUrl })
-        .run();
-      setLinkUrl('');
-      setLinkMenuOpen(false);
-    }
-  }, [editor, linkUrl]);
-
-  // Toggle fullscreen mode
-  const toggleFullscreen = useCallback(() => {
-    setIsFullscreen(prev => !prev);
-    setEditorHeight(isFullscreen ? '300px' : '80vh');
-  }, [isFullscreen]);
-
-  // Preview mode functions
-  const getPreviewContent = useCallback(() => {
-    if (!editor) return '';
-    let content = editor.getHTML();
-    
-    // Replace all tags with their values
-    return replaceTemplateTags(content, PLACEHOLDER_DATA);
-  }, [editor]);
-
-  // Calculate styles based on fullscreen state
-  const containerStyles = {
-    position: isFullscreen ? 'fixed' : 'relative',
-    top: isFullscreen ? '0' : 'auto',
-    left: isFullscreen ? '0' : 'auto',
-    right: isFullscreen ? '0' : 'auto',
-    bottom: isFullscreen ? '0' : 'auto',
-    zIndex: isFullscreen ? '50' : 'auto',
-    backgroundColor: isFullscreen ? 'white' : 'transparent',
-    padding: isFullscreen ? '20px' : '0',
-    borderRadius: isFullscreen ? '0' : '4px',
-    width: isFullscreen ? '100%' : '100%',
-    height: isFullscreen ? '100vh' : 'auto',
-    boxShadow: isFullscreen ? '0 0 10px rgba(0,0,0,0.1)' : 'none',
-    transition: 'all 0.3s ease',
-  } as React.CSSProperties;
-
-  const editorContainerStyles = {
-    height: editorHeight,
-    overflow: 'auto',
-    transition: 'height 0.3s ease',
-    border: '1px solid #e2e8f0',
-    borderRadius: '4px',
-  } as React.CSSProperties;
-
   if (!editor) {
-    return <div>Loading editor...</div>;
+    return null;
   }
 
+  // Handle formatting buttons
+  const toggleBold = () => editor.chain().focus().toggleBold().run();
+  const toggleItalic = () => editor.chain().focus().toggleItalic().run();
+  const toggleUnderline = () => editor.chain().focus().toggleUnderline().run();
+  const toggleStrike = () => editor.chain().focus().toggleStrike().run();
+  
+  // Handle heading buttons
+  const toggleH1 = () => editor.chain().focus().toggleHeading({ level: 1 }).run();
+  const toggleH2 = () => editor.chain().focus().toggleHeading({ level: 2 }).run();
+  
+  // Handle list buttons
+  const toggleBulletList = () => editor.chain().focus().toggleBulletList().run();
+  const toggleOrderedList = () => editor.chain().focus().toggleOrderedList().run();
+  
+  // Handle link
+  const setLink = () => {
+    if (linkUrl) {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: linkUrl, target: '_blank' }).run();
+      setLinkUrl('');
+      setShowLinkInput(false);
+    }
+  };
+  
+  const unsetLink = () => editor.chain().focus().extendMarkRange('link').unsetLink().run();
+  
+  // Handle block quote
+  const toggleBlockquote = () => editor.chain().focus().toggleBlockquote().run();
+  
+  // Handle undo/redo
+  const handleUndo = () => editor.chain().focus().undo().run();
+  const handleRedo = () => editor.chain().focus().redo().run();
+
   return (
-    <div ref={editorContainerRef} style={containerStyles} className="description-editor-container">
-      {/* Main Toolbar */}
-      <div className="flex flex-wrap gap-2 mb-2 p-2 bg-gray-50 border border-gray-200 rounded-md">
-        {/* Text formatting controls */}
-        <div className="flex items-center gap-1 mr-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBold().run()}
-            className={editor.isActive('bold') ? 'bg-gray-200' : ''}
-            aria-label="Bold"
+    <div className="editor-container">
+      <div className="editor-toolbar">
+        {/* Text formatting */}
+        <button
+          type="button"
+          onClick={toggleBold}
+          className={`toolbar-button ${editor.isActive('bold') ? 'is-active' : ''}`}
+          title="Bold"
+        >
+          <Bold size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={toggleItalic}
+          className={`toolbar-button ${editor.isActive('italic') ? 'is-active' : ''}`}
+          title="Italic"
+        >
+          <Italic size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={toggleUnderline}
+          className={`toolbar-button ${editor.isActive('underline') ? 'is-active' : ''}`}
+          title="Underline"
+        >
+          <UnderlineIcon size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={toggleStrike}
+          className={`toolbar-button ${editor.isActive('strike') ? 'is-active' : ''}`}
+          title="Strikethrough"
+        >
+          <Strikethrough size={18} />
+        </button>
+        
+        <div className="toolbar-divider" />
+        
+        {/* Headings */}
+        <button
+          type="button"
+          onClick={toggleH1}
+          className={`toolbar-button ${editor.isActive('heading', { level: 1 }) ? 'is-active' : ''}`}
+          title="Heading 1"
+        >
+          <Heading1 size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={toggleH2}
+          className={`toolbar-button ${editor.isActive('heading', { level: 2 }) ? 'is-active' : ''}`}
+          title="Heading 2"
+        >
+          <Heading2 size={18} />
+        </button>
+        
+        <div className="toolbar-divider" />
+        
+        {/* Lists */}
+        <button
+          type="button"
+          onClick={toggleBulletList}
+          className={`toolbar-button ${editor.isActive('bulletList') ? 'is-active' : ''}`}
+          title="Bullet List"
+        >
+          <List size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={toggleOrderedList}
+          className={`toolbar-button ${editor.isActive('orderedList') ? 'is-active' : ''}`}
+          title="Ordered List"
+        >
+          <ListOrdered size={18} />
+        </button>
+        
+        <div className="toolbar-divider" />
+        
+        {/* Quote */}
+        <button
+          type="button"
+          onClick={toggleBlockquote}
+          className={`toolbar-button ${editor.isActive('blockquote') ? 'is-active' : ''}`}
+          title="Block Quote"
+        >
+          <Quote size={18} />
+        </button>
+        
+        {/* Link */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowLinkInput(!showLinkInput)}
+            className={`toolbar-button ${editor.isActive('link') ? 'is-active' : ''}`}
+            title="Link"
           >
-            <Bold size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={editor.isActive('italic') ? 'bg-gray-200' : ''}
-            aria-label="Italic"
-          >
-            <Italic size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleUnderline().run()}
-            className={editor.isActive('underline') ? 'bg-gray-200' : ''}
-            aria-label="Underline"
-          >
-            <UnderlineIcon size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            className={editor.isActive('heading', { level: 2 }) ? 'bg-gray-200' : ''}
-            aria-label="Heading 2"
-          >
-            <Heading2 size={16} />
-          </Button>
-        </div>
-
-        {/* List controls */}
-        <div className="flex items-center gap-1 mr-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={editor.isActive('bulletList') ? 'bg-gray-200' : ''}
-            aria-label="Bullet List"
-          >
-            <List size={16} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            className={editor.isActive('orderedList') ? 'bg-gray-200' : ''}
-            aria-label="Numbered List"
-          >
-            <ListOrdered size={16} />
-          </Button>
-        </div>
-
-        {/* Link control */}
-        <div className="flex items-center gap-1 mr-4">
-          <Popover open={linkMenuOpen} onOpenChange={setLinkMenuOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={editor.isActive('link') ? 'bg-gray-200' : ''}
-                aria-label="Link"
+            <LinkIcon size={18} />
+          </button>
+          
+          {showLinkInput && (
+            <div className="absolute top-full left-0 mt-1 p-2 bg-background border border-border rounded-md shadow-md z-10 flex items-center gap-2">
+              <input
+                type="url"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                placeholder="https://example.com"
+                className="w-36 px-2 py-1 text-sm border border-input rounded-md"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setLink();
+                  }
+                }}
+                autoFocus
+              />
+              <button 
+                type="button" 
+                onClick={setLink}
+                className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded-md"
               >
-                <LinkIcon size={16} />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="link-url">URL</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="link-url"
-                    value={linkUrl}
-                    onChange={e => setLinkUrl(e.target.value)}
-                    placeholder="https://example.com"
-                  />
-                  <Button size="sm" onClick={setLink}>Apply</Button>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+                Set
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setShowLinkInput(false)}
+                className="px-2 py-1 text-xs bg-secondary text-secondary-foreground rounded-md"
+              >
+                Cancel
+              </button>
+              {editor.isActive('link') && (
+                <button 
+                  type="button" 
+                  onClick={unsetLink}
+                  className="px-2 py-1 text-xs bg-destructive text-destructive-foreground rounded-md"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          )}
         </div>
-
-        {/* Tag insertion */}
-        <div className="flex items-center gap-1 mr-4">
-          <Select onValueChange={insertTag}>
-            <SelectTrigger className="h-8 w-36">
-              <SelectValue placeholder="Insert Tag" />
-            </SelectTrigger>
-            <SelectContent>
-              {AVAILABLE_TAGS.map(tag => (
-                <SelectItem key={tag.name} value={tag.name}>
-                  {tag.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Template insertion */}
-        <div className="flex items-center gap-1 mr-4">
-          <Select onValueChange={insertTemplate}>
-            <SelectTrigger className="h-8 w-40">
-              <SelectValue placeholder="Select Template" />
-            </SelectTrigger>
-            <SelectContent>
-              {PREDEFINED_TEMPLATES.map(template => (
-                <SelectItem key={template.id} value={template.name}>
-                  {template.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Preview mode toggle */}
-        <div className="flex items-center gap-1 mr-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsPreviewMode(!isPreviewMode)}
-            className="ml-auto"
-          >
-            {isPreviewMode ? (
-              <>
-                <Edit3 size={16} className="mr-2" /> Edit
-              </>
-            ) : (
-              <>
-                <Eye size={16} className="mr-2" /> Preview
-              </>
-            )}
-          </Button>
-        </div>
-
-        {/* Fullscreen toggle */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={toggleFullscreen}
-            className="ml-auto"
-          >
-            {isFullscreen ? (
-              <>
-                <Minimize size={16} className="mr-2" /> Exit Fullscreen
-              </>
-            ) : (
-              <>
-                <Maximize size={16} className="mr-2" /> Fullscreen
-              </>
-            )}
-          </Button>
-        </div>
+        
+        <div className="toolbar-divider" />
+        
+        {/* Undo/Redo */}
+        <button
+          type="button"
+          onClick={handleUndo}
+          className="toolbar-button"
+          disabled={!editor.can().undo()}
+          title="Undo"
+        >
+          <Undo size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={handleRedo}
+          className="toolbar-button"
+          disabled={!editor.can().redo()}
+          title="Redo"
+        >
+          <Redo size={18} />
+        </button>
       </div>
-
-      {/* Editor Content */}
-      <div style={editorContainerStyles} className="bg-white">
-        {isPreviewMode ? (
-          <div
-            className="prose max-w-none p-4 min-h-[200px]"
-            dangerouslySetInnerHTML={{ __html: getPreviewContent() }}
-          />
-        ) : (
-          <EditorContent editor={editor} />
-        )}
+      
+      <div className="editor-content">
+        <EditorContent editor={editor} />
       </div>
-
-      {/* Tag legend */}
-      {!isPreviewMode && (
-        <div className="mt-2 text-xs text-gray-500">
-          <p>Available tags: {AVAILABLE_TAGS.map(tag => `{{${tag.name}}}`).join(', ')}</p>
-        </div>
+      
+      {editor && (
+        <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }}>
+          <div className="flex bg-background border border-border rounded-md shadow-md">
+            <button
+              onClick={toggleBold}
+              className={`toolbar-button p-1 ${editor.isActive('bold') ? 'is-active' : ''}`}
+              title="Bold"
+            >
+              <Bold size={14} />
+            </button>
+            <button
+              onClick={toggleItalic}
+              className={`toolbar-button p-1 ${editor.isActive('italic') ? 'is-active' : ''}`}
+              title="Italic"
+            >
+              <Italic size={14} />
+            </button>
+            <button
+              onClick={toggleUnderline}
+              className={`toolbar-button p-1 ${editor.isActive('underline') ? 'is-active' : ''}`}
+              title="Underline"
+            >
+              <UnderlineIcon size={14} />
+            </button>
+            <button
+              onClick={toggleStrike}
+              className={`toolbar-button p-1 ${editor.isActive('strike') ? 'is-active' : ''}`}
+              title="Strikethrough"
+            >
+              <Strikethrough size={14} />
+            </button>
+            <button
+              onClick={() => setShowLinkInput(!showLinkInput)}
+              className={`toolbar-button p-1 ${editor.isActive('link') ? 'is-active' : ''}`}
+              title="Link"
+            >
+              <LinkIcon size={14} />
+            </button>
+          </div>
+        </BubbleMenu>
       )}
     </div>
   );

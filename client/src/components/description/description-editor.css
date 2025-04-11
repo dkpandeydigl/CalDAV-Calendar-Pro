@@ -1,123 +1,147 @@
-/* Rich Text Editor Styles */
+/* Rich text editor styles */
 .ProseMirror {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
   min-height: 200px;
-  padding: 1rem;
-}
-
-.ProseMirror:focus {
   outline: none;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
-.ProseMirror p {
+.ProseMirror h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: hsl(var(--primary));
+}
+
+.ProseMirror h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: hsl(var(--primary));
+}
+
+.ProseMirror h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 1rem;
   margin-bottom: 0.5rem;
 }
 
-/* Custom styling for template tags */
-.ProseMirror [data-tag="true"] {
-  background-color: rgba(0, 0, 0, 0.05);
-  border-radius: 4px;
-  padding: 0 4px;
-  color: #555;
+.ProseMirror p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
-/* Tag styling in regular content */
-.ProseMirror code, 
-.description-preview code {
-  background-color: rgba(0, 0, 0, 0.05);
-  border-radius: 4px;
-  padding: 0 4px;
-  font-family: monospace;
-  font-size: 0.9em;
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.25rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
 }
 
-/* Custom tag styling */
+.ProseMirror ul {
+  list-style-type: disc;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.ProseMirror li {
+  margin-bottom: 0.25rem;
+}
+
+.ProseMirror strong {
+  font-weight: 600;
+}
+
+.ProseMirror em {
+  font-style: italic;
+}
+
+.ProseMirror a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ProseMirror blockquote {
+  border-left: 3px solid hsl(var(--border));
+  padding-left: 1rem;
+  font-style: italic;
+  margin: 0.75rem 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 1rem 0;
+}
+
+/* Template tag styling */
 .template-tag {
-  display: inline-block;
-  padding: 0 4px;
-  background-color: rgba(59, 130, 246, 0.1);
-  border-radius: 4px;
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
-  font-size: 0.9em;
-  cursor: default;
+  background-color: rgba(var(--primary-rgb), 0.15);
+  border-radius: 0.25rem;
+  padding: 0 0.125rem;
+  color: hsl(var(--primary));
+  font-weight: 500;
   white-space: nowrap;
-  margin: 0 2px;
-}
-
-/* Highlight for indicating matching tags */
-.tag-match {
-  background-color: rgba(59, 130, 246, 0.3);
-  border-color: rgba(59, 130, 246, 0.4);
-  color: #1e40af;
-}
-
-/* Styles for preview mode */
-.description-preview {
-  min-height: 200px;
-  padding: 1rem;
-  background-color: white;
-  border-radius: 0.375rem;
-}
-
-.tag-missing {
-  background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #ef4444;
-  text-decoration: line-through;
-}
-
-/* Fullscreen mode styles */
-.fullscreen-editor {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 50;
-  background-color: white;
-  padding: 1rem;
-  overflow: auto;
 }
 
 /* Editor toolbar */
 .editor-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.25rem;
   padding: 0.5rem;
-  background-color: #f9fafb;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.375rem;
-  margin-bottom: 0.5rem;
+  background-color: hsl(var(--muted));
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  border-bottom: none;
 }
 
-/* Better tag styling with proper markup */
-.custom-tag {
+.editor-content {
+  border: 1px solid hsl(var(--border));
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+  background-color: hsl(var(--background));
+}
+
+.editor-container {
+  margin-bottom: 1rem;
+}
+
+.toolbar-button {
   display: inline-flex;
   align-items: center;
-  background-color: #f3f4f6;
-  border-radius: 4px;
-  padding: 1px 4px;
-  margin: 0 2px;
-  border: 1px solid #e5e7eb;
+  justify-content: center;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  color: hsl(var(--foreground));
 }
 
-.custom-tag-name {
-  color: #6366f1; /* indigo-500 */
-  font-size: 0.9em;
-  font-weight: 500;
+.toolbar-button:hover {
+  background-color: hsl(var(--accent));
 }
 
-.custom-tag-braces {
-  color: #9ca3af; /* gray-400 */
-  font-weight: normal;
+.toolbar-button.is-active {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
 }
 
-/* Style for rich text mentions */
-.mention {
-  color: #2563eb;
-  background-color: rgba(59, 130, 246, 0.1);
-  padding: 0 4px;
-  border-radius: 4px;
-  white-space: nowrap;
+/* Divider in toolbar */
+.toolbar-divider {
+  width: 1px;
+  height: 1.5rem;
+  background-color: hsl(var(--border));
+  margin: 0 0.25rem;
 }

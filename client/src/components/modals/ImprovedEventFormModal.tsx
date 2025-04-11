@@ -1542,6 +1542,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         value={description}
                         onChange={setDescription}
                         placeholder="Event Description"
+                        eventData={{
+                          title,
+                          location,
+                          startDate: startDate ? new Date(`${startDate}${allDay ? '' : `T${startTime}`}`) : null,
+                          endDate: endDate ? new Date(`${endDate}${allDay ? '' : `T${endTime}`}`) : null,
+                          attendees,
+                          resources
+                        }}
                       />
                     </div>
                   </div>

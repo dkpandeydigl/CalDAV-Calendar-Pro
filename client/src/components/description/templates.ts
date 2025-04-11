@@ -1,134 +1,205 @@
-// Predefined templates for event descriptions
+/**
+ * Template system for description editor
+ * This file contains predefined templates and functions to manage custom templates
+ */
 
-export type DescriptionTemplate = {
+export interface DescriptionTemplate {
   id: string;
   name: string;
   content: string;
-};
+}
 
+// Local storage key for saved templates
+const SAVED_TEMPLATES_KEY = 'caldav-saved-templates';
+
+// Predefined templates with special template tags
 export const PREDEFINED_TEMPLATES: DescriptionTemplate[] = [
-  {
-    id: 'standard-meeting',
-    name: 'Standard Meeting',
-    content: `<p>Hello {{attendee_name}},</p>
-<p>You are invited to a meeting organized by {{organizer_name}}.</p>
-<p><strong>Date:</strong> {{event_date}}<br>
-<strong>Time:</strong> {{start_time}}<br>
-<strong>Location:</strong> {{location}}</p>
-<p>If joining online, please use this link: {{meeting_link}}</p>
-<p>Please come prepared with any questions or materials.</p>
-<p>Regards,<br>
-{{organizer_name}}</p>`
+  { 
+    id: 'meeting', 
+    name: 'Meeting Agenda', 
+    content: `# Meeting: {{title}}
+
+## Agenda
+1. Welcome and Introduction
+2. Discussion Items
+   - {{item1}}
+   - {{item2}}
+3. Action Items
+4. Next Steps
+
+**Location:** {{location}}
+**Date:** {{date}}
+**Time:** {{startTime}} - {{endTime}}
+
+## Attendees
+{{attendees}}` 
+  },
+  { 
+    id: 'project-review', 
+    name: 'Project Review', 
+    content: `# Project Review: {{title}}
+
+## Project Overview
+Brief description of the project status.
+
+## Accomplishments
+- Key milestone 1
+- Key milestone 2
+
+## Challenges
+- Current blockers
+- Potential risks
+
+## Timeline Review
+- Current phase: {{currentPhase}}
+- Next milestone: {{nextMilestone}}
+
+**Meeting Date:** {{date}}` 
+  },
+  { 
+    id: 'training', 
+    name: 'Training Session', 
+    content: `# Training: {{title}}
+
+## Session Objectives
+- Understand key concepts
+- Learn practical applications
+- Demonstrate proficiency
+
+## Materials Required
+- {{material1}}
+- {{material2}}
+
+## Agenda
+1. Introduction ({{startTime}} - {{sessionBreak}})
+2. Core Content ({{sessionBreak}} - {{sessionEnd}})
+3. Q&A ({{sessionEnd}} - {{endTime}})
+
+**Trainer:** {{trainer}}
+**Location:** {{location}}` 
   },
   {
-    id: 'quick-sync',
-    name: 'Quick Sync',
-    content: `<p>Hi {{attendee_name}},</p>
-<p>Let's have a quick sync on {{event_date}} at {{start_time}}.</p>
-<p>{{meeting_link}}</p>
-<p>-{{organizer_name}}</p>`
-  },
-  {
-    id: 'team-update',
-    name: 'Team Update',
-    content: `<p>Team,</p>
-<p>We'll be having our regular team update on {{event_date}} at {{start_time}} in {{location}}.</p>
-<p>Please prepare a 2-minute update on your current projects.</p>
-<p>Regards,<br>
-{{organizer_name}}</p>`
-  },
-  {
-    id: 'project-review',
-    name: 'Project Review',
-    content: `<p>Dear {{attendee_name}},</p>
-<p>This is a project review meeting scheduled for {{event_date}} at {{start_time}} in {{location}}.</p>
-<p>Agenda:</p>
-<ul>
-  <li>Project status updates</li>
-  <li>Key milestones review</li>
-  <li>Discussion of blockers</li>
-  <li>Next steps planning</li>
-</ul>
-<p>Please bring your latest progress report.</p>
-<p>Regards,<br>
-{{organizer_name}}</p>`
-  },
-  {
-    id: 'interview',
-    name: 'Interview',
-    content: `<p>Dear {{attendee_name}},</p>
-<p>We're pleased to invite you for an interview on {{event_date}} at {{start_time}}.</p>
-<p><strong>Location:</strong> {{location}}</p>
-<p>Please plan for approximately 60 minutes. The interview will include a discussion about your experience, skills, and a brief technical assessment.</p>
-<p>If you need to join remotely, please use this link: {{meeting_link}}</p>
-<p>Looking forward to speaking with you!</p>
-<p>Best regards,<br>
-{{organizer_name}}</p>`
+    id: 'resource-booking',
+    name: 'Resource Booking',
+    content: `# Resource Booking: {{title}}
+
+## Resources Required
+- {{resourceName}}
+- Capacity: {{resourceCapacity}}
+
+## Booking Details
+- Date: {{date}}
+- Time: {{startTime}} - {{endTime}}
+- Location: {{location}}
+
+## Purpose
+Brief description of how the resource will be used.
+
+## Special Requirements
+- {{requirement1}}
+- {{requirement2}}`
   }
 ];
 
-export const PLACEHOLDER_DATA = {
-  attendee_name: "D K Pandey",
-  organizer_name: "Ajay Data",
-  event_date: "Apr 12, 2025",
-  start_time: "10:00 AM",
-  location: "Board Room",
-  meeting_link: "https://meet.link/xyz"
-};
-
-export interface TagInfo {
-  name: string;
-  description: string;
-}
-
-export const AVAILABLE_TAGS: TagInfo[] = [
-  { name: 'attendee_name', description: 'Name of the attendee' },
-  { name: 'organizer_name', description: 'Name of the event organizer' },
-  { name: 'event_date', description: 'Date of the event' },
-  { name: 'start_time', description: 'Start time of the event' },
-  { name: 'location', description: 'Location of the event' },
-  { name: 'meeting_link', description: 'Online meeting link' },
-];
-
-// Helper to replace template tags with actual values
-export function replaceTemplateTags(html: string, data: Record<string, string>): string {
-  let result = html;
-  
-  Object.entries(data).forEach(([key, value]) => {
-    const tagRegex = new RegExp(`{{${key}}}`, 'g');
-    result = result.replace(tagRegex, value || `<span class="tag-missing">{{${key}}}</span>`);
-  });
-  
-  // Highlight any remaining tags that weren't replaced
-  const remainingTagsRegex = /\{\{([a-z_]+)\}\}/g;
-  result = result.replace(remainingTagsRegex, '<span class="tag-missing">{{$1}}</span>');
-  
-  return result;
-}
-
-// Utility to load templates from localStorage
+/**
+ * Load custom templates from local storage
+ */
 export function loadCustomTemplates(): DescriptionTemplate[] {
   try {
-    const saved = localStorage.getItem('custom_description_templates');
-    return saved ? JSON.parse(saved) : [];
-  } catch (e) {
-    console.error('Error loading custom templates:', e);
-    return [];
+    const savedTemplates = localStorage.getItem(SAVED_TEMPLATES_KEY);
+    if (savedTemplates) {
+      return JSON.parse(savedTemplates);
+    }
+  } catch (error) {
+    console.error('Error loading saved templates:', error);
   }
+  return [];
 }
 
-// Utility to save template to localStorage
-export function saveCustomTemplate(template: DescriptionTemplate): void {
+/**
+ * Save a custom template to local storage
+ */
+export function saveCustomTemplate(template: DescriptionTemplate): boolean {
   try {
-    const existing = loadCustomTemplates();
-    const updated = [...existing.filter(t => t.id !== template.id), template];
-    localStorage.setItem('custom_description_templates', JSON.stringify(updated));
-  } catch (e) {
-    console.error('Error saving custom template:', e);
+    const templates = loadCustomTemplates();
+    
+    // Check if template with this ID already exists
+    const existingIndex = templates.findIndex(t => t.id === template.id);
+    
+    if (existingIndex >= 0) {
+      // Update existing template
+      templates[existingIndex] = template;
+    } else {
+      // Add new template
+      templates.push({
+        ...template,
+        id: template.id || `template-${Date.now()}`
+      });
+    }
+    
+    localStorage.setItem(SAVED_TEMPLATES_KEY, JSON.stringify(templates));
+    return true;
+  } catch (error) {
+    console.error('Error saving template:', error);
+    return false;
   }
 }
 
-// Helper to generate a unique ID for new templates
-export function generateTemplateId(): string {
-  return `template-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+/**
+ * Delete a custom template from local storage
+ */
+export function deleteCustomTemplate(templateId: string): boolean {
+  try {
+    const templates = loadCustomTemplates();
+    const filteredTemplates = templates.filter(t => t.id !== templateId);
+    
+    if (templates.length === filteredTemplates.length) {
+      return false; // Template not found
+    }
+    
+    localStorage.setItem(SAVED_TEMPLATES_KEY, JSON.stringify(filteredTemplates));
+    return true;
+  } catch (error) {
+    console.error('Error deleting template:', error);
+    return false;
+  }
+}
+
+/**
+ * Process template tags in a template with actual event data
+ */
+export function processTemplateTags(template: string, eventData: any): string {
+  if (!template) return '';
+  
+  const replacements: Record<string, string> = {
+    '{{title}}': eventData.title || '',
+    '{{location}}': eventData.location || '',
+    '{{date}}': eventData.startDate ? new Date(eventData.startDate).toLocaleDateString() : '',
+    '{{startTime}}': eventData.startDate ? new Date(eventData.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+    '{{endTime}}': eventData.endDate ? new Date(eventData.endDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+  };
+  
+  // Add attendee list if available
+  if (eventData.attendees && Array.isArray(eventData.attendees)) {
+    let attendeeList = '';
+    eventData.attendees.forEach((attendee: any) => {
+      const name = attendee.name || '';
+      const email = attendee.email || '';
+      const displayName = name ? `${name} (${email})` : email;
+      attendeeList += `- ${displayName}\n`;
+    });
+    replacements['{{attendees}}'] = attendeeList;
+  }
+  
+  // Add resource information if available
+  if (eventData.resources && Array.isArray(eventData.resources) && eventData.resources.length > 0) {
+    const resource = eventData.resources[0];
+    replacements['{{resourceName}}'] = resource.name || '';
+    replacements['{{resourceCapacity}}'] = resource.capacity ? resource.capacity.toString() : '';
+  }
+  
+  // Process the template string
+  return template.replace(/\{\{(\w+)\}\}/g, (match, tag) => {
+    return replacements[match] !== undefined ? replacements[match] : match;
+  });
 }
