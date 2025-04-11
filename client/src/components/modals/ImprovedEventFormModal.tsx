@@ -209,7 +209,40 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             
             if (typeof event.attendees === 'string') {
               try {
+                // Try to parse as JSON
                 parsedAttendees = JSON.parse(event.attendees);
+                console.log('Parsed attendees as JSON:', parsedAttendees);
+                
+                // If we have parsed attendees with "params" and "val", transform them to our format
+                if (Array.isArray(parsedAttendees) && parsedAttendees.length > 0 && parsedAttendees[0].params) {
+                  parsedAttendees = parsedAttendees
+                    // Filter out resource attendees
+                    .filter(att => !att.params.CUTYPE || att.params.CUTYPE !== 'RESOURCE')
+                    .map((att, index) => {
+                      // Extract email from val (remove mailto: prefix)
+                      const email = att.val ? att.val.replace('mailto:', '') : '';
+                      
+                      // Determine role from params
+                      let role: AttendeeRole = 'Member';
+                      if (att.params.ROLE === 'CHAIR' || att.params.ROLE === 'Chairman') {
+                        role = 'Chairman';
+                      } else if (att.params.ROLE === 'REQ-PARTICIPANT' || att.params.ROLE === 'Secretary') {
+                        role = 'Secretary';
+                      }
+                      
+                      // Extract name from CN if available
+                      const name = att.params.CN || '';
+                      
+                      return {
+                        id: att.id || `attendee-${index}-${Date.now()}`,
+                        email,
+                        name, 
+                        role
+                      };
+                    });
+                  
+                  console.log('Transformed attendees from params/val format:', parsedAttendees);
+                }
               } catch (parseError) {
                 console.warn('Attendees was not valid JSON, attempting to extract from raw data');
                 
@@ -257,11 +290,32 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             }
               
             if (Array.isArray(parsedAttendees) && parsedAttendees.length > 0) {
-              // Make sure each attendee has an id
-              const attendeesWithIds = parsedAttendees.map((attendee, index) => ({
-                ...attendee,
-                id: attendee.id || `attendee-${index}-${Date.now()}`
-              }));
+              // Filter out any invalid entries or resource entries
+              const validAttendees = parsedAttendees.filter(att => 
+                att && 
+                (att.email || att.val) && 
+                (!att.params || att.params.CUTYPE !== 'RESOURCE')
+              );
+              
+              // Make sure each attendee has an id and transform to our format if needed
+              const attendeesWithIds = validAttendees.map((attendee, index) => {
+                // If attendee has val but no email, it might be in params/val format from node-ical
+                if (attendee.val && !attendee.email) {
+                  return {
+                    id: attendee.id || `attendee-${index}-${Date.now()}`,
+                    email: attendee.val.replace('mailto:', ''),
+                    name: attendee.params?.CN || '',
+                    role: attendee.params?.ROLE === 'CHAIR' ? 'Chairman' : 
+                          attendee.params?.ROLE === 'REQ-PARTICIPANT' ? 'Secretary' : 'Member'
+                  };
+                }
+                
+                // Otherwise use standard format
+                return {
+                  ...attendee,
+                  id: attendee.id || `attendee-${index}-${Date.now()}`
+                };
+              });
               
               setAttendees(attendeesWithIds);
               console.log('Successfully parsed attendees:', attendeesWithIds);
