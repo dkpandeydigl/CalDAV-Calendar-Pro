@@ -30,23 +30,33 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
       // First log some raw data for debugging
       console.log('ATTENDEE DEBUG: Searching raw data of length', rawData.length);
       console.log('ATTENDEE DEBUG: First 100 chars of raw data:', rawData.substring(0, 100));
-      console.log('ATTENDEE DEBUG: Does data contain ATTENDEE?', rawData.includes('ATTENDEE'));
+      console.log('ATTENDEE DEBUG: Full raw data:', rawData);
       
-      // Use multiple patterns to try and extract attendees in different formats
-      // Pattern 1: Standard format with CUTYPE checks
-      const attendeeRegex1 = /ATTENDEE(?!.*CUTYPE=RESOURCE)[^:]*?:[^:\r\n]*mailto:([^\s>\r\n]+)/g;
-      
-      // Pattern 2: More flexible pattern for different formats
-      const attendeeRegex2 = /ATTENDEE[^:]*?(?!CUTYPE=RESOURCE)[^:]*?:[^:\r\n]*mailto:([^\s>\r\n]+)/g;
-      
-      // Pattern 3: Most flexible pattern
-      const attendeeRegex = /ATTENDEE(?!.*CUTYPE=RESOURCE).*?mailto:([^\s>\r\n]+)/g;
-      
-      // Use a more compatible approach with newer JavaScript engines
+      // Skip fancy regex and go straight to line-by-line analysis
+      const lines = rawData.split(/\r?\n/);
       const matches = [];
-      let match;
-      while ((match = attendeeRegex.exec(rawData)) !== null) {
-        matches.push(match);
+      
+      // Find all ATTENDEE lines that are not resources
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.includes('ATTENDEE') && 
+            !line.includes('CUTYPE=RESOURCE') && 
+            line.includes('mailto:')) {
+          // Parse email from mailto: format
+          const emailMatch = line.match(/mailto:([^\s>\r\n]+)/);
+          if (emailMatch) {
+            const attendeeMatch = {
+              0: line,
+              1: emailMatch[1],
+              index: i,
+              input: line,
+              groups: undefined
+            };
+            console.log('ATTENDEE DEBUG: Found attendee line:', line);
+            console.log('ATTENDEE DEBUG: Email match:', emailMatch[1]);
+            matches.push(attendeeMatch);
+          }
+        }
       }
       
       if (matches && matches.length > 0) {
