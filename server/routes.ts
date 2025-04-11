@@ -145,9 +145,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server to check for name duplication`);
           
           // Check for duplicate names on the server (case-insensitive)
-          const serverDuplicate = davCalendars.find(cal => 
-            cal.displayName && cal.displayName.toLowerCase() === (name as string).toLowerCase()
-          );
+          const serverDuplicate = davCalendars.find(cal => {
+            if (typeof cal.displayName === 'string') {
+              return cal.displayName.toLowerCase() === (name as string).toLowerCase();
+            }
+            return false;
+          });
           
           if (serverDuplicate) {
             return res.json({ 
@@ -492,8 +495,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     }
                   });
                   
-                  // Check response status
-                  const status = response?.status || 0;
+                  // Check if response is an array (as specified in the DAVResponse type)
+                  const responseArray = Array.isArray(response) ? response : [response];
+                  
+                  // Check response status - handle both array and non-array responses safely
+                  let status = 0;
+                  
+                  if (Array.isArray(response) && response.length > 0) {
+                    // Try to get status from array response
+                    status = response[0]?.status || 0;
+                  } else if (typeof response === 'object' && response !== null) {
+                    // Try to get status from single object response
+                    status = (response as any)?.status || 0;
+                  }
+                  
                   console.log(`tsdav PROPPATCH response status: ${status}`);
                   
                   if (status >= 200 && status < 300) {

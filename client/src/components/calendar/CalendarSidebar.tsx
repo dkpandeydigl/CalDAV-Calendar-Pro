@@ -557,10 +557,17 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                     size="sm"
                     variant="default"
                     className="mr-2"
-                    disabled={!newCalendarName.trim()}
+                    disabled={!newCalendarName.trim() || isCheckingCalendarName}
                     onClick={handleCreateCalendar}
                   >
-                    Add
+                    {isCheckingCalendarName ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        Checking...
+                      </>
+                    ) : (
+                      "Add"
+                    )}
                   </Button>
                   <Button
                     size="sm"
@@ -630,7 +637,19 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                   <DialogClose asChild>
                     <Button variant="outline">Cancel</Button>
                   </DialogClose>
-                  <Button onClick={handleUpdateCalendar}>Save Changes</Button>
+                  <Button 
+                    onClick={handleUpdateCalendar}
+                    disabled={isCheckingEditName}
+                  >
+                    {isCheckingEditName ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Checking...
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
