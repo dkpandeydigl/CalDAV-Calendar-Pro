@@ -329,6 +329,18 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         
         // Try to parse resources from event if available
         try {
+          // DEBUG: Log the entire event object to inspect structure
+          console.log('DEBUG EVENT DATA FOR RESOURCES:', {
+            id: event.id,
+            title: event.title,
+            rawData: typeof event.rawData === 'string' ? (event.rawData.length > 100 ? event.rawData.substring(0, 100) + '...' : event.rawData) : null,
+            attendees: event.attendees,
+            resources: event.resources,
+            hasAttendeeField: !!event.attendees,
+            hasResourcesField: !!event.resources,
+            hasRawData: !!event.rawData
+          });
+          
           // First try using the utility function
           const parsedResources = parseResourcesFromEvent(event);
           
@@ -336,23 +348,80 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             setResources(parsedResources);
             console.log('Successfully parsed resources using utility:', parsedResources);
           } else if (event.rawData) {
-            // If that doesn't work, try to extract resources from raw data
+            // Log full raw data if it's not too long
+            const fullRawData = typeof event.rawData === 'string' ? 
+              (event.rawData.length > 1000 ? event.rawData.substring(0, 1000) + '...' : event.rawData) : null;
+            console.log('Full raw event data for resource extraction:', fullRawData);
+              
+            // Try both the standard pattern and a more flexible one
             const resourceMatches = typeof event.rawData === 'string'
-              ? event.rawData.match(/ATTENDEE[^:]*CUTYPE=RESOURCE[^:\r\n]*:[^\r\n]+/g)
+              ? event.rawData.match(/ATTENDEE[^:]*CUTYPE=RESOURCE[^:\r\n]*:[^\r\n]+/g) || 
+                event.rawData.match(/ATTENDEE[^:]*CUTYPE="?RESOURCE"?[^:\r\n]*:[^\r\n]+/g) ||
+                event.rawData.match(/ATTENDEE.*?CUTYPE.*?RESOURCE.*?:[^\r\n]+/g)
               : null;
+            
+            console.log('Resource regex matches:', resourceMatches);
+              
+            // Also check for attendees with resource types  
+            if (event.attendees && typeof event.attendees === 'string') {
+              console.log('Checking attendees string for resources:', event.attendees);
+              
+              // Look for "CUTYPE" or "Resource" in the attendees string
+              if (event.attendees.includes('CUTYPE') || event.attendees.includes('Resource')) {
+                try {
+                  const attendeesData = JSON.parse(event.attendees);
+                  console.log('Parsed attendees data for resource check:', attendeesData);
+                  
+                  // Extract any attendees that have CUTYPE=RESOURCE
+                  const resourceAttendees = Array.isArray(attendeesData) ? 
+                    attendeesData.filter(a => a && a.params && 
+                      (a.params.CUTYPE === 'RESOURCE' || a.params.ROLE === 'NON-PARTICIPANT')) : [];
+                      
+                  console.log('Resource attendees filtered:', resourceAttendees);
+                  
+                  if (resourceAttendees.length > 0) {
+                    const extractedResourcesFromAttendees = resourceAttendees.map((att, index) => {
+                      const email = att.val ? att.val.replace('mailto:', '') : '';
+                      const name = att.params.CN || `Resource ${index + 1}`;
+                      const subType = att.params['X-RESOURCE-TYPE'] || '';
+                      
+                      return {
+                        id: `resource-${index}-${Date.now()}`,
+                        name,
+                        adminEmail: email,
+                        subType,
+                        capacity: 1
+                      };
+                    });
+                    
+                    if (extractedResourcesFromAttendees.length > 0) {
+                      setResources(extractedResourcesFromAttendees);
+                      console.log('Extracted resources from attendees data:', extractedResourcesFromAttendees);
+                      return; // Skip further processing if we found resources
+                    }
+                  }
+                } catch (err) {
+                  console.warn('Failed to parse attendees JSON for resources:', err);
+                }
+              }
+            }
               
             if (resourceMatches && resourceMatches.length > 0) {
-              console.log(`Found ${resourceMatches.length} resource matches in raw data`);
+              console.log(`Found ${resourceMatches.length} resource matches in raw data:`, resourceMatches);
               
               const extractedResources = resourceMatches.map((line, index) => {
                 const emailMatch = line.match(/mailto:([^>\r\n]+)/);
                 const adminEmail = emailMatch ? emailMatch[1].trim() : '';
                 
-                const nameMatch = line.match(/CN=([^;:]+)/);
+                const nameMatch = line.match(/CN="?([^";:]+)"?/);
                 const name = nameMatch ? nameMatch[1].trim() : `Resource ${index + 1}`;
                 
-                const typeMatch = line.match(/X-RESOURCE-TYPE=([^;:]+)/);
-                const subType = typeMatch ? typeMatch[1].trim() : '';
+                // Try several patterns for resource type
+                const typeMatch = 
+                  line.match(/X-RESOURCE-TYPE="?([^";:]+)"?/) || 
+                  line.match(/RESOURCE-TYPE="?([^";:]+)"?/) ||
+                  line.match(/TYPE="?([^";:]+)"?/);
+                const subType = typeMatch ? typeMatch[1].trim() : name;
                 
                 return {
                   id: `resource-${index}-${Date.now()}`,
