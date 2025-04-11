@@ -951,7 +951,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         </div>
                         
                         {!allDay && (
-                          <div className="flex-1">
+                          <div className="flex-1 relative z-50">
                             <Input
                               id="start-time"
                               type="time"
@@ -984,7 +984,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         </div>
                         
                         {!allDay && (
-                          <div className="flex-1">
+                          <div className="flex-1 relative z-50">
                             <Input
                               id="end-time"
                               type="time"
