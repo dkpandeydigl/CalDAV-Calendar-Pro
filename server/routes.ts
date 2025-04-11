@@ -266,70 +266,173 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Attempt to update properties
               console.log(`Attempting to update calendar "${existingCalendar.name}" to "${req.body.name}" on CalDAV server`);
               let isDaviCal = false;
+              let updateSuccessful = false;
               
-              // Check if this is a DaviCal server (which might have different behaviors)
+              // Check if this is a DaviCal server (which requires special handling)
               if (existingCalendar.url.includes('/caldav.php/')) {
-                console.log(`Server appears to be DaviCal-based, which may handle calendar renaming differently`);
+                console.log(`Server is DaviCal-based, using DaviCal-specific update approach`);
                 isDaviCal = true;
-              }
-              
-              // Try standard PROPPATCH first for all server types
-              try {
-                // Use davRequest with PROPPATCH to update display name
-                const response = await davClient.davRequest({
-                  url: existingCalendar.url,
-                  init: {
+                
+                // DaviCal servers require a different approach - direct HTTP fetch with auth
+                try {
+                  // First build the HTTP Basic Auth header
+                  const authHeader = 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
+                  
+                  // For DaviCal, we need multiple attempts with different formats
+                  // First attempt: Standard format with both namespaces
+                  const xmlBody1 = `<?xml version="1.0" encoding="utf-8" ?>
+                    <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                      <D:set>
+                        <D:prop>
+                          <D:displayname>${req.body.name}</D:displayname>
+                        </D:prop>
+                      </D:set>
+                    </D:propertyupdate>`;
+                  
+                  console.log('DaviCal update attempt #1: Standard PROPPATCH');
+                  const response1 = await fetch(existingCalendar.url, {
                     method: 'PROPPATCH',
                     headers: {
                       'Content-Type': 'application/xml; charset=utf-8',
+                      'Authorization': authHeader
                     },
-                    body: `<?xml version="1.0" encoding="utf-8" ?>
-                      <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                    body: xmlBody1
+                  });
+                  
+                  console.log(`DaviCal update response #1: Status ${response1.status}`);
+                  
+                  if (response1.status >= 200 && response1.status < 300) {
+                    console.log('DaviCal calendar rename successful with attempt #1');
+                    updateSuccessful = true;
+                  } else {
+                    // Second attempt: Simplified format with just DAV namespace
+                    const xmlBody2 = `<?xml version="1.0" encoding="utf-8" ?>
+                      <D:propertyupdate xmlns:D="DAV:">
                         <D:set>
                           <D:prop>
                             <D:displayname>${req.body.name}</D:displayname>
                           </D:prop>
                         </D:set>
-                      </D:propertyupdate>`
-                  }
-                });
-                
-                // Check response status
-                const status = response?.status || 0;
-                console.log(`Calendar rename PROPPATCH response status: ${status}`);
-                
-                if (status >= 200 && status < 300) {
-                  console.log(`Successfully updated calendar name on server`);
-                } else {
-                  console.warn(`Server responded with status ${status}, calendar rename may not have worked`);
-                  
-                  // For DaviCal, try an alternative approach if the standard one failed
-                  if (isDaviCal) {
-                    // Try DaviCal specific approach with extended content type
-                    console.log('Trying DaviCal-specific PROPPATCH approach...');
-                    await davClient.davRequest({
-                      url: existingCalendar.url,
-                      init: {
+                      </D:propertyupdate>`;
+                    
+                    console.log('DaviCal update attempt #2: Simplified namespace');
+                    const response2 = await fetch(existingCalendar.url, {
+                      method: 'PROPPATCH',
+                      headers: {
+                        'Content-Type': 'text/xml; charset=utf-8',
+                        'Authorization': authHeader
+                      },
+                      body: xmlBody2
+                    });
+                    
+                    console.log(`DaviCal update response #2: Status ${response2.status}`);
+                    
+                    if (response2.status >= 200 && response2.status < 300) {
+                      console.log('DaviCal calendar rename successful with attempt #2');
+                      updateSuccessful = true;
+                    } else {
+                      // Third attempt: With no XML declaration
+                      const xmlBody3 = `<D:propertyupdate xmlns:D="DAV:">
+                        <D:set>
+                          <D:prop>
+                            <D:displayname>${req.body.name}</D:displayname>
+                          </D:prop>
+                        </D:set>
+                      </D:propertyupdate>`;
+                      
+                      console.log('DaviCal update attempt #3: No XML declaration');
+                      const response3 = await fetch(existingCalendar.url, {
                         method: 'PROPPATCH',
                         headers: {
-                          'Content-Type': 'text/xml; charset=utf-8',
+                          'Content-Type': 'text/xml',
+                          'Authorization': authHeader
                         },
-                        body: `<?xml version="1.0" encoding="utf-8" ?>
-                          <D:propertyupdate xmlns:D="DAV:">
-                            <D:set>
-                              <D:prop>
-                                <D:displayname>${req.body.name}</D:displayname>
-                              </D:prop>
-                            </D:set>
-                          </D:propertyupdate>`
+                        body: xmlBody3
+                      });
+                      
+                      console.log(`DaviCal update response #3: Status ${response3.status}`);
+                      
+                      if (response3.status >= 200 && response3.status < 300) {
+                        console.log('DaviCal calendar rename successful with attempt #3');
+                        updateSuccessful = true;
+                      } else {
+                        // For DaviCal servers, we may need to try one more strategy
+                        // Using a different URL structure
+                        if (existingCalendar.url.endsWith('/')) {
+                          const propsUrl = existingCalendar.url + '.properties';
+                          console.log(`DaviCal update attempt #4: Using alternative URL: ${propsUrl}`);
+                          
+                          const response4 = await fetch(propsUrl, {
+                            method: 'PROPPATCH',
+                            headers: {
+                              'Content-Type': 'application/xml',
+                              'Authorization': authHeader
+                            },
+                            body: xmlBody1
+                          });
+                          
+                          console.log(`DaviCal update response #4: Status ${response4.status}`);
+                          
+                          if (response4.status >= 200 && response4.status < 300) {
+                            console.log('DaviCal calendar rename successful with alternative URL structure');
+                            updateSuccessful = true;
+                          }
+                        }
                       }
-                    });
-                    console.log('DaviCal-specific rename attempt completed');
+                    }
                   }
+                  
+                  if (!updateSuccessful) {
+                    console.log('All DaviCal update attempts failed. Falling back to tsdav library...');
+                  }
+                } catch (fetchError) {
+                  console.error('Error during direct fetch for DaviCal update:', fetchError);
+                  // Continue to try tsdav approach
                 }
-              } catch (proppatchError) {
-                console.error('Error during PROPPATCH operation:', proppatchError);
-                throw proppatchError; // Re-throw to be caught by the outer try-catch
+              }
+              
+              // If DaviCal-specific approaches failed or for other server types
+              if (!updateSuccessful) {
+                try {
+                  // Use davRequest with PROPPATCH to update display name
+                  console.log('Trying tsdav library PROPPATCH approach...');
+                  const response = await davClient.davRequest({
+                    url: existingCalendar.url,
+                    init: {
+                      method: 'PROPPATCH',
+                      headers: {
+                        'Content-Type': 'application/xml; charset=utf-8',
+                      },
+                      body: `<?xml version="1.0" encoding="utf-8" ?>
+                        <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                          <D:set>
+                            <D:prop>
+                              <D:displayname>${req.body.name}</D:displayname>
+                            </D:prop>
+                          </D:set>
+                        </D:propertyupdate>`
+                    }
+                  });
+                  
+                  // Check response status
+                  const status = response?.status || 0;
+                  console.log(`tsdav PROPPATCH response status: ${status}`);
+                  
+                  if (status >= 200 && status < 300) {
+                    console.log(`Successfully updated calendar name with tsdav library`);
+                    updateSuccessful = true;
+                  } else {
+                    console.warn(`Server responded with status ${status}, tsdav update may not have worked`);
+                  }
+                } catch (proppatchError) {
+                  console.error('Error during tsdav PROPPATCH operation:', proppatchError);
+                }
+              }
+              
+              if (updateSuccessful) {
+                console.log(`Calendar successfully renamed on server from "${existingCalendar.name}" to "${req.body.name}"`);
+              } else {
+                console.warn(`Unable to confirm calendar rename on server despite multiple attempts.`);
               }
             } catch (calendarUpdateError) {
               console.error(`Error updating calendar on server:`, calendarUpdateError);
