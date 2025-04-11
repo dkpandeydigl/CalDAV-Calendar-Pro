@@ -411,7 +411,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       method: 'DELETE',
                       headers: {
                         'Content-Type': 'application/xml; charset=utf-8',
-                      }
+                      },
+                      body: '' // Empty body required for some CalDAV servers
                     }
                   });
                   console.log(`Successfully deleted calendar from CalDAV server using standard DELETE`);
@@ -451,7 +452,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     method: 'DELETE',
                     headers: {
                       'Content-Type': 'application/xml; charset=utf-8',
-                    }
+                    },
+                    body: '' // Empty body required for some CalDAV servers
                   }
                 });
                 console.log(`Successfully deleted calendar from CalDAV server`);
