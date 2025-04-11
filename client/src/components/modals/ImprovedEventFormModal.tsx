@@ -1738,7 +1738,29 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 {(event?.rawData && typeof event.rawData === 'string') && (
                   <div className="mb-4 border-b pb-4">
                     <h3 className="text-sm font-medium mb-2">Current Resources</h3>
-                    <DirectResourceExtractor rawData={event.rawData} isPreview={false} />
+                    <DirectResourceExtractor 
+                      rawData={event.rawData} 
+                      isPreview={false}
+                      onEdit={(oldResource, newResource) => {
+                        console.log('Edit resource:', oldResource, 'to', newResource);
+                        // Here you would typically update the event's resources in the database
+                        // For now, we'll just show a toast notification
+                        toast({
+                          title: "Resource Updated",
+                          description: `Updated ${oldResource.name} resource information.`,
+                        });
+                      }}
+                      onDelete={(resource) => {
+                        console.log('Delete resource:', resource);
+                        // Here you would typically remove the resource from the event in the database
+                        // For now, we'll just show a toast notification
+                        toast({
+                          title: "Resource Removed",
+                          description: `Removed ${resource.name} from event resources.`,
+                          variant: "destructive"
+                        });
+                      }}
+                    />
                   </div>
                 )}
                 

@@ -1,5 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { Laptop, ProjectorIcon, Wrench, DoorClosed, Phone, VideoIcon, Monitor } from 'lucide-react';
+import { Laptop, ProjectorIcon, Wrench, DoorClosed, Phone, VideoIcon, Monitor, Edit, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 interface Resource {
   id: string;
@@ -11,10 +29,19 @@ interface Resource {
 interface DirectResourceExtractorProps {
   rawData: string | null | undefined;
   isPreview?: boolean; // If true, only show one resource with count indicator
+  onDelete?: (resource: Resource) => void; // Optional callback for delete action
+  onEdit?: (resource: Resource, updatedResource: Resource) => void; // Optional callback for edit action
 }
 
-const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawData, isPreview = true }) => {
+const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ 
+  rawData, 
+  isPreview = true,
+  onDelete,
+  onEdit
+}) => {
   const [resources, setResources] = useState<Resource[]>([]);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [currentResource, setCurrentResource] = useState<Resource | null>(null);
   
   useEffect(() => {
     if (!rawData) {
@@ -85,6 +112,40 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawDa
     }
   };
   
+  // Handle edit resource
+  const handleEditResource = (resource: Resource) => {
+    setCurrentResource(resource);
+    setIsEditDialogOpen(true);
+  };
+
+  // Handle delete resource
+  const handleDeleteResource = (resource: Resource) => {
+    if (onDelete) {
+      onDelete(resource);
+    }
+  };
+
+  // Handle edit resource submit
+  const handleEditResourceSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    if (!currentResource) return;
+    
+    const formData = new FormData(e.currentTarget);
+    const updatedResource: Resource = {
+      ...currentResource,
+      name: formData.get('name') as string || currentResource.name,
+      email: formData.get('email') as string || currentResource.email,
+      type: formData.get('type') as string || currentResource.type,
+    };
+    
+    if (onEdit) {
+      onEdit(currentResource, updatedResource);
+    }
+    
+    setIsEditDialogOpen(false);
+  };
+
   return (
     <div>
       <div className="text-sm font-medium mb-1">
@@ -93,19 +154,61 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawDa
       <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
         <ul className="space-y-1 pr-2">
           {resources.slice(0, isPreview ? 1 : resources.length).map((resource, index) => (
-            <li key={`resource-${index}`} className="flex items-start mb-2">
-              <div className="mt-1 mr-3">
-                {getResourceIcon(resource.type || '')}
-              </div>
-              <div>
-                <div className="font-medium">{resource.name}</div>
-                <div className="text-xs text-gray-600">
-                  Type: {resource.type ? resource.type.trim() : 'Unknown'}
+            <li key={`resource-${index}`} className="flex items-start mb-2 justify-between group">
+              <div className="flex">
+                <div className="mt-1 mr-3">
+                  {getResourceIcon(resource.type || '')}
                 </div>
-                <div className="text-xs text-gray-600">
-                  Admin: {resource.email}
+                <div>
+                  <div className="font-medium">{resource.name}</div>
+                  <div className="text-xs text-gray-600">
+                    Type: {resource.type ? resource.type.trim() : 'Unknown'}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    Admin: {resource.email}
+                  </div>
                 </div>
               </div>
+              
+              {!isPreview && onEdit && onDelete && (
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8"
+                          onClick={() => handleEditResource(resource)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Edit resource</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => handleDeleteResource(resource)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Remove resource</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
             </li>
           ))}
           
@@ -120,6 +223,63 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawDa
           )}
         </ul>
       </div>
+      
+      {/* Edit Resource Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Resource</DialogTitle>
+            <DialogDescription>
+              Update the details of this resource.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {currentResource && (
+            <form onSubmit={handleEditResourceSubmit}>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Resource Name</Label>
+                  <Input
+                    id="edit-name"
+                    name="name"
+                    defaultValue={currentResource.name}
+                    required
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-type">Resource Type</Label>
+                  <Input
+                    id="edit-type"
+                    name="type"
+                    defaultValue={currentResource.type}
+                  />
+                </div>
+                
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-email">Administrator Email</Label>
+                  <Input
+                    id="edit-email"
+                    name="email"
+                    type="email"
+                    defaultValue={currentResource.email}
+                    required
+                  />
+                </div>
+              </div>
+              
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Update Resource
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
