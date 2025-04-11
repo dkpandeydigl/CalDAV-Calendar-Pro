@@ -4,6 +4,22 @@ import { DAVClient } from 'tsdav';
 import * as icalUtils from './ical-utils';
 import * as nodeIcal from 'node-ical';
 
+// Define attendee interface
+interface CalDAVAttendee {
+  email: string;
+  name?: string;
+  role?: string;
+  status?: string;
+  type?: string;
+}
+
+// Define resource interface
+interface CalDAVResource {
+  name: string;
+  adminEmail: string;
+  type?: string;
+}
+
 // Extend the DAVObject interface to include properties we need
 interface CalDAVEvent {
   uid: string;
@@ -15,10 +31,11 @@ interface CalDAVEvent {
   allDay?: boolean;
   timezone?: string;
   recurrenceRule?: string;
-  attendees?: any[];
+  attendees?: CalDAVAttendee[];
+  resources?: CalDAVResource[];
   etag?: string;
   url?: string;
-  data?: any;
+  data?: any; // Original ICS data string
 }
 
 interface SyncJob {
@@ -380,6 +397,8 @@ export class SyncService {
                 recurrenceRule: caldavEvent.recurrenceRule,
                 attendees: caldavEvent.attendees && caldavEvent.attendees.length > 0 ? 
                   JSON.stringify(caldavEvent.attendees) : null,
+                resources: caldavEvent.resources && caldavEvent.resources.length > 0 ?
+                  JSON.stringify(caldavEvent.resources) : null,
                 etag: caldavEvent.etag,
                 url: caldavEvent.url,
                 rawData: caldavEvent.data ? JSON.stringify(caldavEvent.data) : null,
@@ -531,6 +550,8 @@ export class SyncService {
                     recurrenceRule: caldavEvent.recurrenceRule,
                     attendees: caldavEvent.attendees && caldavEvent.attendees.length > 0 ? 
                       JSON.stringify(caldavEvent.attendees) : null,
+                    resources: caldavEvent.resources && caldavEvent.resources.length > 0 ?
+                      JSON.stringify(caldavEvent.resources) : null,  
                     etag: caldavEvent.etag,
                     url: caldavEvent.url,
                     rawData: caldavEvent.data ? JSON.stringify(caldavEvent.data) : null,
@@ -693,11 +714,83 @@ export class SyncService {
         } else if (event.rrule && typeof event.rrule === 'object') {
           // Try to extract the original RRULE string
           recurrenceRule = event.rrule.toString();
+          // If it's not a standard string representation, try to extract it from original ICS data
+          if (recurrenceRule && !recurrenceRule.startsWith('FREQ=')) {
+            const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
+            if (rruleMatch && rruleMatch[1]) {
+              recurrenceRule = rruleMatch[1];
+              console.log(`Extracted RRULE from raw ICS data: ${recurrenceRule}`);
+            }
+          }
+        }
+      } else {
+        // If node-ical failed to parse the RRULE, try to extract it from raw data
+        const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
+        if (rruleMatch && rruleMatch[1]) {
+          recurrenceRule = rruleMatch[1];
+          console.log(`Extracted RRULE from raw ICS data (fallback): ${recurrenceRule}`);
         }
       }
       
-      // Handle attendees
-      const attendees = event.attendees || [];
+      // Handle attendees - extract from node-ical parsed data
+      let attendees: CalDAVAttendee[] = [];
+      let resources: CalDAVResource[] = [];
+      
+      // First try to get attendees from node-ical's parsing
+      if (event.attendees && Array.isArray(event.attendees)) {
+        attendees = event.attendees;
+      } else if (event.attendee) {
+        // Handle case where it might be a single attendee
+        attendees = Array.isArray(event.attendee) ? event.attendee : [event.attendee];
+      } else {
+        // Fallback: Try to extract attendees from raw ICS data using regex
+        try {
+          const attendeeMatches = icsData.match(/ATTENDEE[^:\r\n]+:[^\r\n]+/g);
+          if (attendeeMatches && attendeeMatches.length > 0) {
+            console.log(`Found ${attendeeMatches.length} attendees/resources in raw ICS data`);
+            
+            // Process each attendee line
+            attendeeMatches.forEach(line => {
+              // Extract common properties from the attendee line
+              const emailMatch = line.match(/mailto:([^>\r\n]+)/);
+              const email = emailMatch ? emailMatch[1] : '';
+              
+              const nameMatch = line.match(/CN=([^;:]+)/);
+              const name = nameMatch ? nameMatch[1] : '';
+              
+              const roleMatch = line.match(/ROLE=([^;:]+)/);
+              const role = roleMatch ? roleMatch[1] : 'REQ-PARTICIPANT';
+              
+              const statusMatch = line.match(/PARTSTAT=([^;:]+)/);
+              const status = statusMatch ? statusMatch[1] : 'NEEDS-ACTION';
+              
+              // Check if this is a resource
+              const isResource = line.includes('CUTYPE=RESOURCE');
+              
+              if (isResource) {
+                // Process as a resource
+                resources.push({
+                  name: name || 'Unnamed Resource',
+                  adminEmail: email,
+                  type: line.match(/RESOURCE-TYPE=([^;:]+)/) ? line.match(/RESOURCE-TYPE=([^;:]+)/)?.[1] : undefined
+                });
+              } else {
+                // Process as a regular attendee
+                attendees.push({
+                  email,
+                  name,
+                  role,
+                  status
+                });
+              }
+            });
+            
+            console.log(`Parsed ${attendees.length} attendees and ${resources.length} resources`);
+          }
+        } catch (e) {
+          console.error('Error extracting attendees/resources from raw ICS data:', e);
+        }
+      }
       
       if (!startDate || !endDate) {
         console.warn('Event has invalid dates');
@@ -726,6 +819,7 @@ export class SyncService {
         timezone,
         recurrenceRule,
         attendees: attendees.length > 0 ? attendees : undefined,
+        resources: resources.length > 0 ? resources : undefined,
         etag,
         url,
         data: icsData // Store the original ICS data
