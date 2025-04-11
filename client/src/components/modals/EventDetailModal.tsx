@@ -644,15 +644,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             
             {/* Direct Resource Extractor Component - show all resources in detail view */}
             {typeof event.rawData === 'string' && (
-              <DirectResourceExtractor rawData={event.rawData} isPreview={false} />
+              <DirectResourceExtractor rawData={event.rawData} isPreview={true} />
             )}
             
             {/* Attendees section using DirectAttendeeExtractor - show all attendees in detail view */}
             {(
               <DirectAttendeeExtractor 
                 rawData={typeof event.rawData === 'string' ? event.rawData : null} 
-                showMoreCount={2}
-                isPreview={false}
+                showMoreCount={1}
+                isPreview={true}
               />
             )}
             
