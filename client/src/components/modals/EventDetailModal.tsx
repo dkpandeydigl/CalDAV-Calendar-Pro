@@ -642,19 +642,37 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             
             {/* Debug info removed */}
             
-            {/* Direct Resource Extractor Component - show all resources in detail view */}
-            {typeof event.rawData === 'string' && (
-              <DirectResourceExtractor rawData={event.rawData} isPreview={false} />
-            )}
-            
-            {/* Attendees section using DirectAttendeeExtractor - show all attendees in detail view */}
-            {(
-              <DirectAttendeeExtractor 
-                rawData={typeof event.rawData === 'string' ? event.rawData : null} 
-                showMoreCount={2}
-                isPreview={false}
-              />
-            )}
+            {/* Use Tabs for Resources and Attendees sections */}
+            <Tabs defaultValue="resources" className="mt-4">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="resources">Resources</TabsTrigger>
+                <TabsTrigger value="attendees">Attendees</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="resources" className="mt-4">
+                {/* Resources Tab with ResourceManager for delete capability */}
+                {processedResources.length > 0 && (
+                  <ResourceManager 
+                    resources={processedResources} 
+                    onResourcesChange={() => {}} // Read-only in detail view
+                  />
+                )}
+                {processedResources.length === 0 && (
+                  <div className="text-center p-4 text-gray-500">
+                    No resources associated with this event.
+                  </div>
+                )}
+              </TabsContent>
+              
+              <TabsContent value="attendees" className="mt-4">
+                {/* Attendees section using DirectAttendeeExtractor - show all attendees in detail view */}
+                <DirectAttendeeExtractor 
+                  rawData={typeof event.rawData === 'string' ? event.rawData : null} 
+                  showMoreCount={2}
+                  isPreview={false}
+                />
+              </TabsContent>
+            </Tabs>
             
             {/* Fallback for legacy attendee format if raw data extraction doesn't work */}
             {(() => {
