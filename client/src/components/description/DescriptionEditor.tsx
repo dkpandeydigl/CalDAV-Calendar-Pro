@@ -25,7 +25,6 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
 }) => {
   const [linkUrl, setLinkUrl] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
-  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
   
   // Process template tags if eventData is available
   useEffect(() => {
