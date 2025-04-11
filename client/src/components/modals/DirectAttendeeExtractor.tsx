@@ -27,13 +27,20 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
     }
     
     try {
-      // Use a pattern to directly extract attendee information from raw iCalendar data
-      // Exclude resource attendees (CUTYPE=RESOURCE)
-      // This regex captures the full ATTENDEE line and the email
-      const attendeeRegex = /ATTENDEE(?!.*CUTYPE=RESOURCE)[^:]*?:[^:\r\n]*(?:mailto:)?([^\s>\r\n]+)/g;
-      
+      // First log some raw data for debugging
       console.log('ATTENDEE DEBUG: Searching raw data of length', rawData.length);
       console.log('ATTENDEE DEBUG: First 100 chars of raw data:', rawData.substring(0, 100));
+      console.log('ATTENDEE DEBUG: Does data contain ATTENDEE?', rawData.includes('ATTENDEE'));
+      
+      // Use multiple patterns to try and extract attendees in different formats
+      // Pattern 1: Standard format with CUTYPE checks
+      const attendeeRegex1 = /ATTENDEE(?!.*CUTYPE=RESOURCE)[^:]*?:[^:\r\n]*mailto:([^\s>\r\n]+)/g;
+      
+      // Pattern 2: More flexible pattern for different formats
+      const attendeeRegex2 = /ATTENDEE[^:]*?(?!CUTYPE=RESOURCE)[^:]*?:[^:\r\n]*mailto:([^\s>\r\n]+)/g;
+      
+      // Pattern 3: Most flexible pattern
+      const attendeeRegex = /ATTENDEE(?!.*CUTYPE=RESOURCE).*?mailto:([^\s>\r\n]+)/g;
       
       // Use a more compatible approach with newer JavaScript engines
       const matches = [];
@@ -77,7 +84,52 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
         console.log('ATTENDEE DEBUG: Extracted attendees:', directAttendees);
         setAttendees(directAttendees);
       } else {
-        console.log('ATTENDEE DEBUG: No attendees found in raw data');
+        console.log('ATTENDEE DEBUG: No attendees found with regex, trying fallback approach');
+        
+        // Fallback approach - split by lines and find ATTENDEE lines
+        const lines = rawData.split(/\r?\n/);
+        const attendeeLines = lines.filter(line => 
+          line.includes('ATTENDEE') && 
+          !line.includes('CUTYPE=RESOURCE') && 
+          line.includes('mailto:')
+        );
+        
+        if (attendeeLines.length > 0) {
+          console.log(`ATTENDEE DEBUG: Found ${attendeeLines.length} attendee lines with fallback approach`);
+          
+          const fallbackAttendees = attendeeLines.map((line, index) => {
+            // Extract email
+            const emailMatch = line.match(/mailto:([^\s>\r\n]+)/);
+            const email = emailMatch ? emailMatch[1].trim() : `unknown-${index}@example.com`;
+            
+            // Extract name
+            const cnMatch = line.match(/CN=([^;:]+)/);
+            const name = cnMatch ? cnMatch[1].trim() : email.split('@')[0];
+            
+            // Extract role
+            const roleMatch = line.match(/ROLE=([^;:]+)/);
+            const role = roleMatch ? roleMatch[1].trim() : 'Attendee';
+            
+            // Extract status
+            const statusMatch = line.match(/PARTSTAT=([^;:]+)/);
+            const status = statusMatch ? statusMatch[1].replace(/-/g, ' ').trim() : 'Needs Action';
+            
+            console.log(`ATTENDEE DEBUG - Fallback extracted attendee: ${name}, email: ${email}`);
+            
+            return {
+              id: `attendee-fallback-${index}-${Date.now()}`,
+              email,
+              name,
+              role,
+              status
+            };
+          });
+          
+          console.log('ATTENDEE DEBUG: Extracted fallback attendees:', fallbackAttendees);
+          setAttendees(fallbackAttendees);
+        } else {
+          console.log('ATTENDEE DEBUG: No attendees found in raw data with any method');
+        }
       }
     } catch (error) {
       console.error('ATTENDEE DEBUG: Error extracting attendees:', error);
