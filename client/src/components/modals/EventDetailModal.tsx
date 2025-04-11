@@ -640,16 +640,17 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             
             {/* Debug info removed */}
             
-            {/* Direct Resource Extractor Component */}
+            {/* Direct Resource Extractor Component - show all resources in detail view */}
             {typeof event.rawData === 'string' && (
-              <DirectResourceExtractor rawData={event.rawData} />
+              <DirectResourceExtractor rawData={event.rawData} isPreview={false} />
             )}
             
-            {/* Attendees section using DirectAttendeeExtractor */}
+            {/* Attendees section using DirectAttendeeExtractor - show all attendees in detail view */}
             {(
               <DirectAttendeeExtractor 
                 rawData={typeof event.rawData === 'string' ? event.rawData : null} 
-                showMoreCount={2} 
+                showMoreCount={2}
+                isPreview={false}
               />
             )}
             
@@ -668,7 +669,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
                           {attendees
                             .filter(Boolean)
-                            .slice(0, 2) // Show only the first 2 attendees
+                            // Show all attendees in detail view
                             .map((attendee, index) => {
                               // Handle both string and object formats
                               if (typeof attendee === 'object' && attendee !== null) {

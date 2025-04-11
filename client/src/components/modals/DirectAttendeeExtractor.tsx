@@ -12,11 +12,13 @@ interface Attendee {
 interface DirectAttendeeExtractorProps {
   rawData: string | null | undefined;
   showMoreCount?: number; // Number of attendees to show before "more"
+  isPreview?: boolean; // If true, only show limited attendees with count indicator
 }
 
 const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({ 
   rawData,
-  showMoreCount = 2
+  showMoreCount = 2,
+  isPreview = true
 }) => {
   console.log('ATTENDEE DEBUG: DirectAttendeeExtractor component rendering with rawData:', 
               rawData ? `string of length ${rawData.length}` : 'null/undefined');
@@ -209,7 +211,7 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
       <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
         <ul className="space-y-1">
           {attendees
-            .slice(0, 1) // Show only the first attendee
+            .slice(0, isPreview ? 1 : attendees.length) // Show one attendee in preview mode, all in detail mode
             .map((attendee, index) => (
               <li key={`attendee-${index}`} className="flex items-start mb-2">
                 <div className="mt-1 mr-3">
@@ -237,8 +239,8 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
               </li>
             ))}
           
-          {/* Show "more attendees" indicator if needed */}
-          {attendees.length > 1 && (
+          {/* Show "more attendees" indicator if needed - only in preview mode */}
+          {isPreview && attendees.length > 1 && (
             <li className="text-xs text-center py-1">
               <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500 inline-flex items-center">
                 <Users className="h-3 w-3 mr-1" />

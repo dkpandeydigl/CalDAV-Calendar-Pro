@@ -109,8 +109,8 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawDa
             </li>
           ))}
           
-          {/* Show "more resources" indicator if needed */}
-          {resources.length > 1 && (
+          {/* Show "more resources" indicator if needed - only in preview mode */}
+          {isPreview && resources.length > 1 && (
             <li className="text-xs text-center py-1">
               <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500 inline-flex items-center">
                 <Wrench className="h-3 w-3 mr-1" />
