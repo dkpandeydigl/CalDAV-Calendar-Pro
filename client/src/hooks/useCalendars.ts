@@ -56,10 +56,16 @@ export const useCalendars = () => {
 
   const updateCalendarMutation = useMutation({
     mutationFn: ({ id, data }: { id: number, data: Partial<Calendar> }) => {
+      console.log(`Updating calendar ID ${id} with data:`, data);
       return apiRequest('PUT', `/api/calendars/${id}`, data)
-        .then(res => res.json());
+        .then(async (res) => {
+          const responseData = await res.json();
+          console.log(`Calendar update response:`, responseData);
+          return responseData;
+        });
     },
-    onSuccess: () => {
+    onSuccess: (updatedCalendar) => {
+      console.log(`Calendar updated successfully:`, updatedCalendar);
       queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
       toast({
         title: "Calendar Updated",
@@ -67,6 +73,7 @@ export const useCalendars = () => {
       });
     },
     onError: (error) => {
+      console.error(`Calendar update failed:`, error);
       toast({
         title: "Failed to Update Calendar",
         description: error.message || "An error occurred while updating the calendar.",

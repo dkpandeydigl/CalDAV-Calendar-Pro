@@ -301,20 +301,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const userId = req.user!.id;
+      console.log(`Calendar update request for calendar ID ${calendarId} by user ${userId}`);
+      console.log(`Update data:`, req.body);
       
       // Get the existing calendar to check ownership
       const existingCalendar = await storage.getCalendar(calendarId);
       if (!existingCalendar) {
+        console.log(`Calendar ${calendarId} not found`);
         return res.status(404).json({ message: "Calendar not found" });
       }
       
       // Check if the user owns this calendar
       if (existingCalendar.userId !== userId) {
+        console.log(`User ${userId} does not own calendar ${calendarId} (owned by ${existingCalendar.userId})`);
         return res.status(403).json({ message: "You don't have permission to modify this calendar" });
       }
       
       // Set content type header explicitly to ensure JSON response
       res.setHeader('Content-Type', 'application/json');
+      
+      // Log existing calendar details before update
+      console.log(`Existing calendar:`, {
+        id: existingCalendar.id,
+        name: existingCalendar.name,
+        color: existingCalendar.color,
+        url: existingCalendar.url,
+        syncToken: existingCalendar.syncToken
+      });
       
       // If this calendar exists on the CalDAV server and we're changing its properties
       // Note that some properties (like color) can be changed locally without affecting the server
@@ -712,12 +725,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Update the calendar locally
+      console.log(`Updating calendar locally with data:`, req.body);
       const updatedCalendar = await storage.updateCalendar(calendarId, req.body);
       
       // Return the updated calendar
       if (updatedCalendar) {
+        console.log(`Calendar update successful. Updated calendar:`, {
+          id: updatedCalendar.id,
+          name: updatedCalendar.name,
+          color: updatedCalendar.color,
+          url: updatedCalendar.url,
+          syncToken: updatedCalendar.syncToken
+        });
         res.json(updatedCalendar);
       } else {
+        console.error(`Failed to update calendar ${calendarId} in database`);
         res.status(500).json({ message: "Failed to update calendar" });
       }
     } catch (err) {
