@@ -632,20 +632,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   <span>Description</span>
                 </div>
                 <div 
-                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 line-clamp-3 hover:line-clamp-none hover:max-h-[12em] hover:overflow-y-auto pr-2"
+                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 line-clamp-3 pr-2"
                   dangerouslySetInnerHTML={{ __html: event.description }}
                 />
               </div>
             )}
             
-            {/* Debug raw data info */}
-            <div className="text-xs p-1 bg-yellow-50 rounded border border-yellow-200 mb-2">
-              <p>Debug rawData: {typeof event.rawData === 'string' 
-                ? `String length ${event.rawData.length}` 
-                : typeof event.rawData === 'object'
-                ? 'Object type'
-                : 'Not string/object'}</p>
-            </div>
+            {/* Debug info removed */}
             
             {/* Direct Resource Extractor Component */}
             {typeof event.rawData === 'string' && (
