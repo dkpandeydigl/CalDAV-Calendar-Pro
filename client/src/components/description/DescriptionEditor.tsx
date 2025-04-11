@@ -3,10 +3,15 @@ import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Underline from '@tiptap/extension-underline';
-import { Bold, Italic, Underline as UnderlineIcon, Strikethrough, List, ListOrdered, Link as LinkIcon, Heading1, Heading2, Quote, Undo, Redo } from 'lucide-react';
+import { Bold, Italic, Underline as UnderlineIcon, Strikethrough, List, ListOrdered, Link as LinkIcon, Heading1, Heading2, Quote, Undo, Redo, Maximize2, Minimize2, Hash } from 'lucide-react';
 import { TemplateTagExtension } from './TemplateTagExtension';
 import { processTemplateTags } from './templates';
 import './description-editor.css';
+import { 
+  Popover,
+  PopoverContent,
+  PopoverTrigger
+} from '@/components/ui/popover';
 
 interface DescriptionEditorProps {
   value: string;
@@ -23,6 +28,7 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
 }) => {
   const [linkUrl, setLinkUrl] = useState('');
   const [showLinkInput, setShowLinkInput] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   
   // Process template tags if eventData is available
   useEffect(() => {
@@ -97,7 +103,7 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
   const handleRedo = () => editor.chain().focus().redo().run();
 
   return (
-    <div className="editor-container">
+    <div className={`editor-container ${isFullScreen ? 'fullscreen' : ''}`}>
       <div className="editor-toolbar">
         {/* Text formatting */}
         <button
@@ -261,6 +267,79 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
           <Redo size={18} />
         </button>
         
+        <div className="toolbar-divider" />
+        
+        {/* Template Tags */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="toolbar-button"
+              title="Insert Template Tag"
+            >
+              <Hash size={18} />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-60" sideOffset={5}>
+            <div className="space-y-2">
+              <h4 className="font-medium">Insert Template Tag</h4>
+              <div className="grid gap-1">
+                <button
+                  type="button"
+                  className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
+                  onClick={() => editor.chain().focus().insertContent('{{title}}').run()}
+                >
+                  <code>{{title}}</code> - Event title
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
+                  onClick={() => editor.chain().focus().insertContent('{{location}}').run()}
+                >
+                  <code>{{location}}</code> - Event location
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
+                  onClick={() => editor.chain().focus().insertContent('{{date}}').run()}
+                >
+                  <code>{{date}}</code> - Event date
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
+                  onClick={() => editor.chain().focus().insertContent('{{startTime}}').run()}
+                >
+                  <code>{{startTime}}</code> - Start time
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
+                  onClick={() => editor.chain().focus().insertContent('{{endTime}}').run()}
+                >
+                  <code>{{endTime}}</code> - End time
+                </button>
+                <button
+                  type="button"
+                  className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
+                  onClick={() => editor.chain().focus().insertContent('{{attendees}}').run()}
+                >
+                  <code>{{attendees}}</code> - List of attendees
+                </button>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+        
+        {/* Fullscreen Toggle */}
+        <button
+          type="button"
+          onClick={() => setIsFullScreen(!isFullScreen)}
+          className="toolbar-button"
+          title={isFullScreen ? "Exit Full Screen" : "Full Screen"}
+        >
+          {isFullScreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </button>
       </div>
       
       <div className="editor-content">
