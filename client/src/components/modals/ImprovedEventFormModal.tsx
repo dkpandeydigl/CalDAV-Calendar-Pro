@@ -49,6 +49,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import EmailPreview from '@/components/email/EmailPreview';
 import { useEmailPreview } from '@/hooks/useEmailPreview';
 import ResourceManager, { Resource } from '@/components/resources/ResourceManager';
+import DirectResourceExtractor from '@/components/modals/DirectResourceExtractor';
 import { parseResourcesFromEvent } from '@/utils/resourceUtils';
 import type { Event } from '@shared/schema';
 
@@ -1733,6 +1734,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               </TabsContent>
               
               <TabsContent value="resources" className="mt-0 p-0 min-h-[500px]">
+                {/* Show existing resources from raw data if available */}
+                {(event?.rawData && typeof event.rawData === 'string') && (
+                  <div className="mb-4 border-b pb-4">
+                    <h3 className="text-sm font-medium mb-2">Current Resources</h3>
+                    <DirectResourceExtractor rawData={event.rawData} />
+                  </div>
+                )}
+                
                 <ResourceManager 
                   resources={resources}
                   onResourcesChange={setResources}
