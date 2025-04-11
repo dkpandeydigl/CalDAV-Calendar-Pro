@@ -704,7 +704,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 );
                               }
                             })}
-                          {attendees.length > 2 && (
+                          {/* Don't show "more attendees" indicator in detail view */}
+                          {false && attendees.length > 2 && (
                             <li className="text-xs text-center py-1">
                               <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500 inline-flex items-center">
                                 <UserIcon className="h-3 w-3 mr-1" />
@@ -795,7 +796,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
                       <ul className="space-y-1 pr-2">
                         {parsedResources
-                          .slice(0, 1) // Show only the first resource
+                          // Show all resources in detail view
                           .map((resource: any, index) => {
                           try {
                             // Parse resource if it's a string that might be JSON
@@ -898,7 +899,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             );
                           }
                         })}
-                        {parsedResources.length > 1 && (
+                        {/* Don't show "more resources" indicator in detail view */}
+                        {false && parsedResources.length > 1 && (
                           <li className="text-xs text-muted-foreground italic text-center py-1">
                             <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
                               + {parsedResources.length - 1} more resource{parsedResources.length > 2 ? 's' : ''}

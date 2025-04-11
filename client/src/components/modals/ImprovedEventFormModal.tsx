@@ -1738,7 +1738,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                 {(event?.rawData && typeof event.rawData === 'string') && (
                   <div className="mb-4 border-b pb-4">
                     <h3 className="text-sm font-medium mb-2">Current Resources</h3>
-                    <DirectResourceExtractor rawData={event.rawData} />
+                    <DirectResourceExtractor rawData={event.rawData} isPreview={false} />
                   </div>
                 )}
                 
