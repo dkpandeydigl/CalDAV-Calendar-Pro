@@ -2,6 +2,7 @@ import { storage } from './database-storage';
 import { ServerConnection, Calendar, InsertEvent } from '@shared/schema';
 import { DAVClient } from 'tsdav';
 import * as icalUtils from './ical-utils';
+import * as nodeIcal from 'node-ical';
 
 // Extend the DAVObject interface to include properties we need
 interface CalDAVEvent {
@@ -584,6 +585,129 @@ export class SyncService {
     
     // No match found
     return undefined;
+  }
+  
+  /**
+   * Parse raw ICS data into a CalDAVEvent object
+   * This improves compatibility with other CalDAV clients by using node-ical for parsing
+   * @param icsData The raw ICS data as a string
+   * @param etag The ETag header value from the server
+   * @param url The URL of the event
+   */
+  private parseRawICSData(icsData: string, etag?: string, url?: string): CalDAVEvent | null {
+    try {
+      // Parse the ICS data using node-ical
+      const parseICS = (nodeIcal as any).default?.parseICS || nodeIcal.parseICS;
+      const parsedCal = parseICS(icsData);
+      
+      // Find the first VEVENT in the parsed calendar
+      const eventKey = Object.keys(parsedCal).find(key => 
+        parsedCal[key]?.type === 'VEVENT'
+      );
+      
+      if (!eventKey || !parsedCal[eventKey]) {
+        console.warn('No valid VEVENT found in ICS data');
+        return null;
+      }
+      
+      const event = parsedCal[eventKey];
+      
+      // Initialize dates
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+      let allDay = false;
+      
+      // Handle start date
+      if (event.start instanceof Date) {
+        startDate = event.start;
+        
+        // Check if it's likely an all-day event (time is midnight)
+        const hours = event.start.getHours();
+        const minutes = event.start.getMinutes();
+        const seconds = event.start.getSeconds();
+        
+        if (hours === 0 && minutes === 0 && seconds === 0) {
+          // Potential all-day event
+          allDay = true;
+        }
+      } else if (event.start && typeof event.start === 'object' && 'toJSDate' in event.start) {
+        startDate = (event.start as any).toJSDate();
+        // Check if it's marked as a date-only event
+        if ((event.start as any).dateOnly) {
+          allDay = true;
+        }
+      }
+      
+      // Handle end date
+      if (event.end instanceof Date) {
+        endDate = event.end;
+      } else if (event.end && typeof event.end === 'object' && 'toJSDate' in event.end) {
+        endDate = (event.end as any).toJSDate();
+      }
+      
+      // If no end date is provided, derive from start date
+      if (!endDate && startDate) {
+        endDate = new Date(startDate);
+        if (allDay) {
+          // For all-day events, set end to next day
+          endDate.setDate(endDate.getDate() + 1);
+        } else {
+          // For timed events, set end to 1 hour after start
+          endDate.setHours(endDate.getHours() + 1);
+        }
+      }
+      
+      // Parse RRULE if present
+      let recurrenceRule: string | undefined = undefined;
+      if (event.rrule) {
+        if (typeof event.rrule === 'string') {
+          recurrenceRule = event.rrule;
+        } else if (event.rrule && typeof event.rrule === 'object') {
+          // Try to extract the original RRULE string
+          recurrenceRule = event.rrule.toString();
+        }
+      }
+      
+      // Handle attendees
+      const attendees = event.attendees || [];
+      
+      if (!startDate || !endDate) {
+        console.warn('Event has invalid dates');
+        return null;
+      }
+      
+      // Check timezone information
+      let timezone = 'UTC'; // Default timezone
+      
+      // Try to extract timezone from the event
+      if (event.timezone) {
+        timezone = event.timezone;
+      } else if (event.start && (event.start as any).tz) {
+        timezone = (event.start as any).tz;
+      }
+      
+      // Create the CalDAVEvent object
+      const caldavEvent: CalDAVEvent = {
+        uid: event.uid || `auto-generated-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        summary: event.summary || 'Untitled Event',
+        description: event.description,
+        location: event.location,
+        startDate,
+        endDate,
+        allDay,
+        timezone,
+        recurrenceRule,
+        attendees: attendees.length > 0 ? attendees : undefined,
+        etag,
+        url,
+        data: icsData // Store the original ICS data
+      };
+      
+      return caldavEvent;
+    } catch (error) {
+      console.error('Error parsing ICS data:', error);
+      return null;
+    }
   }
   
   /**
