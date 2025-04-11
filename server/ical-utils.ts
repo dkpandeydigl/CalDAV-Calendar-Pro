@@ -10,11 +10,63 @@
 export function escapeICalString(value: string | undefined | null): string {
   if (!value) return '';
   
-  return value
+  // First sanitize any HTML content
+  const sanitizedValue = sanitizeHtmlForIcal(value);
+  
+  return sanitizedValue
     .replace(/\\/g, '\\\\')  // Escape backslashes first
     .replace(/;/g, '\\;')    // Escape semicolons
     .replace(/,/g, '\\,')    // Escape commas
     .replace(/\n/g, '\\n');  // Escape line breaks
+}
+
+/**
+ * Sanitizes HTML content for iCalendar format
+ * Converts HTML to plain text with line breaks to ensure cross-client compatibility
+ * @param html The HTML string to sanitize
+ * @returns Plain text representation with line breaks
+ */
+function sanitizeHtmlForIcal(html: string): string {
+  if (!html) return '';
+  
+  // Check if this is HTML content (has tags)
+  if (!/<[a-z][\s\S]*>/i.test(html)) {
+    return html; // Not HTML, return as is
+  }
+  
+  try {
+    // Handle <p> tags
+    let plainText = html.replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n');
+    
+    // Handle <br> tags
+    plainText = plainText.replace(/<br\s*\/?>/gi, '\n');
+    
+    // Handle <div> tags
+    plainText = plainText.replace(/<div[^>]*>(.*?)<\/div>/gi, '$1\n');
+    
+    // Handle <li> tags
+    plainText = plainText.replace(/<li[^>]*>(.*?)<\/li>/gi, '• $1\n');
+    
+    // Remove all remaining HTML tags
+    plainText = plainText.replace(/<[^>]+>/g, '');
+    
+    // Decode HTML entities
+    plainText = plainText
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+    
+    // Remove excessive line breaks
+    plainText = plainText.replace(/\n\s*\n\s*\n/g, '\n\n');
+    
+    return plainText.trim();
+  } catch (e) {
+    console.error('Error sanitizing HTML for iCalendar:', e);
+    return html; // Return original if error occurs
+  }
 }
 
 /**
