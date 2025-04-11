@@ -3,6 +3,33 @@
  */
 
 /**
+ * Decodes HTML entities in a string
+ * This is a simplified version that handles common HTML entities
+ * @param html The HTML string with entities to decode
+ * @returns The decoded string
+ */
+function decodeHtmlEntities(html: string): string {
+  if (!html) return '';
+  
+  return html
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&ndash;/g, '-')
+    .replace(/&mdash;/g, '--')
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/&bull;/g, '*')
+    .replace(/&hellip;/g, '...')
+    .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(parseInt(dec, 10)));
+}
+
+/**
  * Escapes special characters in a string according to RFC 5545
  * @param value The string to escape
  * @returns The escaped string
