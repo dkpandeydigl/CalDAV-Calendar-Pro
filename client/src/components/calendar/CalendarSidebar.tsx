@@ -136,10 +136,22 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
       return false;
     }
     
-    // Validate against allowed characters (letters, digits, underscore, hyphen, period)
-    const regex = /^[A-Za-z0-9_\-\.]+$/;
+    // Check for name length (max 20 characters)
+    if (name.length > 20) {
+      setCalendarNameError('Calendar name must be 20 characters or less');
+      return false;
+    }
+    
+    // Check for consecutive spaces (not more than one space allowed)
+    if (/\s{2,}/.test(name)) {
+      setCalendarNameError('Multiple consecutive spaces are not allowed');
+      return false;
+    }
+    
+    // Validate against allowed characters (letters, digits, spaces, underscore, hyphen, period)
+    const regex = /^[A-Za-z0-9 _\-\.]+$/;
     if (!regex.test(name)) {
-      setCalendarNameError('Only letters, digits, underscore, hyphen, and period are allowed');
+      setCalendarNameError('Only letters, digits, spaces, underscore, hyphen, and period are allowed');
       return false;
     }
     
@@ -186,10 +198,22 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
       return;
     }
     
-    // Validate against allowed characters (letters, digits, underscore, hyphen, period)
-    const regex = /^[A-Za-z0-9_\-\.]+$/;
+    // Check for name length (max 20 characters)
+    if (editCalendarName.length > 20) {
+      setEditCalendarNameError('Calendar name must be 20 characters or less');
+      return;
+    }
+    
+    // Check for consecutive spaces (not more than one space allowed)
+    if (/\s{2,}/.test(editCalendarName)) {
+      setEditCalendarNameError('Multiple consecutive spaces are not allowed');
+      return;
+    }
+    
+    // Validate against allowed characters (letters, digits, spaces, underscore, hyphen, period)
+    const regex = /^[A-Za-z0-9 _\-\.]+$/;
     if (!regex.test(editCalendarName)) {
-      setEditCalendarNameError('Only letters, digits, underscore, hyphen, and period are allowed');
+      setEditCalendarNameError('Only letters, digits, spaces, underscore, hyphen, and period are allowed');
       return;
     }
     
@@ -398,7 +422,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                     <p className="text-xs text-destructive mt-1">{calendarNameError}</p>
                   )}
                   <div className="text-xs text-neutral-500 mt-1">
-                    Note: Allowed Characters- [Letters, digits, _, -, and .]
+                    Note: Calendar name allows letters, digits, spaces and characters (_, -, .)
+                    Maximum length is 20 characters with no consecutive spaces.
                   </div>
                 </div>
                 <div className="mb-2 flex items-center mt-3">
@@ -470,7 +495,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                       <p className="text-xs text-destructive">{editCalendarNameError}</p>
                     )}
                     <div className="text-xs text-neutral-500">
-                      Note: Allowed Characters- [Letters, digits, _, -, and .]
+                      Note: Calendar name allows letters, digits, spaces and characters (_, -, .)
+                      Maximum length is 20 characters with no consecutive spaces.
                     </div>
                   </div>
                   
