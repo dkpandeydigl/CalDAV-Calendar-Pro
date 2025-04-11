@@ -560,9 +560,23 @@ export class SyncService {
                   };
                   
                   if (existingEvent) {
-                    // Update the existing event
-                    console.log(`Updating existing event: ${caldavEvent.uid}`);
-                    await storage.updateEvent(existingEvent.id, eventData as any);
+                    // Check if this event is pending update (modified locally)
+                    // If so, we shouldn't overwrite it with server data
+                    if (existingEvent.syncStatus === 'pending') {
+                      console.log(`Skipping update for event "${existingEvent.title}" (ID: ${existingEvent.id}) because it has pending changes`);
+                      // Just update the etag to avoid sync conflicts, but preserve local changes
+                      if (caldavEvent.etag && caldavEvent.etag !== existingEvent.etag) {
+                        await storage.updateEvent(existingEvent.id, { 
+                          etag: caldavEvent.etag,
+                          // Keep the syncStatus as pending
+                          syncStatus: 'pending'
+                        });
+                      }
+                    } else {
+                      // Normal update for events without pending changes
+                      console.log(`Updating existing event: ${caldavEvent.uid}`);
+                      await storage.updateEvent(existingEvent.id, eventData as any);
+                    }
                   } else {
                     // Create a new event
                     console.log(`Creating new event: ${caldavEvent.uid}`);
