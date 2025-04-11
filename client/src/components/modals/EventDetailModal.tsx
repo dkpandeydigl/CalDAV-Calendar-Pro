@@ -11,6 +11,7 @@ import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
 import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle } from 'lucide-react';
 import DirectResourceExtractor from './DirectResourceExtractor';
+import ResourceManager from '@/components/resources/ResourceManager';
 import DirectAttendeeExtractor from './DirectAttendeeExtractor';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
