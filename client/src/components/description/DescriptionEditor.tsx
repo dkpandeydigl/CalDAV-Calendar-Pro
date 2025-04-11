@@ -287,44 +287,44 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
                 <button
                   type="button"
                   className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
-                  onClick={() => editor.chain().focus().insertContent('{{title}}').run()}
+                  onClick={() => editor.chain().focus().insertContent("{{title}}").run()}
                 >
-                  <code>{{title}}</code> - Event title
+                  <code>&#123;&#123;title&#125;&#125;</code> - Event title
                 </button>
                 <button
                   type="button"
                   className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
-                  onClick={() => editor.chain().focus().insertContent('{{location}}').run()}
+                  onClick={() => editor.chain().focus().insertContent("{{location}}").run()}
                 >
-                  <code>{{location}}</code> - Event location
+                  <code>&#123;&#123;location&#125;&#125;</code> - Event location
                 </button>
                 <button
                   type="button"
                   className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
-                  onClick={() => editor.chain().focus().insertContent('{{date}}').run()}
+                  onClick={() => editor.chain().focus().insertContent("{{date}}").run()}
                 >
-                  <code>{{date}}</code> - Event date
+                  <code>&#123;&#123;date&#125;&#125;</code> - Event date
                 </button>
                 <button
                   type="button"
                   className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
-                  onClick={() => editor.chain().focus().insertContent('{{startTime}}').run()}
+                  onClick={() => editor.chain().focus().insertContent("{{startTime}}").run()}
                 >
-                  <code>{{startTime}}</code> - Start time
+                  <code>&#123;&#123;startTime&#125;&#125;</code> - Start time
                 </button>
                 <button
                   type="button"
                   className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
-                  onClick={() => editor.chain().focus().insertContent('{{endTime}}').run()}
+                  onClick={() => editor.chain().focus().insertContent("{{endTime}}").run()}
                 >
-                  <code>{{endTime}}</code> - End time
+                  <code>&#123;&#123;endTime&#125;&#125;</code> - End time
                 </button>
                 <button
                   type="button"
                   className="text-left text-sm px-2 py-1 rounded hover:bg-muted"
-                  onClick={() => editor.chain().focus().insertContent('{{attendees}}').run()}
+                  onClick={() => editor.chain().focus().insertContent("{{attendees}}").run()}
                 >
-                  <code>{{attendees}}</code> - List of attendees
+                  <code>&#123;&#123;attendees&#125;&#125;</code> - List of attendees
                 </button>
               </div>
             </div>
