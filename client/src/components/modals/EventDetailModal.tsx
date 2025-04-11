@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
 import { MailCheck, AlertTriangle } from 'lucide-react';
+import DirectResourceExtractor from './DirectResourceExtractor';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
@@ -634,6 +635,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   dangerouslySetInnerHTML={{ __html: event.description }}
                 />
               </div>
+            )}
+            
+            {/* Direct Resource Extractor Component */}
+            {typeof event.rawData === 'string' && (
+              <DirectResourceExtractor rawData={event.rawData} />
             )}
             
             {/* Attendees section - handle safely with runtime checks */}
