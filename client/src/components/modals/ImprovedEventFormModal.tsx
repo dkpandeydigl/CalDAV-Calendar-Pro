@@ -951,13 +951,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         </div>
                         
                         {!allDay && (
-                          <div className="flex-1 relative z-50">
+                          <div className="flex-1">
                             <Input
                               id="start-time"
                               type="time"
                               value={startTime}
                               onChange={(e) => setStartTime(e.target.value)}
-                              className={errors.startTime ? 'border-destructive' : ''}
+                              className={`${errors.startTime ? 'border-destructive' : ''} [&::-webkit-calendar-picker-indicator]:z-50 [&::-webkit-calendar-picker-indicator]:relative`}
                             />
                             {errors.startTime && (
                               <p className="text-destructive text-xs">{errors.startTime}</p>
@@ -984,13 +984,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         </div>
                         
                         {!allDay && (
-                          <div className="flex-1 relative z-50">
+                          <div className="flex-1">
                             <Input
                               id="end-time"
                               type="time"
                               value={endTime}
                               onChange={(e) => setEndTime(e.target.value)}
-                              className={errors.endTime ? 'border-destructive' : ''}
+                              className={`${errors.endTime ? 'border-destructive' : ''} [&::-webkit-calendar-picker-indicator]:z-50 [&::-webkit-calendar-picker-indicator]:relative`}
                             />
                             {errors.endTime && (
                               <p className="text-destructive text-xs">{errors.endTime}</p>
