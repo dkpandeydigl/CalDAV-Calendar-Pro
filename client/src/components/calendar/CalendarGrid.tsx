@@ -338,44 +338,57 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
               } catch (jsonError) {
                 // If it's not JSON, check if it's an iCalendar format (FREQ=DAILY;COUNT=3)
                 if (event.recurrenceRule.includes('FREQ=')) {
-                  // This is an iCalendar RRULE, convert it to our format
-                  const rrule = event.recurrenceRule;
-                  recurrenceObj = {
-                    pattern: 'Daily', // Default to daily
-                    interval: 1,
-                    weekdays: [],
-                    endType: 'After',
-                    occurrences: 10 // Default to 10 occurrences
-                  };
-                  
-                  // Extract frequency
-                  const freqMatch = rrule.match(/FREQ=([^;]+)/);
-                  if (freqMatch && freqMatch[1]) {
-                    const freq = freqMatch[1];
-                    if (freq === 'DAILY') recurrenceObj.pattern = 'Daily';
-                    else if (freq === 'WEEKLY') recurrenceObj.pattern = 'Weekly';
-                    else if (freq === 'MONTHLY') recurrenceObj.pattern = 'Monthly';
-                    else if (freq === 'YEARLY') recurrenceObj.pattern = 'Yearly';
-                  }
-                  
-                  // Extract interval
-                  const intervalMatch = rrule.match(/INTERVAL=(\d+)/);
-                  if (intervalMatch && intervalMatch[1]) {
-                    recurrenceObj.interval = parseInt(intervalMatch[1], 10) || 1;
-                  }
-                  
-                  // Extract count
-                  const countMatch = rrule.match(/COUNT=(\d+)/);
-                  if (countMatch && countMatch[1]) {
-                    recurrenceObj.occurrences = parseInt(countMatch[1], 10) || 10;
-                    recurrenceObj.endType = 'After';
-                  }
-                  
-                  // Extract until
-                  const untilMatch = rrule.match(/UNTIL=([^;]+)/);
-                  if (untilMatch && untilMatch[1]) {
-                    recurrenceObj.untilDate = untilMatch[1];
-                    recurrenceObj.endType = 'Until';
+                  try {
+                    // This is an iCalendar RRULE, convert it to our format
+                    const rrule = event.recurrenceRule;
+                    console.log(`Processing iCalendar RRULE: ${rrule}`);
+                    
+                    recurrenceObj = {
+                      pattern: 'Daily', // Default to daily
+                      interval: 1,
+                      weekdays: [],
+                      endType: 'After',
+                      occurrences: 10 // Default to 10 occurrences
+                    };
+                    
+                    // Extract frequency
+                    const freqMatch = rrule.match(/FREQ=([^;]+)/);
+                    if (freqMatch && freqMatch[1]) {
+                      const freq = freqMatch[1];
+                      if (freq === 'DAILY') recurrenceObj.pattern = 'Daily';
+                      else if (freq === 'WEEKLY') recurrenceObj.pattern = 'Weekly';
+                      else if (freq === 'MONTHLY') recurrenceObj.pattern = 'Monthly';
+                      else if (freq === 'YEARLY') recurrenceObj.pattern = 'Yearly';
+                      console.log(`Extracted FREQ=${freq}, setting pattern to ${recurrenceObj.pattern}`);
+                    }
+                    
+                    // Extract interval
+                    const intervalMatch = rrule.match(/INTERVAL=(\d+)/);
+                    if (intervalMatch && intervalMatch[1]) {
+                      recurrenceObj.interval = parseInt(intervalMatch[1], 10) || 1;
+                      console.log(`Extracted INTERVAL=${recurrenceObj.interval}`);
+                    }
+                    
+                    // Extract count
+                    const countMatch = rrule.match(/COUNT=(\d+)/);
+                    if (countMatch && countMatch[1]) {
+                      recurrenceObj.occurrences = parseInt(countMatch[1], 10) || 10;
+                      recurrenceObj.endType = 'After';
+                      console.log(`Extracted COUNT=${recurrenceObj.occurrences}, setting endType to ${recurrenceObj.endType}`);
+                    }
+                    
+                    // Extract until
+                    const untilMatch = rrule.match(/UNTIL=([^;]+)/);
+                    if (untilMatch && untilMatch[1]) {
+                      recurrenceObj.untilDate = untilMatch[1];
+                      recurrenceObj.endType = 'Until';
+                      console.log(`Extracted UNTIL=${recurrenceObj.untilDate}, setting endType to ${recurrenceObj.endType}`);
+                    }
+                    
+                    console.log(`Successfully parsed iCalendar RRULE to:`, recurrenceObj);
+                  } catch (error) {
+                    console.error(`Error parsing iCalendar RRULE:`, error);
+                    throw error; // Re-throw to be caught by outer catch
                   }
                 } else {
                   // Not recognized format, log error and skip
