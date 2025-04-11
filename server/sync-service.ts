@@ -322,35 +322,49 @@ export class SyncService {
             
             // Process the events
             for (const event of events) {
-              // Cast DAVObject to our CalDAVEvent interface for type safety
-              const caldavEvent = event as unknown as CalDAVEvent;
+              let caldavEvent: CalDAVEvent | null = null;
+              
+              // Check if this event has raw data to parse with our enhanced parser
+              if (event.data) {
+                // Use our improved parser to parse the raw ICS data
+                caldavEvent = this.parseRawICSData(event.data, event.etag, event.url);
+                if (caldavEvent) {
+                  console.log(`Successfully parsed external event: ${caldavEvent.summary}`);
+                }
+              }
+              
+              // Fall back to the default tsdav parsing if our improved parser failed
+              if (!caldavEvent) {
+                // Cast DAVObject to our CalDAVEvent interface for type safety
+                caldavEvent = event as unknown as CalDAVEvent;
+                
+                // Generate UID if missing, before we skip anything
+                if (!caldavEvent.uid) {
+                  console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
+                  caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
+                }
+                
+                // Skip events that don't have essential data (summary, dates)
+                // Check if this is just a placeholder or empty event
+                const isEmptyEvent = !caldavEvent.summary && (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime()));
+                const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
+                                      caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
+                
+                // Only skip completely empty events - be more lenient with events from other clients
+                if (isEmptyEvent && !hasValidDates) {
+                  console.log(`Skipping completely empty event with no title and no valid dates: ${caldavEvent.uid}`);
+                  continue; // Skip to the next event
+                }
+                
+                // For events with no summary but valid dates, assign a default title
+                if (!caldavEvent.summary && hasValidDates) {
+                  console.log(`Event has valid dates but no title, assigning default title: ${caldavEvent.uid}`);
+                  caldavEvent.summary = 'Untitled Event';
+                }
+              }
               
               // Check if we already have this event in our database
               const existingEvent = await storage.getEventByUID(caldavEvent.uid);
-              
-              // Skip events that don't have essential data (summary, dates)
-              // Check if this is just a placeholder or empty event
-              const isEmptyEvent = !caldavEvent.summary && (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime()));
-              const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
-                                     caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
-                                     
-              // Generate UID first if missing, before we skip anything
-              if (!caldavEvent.uid) {
-                console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
-                caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
-              }
-              
-              // Only skip completely empty events - be more lenient with events from other clients
-              if (isEmptyEvent && !hasValidDates) {
-                console.log(`Skipping completely empty event with no title and no valid dates: ${caldavEvent.uid}`);
-                continue; // Skip to the next event
-              }
-              
-              // For events with no summary but valid dates, assign a default title
-              if (!caldavEvent.summary && hasValidDates) {
-                console.log(`Event has valid dates but no title, assigning default title: ${caldavEvent.uid}`);
-                caldavEvent.summary = 'Untitled Event';
-              }
               
               // Convert the event data
               const eventData: Partial<InsertEvent> = {
@@ -459,35 +473,49 @@ export class SyncService {
               // Process the events
               for (const event of events) {
                 try {
-                  // Cast DAVObject to our CalDAVEvent interface for type safety
-                  const caldavEvent = event as unknown as CalDAVEvent;
+                  let caldavEvent: CalDAVEvent | null = null;
+                  
+                  // Check if this event has raw data to parse with our enhanced parser
+                  if (event.data) {
+                    // Use our improved parser to parse the raw ICS data
+                    caldavEvent = this.parseRawICSData(event.data, event.etag, event.url);
+                    if (caldavEvent) {
+                      console.log(`Successfully parsed external event: ${caldavEvent.summary}`);
+                    }
+                  }
+                  
+                  // Fall back to the default tsdav parsing if our improved parser failed
+                  if (!caldavEvent) {
+                    // Cast DAVObject to our CalDAVEvent interface for type safety
+                    caldavEvent = event as unknown as CalDAVEvent;
+                    
+                    // Generate UID if missing, before we skip anything
+                    if (!caldavEvent.uid) {
+                      console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
+                      caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
+                    }
+                    
+                    // Skip events that don't have essential data (summary, dates)
+                    // Check if this is just a placeholder or empty event
+                    const isEmptyEvent = !caldavEvent.summary && (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime()));
+                    const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
+                                          caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
+                    
+                    // Only skip completely empty events - be more lenient with events from other clients
+                    if (isEmptyEvent && !hasValidDates) {
+                      console.log(`Skipping completely empty event with no title and no valid dates: ${caldavEvent.uid}`);
+                      continue; // Skip to the next event
+                    }
+                    
+                    // For events with no summary but valid dates, assign a default title
+                    if (!caldavEvent.summary && hasValidDates) {
+                      console.log(`Event has valid dates but no title, assigning default title: ${caldavEvent.uid}`);
+                      caldavEvent.summary = 'Untitled Event';
+                    }
+                  }
                   
                   // Check if we already have this event in our database
                   const existingEvent = await storage.getEventByUID(caldavEvent.uid);
-                  
-                  // Skip events that don't have essential data (summary, dates)
-                  // Check if this is just a placeholder or empty event
-                  const isEmptyEvent = !caldavEvent.summary && (!caldavEvent.startDate || isNaN(caldavEvent.startDate.getTime()));
-                  const hasValidDates = caldavEvent.startDate && !isNaN(caldavEvent.startDate.getTime()) && 
-                                         caldavEvent.endDate && !isNaN(caldavEvent.endDate.getTime());
-                  
-                  // Generate UID first if missing, before we skip anything
-                  if (!caldavEvent.uid) {
-                    console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
-                    caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
-                  }
-                  
-                  // Only skip completely empty events - be more lenient with events from other clients
-                  if (isEmptyEvent && !hasValidDates) {
-                    console.log(`Skipping completely empty event with no title and no valid dates: ${caldavEvent.uid}`);
-                    continue; // Skip to the next event
-                  }
-                  
-                  // For events with no summary but valid dates, assign a default title
-                  if (!caldavEvent.summary && hasValidDates) {
-                    console.log(`Event has valid dates but no title, assigning default title: ${caldavEvent.uid}`);
-                    caldavEvent.summary = 'Untitled Event';
-                  }
                   
                   // Convert the event data
                   const eventData: Partial<InsertEvent> = {
