@@ -3,11 +3,9 @@ import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Underline from '@tiptap/extension-underline';
-import { Bold, Italic, Underline as UnderlineIcon, Strikethrough, List, ListOrdered, Link as LinkIcon, Heading1, Heading2, Quote, Undo, Redo, FileText } from 'lucide-react';
+import { Bold, Italic, Underline as UnderlineIcon, Strikethrough, List, ListOrdered, Link as LinkIcon, Heading1, Heading2, Quote, Undo, Redo } from 'lucide-react';
 import { TemplateTagExtension } from './TemplateTagExtension';
 import { processTemplateTags } from './templates';
-import SavedTemplateManager from './SavedTemplateManager';
-import { type DescriptionTemplate } from './templates';
 import './description-editor.css';
 
 interface DescriptionEditorProps {
@@ -97,12 +95,6 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
   // Handle undo/redo
   const handleUndo = () => editor.chain().focus().undo().run();
   const handleRedo = () => editor.chain().focus().redo().run();
-  
-  // Handle template selection
-  const handleSelectTemplate = (template: DescriptionTemplate) => {
-    editor.chain().focus().setContent(template.content).run();
-    setTemplateManagerOpen(false);
-  };
 
   return (
     <div className="editor-container">
@@ -269,29 +261,11 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
           <Redo size={18} />
         </button>
         
-        <div className="toolbar-divider" />
-        
-        {/* Templates */}
-        <button
-          type="button"
-          onClick={() => setTemplateManagerOpen(true)}
-          className="toolbar-button"
-          title="Templates"
-        >
-          <FileText size={18} />
-        </button>
       </div>
       
       <div className="editor-content">
         <EditorContent editor={editor} />
       </div>
-      
-      {/* Template Manager */}
-      <SavedTemplateManager 
-        open={templateManagerOpen}
-        onOpenChange={setTemplateManagerOpen}
-        onSelectTemplate={handleSelectTemplate}
-      />
       
       {editor && (
         <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }}>
