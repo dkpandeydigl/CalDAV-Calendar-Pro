@@ -263,19 +263,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Note: Not all CalDAV servers support renaming calendars through the API
             // We can try but we'll continue with the local update even if it fails
             try {
-              // Attempt to update properties - this is highly server-dependent
+              // Attempt to update properties
+              console.log(`Attempting to update calendar "${existingCalendar.name}" to "${req.body.name}" on CalDAV server`);
+              let isDaviCal = false;
+              
+              // Check if this is a DaviCal server (which might have different behaviors)
               if (existingCalendar.url.includes('/caldav.php/')) {
-                // For DaviCal-based servers, updating calendar properties is limited
-                console.log(`Server appears to be DaviCal-based, calendar renaming may not be supported`);
-                
-                // For DaviCal, we would need to use PROPPATCH - but it's usually limited
-                // Most DaviCal servers restrict this operation
-              } else {
-                // For other CalDAV servers, try standard PROPPATCH
-                console.log(`Attempting to update calendar "${existingCalendar.name}" to "${req.body.name}" on CalDAV server`);
-                
-                // Since we can't directly access updateCalendar, we'll use davRequest with PROPPATCH
-                await davClient.davRequest({
+                console.log(`Server appears to be DaviCal-based, which may handle calendar renaming differently`);
+                isDaviCal = true;
+              }
+              
+              // Try standard PROPPATCH first for all server types
+              try {
+                // Use davRequest with PROPPATCH to update display name
+                const response = await davClient.davRequest({
                   url: existingCalendar.url,
                   init: {
                     method: 'PROPPATCH',
@@ -293,7 +294,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   }
                 });
                 
-                console.log(`Successfully sent update request to CalDAV server`);
+                // Check response status
+                const status = response?.status || 0;
+                console.log(`Calendar rename PROPPATCH response status: ${status}`);
+                
+                if (status >= 200 && status < 300) {
+                  console.log(`Successfully updated calendar name on server`);
+                } else {
+                  console.warn(`Server responded with status ${status}, calendar rename may not have worked`);
+                  
+                  // For DaviCal, try an alternative approach if the standard one failed
+                  if (isDaviCal) {
+                    // Try DaviCal specific approach with extended content type
+                    console.log('Trying DaviCal-specific PROPPATCH approach...');
+                    await davClient.davRequest({
+                      url: existingCalendar.url,
+                      init: {
+                        method: 'PROPPATCH',
+                        headers: {
+                          'Content-Type': 'text/xml; charset=utf-8',
+                        },
+                        body: `<?xml version="1.0" encoding="utf-8" ?>
+                          <D:propertyupdate xmlns:D="DAV:">
+                            <D:set>
+                              <D:prop>
+                                <D:displayname>${req.body.name}</D:displayname>
+                              </D:prop>
+                            </D:set>
+                          </D:propertyupdate>`
+                      }
+                    });
+                    console.log('DaviCal-specific rename attempt completed');
+                  }
+                }
+              } catch (proppatchError) {
+                console.error('Error during PROPPATCH operation:', proppatchError);
+                throw proppatchError; // Re-throw to be caught by the outer try-catch
               }
             } catch (calendarUpdateError) {
               console.error(`Error updating calendar on server:`, calendarUpdateError);
