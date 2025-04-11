@@ -354,8 +354,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log(`Server is DaviCal-based, using DaviCal-specific update approach`);
                 isDaviCal = true;
                 
-                // For DaviCal servers, the most reliable approach is to create a new calendar
-                // with the new name and migrate all events
+                // For DaviCal servers, we need to create a new calendar with the new name
+                // and copy all events from the old calendar to the new one
                 try {
                   // First build the HTTP Basic Auth header
                   const authHeader = 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
