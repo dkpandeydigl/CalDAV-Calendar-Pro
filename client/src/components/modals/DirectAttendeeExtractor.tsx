@@ -29,8 +29,18 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
     try {
       // Use a pattern to directly extract attendee information from raw iCalendar data
       // Exclude resource attendees (CUTYPE=RESOURCE)
-      const attendeeRegex = /ATTENDEE(?!.*CUTYPE=RESOURCE)[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
-      const matches = Array.from(rawData.matchAll(attendeeRegex));
+      // This regex captures the full ATTENDEE line and the email
+      const attendeeRegex = /ATTENDEE(?!.*CUTYPE=RESOURCE)[^:]*?:[^:\r\n]*(?:mailto:)?([^\s>\r\n]+)/g;
+      
+      console.log('ATTENDEE DEBUG: Searching raw data of length', rawData.length);
+      console.log('ATTENDEE DEBUG: First 100 chars of raw data:', rawData.substring(0, 100));
+      
+      // Use a more compatible approach with newer JavaScript engines
+      const matches = [];
+      let match;
+      while ((match = attendeeRegex.exec(rawData)) !== null) {
+        matches.push(match);
+      }
       
       if (matches && matches.length > 0) {
         console.log(`ATTENDEE DEBUG: Found ${matches.length} attendees directly in raw data`);
@@ -51,6 +61,9 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
           // Extract participation status
           const statusMatch = fullLine.match(/PARTSTAT=([^;:]+)/);
           const status = statusMatch ? statusMatch[1].replace(/-/g, ' ').trim() : 'Needs Action';
+          
+          // Add individual attendee debug logging
+          console.log(`ATTENDEE DEBUG - Extracted attendee: ${name}, email: ${email}, role: ${role}, status: ${status}`);
           
           return {
             id: `attendee-${index}-${Date.now()}`,

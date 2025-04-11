@@ -11,6 +11,7 @@ import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
 import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle } from 'lucide-react';
 import DirectResourceExtractor from './DirectResourceExtractor';
+import DirectAttendeeExtractor from './DirectAttendeeExtractor';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
@@ -642,65 +643,74 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               <DirectResourceExtractor rawData={event.rawData} />
             )}
             
-            {/* Attendees section - handle safely with runtime checks */}
+            {/* Attendees section using DirectAttendeeExtractor */}
+            {typeof event.rawData === 'string' && (
+              <DirectAttendeeExtractor rawData={event.rawData} showMoreCount={2} />
+            )}
+            
+            {/* Fallback for legacy attendee format if raw data extraction doesn't work */}
             {(() => {
-              const attendees = event.attendees as unknown;
-              if (attendees && Array.isArray(attendees) && attendees.length > 0) {
-                return (
-                  <div>
-                    <div className="text-sm font-medium mb-1">
-                      <span>Attendees ({attendees.length})</span>
+              // Only show this if DirectAttendeeExtractor didn't find anything
+              if (typeof event.rawData !== 'string') {
+                const attendees = event.attendees as unknown;
+                if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+                  return (
+                    <div>
+                      <div className="text-sm font-medium mb-1">
+                        <span>Attendees ({attendees.length})</span>
+                      </div>
+                      <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
+                        <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
+                          {attendees
+                            .filter(Boolean)
+                            .slice(0, 2) // Show only the first 2 attendees
+                            .map((attendee, index) => {
+                              // Handle both string and object formats
+                              if (typeof attendee === 'object' && attendee !== null) {
+                                // Object format with email and role
+                                const { email, role } = attendee as { email: string; role?: string };
+                                return (
+                                  <li key={index} className="flex items-start">
+                                    <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
+                                    <div>
+                                      <div className="font-medium">{email}</div>
+                                      {role && (
+                                        <div className="text-xs text-muted-foreground">
+                                          <span className={`inline-block px-2 py-0.5 rounded ${
+                                            role === 'Chairman' ? 'bg-red-100 text-red-800' : 
+                                            role === 'Secretary' ? 'bg-blue-100 text-blue-800' : 
+                                            'bg-gray-100 text-gray-800'
+                                          }`}>
+                                            {role}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </li>
+                                );
+                              } else {
+                                // Fallback for string format
+                                return (
+                                  <li key={index} className="flex items-center">
+                                    <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
+                                    {String(attendee)}
+                                  </li>
+                                );
+                              }
+                            })}
+                          {attendees.length > 2 && (
+                            <li className="text-xs text-center py-1">
+                              <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500 inline-flex items-center">
+                                <UserIcon className="h-3 w-3 mr-1" />
+                                + {attendees.length - 2} more attendee{attendees.length > 3 ? 's' : ''}
+                              </span>
+                            </li>
+                          )}
+                        </ul>
+                      </div>
                     </div>
-                    <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                      <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
-                        {attendees
-                          .filter(Boolean)
-                          .slice(0, 2) // Show only the first 2 attendees
-                          .map((attendee, index) => {
-                            // Handle both string and object formats
-                            if (typeof attendee === 'object' && attendee !== null) {
-                              // Object format with email and role
-                              const { email, role } = attendee as { email: string; role?: string };
-                              return (
-                                <li key={index} className="flex items-start">
-                                  <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
-                                  <div>
-                                    <div className="font-medium">{email}</div>
-                                    {role && (
-                                      <div className="text-xs text-muted-foreground">
-                                        <span className={`inline-block px-2 py-0.5 rounded ${
-                                          role === 'Chairman' ? 'bg-red-100 text-red-800' : 
-                                          role === 'Secretary' ? 'bg-blue-100 text-blue-800' : 
-                                          'bg-gray-100 text-gray-800'
-                                        }`}>
-                                          {role}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </li>
-                              );
-                            } else {
-                              // Fallback for string format
-                              return (
-                                <li key={index} className="flex items-center">
-                                  <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
-                                  {String(attendee)}
-                                </li>
-                              );
-                            }
-                          })}
-                        {attendees.length > 2 && (
-                          <li className="text-xs text-muted-foreground italic text-center py-1">
-                            <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
-                              + {attendees.length - 2} more attendee{attendees.length > 3 ? 's' : ''}
-                            </span>
-                          </li>
-                        )}
-                      </ul>
-                    </div>
-                  </div>
-                );
+                  );
+                }
               }
               return null;
             })()}
