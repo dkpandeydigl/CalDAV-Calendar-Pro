@@ -193,6 +193,7 @@ export function generateICalEvent(event: any, options: {
   
   // Optional properties
   if (event.description) {
+    // Always sanitize the description to convert HTML to plain text for interoperable iCalendar
     lines.push(formatContentLine('DESCRIPTION', escapeICalString(event.description)));
   }
   

@@ -18,6 +18,49 @@ import DirectAttendeeExtractor from './DirectAttendeeExtractor';
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
 
+/**
+ * Helper function to sanitize and process description content for display
+ * Handles both HTML and plain text descriptions from different CalDAV clients
+ */
+function sanitizeDescriptionForDisplay(description: string | any): string {
+  if (!description) return '';
+  
+  // If it's not a string, try to convert it
+  if (typeof description !== 'string') {
+    try {
+      description = JSON.stringify(description);
+    } catch (e) {
+      description = String(description);
+    }
+  }
+  
+  // Check if this is an HTML description (has HTML tags)
+  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(description);
+  
+  if (hasHtmlTags) {
+    // It's already HTML content, return as is
+    return description;
+  }
+  
+  // Check if it has line breaks that should be converted to <br> tags
+  if (description.includes('\\n') || description.includes('\n')) {
+    // Convert escape sequences and line breaks to HTML
+    return description
+      .replace(/\\n/g, '<br>')
+      .replace(/\n/g, '<br>')
+      .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+  }
+  
+  // Plain text - escape HTML characters and preserve spaces
+  return description
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/  /g, '&nbsp;&nbsp;');
+}
+
 // Define a User interface that matches the schema with email
 // Based on shared/schema.ts where email is text("email") (optional)
 interface UserWithEmail {
@@ -628,14 +671,22 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </div>
             )}
             
-            {event.description && typeof event.description === 'string' && (
+            {event.description && (
               <div>
                 <div className="text-sm font-medium mb-1">
                   <span>Description</span>
                 </div>
                 <div 
                   className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 line-clamp-3 pr-2"
-                  dangerouslySetInnerHTML={{ __html: event.description }}
+                  dangerouslySetInnerHTML={{ 
+                    __html: typeof event.description === 'string' && event.description.includes('<') 
+                      ? event.description  // It's already HTML
+                      : typeof event.description === 'string'
+                        ? event.description
+                            .replace(/\\n/g, '<br>')
+                            .replace(/\n/g, '<br>')
+                        : String(event.description)
+                  }}
                 />
               </div>
             )}
