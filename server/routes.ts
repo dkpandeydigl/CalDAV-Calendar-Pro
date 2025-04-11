@@ -355,13 +355,183 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 isDaviCal = true;
                 
                 // For DaviCal servers, the most reliable approach is to create a new calendar
-                // with the new name first, then we'll handle event migration if needed
+                // with the new name and migrate all events
                 try {
                   // First build the HTTP Basic Auth header
                   const authHeader = 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
                   
-                  // For DaviCal, we need multiple attempts with different formats
-                  // First attempt: Standard format with both namespaces
+                  // Extract the principal URL and calendar path
+                  const davicalUrlParts = existingCalendar.url.split('/caldav.php/');
+                  
+                  if (davicalUrlParts.length !== 2) {
+                    console.error('Invalid DaviCal URL format, cannot parse for calendar operations');
+                    throw new Error('Invalid DaviCal URL format');
+                  }
+                  
+                  const serverBase = davicalUrlParts[0] + '/caldav.php/';
+                  const pathParts = davicalUrlParts[1].split('/');
+                  
+                  if (pathParts.length < 2) {
+                    console.error('Invalid DaviCal path format, cannot determine principal and calendar');
+                    throw new Error('Invalid DaviCal path format');
+                  }
+                  
+                  const principal = decodeURIComponent(pathParts[0]);
+                  const oldCalendarName = decodeURIComponent(pathParts[1]);
+                  // Create new calendar name - replace spaces with hyphens for the URL path only
+                  const newUrlCalendarName = req.body.name.replace(/\s+/g, '-').toLowerCase();
+                  
+                  console.log(`DaviCal principal: ${principal}`);
+                  console.log(`DaviCal old calendar name: ${oldCalendarName}`);
+                  console.log(`DaviCal new calendar name for URL: ${newUrlCalendarName}`);
+                  
+                  // Check if the new calendar already exists
+                  const newCalendarUrl = `${serverBase}${encodeURIComponent(principal)}/${encodeURIComponent(newUrlCalendarName)}/`;
+                  console.log(`Checking if the new calendar already exists at: ${newCalendarUrl}`);
+                  
+                  let newCalendarExists = false;
+                  try {
+                    const checkResponse = await fetch(newCalendarUrl, {
+                      method: 'PROPFIND',
+                      headers: {
+                        'Content-Type': 'application/xml; charset=utf-8',
+                        'Authorization': authHeader,
+                        'Depth': '0'
+                      },
+                      body: `<?xml version="1.0" encoding="utf-8" ?>
+                        <D:propfind xmlns:D="DAV:">
+                          <D:prop>
+                            <D:resourcetype/>
+                          </D:prop>
+                        </D:propfind>`
+                    });
+                    
+                    if (checkResponse.status === 200 || checkResponse.status === 207) {
+                      console.log(`Warning: A calendar already exists at the new URL path: ${newCalendarUrl}`);
+                      newCalendarExists = true;
+                    }
+                  } catch (checkError) {
+                    // Expected 404 if calendar doesn't exist
+                    console.log(`New calendar doesn't exist yet: ${newCalendarUrl}`);
+                  }
+                  
+                  // If a calendar already exists at that path, use a different approach
+                  if (newCalendarExists) {
+                    console.warn(`Cannot create new calendar - a calendar already exists at ${newCalendarUrl}`);
+                  } else {
+                    // Create a new calendar with the new name
+                    console.log(`DaviCal: Creating new calendar with name: ${req.body.name}`);
+                    
+                    const createResponse = await fetch(newCalendarUrl, {
+                      method: 'MKCALENDAR',
+                      headers: {
+                        'Content-Type': 'application/xml; charset=utf-8',
+                        'Authorization': authHeader
+                      },
+                      body: `<?xml version="1.0" encoding="utf-8" ?>
+                        <C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                          <D:set>
+                            <D:prop>
+                              <D:displayname>${req.body.name}</D:displayname>
+                              <C:calendar-color>${req.body.color || existingCalendar.color}</C:calendar-color>
+                              <C:calendar-description>${existingCalendar.description || ''}</C:calendar-description>
+                            </D:prop>
+                          </D:set>
+                        </C:mkcalendar>`
+                    });
+                    
+                    console.log(`Create calendar response status: ${createResponse.status}`);
+                    
+                    if (createResponse.status >= 200 && createResponse.status < 300) {
+                      // Now copy all events from old calendar to the new one
+                      console.log(`Successfully created new calendar at ${newCalendarUrl}, now copying events`);
+                      
+                      // Get all events from the old calendar
+                      const getAllEventsResponse = await fetch(existingCalendar.url, {
+                        method: 'PROPFIND',
+                        headers: {
+                          'Content-Type': 'application/xml; charset=utf-8',
+                          'Authorization': authHeader,
+                          'Depth': '1'
+                        },
+                        body: `<?xml version="1.0" encoding="utf-8" ?>
+                          <D:propfind xmlns:D="DAV:">
+                            <D:prop>
+                              <D:resourcetype/>
+                              <D:getcontenttype/>
+                              <D:getetag/>
+                            </D:prop>
+                          </D:propfind>`
+                      });
+                      
+                      const allEventsText = await getAllEventsResponse.text();
+                      
+                      // Extract event URLs from response
+                      const eventUrlMatches = allEventsText.match(/<D:href>([^<]+\.ics)<\/D:href>/g) || [];
+                      const eventUrls = eventUrlMatches.map(match => {
+                        const urlMatch = match.match(/<D:href>([^<]+)<\/D:href>/);
+                        return urlMatch ? urlMatch[1] : null;
+                      }).filter(url => url !== null);
+                      
+                      console.log(`Found ${eventUrls.length} events to copy to the new calendar`);
+                      
+                      // Copy each event to the new calendar
+                      let successfulCopies = 0;
+                      for (const eventUrl of eventUrls) {
+                        try {
+                          // Get event data
+                          const getEventResponse = await fetch(serverBase + eventUrl, {
+                            method: 'GET',
+                            headers: {
+                              'Authorization': authHeader
+                            }
+                          });
+                          
+                          if (getEventResponse.status === 200) {
+                            const eventData = await getEventResponse.text();
+                            
+                            // Create event in new calendar
+                            const newEventUrl = eventUrl.replace(
+                              encodeURIComponent(oldCalendarName), 
+                              encodeURIComponent(newUrlCalendarName)
+                            );
+                            
+                            const putEventResponse = await fetch(serverBase + newEventUrl, {
+                              method: 'PUT',
+                              headers: {
+                                'Content-Type': 'text/calendar; charset=utf-8',
+                                'Authorization': authHeader
+                              },
+                              body: eventData
+                            });
+                            
+                            if (putEventResponse.status >= 200 && putEventResponse.status < 300) {
+                              successfulCopies++;
+                            } else {
+                              console.error(`Failed to copy event to new calendar: ${putEventResponse.status}`);
+                            }
+                          }
+                        } catch (eventCopyError) {
+                          console.error('Error copying event:', eventCopyError);
+                        }
+                      }
+                      
+                      console.log(`Successfully copied ${successfulCopies} of ${eventUrls.length} events`);
+                      
+                      // Update the URL in the database to point to the new calendar
+                      existingCalendar.url = newCalendarUrl;
+                      req.body.url = newCalendarUrl;
+                      
+                      // Also update sync token to force a full resync
+                      req.body.syncToken = null;
+                      
+                      updateSuccessful = true;
+                      console.log('DaviCal calendar rename successful with create+copy approach');
+                    } else {
+                      console.error(`Failed to create new calendar: ${createResponse.status}`);
+                      console.error('Will try standard PROPPATCH approach as fallback');
+                    }
+                  }
                   const xmlBody1 = `<?xml version="1.0" encoding="utf-8" ?>
                     <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                       <D:set>
