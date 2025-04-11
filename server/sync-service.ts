@@ -1045,26 +1045,33 @@ export class SyncService {
                     }
                     else if (line.startsWith('LOCATION:') && event.location !== undefined) {
                       if (event.location) {
-                        // Properly escape special characters in location according to RFC 5545
-                        const escapedLocation = event.location
-                          .replace(/\\/g, '\\\\')  // Escape backslashes
-                          .replace(/;/g, '\\;')    // Escape semicolons
-                          .replace(/,/g, '\\,')    // Escape commas
-                          .replace(/\n/g, '\\n');  // Escape line breaks
-                        newLines.push(`LOCATION:${escapedLocation}`);
+                        // Use ical-utils to properly escape the location
+                        newLines.push(`LOCATION:${icalUtils.escapeICalString(event.location)}`);
                       } else {
                         newLines.push('');
                       }
                     }
                     else if (line.startsWith('DESCRIPTION:') && event.description !== undefined) {
                       if (event.description) {
-                        // Properly escape special characters in description according to RFC 5545
-                        const escapedDescription = event.description
-                          .replace(/\\/g, '\\\\')  // Escape backslashes
-                          .replace(/;/g, '\\;')    // Escape semicolons
-                          .replace(/,/g, '\\,')    // Escape commas
-                          .replace(/\n/g, '\\n');  // Escape line breaks
-                        newLines.push(`DESCRIPTION:${escapedDescription}`);
+                        // Check if this might be a special Thunderbird ALTREP description format that we want to preserve
+                        const isThunderbirdFormat = 
+                          typeof event.description === 'string' && 
+                          (event.description.includes('"ALTREP"') || 
+                           event.description.includes('"params"') || 
+                           event.description.includes('data:text/html'));
+                         
+                        if (isThunderbirdFormat) {
+                          // Carefully preserve the special format
+                          // Just fold the line properly without changing its content
+                          const descLine = `DESCRIPTION:${event.description}`;
+                          // Apply proper iCalendar line folding (lines should be under 75 chars)
+                          const foldedLine = icalUtils.foldLine(descLine);
+                          // Push each line of the folded content separately
+                          foldedLine.split(/\r?\n/).forEach(l => newLines.push(l));
+                        } else {
+                          // Regular description - use ical-utils to properly escape it
+                          newLines.push(`DESCRIPTION:${icalUtils.escapeICalString(event.description)}`);
+                        }
                       } else {
                         newLines.push('');
                       }
@@ -1185,19 +1192,95 @@ export class SyncService {
               } catch (e) {
                 console.error(`Error updating raw ICS data for event ${event.id}:`, e);
                 // Fallback to creating new iCalendar data using our utilities
+                // Check if this might be a special Thunderbird ALTREP description format that we need to preserve
+                const hasThunderbirdFormat = 
+                  event.description && 
+                  typeof event.description === 'string' && 
+                  (event.description.includes('"ALTREP"') || 
+                   event.description.includes('"params"') || 
+                   event.description.includes('data:text/html'));
+                
+                // If it's a Thunderbird format description, we need special handling
+                if (hasThunderbirdFormat) {
+                  // Create a basic iCalendar structure and then insert the description as is
+                  const baseIcal = icalUtils.generateICalEvent({...event, description: ''}, {
+                    organizer: job.connection.username,
+                    sequence: currentSequence,
+                    timestamp: currentTimestamp
+                  });
+                  
+                  // Insert the special description format preserving its structure
+                  // First split the iCalendar data into lines
+                  const lines = baseIcal.split(/\r?\n/);
+                  // Find position before END:VEVENT
+                  const endEventPos = lines.findIndex(line => line.startsWith('END:VEVENT'));
+                  
+                  if (endEventPos > -1) {
+                    // Format and fold the description line
+                    const descLine = `DESCRIPTION:${event.description}`;
+                    const foldedDesc = icalUtils.foldLine(descLine);
+                    // Insert before END:VEVENT
+                    lines.splice(endEventPos, 0, foldedDesc);
+                    // Join lines back together
+                    icalData = lines.join('\r\n');
+                  } else {
+                    // Fallback if we can't find END:VEVENT
+                    icalData = baseIcal;
+                  }
+                } else {
+                  // Normal event - use standard generation
+                  icalData = icalUtils.generateICalEvent(event, {
+                    organizer: job.connection.username,
+                    sequence: currentSequence,
+                    timestamp: currentTimestamp
+                  });
+                }
+              }
+            } else {
+              // No existing raw data, create new iCalendar data using our utilities
+              // Check if this might be a special Thunderbird ALTREP description format that we need to preserve
+              const hasThunderbirdFormat = 
+                event.description && 
+                typeof event.description === 'string' && 
+                (event.description.includes('"ALTREP"') || 
+                 event.description.includes('"params"') || 
+                 event.description.includes('data:text/html'));
+              
+              // If it's a Thunderbird format description, we need special handling
+              if (hasThunderbirdFormat) {
+                // Create a basic iCalendar structure and then insert the description as is
+                const baseIcal = icalUtils.generateICalEvent({...event, description: ''}, {
+                  organizer: job.connection.username,
+                  sequence: currentSequence,
+                  timestamp: currentTimestamp
+                });
+                
+                // Insert the special description format preserving its structure
+                // First split the iCalendar data into lines
+                const lines = baseIcal.split(/\r?\n/);
+                // Find position before END:VEVENT
+                const endEventPos = lines.findIndex(line => line.startsWith('END:VEVENT'));
+                
+                if (endEventPos > -1) {
+                  // Format and fold the description line
+                  const descLine = `DESCRIPTION:${event.description}`;
+                  const foldedDesc = icalUtils.foldLine(descLine);
+                  // Insert before END:VEVENT
+                  lines.splice(endEventPos, 0, foldedDesc);
+                  // Join lines back together
+                  icalData = lines.join('\r\n');
+                } else {
+                  // Fallback if we can't find END:VEVENT
+                  icalData = baseIcal;
+                }
+              } else {
+                // Normal event - use standard generation
                 icalData = icalUtils.generateICalEvent(event, {
                   organizer: job.connection.username,
                   sequence: currentSequence,
                   timestamp: currentTimestamp
                 });
               }
-            } else {
-              // No existing raw data, create new iCalendar data using our utilities
-              icalData = icalUtils.generateICalEvent(event, {
-                organizer: job.connection.username,
-                sequence: currentSequence,
-                timestamp: currentTimestamp
-              });
             }
             
             // Determine if we're creating or updating
