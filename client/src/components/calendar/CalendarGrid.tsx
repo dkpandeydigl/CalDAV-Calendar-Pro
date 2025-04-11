@@ -343,7 +343,8 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
                     const rrule = event.recurrenceRule;
                     console.log(`Processing iCalendar RRULE: ${rrule}`);
                     
-                    recurrenceObj = {
+                    // Initialize with default values
+                    const recurrenceData: any = {
                       pattern: 'Daily', // Default to daily
                       interval: 1,
                       weekdays: [],
@@ -355,40 +356,120 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
                     const freqMatch = rrule.match(/FREQ=([^;]+)/);
                     if (freqMatch && freqMatch[1]) {
                       const freq = freqMatch[1];
-                      if (freq === 'DAILY') recurrenceObj.pattern = 'Daily';
-                      else if (freq === 'WEEKLY') recurrenceObj.pattern = 'Weekly';
-                      else if (freq === 'MONTHLY') recurrenceObj.pattern = 'Monthly';
-                      else if (freq === 'YEARLY') recurrenceObj.pattern = 'Yearly';
-                      console.log(`Extracted FREQ=${freq}, setting pattern to ${recurrenceObj.pattern}`);
+                      if (freq === 'DAILY') recurrenceData.pattern = 'Daily';
+                      else if (freq === 'WEEKLY') recurrenceData.pattern = 'Weekly';
+                      else if (freq === 'MONTHLY') recurrenceData.pattern = 'Monthly';
+                      else if (freq === 'YEARLY') recurrenceData.pattern = 'Yearly';
+                      console.log(`Extracted FREQ=${freq}, setting pattern to ${recurrenceData.pattern}`);
                     }
                     
                     // Extract interval
                     const intervalMatch = rrule.match(/INTERVAL=(\d+)/);
                     if (intervalMatch && intervalMatch[1]) {
-                      recurrenceObj.interval = parseInt(intervalMatch[1], 10) || 1;
-                      console.log(`Extracted INTERVAL=${recurrenceObj.interval}`);
+                      recurrenceData.interval = parseInt(intervalMatch[1], 10) || 1;
+                      console.log(`Extracted INTERVAL=${recurrenceData.interval}`);
                     }
                     
                     // Extract count
                     const countMatch = rrule.match(/COUNT=(\d+)/);
                     if (countMatch && countMatch[1]) {
-                      recurrenceObj.occurrences = parseInt(countMatch[1], 10) || 10;
-                      recurrenceObj.endType = 'After';
-                      console.log(`Extracted COUNT=${recurrenceObj.occurrences}, setting endType to ${recurrenceObj.endType}`);
+                      recurrenceData.occurrences = parseInt(countMatch[1], 10) || 10;
+                      recurrenceData.endType = 'After';
+                      console.log(`Extracted COUNT=${recurrenceData.occurrences}, setting endType to ${recurrenceData.endType}`);
                     }
                     
                     // Extract until
                     const untilMatch = rrule.match(/UNTIL=([^;]+)/);
                     if (untilMatch && untilMatch[1]) {
-                      recurrenceObj.untilDate = untilMatch[1];
-                      recurrenceObj.endType = 'Until';
-                      console.log(`Extracted UNTIL=${recurrenceObj.untilDate}, setting endType to ${recurrenceObj.endType}`);
+                      // Parse iCalendar date format like 20250428T235959Z
+                      const untilStr = untilMatch[1];
+                      let untilDate;
+                      
+                      if (untilStr.includes('T')) {
+                        // Date with time
+                        const year = parseInt(untilStr.substring(0, 4), 10);
+                        const month = parseInt(untilStr.substring(4, 6), 10) - 1; // Month is 0-indexed
+                        const day = parseInt(untilStr.substring(6, 8), 10);
+                        const hour = parseInt(untilStr.substring(9, 11), 10);
+                        const minute = parseInt(untilStr.substring(11, 13), 10);
+                        const second = parseInt(untilStr.substring(13, 15), 10);
+                        
+                        untilDate = new Date(Date.UTC(year, month, day, hour, minute, second));
+                      } else {
+                        // Date only
+                        const year = parseInt(untilStr.substring(0, 4), 10);
+                        const month = parseInt(untilStr.substring(4, 6), 10) - 1;
+                        const day = parseInt(untilStr.substring(6, 8), 10);
+                        
+                        untilDate = new Date(Date.UTC(year, month, day));
+                      }
+                      
+                      recurrenceData.untilDate = untilDate.toISOString();
+                      recurrenceData.endType = 'Until';
+                      console.log(`Extracted UNTIL=${untilStr}, parsed to ${recurrenceData.untilDate}, setting endType to ${recurrenceData.endType}`);
                     }
+                    
+                    // Extract BYDAY for weekly recurrences
+                    if (recurrenceData.pattern === 'Weekly') {
+                      const bydayMatch = rrule.match(/BYDAY=([^;]+)/);
+                      if (bydayMatch && bydayMatch[1]) {
+                        const days = bydayMatch[1].split(',');
+                        const dayMap: Record<string, string> = {
+                          'SU': 'Sunday',
+                          'MO': 'Monday',
+                          'TU': 'Tuesday',
+                          'WE': 'Wednesday',
+                          'TH': 'Thursday',
+                          'FR': 'Friday',
+                          'SA': 'Saturday'
+                        };
+                        
+                        recurrenceData.weekdays = days.map(day => dayMap[day] || day);
+                        console.log(`Extracted BYDAY=${bydayMatch[1]}, mapped to weekdays:`, recurrenceData.weekdays);
+                      }
+                    }
+                    
+                    // Store the original RRULE for reference
+                    recurrenceData.originalRrule = rrule;
+                    
+                    // Assign to recurrenceObj
+                    recurrenceObj = recurrenceData;
                     
                     console.log(`Successfully parsed iCalendar RRULE to:`, recurrenceObj);
                   } catch (error) {
                     console.error(`Error parsing iCalendar RRULE:`, error);
-                    throw error; // Re-throw to be caught by outer catch
+                    // Create a fallback simple recurrence object that uses just the FREQ and COUNT
+                    try {
+                      console.log(`Attempting fallback RRULE parsing for: ${event.recurrenceRule}`);
+                      const simplifiedObj: any = {
+                        pattern: 'Daily',
+                        interval: 1,
+                        endType: 'After',
+                        occurrences: 3,
+                        weekdays: []
+                      };
+                      
+                      if (event.recurrenceRule.includes('FREQ=DAILY')) {
+                        simplifiedObj.pattern = 'Daily';
+                      } else if (event.recurrenceRule.includes('FREQ=WEEKLY')) {
+                        simplifiedObj.pattern = 'Weekly';
+                      } else if (event.recurrenceRule.includes('FREQ=MONTHLY')) {
+                        simplifiedObj.pattern = 'Monthly';
+                      } else if (event.recurrenceRule.includes('FREQ=YEARLY')) {
+                        simplifiedObj.pattern = 'Yearly';
+                      }
+                      
+                      const countMatch = event.recurrenceRule.match(/COUNT=(\d+)/);
+                      if (countMatch && countMatch[1]) {
+                        simplifiedObj.occurrences = parseInt(countMatch[1], 10);
+                      }
+                      
+                      recurrenceObj = simplifiedObj;
+                      console.log(`Applied fallback RRULE parsing:`, recurrenceObj);
+                    } catch (fallbackError) {
+                      console.error(`Fallback RRULE parsing also failed:`, fallbackError);
+                      throw error; // Re-throw the original error
+                    }
                   }
                 } else {
                   // Not recognized format, log error and skip

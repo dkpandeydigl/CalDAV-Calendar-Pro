@@ -202,62 +202,207 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     endDate.setHours(endDate.getHours() + 1);
   }
   
-  // Check if event has attendees
-  const hasAttendees = (() => {
-    // First check the actual attendees array
-    const attendees = event.attendees as unknown;
-    const hasActualAttendees = attendees && Array.isArray(attendees) && attendees.length > 0;
+  // Parse and extract attendees from raw data if needed
+  const extractAttendeesFromRawData = () => {
+    if (!event.rawData) return [];
     
-    // Also check if attendees are embedded in raw data but not properly extracted
-    let hasAttendeeInRawData = false;
-    if (event.rawData && !hasActualAttendees) {
-      try {
-        const rawData = typeof event.rawData === 'string' 
-          ? JSON.parse(event.rawData) 
-          : event.rawData;
+    try {
+      // First, try to parse the raw data as JSON
+      let rawData;
+      
+      if (typeof event.rawData === 'string') {
+        try {
+          rawData = JSON.parse(event.rawData);
+        } catch (e) {
+          // If it can't be parsed as JSON, it might be a raw iCalendar string
+          // Look for attendee lines in iCalendar format
+          const attendeeRegex = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const matches = event.rawData.match(attendeeRegex);
           
-        if (rawData && typeof rawData === 'object') {
-          // Check for attendees in various possible formats
-          const attendeesInRaw = rawData.attendees || rawData.ATTENDEE || rawData.ATTENDEES;
-          hasAttendeeInRawData = !!(attendeesInRaw && 
-            (Array.isArray(attendeesInRaw) ? attendeesInRaw.length > 0 : attendeesInRaw));
+          if (matches && matches.length > 0) {
+            console.log(`Found ${matches.length} attendee lines in raw iCalendar data`);
+            
+            return matches.map(line => {
+              const emailMatch = line.match(/mailto:([^>\r\n]+)/);
+              const email = emailMatch ? emailMatch[1].trim() : '';
+              
+              const nameMatch = line.match(/CN=([^;:]+)/);
+              const name = nameMatch ? nameMatch[1].trim() : '';
+              
+              const roleMatch = line.match(/ROLE=([^;:]+)/);
+              const role = roleMatch ? roleMatch[1].trim() : '';
+              
+              const isResource = line.includes('CUTYPE=RESOURCE');
+              
+              return {
+                email,
+                name: name || email,
+                role,
+                isResource
+              };
+            }).filter(attendee => !attendee.isResource && attendee.email);
+          }
+          
+          return []; // No attendees found in iCalendar format
         }
-      } catch (e) {
-        console.warn('Error parsing event raw data for attendees:', e);
+      } else {
+        // It's already an object
+        rawData = event.rawData;
+      }
+      
+      if (rawData && typeof rawData === 'object') {
+        // Check for attendees in various possible formats
+        const attendeesInRaw = rawData.attendees || rawData.ATTENDEE || rawData.ATTENDEES;
+        
+        if (attendeesInRaw) {
+          if (Array.isArray(attendeesInRaw)) {
+            return attendeesInRaw;
+          } else if (typeof attendeesInRaw === 'string') {
+            try {
+              // It might be a stringified array
+              return JSON.parse(attendeesInRaw);
+            } catch (e) {
+              // It's a single attendee as string
+              return [{ email: attendeesInRaw }];
+            }
+          } else {
+            // It's a single attendee object
+            return [attendeesInRaw];
+          }
+        }
+      }
+      
+      return []; // No attendees found
+    } catch (e) {
+      console.warn('Error extracting attendees from raw data:', e);
+      return [];
+    }
+  };
+  
+  // Parse and extract resources from raw data if needed
+  const extractResourcesFromRawData = () => {
+    if (!event.rawData) return [];
+    
+    try {
+      // Check if we already have resources
+      if (event.resources) {
+        if (typeof event.resources === 'string') {
+          try {
+            return JSON.parse(event.resources);
+          } catch (e) {
+            console.warn('Failed to parse resources JSON:', e);
+          }
+        } else if (Array.isArray(event.resources)) {
+          return event.resources;
+        }
+      }
+      
+      // Try to extract from raw data
+      if (typeof event.rawData === 'string') {
+        // Look for resource attendee lines in iCalendar format
+        const resourceRegex = /ATTENDEE[^:]*CUTYPE=RESOURCE[^:\r\n]*:[^\r\n]+/g;
+        const matches = event.rawData.match(resourceRegex);
+        
+        if (matches && matches.length > 0) {
+          console.log(`Found ${matches.length} resource lines in raw iCalendar data`);
+          
+          return matches.map(line => {
+            const emailMatch = line.match(/mailto:([^>\r\n]+)/);
+            const adminEmail = emailMatch ? emailMatch[1].trim() : '';
+            
+            const nameMatch = line.match(/CN=([^;:]+)/);
+            const adminName = nameMatch ? nameMatch[1].trim() : '';
+            
+            const typeMatch = line.match(/X-RESOURCE-TYPE=([^;:]+)/);
+            const subType = typeMatch ? typeMatch[1].trim() : '';
+            
+            // Generate a unique ID for this resource
+            const id = `res-${Math.random().toString(36).substring(2, 10)}`;
+            
+            return {
+              id,
+              adminEmail,
+              adminName,
+              subType,
+              capacity: 1
+            };
+          });
+        }
+      } else if (typeof event.rawData === 'object') {
+        // It's already an object, look for resources property
+        const rawData = event.rawData;
+        if (rawData.resources) {
+          if (typeof rawData.resources === 'string') {
+            try {
+              return JSON.parse(rawData.resources);
+            } catch (e) {
+              console.warn('Failed to parse resources from raw data:', e);
+            }
+          } else if (Array.isArray(rawData.resources)) {
+            return rawData.resources;
+          }
+        }
+      }
+      
+      return []; // No resources found
+    } catch (e) {
+      console.warn('Error extracting resources from raw data:', e);
+      return [];
+    }
+  };
+  
+  // Process attendees data
+  const processedAttendees = (() => {
+    // First check if we already have parsed attendees
+    if (event.attendees) {
+      if (typeof event.attendees === 'string') {
+        try {
+          const parsedAttendees = JSON.parse(event.attendees);
+          if (Array.isArray(parsedAttendees) && parsedAttendees.length > 0) {
+            return parsedAttendees;
+          }
+        } catch (e) {
+          console.warn('Failed to parse attendees JSON:', e);
+        }
+      } else if (Array.isArray(event.attendees) && event.attendees.length > 0) {
+        return event.attendees;
       }
     }
     
-    return hasActualAttendees || hasAttendeeInRawData;
+    // If we don't have attendees yet, try to extract them from raw data
+    return extractAttendeesFromRawData();
   })();
   
-  // Check if the event has resources
-  const hasResources = (() => {
-    // First check if resources exists and is an array or object
-    const resourcesData = event.resources;
-    
-    // If it's an array with items
-    if (Array.isArray(resourcesData) && resourcesData.length > 0) {
-      return true;
-    }
-    
-    // If it's a string that might be JSON
-    if (typeof resourcesData === 'string' && resourcesData.trim() !== '') {
-      try {
-        const parsed = JSON.parse(resourcesData);
-        return Array.isArray(parsed) ? parsed.length > 0 : !!parsed;
-      } catch (e) {
-        // Not JSON, but still a non-empty string
-        return true;
+  // Process resources data
+  const processedResources = (() => {
+    // First check if we already have parsed resources
+    if (event.resources) {
+      if (typeof event.resources === 'string') {
+        try {
+          const parsedResources = JSON.parse(event.resources);
+          if (Array.isArray(parsedResources) && parsedResources.length > 0) {
+            return parsedResources;
+          }
+        } catch (e) {
+          console.warn('Failed to parse resources JSON:', e);
+        }
+      } else if (Array.isArray(event.resources) && event.resources.length > 0) {
+        return event.resources;
       }
     }
     
-    // If it's an object (not array, not null)
-    if (resourcesData && typeof resourcesData === 'object' && !Array.isArray(resourcesData)) {
-      return true;
-    }
-    
-    return false;
+    // If we don't have resources yet, try to extract them from raw data
+    return extractResourcesFromRawData();
   })();
+  
+  console.log('Raw resources data:', event.resources);
+  console.log('Parsed resources:', processedResources);
+  
+  // Check if event has attendees
+  const hasAttendees = processedAttendees.length > 0;
+  
+  // Check if event has resources
+  const hasResources = processedResources.length > 0;
 
   // Determine if the event should show a Cancel Event button
   // We want to show this button for ANY of these cases:
