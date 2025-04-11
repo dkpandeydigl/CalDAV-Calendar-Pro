@@ -9,7 +9,7 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned } from 'lucide-react';
+import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle } from 'lucide-react';
 import DirectResourceExtractor from './DirectResourceExtractor';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
@@ -967,7 +967,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-red-600 flex items-center gap-2">
-              <span className="material-icons text-red-500">warning</span>
+              <AlertTriangle className="text-red-500 h-5 w-5" />
               Delete Event
             </DialogTitle>
           </DialogHeader>
@@ -990,7 +990,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             {deleteError && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
                 <p className="text-sm text-red-600 flex items-start">
-                  <span className="material-icons text-red-500 mr-1 text-sm">error</span>
+                  <AlertCircle className="text-red-500 mr-1 h-4 w-4" />
                   <span>Error: {deleteError}</span>
                 </p>
               </div>
@@ -1147,7 +1147,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             {cancelError && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
                 <p className="text-sm text-red-600 flex items-start">
-                  <span className="material-icons text-red-500 mr-1 text-sm">error</span>
+                  <AlertCircle className="text-red-500 mr-1 h-4 w-4" />
                   <span>Error: {cancelError}</span>
                 </p>
               </div>
