@@ -51,6 +51,13 @@ import ResourceManager, { Resource } from '@/components/resources/ResourceManage
 import DirectResourceExtractor from '@/components/modals/DirectResourceExtractor';
 import { parseResourcesFromEvent } from '@/utils/resourceUtils';
 import type { Event } from '@shared/schema';
+import { 
+  PREDEFINED_TEMPLATES, 
+  loadCustomTemplates, 
+  saveCustomTemplate, 
+  type DescriptionTemplate 
+} from '@/components/description/templates';
+import SavedTemplateManager from '@/components/description/SavedTemplateManager';
 
 interface EventFormModalProps {
   open: boolean;
@@ -184,10 +191,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   
   // Template state
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
+  
+  // Import templates from components/description/templates.ts
   const templates = [
-    { id: 'meeting', name: 'Meeting Agenda', content: '1. Welcome\n2. Updates\n3. Discussion\n4. Action Items\n5. Next Steps' },
-    { id: 'review', name: 'Project Review', content: '1. Project Overview\n2. Accomplishments\n3. Challenges\n4. Timeline Review\n5. Next Milestones' },
-    { id: 'planning', name: 'Planning Session', content: '1. Goals and Objectives\n2. Resource Planning\n3. Timeline Creation\n4. Risk Assessment\n5. Assignments' }
+    ...PREDEFINED_TEMPLATES,
+    ...loadCustomTemplates(),
   ];
 
   // Week days for recurrence
@@ -905,11 +914,18 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       return;
     }
     
+    // Find template in both predefined and custom templates
     const template = templates.find(t => t.id === templateId);
     if (template) {
       setDescription(template.content);
       setSelectedTemplate(templateId);
     }
+  };
+  
+  const handleSelectTemplate = (template: DescriptionTemplate) => {
+    setDescription(template.content);
+    setSelectedTemplate(template.id);
+    setTemplateManagerOpen(false);
   };
   
   const handleSubmit = async () => {
@@ -1503,8 +1519,24 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             ))}
                           </SelectContent>
                         </Select>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-7 text-xs px-2 flex items-center gap-1"
+                          onClick={() => setTemplateManagerOpen(true)}
+                        >
+                          <Save className="h-3 w-3" />
+                          Manage
+                        </Button>
                       </div>
                     </div>
+                    
+                    {/* Template Manager Modal */}
+                    <SavedTemplateManager 
+                      open={templateManagerOpen}
+                      onOpenChange={setTemplateManagerOpen}
+                      onSelectTemplate={handleSelectTemplate}
+                    />
                     <div className="rich-text-editor-container">
                       <DescriptionEditor
                         value={description}
