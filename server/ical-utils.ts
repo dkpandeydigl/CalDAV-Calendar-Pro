@@ -35,32 +35,53 @@ function sanitizeHtmlForIcal(html: string): string {
   }
   
   try {
-    // Handle <p> tags
-    let plainText = html.replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n');
+    // Handle common HTML block elements first
     
-    // Handle <br> tags
+    // First unfold any wrapped lines in the HTML (Thunderbird sometimes does this)
+    let unfolded = html.replace(/\r\n\s+/g, ' ');
+    
+    // Replace common block elements with their content plus newlines
+    const blockElements = ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre'];
+    let plainText = unfolded;
+    
+    // Process each block element
+    blockElements.forEach(tag => {
+      // Match both self-closing and regular tags
+      const selfClosingRegex = new RegExp(`<${tag}[^>]*\\/>`, 'gi');
+      plainText = plainText.replace(selfClosingRegex, '\n');
+      
+      // Match opening and closing tags, capture content
+      const regex = new RegExp(`<${tag}[^>]*>(.*?)<\\/${tag}>`, 'gi');
+      plainText = plainText.replace(regex, '$1\n');
+    });
+    
+    // Handle <br> tags - both self-closing and regular
     plainText = plainText.replace(/<br\s*\/?>/gi, '\n');
     
-    // Handle <div> tags
-    plainText = plainText.replace(/<div[^>]*>(.*?)<\/div>/gi, '$1\n');
-    
-    // Handle <li> tags
+    // Handle lists
     plainText = plainText.replace(/<li[^>]*>(.*?)<\/li>/gi, '• $1\n');
+    plainText = plainText.replace(/<\/ul>\s*<ul[^>]*>/gi, '\n'); // Separate consecutive lists
+    plainText = plainText.replace(/<\/ol>\s*<ol[^>]*>/gi, '\n');
+    
+    // Handle table cells
+    plainText = plainText.replace(/<\/td>\s*<td[^>]*>/gi, ' | ');
+    plainText = plainText.replace(/<\/tr>\s*<tr[^>]*>/gi, '\n');
+    
+    // Special handling for Thunderbird-specific elements
+    plainText = plainText.replace(/<moz-[^>]+>(.*?)<\/moz-[^>]+>/gi, '$1');
     
     // Remove all remaining HTML tags
     plainText = plainText.replace(/<[^>]+>/g, '');
     
-    // Decode HTML entities
-    plainText = plainText
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
+    // Decode HTML entities - we use a simplified approach to avoid LSP issues with Unicode
+    plainText = decodeHtmlEntities(plainText);
     
-    // Remove excessive line breaks
-    plainText = plainText.replace(/\n\s*\n\s*\n/g, '\n\n');
+    // Clean up whitespace and normalize line breaks
+    plainText = plainText
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .replace(/\n\s*\n\s*\n/g, '\n\n')  // Remove excessive line breaks
+      .replace(/^\s+|\s+$/g, '');        // Trim whitespace
     
     return plainText.trim();
   } catch (e) {

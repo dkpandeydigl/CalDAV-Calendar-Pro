@@ -679,13 +679,36 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <div 
                   className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 line-clamp-3 pr-2"
                   dangerouslySetInnerHTML={{ 
-                    __html: typeof event.description === 'string' && event.description.includes('<') 
-                      ? event.description  // It's already HTML
-                      : typeof event.description === 'string'
-                        ? event.description
-                            .replace(/\\n/g, '<br>')
-                            .replace(/\n/g, '<br>')
-                        : String(event.description)
+                    __html: (() => {
+                      if (!event.description) return '';
+                      
+                      const description = String(event.description);
+                      
+                      // Case 1: It's already valid HTML with tags
+                      if (description.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
+                        return description;
+                      }
+                      
+                      // Case 2: It has escaped HTML tags (from Thunderbird)
+                      if (description.includes('&lt;') && description.includes('&gt;')) {
+                        // First unescape the HTML entities
+                        const unescaped = description
+                          .replace(/&lt;/g, '<')
+                          .replace(/&gt;/g, '>')
+                          .replace(/&quot;/g, '"')
+                          .replace(/&amp;/g, '&');
+                        
+                        // Check if it now has valid HTML
+                        if (unescaped.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
+                          return unescaped;
+                        }
+                      }
+                      
+                      // Case 3: Plain text with escaped newlines
+                      return description
+                        .replace(/\\n/g, '<br>')
+                        .replace(/\n/g, '<br>');
+                    })()
                   }}
                 />
               </div>
