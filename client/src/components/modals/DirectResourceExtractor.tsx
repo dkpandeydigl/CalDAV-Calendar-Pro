@@ -10,9 +10,10 @@ interface Resource {
 
 interface DirectResourceExtractorProps {
   rawData: string | null | undefined;
+  isPreview?: boolean; // If true, only show one resource with count indicator
 }
 
-const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawData }) => {
+const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawData, isPreview = true }) => {
   const [resources, setResources] = useState<Resource[]>([]);
   
   useEffect(() => {
@@ -91,7 +92,7 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawDa
       </div>
       <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
         <ul className="space-y-1 pr-2">
-          {resources.slice(0, 1).map((resource, index) => (
+          {resources.slice(0, isPreview ? 1 : resources.length).map((resource, index) => (
             <li key={`resource-${index}`} className="flex items-start mb-2">
               <div className="mt-1 mr-3">
                 {getResourceIcon(resource.type || '')}
