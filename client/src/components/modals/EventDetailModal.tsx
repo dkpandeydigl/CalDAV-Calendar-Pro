@@ -281,74 +281,100 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   
   // Parse and extract resources from raw data if needed
   const extractResourcesFromRawData = () => {
-    if (!event.rawData) return [];
+    if (!event) return [];
+    
+    console.log('RESOURCE DEBUG - Extracting resources from event:', event.title);
     
     try {
-      // Check if we already have resources
+      // DIRECT EXTRACTION FROM VCALENDAR DATA
+      // This is the most reliable method as it works with the raw iCalendar data
+      if (event.rawData && typeof event.rawData === 'string') {
+        const rawDataStr = event.rawData;
+        console.log('RESOURCE DEBUG - Raw data available, length:', rawDataStr.length);
+        
+        // Use a simple regex to find any ATTENDEE lines containing CUTYPE=RESOURCE
+        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
+        const matches = [...rawDataStr.matchAll(resourceRegex)];
+        
+        if (matches && matches.length > 0) {
+          console.log(`RESOURCE DEBUG - Found ${matches.length} resource matches in raw data:`, matches);
+          
+          const extractedResources = matches.map((match, index) => {
+            const fullLine = match[0]; // The complete ATTENDEE line 
+            const email = match[1]; // The captured email group
+            
+            // Extract resource name from CN
+            const cnMatch = fullLine.match(/CN=([^;:]+)/);
+            const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
+            
+            // Extract resource type
+            const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
+            const resourceType = typeMatch ? typeMatch[1].trim() : '';
+            
+            const resource = {
+              id: `resource-${index}-${Date.now()}`,
+              adminEmail: email,
+              adminName: name,
+              subType: resourceType,
+              capacity: 1
+            };
+            
+            console.log(`RESOURCE DEBUG - Extracted resource: ${name}, email: ${email}, type: ${resourceType}`);
+            return resource;
+          });
+          
+          if (extractedResources.length > 0) {
+            console.log('RESOURCE DEBUG - Successfully extracted resources from raw VCALENDAR data', extractedResources);
+            return extractedResources;
+          }
+        } else {
+          console.log('RESOURCE DEBUG - No resource matches found in raw data');
+        }
+      }
+      
+      // FALLBACK 1: Check already parsed resources
       if (event.resources) {
+        console.log('RESOURCE DEBUG - Checking event.resources:', event.resources);
+        
         if (typeof event.resources === 'string') {
           try {
-            return JSON.parse(event.resources);
+            const parsedResources = JSON.parse(event.resources);
+            if (Array.isArray(parsedResources) && parsedResources.length > 0) {
+              console.log('RESOURCE DEBUG - Successfully parsed resources from JSON string');
+              return parsedResources;
+            }
           } catch (e) {
-            console.warn('Failed to parse resources JSON:', e);
+            console.warn('RESOURCE DEBUG - Failed to parse resources JSON:', e);
           }
-        } else if (Array.isArray(event.resources)) {
+        } else if (Array.isArray(event.resources) && event.resources.length > 0) {
+          console.log('RESOURCE DEBUG - Using existing resources array');
           return event.resources;
         }
       }
       
-      // Try to extract from raw data
-      if (typeof event.rawData === 'string') {
-        // Look for resource attendee lines in iCalendar format
-        const resourceRegex = /ATTENDEE[^:]*CUTYPE=RESOURCE[^:\r\n]*:[^\r\n]+/g;
-        const matches = event.rawData.match(resourceRegex);
-        
-        if (matches && matches.length > 0) {
-          console.log(`Found ${matches.length} resource lines in raw iCalendar data`);
-          
-          return matches.map(line => {
-            const emailMatch = line.match(/mailto:([^>\r\n]+)/);
-            const adminEmail = emailMatch ? emailMatch[1].trim() : '';
-            
-            const nameMatch = line.match(/CN=([^;:]+)/);
-            const adminName = nameMatch ? nameMatch[1].trim() : '';
-            
-            const typeMatch = line.match(/X-RESOURCE-TYPE=([^;:]+)/);
-            const subType = typeMatch ? typeMatch[1].trim() : '';
-            
-            // Generate a unique ID for this resource
-            const id = `res-${Math.random().toString(36).substring(2, 10)}`;
-            
-            return {
-              id,
-              adminEmail,
-              adminName,
-              subType,
-              capacity: 1
-            };
-          });
-        }
-      } else if (typeof event.rawData === 'object') {
-        // It's already an object, look for resources property
-        const rawData = event.rawData;
-        if (rawData.resources) {
-          if (typeof rawData.resources === 'string') {
-            try {
-              return JSON.parse(rawData.resources);
-            } catch (e) {
-              console.warn('Failed to parse resources from raw data:', e);
-            }
-          } else if (Array.isArray(rawData.resources)) {
-            return rawData.resources;
-          }
+      // FALLBACK 2: Try one last time with manual regex on the title
+      // This is very hacky but can catch resources mentioned in the title
+      if (event.title && event.title.toLowerCase().includes('resource')) {
+        console.log('RESOURCE DEBUG - Trying to extract resources from title');
+        const match = event.title.match(/resource\s*[:,-]?\s*([^,]+)/i);
+        if (match && match[1]) {
+          const resourceName = match[1].trim();
+          console.log(`RESOURCE DEBUG - Extracted potential resource from title: ${resourceName}`);
+          return [{
+            id: `resource-title-${Date.now()}`,
+            adminName: resourceName,
+            adminEmail: '',
+            subType: '',
+            capacity: 1
+          }];
         }
       }
-      
-      return []; // No resources found
-    } catch (e) {
-      console.warn('Error extracting resources from raw data:', e);
-      return [];
+    } catch (error) {
+      console.error('RESOURCE DEBUG - Error extracting resources:', error);
     }
+    
+    console.log('RESOURCE DEBUG - No resources found');
+    return [];
   };
   
   // Process attendees data
