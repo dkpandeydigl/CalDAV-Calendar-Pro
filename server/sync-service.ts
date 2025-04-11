@@ -1538,18 +1538,8 @@ UID:${event.uid}\r
 SUMMARY:${event.title || "Untitled Event"}\r
 DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.startDate, event.allDay === true)}\r
 DTEND${event.allDay ? ';VALUE=DATE' : ''}:${this.formatICalDate(event.endDate, event.allDay === true)}\r
-${event.description ? `DESCRIPTION:${event.description
-      .replace(/\\/g, '\\\\')  // Escape backslashes
-      .replace(/;/g, '\\;')    // Escape semicolons
-      .replace(/,/g, '\\,')    // Escape commas
-      .replace(/\n/g, '\\n')   // Escape line breaks
-    }\r\n` : ''}\
-${event.location ? `LOCATION:${event.location
-      .replace(/\\/g, '\\\\')  // Escape backslashes
-      .replace(/;/g, '\\;')    // Escape semicolons
-      .replace(/,/g, '\\,')    // Escape commas
-      .replace(/\n/g, '\\n')   // Escape line breaks
-    }\r\n` : ''}\
+${event.description ? `DESCRIPTION:${icalUtils.escapeICalString(event.description)}\r\n` : ''}\
+${event.location ? `LOCATION:${icalUtils.escapeICalString(event.location)}\r\n` : ''}\
 DTSTAMP:${timestamp}\r
 CREATED:${timestamp}\r
 LAST-MODIFIED:${timestamp}\r
