@@ -205,12 +205,66 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         try {
           if (event.attendees) {
             // If attendees is a string, parse it; if it's already an object, use it directly
-            const parsedAttendees = typeof event.attendees === 'string' 
-              ? JSON.parse(event.attendees)
-              : event.attendees;
+            let parsedAttendees;
+            
+            if (typeof event.attendees === 'string') {
+              try {
+                parsedAttendees = JSON.parse(event.attendees);
+              } catch (parseError) {
+                console.warn('Attendees was not valid JSON, attempting to extract from raw data');
+                
+                // If it's a string but not JSON, check if it's in the raw data
+                if (event.rawData) {
+                  const attendeeMatches = typeof event.rawData === 'string' 
+                    ? event.rawData.match(/ATTENDEE[^:\r\n]*(?:(?!CUTYPE=RESOURCE)[^:\r\n])*:[^\r\n]+/g)
+                    : null;
+                    
+                  if (attendeeMatches && attendeeMatches.length > 0) {
+                    console.log(`Found ${attendeeMatches.length} attendee matches in raw data`);
+                    
+                    parsedAttendees = attendeeMatches.map((line, index) => {
+                      const emailMatch = line.match(/mailto:([^>\r\n]+)/);
+                      const email = emailMatch ? emailMatch[1].trim() : `unknown${index}@example.com`;
+                      
+                      const nameMatch = line.match(/CN=([^;:]+)/);
+                      const name = nameMatch ? nameMatch[1].trim() : '';
+                      
+                      const roleMatch = line.match(/ROLE=([^;:]+)/);
+                      let role: AttendeeRole = 'Member';
+                      
+                      if (roleMatch) {
+                        const rawRole = roleMatch[1].trim();
+                        if (rawRole === 'CHAIR' || rawRole === 'Chairman') {
+                          role = 'Chairman';
+                        } else if (rawRole === 'REQ-PARTICIPANT' || rawRole === 'Secretary') {
+                          role = 'Secretary';
+                        }
+                      }
+                      
+                      return {
+                        id: `attendee-${index}-${Date.now()}`,
+                        email,
+                        name,
+                        role
+                      };
+                    });
+                  }
+                }
+              }
+            } else {
+              // It's already an object
+              parsedAttendees = event.attendees;
+            }
               
-            if (Array.isArray(parsedAttendees)) {
-              setAttendees(parsedAttendees);
+            if (Array.isArray(parsedAttendees) && parsedAttendees.length > 0) {
+              // Make sure each attendee has an id
+              const attendeesWithIds = parsedAttendees.map((attendee, index) => ({
+                ...attendee,
+                id: attendee.id || `attendee-${index}-${Date.now()}`
+              }));
+              
+              setAttendees(attendeesWithIds);
+              console.log('Successfully parsed attendees:', attendeesWithIds);
             }
           }
         } catch (error) {
@@ -221,9 +275,45 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         
         // Try to parse resources from event if available
         try {
+          // First try using the utility function
           const parsedResources = parseResourcesFromEvent(event);
+          
           if (parsedResources.length > 0) {
             setResources(parsedResources);
+            console.log('Successfully parsed resources using utility:', parsedResources);
+          } else if (event.rawData) {
+            // If that doesn't work, try to extract resources from raw data
+            const resourceMatches = typeof event.rawData === 'string'
+              ? event.rawData.match(/ATTENDEE[^:]*CUTYPE=RESOURCE[^:\r\n]*:[^\r\n]+/g)
+              : null;
+              
+            if (resourceMatches && resourceMatches.length > 0) {
+              console.log(`Found ${resourceMatches.length} resource matches in raw data`);
+              
+              const extractedResources = resourceMatches.map((line, index) => {
+                const emailMatch = line.match(/mailto:([^>\r\n]+)/);
+                const adminEmail = emailMatch ? emailMatch[1].trim() : '';
+                
+                const nameMatch = line.match(/CN=([^;:]+)/);
+                const name = nameMatch ? nameMatch[1].trim() : `Resource ${index + 1}`;
+                
+                const typeMatch = line.match(/X-RESOURCE-TYPE=([^;:]+)/);
+                const subType = typeMatch ? typeMatch[1].trim() : '';
+                
+                return {
+                  id: `resource-${index}-${Date.now()}`,
+                  name,
+                  adminEmail,
+                  subType,
+                  capacity: 1
+                };
+              });
+              
+              if (extractedResources.length > 0) {
+                setResources(extractedResources);
+                console.log('Successfully parsed resources from raw data:', extractedResources);
+              }
+            }
           }
         } catch (error) {
           console.error('Failed to parse resources', error);
@@ -236,25 +326,126 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           // First check if we have recurrenceRule (from schema) and use that
           if (event.recurrenceRule) {
             try {
-              // Attempt to parse recurrence rule if it's in our expected format
-              const parsedRecurrence = JSON.parse(event.recurrenceRule);
-              if (parsedRecurrence && typeof parsedRecurrence === 'object') {
-                // Default values for any missing fields
-                setRecurrence({
-                  pattern: parsedRecurrence.pattern || 'None',
-                  interval: parsedRecurrence.interval || 1,
-                  weekdays: parsedRecurrence.weekdays || [],
-                  dayOfMonth: parsedRecurrence.dayOfMonth,
-                  monthOfYear: parsedRecurrence.monthOfYear,
-                  endType: parsedRecurrence.endType || 'Never',
-                  occurrences: parsedRecurrence.occurrences || 10,
-                  endDate: parsedRecurrence.endDate ? new Date(parsedRecurrence.endDate) : undefined
-                });
+              // First try to parse as JSON
+              const recurrenceRule = event.recurrenceRule;
+              let recurrenceConfig: RecurrenceConfig = {
+                pattern: 'None',
+                interval: 1,
+                weekdays: [],
+                endType: 'Never',
+                occurrences: 10
+              };
+              
+              // Try to parse as JSON first
+              try {
+                // Attempt to parse recurrence rule if it's in our expected format
+                const parsedRecurrence = JSON.parse(recurrenceRule);
+                if (parsedRecurrence && typeof parsedRecurrence === 'object') {
+                  // Default values for any missing fields
+                  recurrenceConfig = {
+                    pattern: parsedRecurrence.pattern || 'None',
+                    interval: parsedRecurrence.interval || 1,
+                    weekdays: parsedRecurrence.weekdays || [],
+                    dayOfMonth: parsedRecurrence.dayOfMonth,
+                    monthOfYear: parsedRecurrence.monthOfYear,
+                    endType: parsedRecurrence.endType || 'Never',
+                    occurrences: parsedRecurrence.occurrences || 10,
+                    endDate: parsedRecurrence.endDate ? new Date(parsedRecurrence.endDate) : undefined
+                  };
+                  console.log('Successfully parsed recurrence rule from JSON:', recurrenceConfig);
+                }
+              } catch (jsonParseError) {
+                // If it's not JSON, check if it's an iCalendar format (FREQ=DAILY;COUNT=3)
+                if (recurrenceRule.includes('FREQ=')) {
+                  console.log('Parsing iCalendar RRULE format:', recurrenceRule);
+                  
+                  // Extract frequency
+                  const freqMatch = recurrenceRule.match(/FREQ=([^;]+)/);
+                  if (freqMatch && freqMatch[1]) {
+                    const freq = freqMatch[1];
+                    if (freq === 'DAILY') recurrenceConfig.pattern = 'Daily';
+                    else if (freq === 'WEEKLY') recurrenceConfig.pattern = 'Weekly';
+                    else if (freq === 'MONTHLY') recurrenceConfig.pattern = 'Monthly';
+                    else if (freq === 'YEARLY') recurrenceConfig.pattern = 'Yearly';
+                    console.log(`Extracted frequency: ${freq}, mapped to pattern: ${recurrenceConfig.pattern}`);
+                  }
+                  
+                  // Extract interval
+                  const intervalMatch = recurrenceRule.match(/INTERVAL=(\d+)/);
+                  if (intervalMatch && intervalMatch[1]) {
+                    recurrenceConfig.interval = parseInt(intervalMatch[1], 10);
+                    console.log(`Extracted interval: ${recurrenceConfig.interval}`);
+                  }
+                  
+                  // Extract count
+                  const countMatch = recurrenceRule.match(/COUNT=(\d+)/);
+                  if (countMatch && countMatch[1]) {
+                    recurrenceConfig.occurrences = parseInt(countMatch[1], 10);
+                    recurrenceConfig.endType = 'After';
+                    console.log(`Extracted count: ${recurrenceConfig.occurrences}, setting endType: After`);
+                  }
+                  
+                  // Extract until
+                  const untilMatch = recurrenceRule.match(/UNTIL=([^;]+)/);
+                  if (untilMatch && untilMatch[1]) {
+                    // Parse iCalendar date format like 20250428T235959Z
+                    const untilStr = untilMatch[1];
+                    let untilDate;
+                    
+                    if (untilStr.includes('T')) {
+                      // Date with time
+                      const year = parseInt(untilStr.substring(0, 4), 10);
+                      const month = parseInt(untilStr.substring(4, 6), 10) - 1; // Month is 0-indexed
+                      const day = parseInt(untilStr.substring(6, 8), 10);
+                      const hour = parseInt(untilStr.substring(9, 11), 10);
+                      const minute = parseInt(untilStr.substring(11, 13), 10);
+                      const second = parseInt(untilStr.substring(13, 15), 10);
+                      
+                      untilDate = new Date(Date.UTC(year, month, day, hour, minute, second));
+                    } else {
+                      // Date only
+                      const year = parseInt(untilStr.substring(0, 4), 10);
+                      const month = parseInt(untilStr.substring(4, 6), 10) - 1;
+                      const day = parseInt(untilStr.substring(6, 8), 10);
+                      
+                      untilDate = new Date(Date.UTC(year, month, day));
+                    }
+                    
+                    recurrenceConfig.endDate = untilDate;
+                    recurrenceConfig.endType = 'On';
+                    console.log(`Extracted until: ${untilStr}, parsed to ${untilDate}, setting endType: On`);
+                  }
+                  
+                  // Extract BYDAY for weekly recurrences
+                  if (recurrenceConfig.pattern === 'Weekly') {
+                    const bydayMatch = recurrenceRule.match(/BYDAY=([^;]+)/);
+                    if (bydayMatch && bydayMatch[1]) {
+                      const days = bydayMatch[1].split(',');
+                      const dayMap: Record<string, string> = {
+                        'SU': 'Sunday',
+                        'MO': 'Monday',
+                        'TU': 'Tuesday',
+                        'WE': 'Wednesday',
+                        'TH': 'Thursday',
+                        'FR': 'Friday',
+                        'SA': 'Saturday'
+                      };
+                      
+                      recurrenceConfig.weekdays = days.map(day => dayMap[day] || day);
+                      console.log(`Extracted BYDAY=${bydayMatch[1]}, mapped to weekdays:`, recurrenceConfig.weekdays);
+                    }
+                  }
+                  
+                  console.log('Successfully parsed iCalendar RRULE:', recurrenceConfig);
+                }
+              }
+              
+              // Now set the recurrence config regardless of how it was parsed
+              if (recurrenceConfig.pattern !== 'None') {
+                setRecurrence(recurrenceConfig);
               }
             } catch (innerError) {
-              console.error('Failed to parse recurrence rule JSON', innerError);
-              // If the recurrence rule is in a different format (like iCalendar), 
-              // we'd need additional parsing logic here
+              console.error('Failed to parse recurrence rule', innerError);
             }
           }
         } catch (error) {
