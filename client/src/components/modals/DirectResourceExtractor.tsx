@@ -71,22 +71,16 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawDa
       <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
         <ul className="space-y-1 max-h-[10em] overflow-y-auto pr-2">
           {resources.map((resource, index) => (
-            <li key={`resource-${index}`} className="flex items-start">
-              <span className="material-icons text-purple-500 mr-2 text-sm mt-0.5">meeting_room</span>
+            <li key={`resource-${index}`} className="flex items-start mb-2">
+              <span className="material-icons text-purple-500 mr-2">meeting_room</span>
               <div>
-                <div className="font-medium">
-                  {resource.name || "Resource"}
+                <div className="font-medium">{resource.name}</div>
+                <div className="text-xs text-gray-600">
+                  Type: {resource.type ? resource.type.trim() : 'Unknown'}
                 </div>
-                {resource.type && (
-                  <div className="text-xs text-muted-foreground">
-                    Type: {resource.type}
-                  </div>
-                )}
-                {resource.email && (
-                  <div className="text-xs text-muted-foreground">
-                    Admin: {resource.email}
-                  </div>
-                )}
+                <div className="text-xs text-gray-600">
+                  Admin: {resource.email}
+                </div>
               </div>
             </li>
           ))}
