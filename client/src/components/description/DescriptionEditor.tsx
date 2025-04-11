@@ -96,7 +96,7 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
 
   // Handle template insertion
   const insertTemplate = useCallback((templateName: string) => {
-    const template = TEMPLATES.find(t => t.name === templateName);
+    const template = PREDEFINED_TEMPLATES.find(t => t.name === templateName);
     if (editor && template) {
       editor.commands.setContent(template.content);
     }
@@ -128,12 +128,7 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
     let content = editor.getHTML();
     
     // Replace all tags with their values
-    Object.entries(PREVIEW_DATA).forEach(([key, value]) => {
-      const tagRegex = new RegExp(`{{${key}}}`, 'g');
-      content = content.replace(tagRegex, value);
-    });
-    
-    return content;
+    return replaceTemplateTags(content, PLACEHOLDER_DATA);
   }, [editor]);
 
   // Calculate styles based on fullscreen state
@@ -284,8 +279,8 @@ const DescriptionEditor: React.FC<DescriptionEditorProps> = ({
               <SelectValue placeholder="Select Template" />
             </SelectTrigger>
             <SelectContent>
-              {TEMPLATES.map(template => (
-                <SelectItem key={template.name} value={template.name}>
+              {PREDEFINED_TEMPLATES.map(template => (
+                <SelectItem key={template.id} value={template.name}>
                   {template.name}
                 </SelectItem>
               ))}

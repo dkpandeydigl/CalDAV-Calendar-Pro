@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Cross2Icon, Pencil1Icon, PlusIcon, TrashIcon } from '@radix-ui/react-icons';
+import { X, Pencil, Plus, Trash } from 'lucide-react';
 import { 
   DescriptionTemplate, 
   loadCustomTemplates, 
@@ -116,7 +116,7 @@ const SavedTemplateManager: React.FC<SavedTemplateManagerProps> = ({
           <div className="space-y-4">
             <div className="flex justify-end">
               <Button onClick={handleNewTemplate} variant="outline" size="sm">
-                <PlusIcon className="mr-2 h-4 w-4" />
+                <Plus className="mr-2 h-4 w-4" />
                 New Template
               </Button>
             </div>
@@ -144,10 +144,10 @@ const SavedTemplateManager: React.FC<SavedTemplateManagerProps> = ({
                         Use
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleEditTemplate(template)}>
-                        <Pencil1Icon className="h-4 w-4" />
+                        <Pencil className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="icon" onClick={() => handleDeleteTemplate(template.id)}>
-                        <TrashIcon className="h-4 w-4" />
+                        <Trash className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -182,7 +182,7 @@ const SavedTemplateManager: React.FC<SavedTemplateManagerProps> = ({
                   className="min-h-[200px] font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Use tags like {{attendee_name}} that will be replaced with actual values.
+                  Use tags like <code>{"{{"}</code>attendee_name<code>{"}}"}</code> that will be replaced with actual values.
                 </p>
               </div>
             </div>
