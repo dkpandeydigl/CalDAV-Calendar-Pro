@@ -1,4 +1,4 @@
-import { FC, useState } from 'react';
+import { FC, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -10,9 +10,10 @@ import { getTimezones } from '@/lib/date-utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatFullDate } from '@/lib/date-utils';
 import { useServerConnection } from '@/hooks/useServerConnection';
-import { CalendarIcon, Download, Edit, MoreVertical, Share2, Trash2, UploadCloud } from 'lucide-react';
+import { CalendarIcon, Download, Edit, MoreVertical, Share2, Trash2, UploadCloud, Loader2 } from 'lucide-react';
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 import { useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
 import {
   Popover,
   PopoverContent,
@@ -92,6 +93,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   const [newCalendarName, setNewCalendarName] = useState('');
   const [newCalendarColor, setNewCalendarColor] = useState('#0078d4');
   const [calendarNameError, setCalendarNameError] = useState('');
+  const [isCheckingCalendarName, setIsCheckingCalendarName] = useState(false);
+  const [shouldCreateCalendar, setShouldCreateCalendar] = useState(false);
   
   // Calendar editing state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -99,6 +102,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   const [editCalendarName, setEditCalendarName] = useState('');
   const [editCalendarColor, setEditCalendarColor] = useState('');
   const [editCalendarNameError, setEditCalendarNameError] = useState('');
+  const [isCheckingEditName, setIsCheckingEditName] = useState(false);
+  const [shouldUpdateCalendar, setShouldUpdateCalendar] = useState(false);
   
   // Calendar deletion state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -115,6 +120,74 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   const [calendarsToUnshare, setCalendarsToUnshare] = useState<Calendar[]>([]);
 
   const timezones = getTimezones();
+  
+  // Effect to check if we should create a calendar after name check
+  useEffect(() => {
+    if (shouldCreateCalendar && !isCheckingCalendarName) {
+      // Reset the flag first
+      setShouldCreateCalendar(false);
+      
+      // Proceed with calendar creation
+      createCalendar({
+        name: newCalendarName.trim(),
+        color: newCalendarColor,
+        enabled: true,
+        isLocal: true,
+        isPrimary: false,
+        url: null,
+        syncToken: null,
+        description: null
+      });
+      
+      setShowAddCalendar(false);
+      setNewCalendarName('');
+      setNewCalendarColor('#0078d4');
+    }
+  }, [shouldCreateCalendar, isCheckingCalendarName, newCalendarName, newCalendarColor, createCalendar]);
+  
+  // Effect to check if we should update a calendar after name check
+  useEffect(() => {
+    if (shouldUpdateCalendar && !isCheckingEditName && editingCalendar) {
+      // Reset the flag first
+      setShouldUpdateCalendar(false);
+      
+      // Proceed with calendar update
+      updateCalendar({
+        id: editingCalendar.id,
+        data: {
+          name: editCalendarName.trim(),
+          color: editCalendarColor
+        }
+      });
+      
+      setIsEditDialogOpen(false);
+      setEditingCalendar(null);
+    }
+  }, [shouldUpdateCalendar, isCheckingEditName, editingCalendar, editCalendarName, editCalendarColor, updateCalendar]);
+  
+  // Function to check for duplicate calendar name
+  const checkDuplicateCalendarName = async (name: string, excludeId?: number): Promise<boolean> => {
+    try {
+      const queryParams = new URLSearchParams({ name });
+      if (excludeId !== undefined) {
+        queryParams.append('excludeId', excludeId.toString());
+      }
+      
+      const response = await apiRequest('GET', `/api/check-calendar-name?${queryParams.toString()}`);
+      const data = await response.json();
+      
+      if (data.exists) {
+        // If there's a duplicate, show the error message
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error checking for duplicate calendar name:', error);
+      // If there's an error, we'll allow creation since this is just a preventative check
+      return false;
+    }
+  };
 
   const handleCalendarToggle = (id: number, checked: boolean, isShared: boolean = false) => {
     // If it's a shared calendar, we need to handle it differently
@@ -160,23 +233,32 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   };
   
   // Create calendar
-  const handleCreateCalendar = () => {
+  const handleCreateCalendar = async () => {
     if (!validateCalendarName(newCalendarName)) return;
     
-    createCalendar({
-      name: newCalendarName.trim(),
-      color: newCalendarColor,
-      enabled: true,
-      isLocal: true,
-      isPrimary: false,
-      url: null,
-      syncToken: null,
-      description: null
-    });
-    
-    setShowAddCalendar(false);
-    setNewCalendarName('');
-    setNewCalendarColor('#0078d4');
+    // First check for duplicate calendar name
+    setIsCheckingCalendarName(true);
+    try {
+      const isDuplicate = await checkDuplicateCalendarName(newCalendarName.trim());
+      
+      if (isDuplicate) {
+        setCalendarNameError('A calendar with this name already exists. Please choose a different name.');
+        setIsCheckingCalendarName(false);
+        return;
+      }
+      
+      // Set flag to trigger the effect hook which will create the calendar
+      setShouldCreateCalendar(true);
+    } catch (error) {
+      console.error('Error checking for duplicate calendar name:', error);
+      toast({
+        title: "Calendar Name Check Failed",
+        description: "Failed to verify if calendar name is unique. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCheckingCalendarName(false);
+    }
   };
   
   // Open edit dialog
@@ -189,7 +271,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
   };
   
   // Update calendar
-  const handleUpdateCalendar = () => {
+  const handleUpdateCalendar = async () => {
     if (!editingCalendar) return;
     
     // Validate calendar name
@@ -217,16 +299,48 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
       return;
     }
     
-    updateCalendar({
-      id: editingCalendar.id,
-      data: {
-        name: editCalendarName.trim(),
-        color: editCalendarColor
-      }
-    });
+    // Skip duplicate name check if we're not changing the name
+    if (editingCalendar.name === editCalendarName.trim()) {
+      // Only updating color, proceed directly
+      updateCalendar({
+        id: editingCalendar.id,
+        data: {
+          name: editCalendarName.trim(),
+          color: editCalendarColor
+        }
+      });
+      
+      setIsEditDialogOpen(false);
+      setEditingCalendar(null);
+      return;
+    }
     
-    setIsEditDialogOpen(false);
-    setEditingCalendar(null);
+    // First check for duplicate calendar name
+    setIsCheckingEditName(true);
+    try {
+      const isDuplicate = await checkDuplicateCalendarName(
+        editCalendarName.trim(), 
+        editingCalendar.id
+      );
+      
+      if (isDuplicate) {
+        setEditCalendarNameError('A calendar with this name already exists. Please choose a different name.');
+        setIsCheckingEditName(false);
+        return;
+      }
+      
+      // Set flag to trigger the effect hook which will update the calendar
+      setShouldUpdateCalendar(true);
+    } catch (error) {
+      console.error('Error checking for duplicate calendar name:', error);
+      toast({
+        title: "Calendar Name Check Failed",
+        description: "Failed to verify if calendar name is unique. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCheckingEditName(false);
+    }
   };
   
   // Open delete dialog

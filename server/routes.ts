@@ -91,6 +91,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // CALENDARS API
+  
+  // Check if a calendar name already exists (for duplication prevention)
+  app.get("/api/check-calendar-name", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { name, excludeId } = req.query;
+      
+      if (!name) {
+        return res.status(400).json({ message: "Calendar name is required" });
+      }
+
+      // First check local calendars
+      const userCalendars = await storage.getCalendars(userId);
+      
+      // Check if there's a local calendar with the same name (case-insensitive)
+      // Exclude the current calendar if we're editing and excludeId is provided
+      const excludeCalendarId = excludeId ? parseInt(excludeId as string) : undefined;
+      const localDuplicate = userCalendars.find(cal => 
+        cal.name.toLowerCase() === (name as string).toLowerCase() && 
+        (!excludeCalendarId || cal.id !== excludeCalendarId)
+      );
+      
+      if (localDuplicate) {
+        return res.json({ 
+          exists: true, 
+          message: "A calendar with this name already exists in your account" 
+        });
+      }
+      
+      // If no local duplicate, check the server if a connection exists
+      try {
+        const connection = await storage.getServerConnection(userId);
+        
+        if (connection && connection.status === 'connected') {
+          // Create a DAV client
+          const { DAVClient } = await import('tsdav');
+          const davClient = new DAVClient({
+            serverUrl: connection.url,
+            credentials: {
+              username: connection.username,
+              password: connection.password
+            },
+            authMethod: 'Basic',
+            defaultAccountType: 'caldav'
+          });
+          
+          // Login to the server
+          await davClient.login();
+          
+          // Fetch all calendars from server
+          const davCalendars = await davClient.fetchCalendars();
+          console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server to check for name duplication`);
+          
+          // Check for duplicate names on the server (case-insensitive)
+          const serverDuplicate = davCalendars.find(cal => 
+            cal.displayName && cal.displayName.toLowerCase() === (name as string).toLowerCase()
+          );
+          
+          if (serverDuplicate) {
+            return res.json({ 
+              exists: true, 
+              message: "A calendar with this name already exists on the CalDAV server" 
+            });
+          }
+        }
+      } catch (serverCheckError) {
+        console.error("Error checking for calendar name on server:", serverCheckError);
+        // We'll still allow creation if server check fails - just log the error
+      }
+      
+      // No duplicates found
+      res.json({ exists: false });
+    } catch (err) {
+      console.error("Error checking calendar name:", err);
+      res.status(500).json({ message: "Failed to check calendar name" });
+    }
+  });
+  
   app.get("/api/calendars", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
