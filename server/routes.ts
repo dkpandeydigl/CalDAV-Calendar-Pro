@@ -532,6 +532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       console.log(`Successfully copied ${successfulCopies} of ${eventUrls.length} events`);
                       
                       // Update the URL in the database to point to the new calendar
+                      const oldCalendarUrl = existingCalendar.url;
                       existingCalendar.url = newCalendarUrl;
                       req.body.url = newCalendarUrl;
                       
@@ -540,6 +541,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
                       
                       updateSuccessful = true;
                       console.log('DaviCal calendar rename successful with create+copy approach');
+                      
+                      // Now attempt to delete the old calendar to clean up
+                      console.log(`Cleaning up - attempting to delete old calendar at ${oldCalendarUrl}`);
+                      try {
+                        // Use DELETE with infinity depth to delete the calendar and all its contents
+                        const deleteResponse = await fetch(oldCalendarUrl, {
+                          method: 'DELETE',
+                          headers: {
+                            'Authorization': authHeader,
+                            'Depth': 'infinity'
+                          }
+                        });
+                        
+                        console.log(`Old calendar deletion response: ${deleteResponse.status}`);
+                        
+                        if (deleteResponse.status >= 200 && deleteResponse.status < 300) {
+                          console.log('Successfully deleted old calendar');
+                        } else {
+                          console.log('Could not delete old calendar - server response:', deleteResponse.status);
+                          
+                          // Try alternate approach - mark it as disabled to hide it from UI
+                          try {
+                            console.log('Attempting to disable old calendar instead');
+                            const disableResponse = await fetch(oldCalendarUrl, {
+                              method: 'PROPPATCH',
+                              headers: {
+                                'Content-Type': 'application/xml; charset=utf-8',
+                                'Authorization': authHeader
+                              },
+                              body: `<?xml version="1.0" encoding="utf-8" ?>
+                                <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                                  <D:set>
+                                    <D:prop>
+                                      <C:calendar-enabled>false</C:calendar-enabled>
+                                    </D:prop>
+                                  </D:set>
+                                </D:propertyupdate>`
+                            });
+                            
+                            console.log(`Disable calendar response: ${disableResponse.status}`);
+                          } catch (disableError) {
+                            console.error('Error trying to disable old calendar:', disableError);
+                          }
+                        }
+                      } catch (deleteError) {
+                        console.error('Error deleting old calendar:', deleteError);
+                      }
                     } else {
                       console.error(`Failed to create new calendar: ${createResponse.status}`);
                       console.error('Will try standard PROPPATCH approach as fallback');
