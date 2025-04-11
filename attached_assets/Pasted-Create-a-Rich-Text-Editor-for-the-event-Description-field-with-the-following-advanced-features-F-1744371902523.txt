@@ -1,0 +1,99 @@
+Create a Rich Text Editor for the event Description field with the following advanced features:
+
+✅ Features to Implement
+Rich Text Editing
+
+Use TipTap for best UX and flexibility.
+
+Support: Bold, Italics, Underline, Lists, Links, Headings.
+
+Tag Insertion
+
+Use {{tag_name}} format for inserting dynamic fields.
+
+Available Tags:
+
+{{attendee_name}}
+
+{{organizer_name}}
+
+{{event_date}}
+
+{{start_time}}
+
+{{location}}
+
+{{meeting_link}}
+
+Implement an “Insert Tag” dropdown that adds the tag at the current cursor position in the editor.
+
+Template Support
+
+Add a dropdown to insert predefined templates.
+
+Templates are basic rich text snippets (e.g., meeting invite text).
+
+When a template is selected, insert it into the editor.
+
+Live Preview Mode
+
+Add a toggle button: Preview ✨ / Edit 📝
+
+In preview mode:
+
+Show rendered HTML
+
+Replace {{tag}} with actual values using a placeholder object
+
+Example replacement object:
+
+js
+Copy
+Edit
+{
+  attendee_name: "D K Pandey",
+  organizer_name: "Ajay Data",
+  event_date: "2025-04-12",
+  start_time: "10:00 AM",
+  location: "Board Room",
+  meeting_link: "https://meet.link/xyz"
+}
+Full-Screen Mode
+
+Add a button 🔳 Fullscreen to expand the editor to full window height and width.
+
+Toggle back to normal view with 🗕 Exit Fullscreen.
+
+🧪 UX Expectations
+Tags like {{attendee_name}} should appear styled (e.g., light gray background).
+
+Editing experience should be smooth with a toolbar and shortcuts.
+
+Fullscreen mode should allow easier writing and previewing.
+
+Content should be managed as HTML (TipTap handles this).
+
+🧰 Tech Stack
+React + TipTap
+
+Styling: Tailwind CSS or basic CSS-in-JS
+
+State management: useState
+
+Optionally: use react-modal or Tailwind fixed + z-index for fullscreen
+
+📁 Output
+Deliver a React component named DescriptionEditor.jsx that:
+
+Accepts initial content as prop
+
+Exposes final HTML on change
+
+Contains buttons/dropdowns for inserting tags/templates
+
+Handles preview/fullscreen modes
+
+✨ Bonus
+Highlight invalid/missing tags in preview mode
+
+Save/load templates from localStorage or server if needed
