@@ -399,160 +399,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               // Some servers support calendar deletion, but it's not universally supported
               // This might throw an error on servers that don't allow it
-              if (existingCalendar.url.includes('/caldav.php/')) {
-                // For DaviCal servers, we need to try different approaches
-                console.log(`Attempting to delete DaviCal calendar: ${existingCalendar.url}`);
+              // DIRECT DELETION APPROACH - Handle all CalDAV server types with specialized methods
+              console.log(`Attempting to delete calendar: ${existingCalendar.url}`);
+
+              // For more reliable deletion, first delete ALL events in calendar
+              console.log(`First ensuring all events are deleted from the server`);
+              
+              try {
+                // Step 1: Find all events in this calendar on the server
+                const calendarObjects = await davClient.fetchCalendarObjects({
+                  calendar: { url: existingCalendar.url }
+                });
                 
-                try {
-                  // First attempt: Try standard DELETE with empty body
+                console.log(`Found ${calendarObjects.length} objects to delete on server`);
+                
+                // Step 2: Delete each calendar object individually with retry logic
+                for (const calObject of calendarObjects) {
                   try {
-                    await davClient.davRequest({
-                      url: existingCalendar.url,
-                      init: {
-                        method: 'DELETE',
-                        headers: {
-                          'Content-Type': 'application/xml; charset=utf-8',
-                        },
-                        body: '' // Empty body required for some CalDAV servers
-                      }
-                    });
-                    console.log(`Successfully deleted calendar from CalDAV server using standard DELETE`);
-                  } catch (stdDeleteError) {
-                    console.log(`Standard DELETE failed, trying alternative approaches...`, stdDeleteError);
-                    
-                    // Second attempt: Try different content types (some servers are specific)
+                    if (calObject.url) {
+                      console.log(`Deleting object: ${calObject.url}`);
+                      await davClient.deleteCalendarObject({
+                        calendarObject: {
+                          url: calObject.url,
+                          etag: calObject.etag || ""
+                        }
+                      });
+                    }
+                  } catch (objDelErr) {
+                    console.log(`Failed to delete individual object: ${objDelErr.message}`);
+                    // Try direct DAV request as fallback
                     try {
                       await davClient.davRequest({
-                        url: existingCalendar.url,
+                        url: calObject.url,
                         init: {
                           method: 'DELETE',
                           headers: {
                             'Content-Type': 'text/plain',
                           },
-                          body: '' 
+                          body: ''
                         }
                       });
-                      console.log(`Successfully deleted calendar using DELETE with text/plain`);
-                    } catch (altDeleteError) {
-                      console.log(`Alternative DELETE failed, trying PROPPATCH:`, altDeleteError);
-                      
-                      // Third attempt: Try PROPPATCH to disable calendar
-                      try {
-                        await davClient.davRequest({
-                          url: existingCalendar.url,
-                          init: {
-                            method: 'PROPPATCH',
-                            headers: {
-                              'Content-Type': 'application/xml; charset=utf-8',
-                            },
-                            body: `<?xml version="1.0" encoding="utf-8" ?>
-                              <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                                <D:set>
-                                  <D:prop>
-                                    <C:calendar-enabled>false</C:calendar-enabled>
-                                  </D:prop>
-                                </D:set>
-                              </D:propertyupdate>`
-                          }
-                        });
-                        console.log(`Successfully disabled calendar on CalDAV server using PROPPATCH`);
-                        
-                        // Fourth attempt: Special handling - mark as hidden
-                        try {
-                          await davClient.davRequest({
-                            url: existingCalendar.url,
-                            init: {
-                              method: 'PROPPATCH',
-                              headers: {
-                                'Content-Type': 'application/xml; charset=utf-8',
-                              },
-                              body: `<?xml version="1.0" encoding="utf-8" ?>
-                                <D:propertyupdate xmlns:D="DAV:" xmlns:IC="http://apple.com/ns/ical/">
-                                  <D:set>
-                                    <D:prop>
-                                      <IC:calendar-hidden>1</IC:calendar-hidden>
-                                    </D:prop>
-                                  </D:set>
-                                </D:propertyupdate>`
-                            }
-                          });
-                          console.log(`Successfully marked calendar as hidden on server`);
-                        } catch (hiddenError) {
-                          console.log(`Failed to mark calendar as hidden:`, hiddenError);
-                        }
-                      } catch (propError) {
-                        console.log(`PROPPATCH approach failed:`, propError);
-                      }
+                    } catch (directDelErr) {
+                      console.log(`Also failed with direct request: ${directDelErr.message}`);
                     }
                   }
-                } catch (deleteError) {
-                  console.log(`All deletion approaches failed:`, deleteError);
                 }
-              } else {
-                // For other CalDAV servers, try the same comprehensive approach
-                console.log(`Attempting to delete calendar: ${existingCalendar.url}`);
                 
+                console.log(`All calendar objects deletion attempts completed`);
+                
+                // Step 3: Now try to delete the actual calendar with multiple approaches
                 try {
-                  // First attempt: Standard DELETE with empty body
+                  // Try DELETE with specially crafted XML body - works on some servers
+                  await davClient.davRequest({
+                    url: existingCalendar.url,
+                    init: {
+                      method: 'DELETE',
+                      headers: {
+                        'Content-Type': 'application/xml; charset=utf-8',
+                        'Depth': '0'
+                      },
+                      body: '<?xml version="1.0" encoding="utf-8" ?><D:remove xmlns:D="DAV:"/>'
+                    }
+                  });
+                  console.log(`Successfully deleted calendar using DELETE with XML body`);
+                } catch (xmlDelError) {
+                  console.log(`XML DELETE failed: ${xmlDelError.message}`);
+                  
                   try {
+                    // Try standard empty DELETE request
                     await davClient.davRequest({
                       url: existingCalendar.url,
                       init: {
                         method: 'DELETE',
                         headers: {
-                          'Content-Type': 'application/xml; charset=utf-8',
+                          'Content-Type': 'text/plain',
+                          'Depth': '0'
                         },
-                        body: '' // Empty body required for some CalDAV servers
+                        body: ''
                       }
                     });
-                    console.log(`Successfully deleted calendar from server using standard DELETE`);
-                  } catch (stdDeleteError) {
-                    console.log(`Standard DELETE failed, trying alternative approaches...`);
+                    console.log(`Successfully deleted calendar using standard DELETE`);
+                  } catch (stdDelError) {
+                    console.log(`Standard DELETE failed: ${stdDelError.message}`);
                     
-                    // Second attempt: Try with different content type
+                    // If DELETE failed, try marking as disabled/hidden
                     try {
                       await davClient.davRequest({
                         url: existingCalendar.url,
                         init: {
-                          method: 'DELETE',
+                          method: 'PROPPATCH',
                           headers: {
-                            'Content-Type': 'text/plain',
+                            'Content-Type': 'application/xml; charset=utf-8',
                           },
-                          body: '' 
+                          body: `<?xml version="1.0" encoding="utf-8" ?>
+                            <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                              <D:set>
+                                <D:prop>
+                                  <C:calendar-enabled>false</C:calendar-enabled>
+                                </D:prop>
+                              </D:set>
+                            </D:propertyupdate>`
                         }
                       });
-                      console.log(`Successfully deleted calendar using DELETE with text/plain`);
-                    } catch (altDeleteError) {
-                      console.log(`Alternative DELETE failed, trying PROPPATCH...`);
-                      
-                      // Third attempt: Try to mark as disabled
-                      try {
-                        await davClient.davRequest({
-                          url: existingCalendar.url,
-                          init: {
-                            method: 'PROPPATCH',
-                            headers: {
-                              'Content-Type': 'application/xml; charset=utf-8',
-                            },
-                            body: `<?xml version="1.0" encoding="utf-8" ?>
-                              <D:propertyupdate xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                                <D:set>
-                                  <D:prop>
-                                    <C:calendar-enabled>false</C:calendar-enabled>
-                                  </D:prop>
-                                </D:set>
-                              </D:propertyupdate>`
-                          }
-                        });
-                        console.log(`Successfully disabled calendar on server using PROPPATCH`);
-                      } catch (propError) {
-                        console.log(`All deletion approaches failed for this calendar`);
-                      }
+                      console.log(`Successfully disabled calendar via PROPPATCH`);
+                    } catch (propError) {
+                      console.log(`All deletion approaches failed for this calendar: ${propError.message}`);
                     }
                   }
-                } catch (deleteError) {
-                  console.log(`Deletion attempts failed for this calendar`);
                 }
+              } catch (calErr) {
+                console.error(`Error during calendar deletion process: ${calErr.message}`);
               }
             } catch (calendarDeleteError) {
               console.error(`Error deleting calendar from server:`, calendarDeleteError);
