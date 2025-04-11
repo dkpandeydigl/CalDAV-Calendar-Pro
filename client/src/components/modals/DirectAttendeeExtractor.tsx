@@ -18,6 +18,9 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
   rawData,
   showMoreCount = 2
 }) => {
+  console.log('ATTENDEE DEBUG: DirectAttendeeExtractor component rendering with rawData:', 
+              rawData ? `string of length ${rawData.length}` : 'null/undefined');
+  
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   
   useEffect(() => {
@@ -146,8 +149,23 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
     }
   }, [rawData]);
   
+  // FOR DEBUGGING: Always show the component even if no attendees found
+  // to verify it's being rendered
   if (attendees.length === 0) {
-    return null;
+    console.log('ATTENDEE DEBUG: No attendees found, but rendering component for debugging');
+    // Return a debug version of the component
+    return (
+      <div className="border border-red-300 p-2 mt-2 rounded-md">
+        <div className="text-sm font-medium mb-1">
+          <span>Attendee Extractor Debug (No Attendees Found)</span>
+        </div>
+        <div className="text-xs text-gray-500">
+          <p>Raw data length: {rawData ? rawData.length : 'null'}</p>
+          <p>Component is rendering but found no attendees to display.</p>
+          <p>Raw data type: {typeof rawData}</p>
+        </div>
+      </div>
+    );
   }
 
   // Function to determine which icon to use based on attendee role

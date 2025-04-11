@@ -638,14 +638,26 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </div>
             )}
             
+            {/* Debug raw data info */}
+            <div className="text-xs p-1 bg-yellow-50 rounded border border-yellow-200 mb-2">
+              <p>Debug rawData: {typeof event.rawData === 'string' 
+                ? `String length ${event.rawData.length}` 
+                : typeof event.rawData === 'object'
+                ? 'Object type'
+                : 'Not string/object'}</p>
+            </div>
+            
             {/* Direct Resource Extractor Component */}
             {typeof event.rawData === 'string' && (
               <DirectResourceExtractor rawData={event.rawData} />
             )}
             
             {/* Attendees section using DirectAttendeeExtractor */}
-            {typeof event.rawData === 'string' && (
-              <DirectAttendeeExtractor rawData={event.rawData} showMoreCount={2} />
+            {(
+              <DirectAttendeeExtractor 
+                rawData={typeof event.rawData === 'string' ? event.rawData : null} 
+                showMoreCount={2} 
+              />
             )}
             
             {/* Fallback for legacy attendee format if raw data extraction doesn't work */}
