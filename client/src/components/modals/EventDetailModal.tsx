@@ -792,7 +792,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <span>Resources ({parsedResources.length})</span>
                     </div>
                     <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                      <ul className="space-y-1 max-h-[10em] overflow-y-auto pr-2">
+                      <ul className="space-y-1 pr-2">
                         {parsedResources
                           .slice(0, 1) // Show only the first resource
                           .map((resource: any, index) => {

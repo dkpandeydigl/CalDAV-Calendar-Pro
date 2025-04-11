@@ -207,9 +207,9 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
         <span>Attendees ({attendees.length})</span>
       </div>
       <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-        <ul className="space-y-1 max-h-[10em] overflow-y-auto pr-2">
+        <ul className="space-y-1">
           {attendees
-            .slice(0, showMoreCount)
+            .slice(0, 1) // Show only the first attendee
             .map((attendee, index) => (
               <li key={`attendee-${index}`} className="flex items-start mb-2">
                 <div className="mt-1 mr-3">
@@ -238,11 +238,11 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
             ))}
           
           {/* Show "more attendees" indicator if needed */}
-          {attendees.length > showMoreCount && (
+          {attendees.length > 1 && (
             <li className="text-xs text-center py-1">
               <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500 inline-flex items-center">
                 <Users className="h-3 w-3 mr-1" />
-                + {attendees.length - showMoreCount} more attendee{attendees.length - showMoreCount > 1 ? 's' : ''}
+                + {attendees.length - 1} more attendee{attendees.length - 1 > 1 ? 's' : ''}
               </span>
             </li>
           )}

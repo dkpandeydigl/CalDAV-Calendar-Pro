@@ -90,8 +90,8 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawDa
         <span>Resources ({resources.length})</span>
       </div>
       <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-        <ul className="space-y-1 max-h-[10em] overflow-y-auto pr-2">
-          {resources.map((resource, index) => (
+        <ul className="space-y-1 pr-2">
+          {resources.slice(0, 1).map((resource, index) => (
             <li key={`resource-${index}`} className="flex items-start mb-2">
               <div className="mt-1 mr-3">
                 {getResourceIcon(resource.type || '')}
@@ -107,6 +107,16 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ rawDa
               </div>
             </li>
           ))}
+          
+          {/* Show "more resources" indicator if needed */}
+          {resources.length > 1 && (
+            <li className="text-xs text-center py-1">
+              <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500 inline-flex items-center">
+                <Wrench className="h-3 w-3 mr-1" />
+                + {resources.length - 1} more resource{resources.length - 1 > 1 ? 's' : ''}
+              </span>
+            </li>
+          )}
         </ul>
       </div>
     </div>
