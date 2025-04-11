@@ -9,7 +9,7 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Laptop, Wrench, Settings } from 'lucide-react';
+import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned } from 'lucide-react';
 import DirectResourceExtractor from './DirectResourceExtractor';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
@@ -606,7 +606,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </div>
             
             <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
-              <span className="material-icons text-primary mr-2 bg-white p-1 rounded-md shadow-sm">schedule</span>
+              <Clock className="text-primary mr-2 bg-white p-1 rounded-md shadow-sm h-5 w-5" />
               <div>
                 <div className="text-sm font-medium text-primary/90">{formatDayOfWeekDate(startDate)}</div>
                 <div className="text-sm text-primary/80">
@@ -620,7 +620,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             
             {event.location && (
               <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
-                <span className="material-icons text-blue-500 mr-2 bg-white p-1 rounded-md shadow-sm">location_on</span>
+                <MapPinned className="text-blue-500 mr-2 bg-white p-1 rounded-md shadow-sm h-5 w-5" />
                 <div className="text-sm font-medium text-blue-700">{event.location}</div>
               </div>
             )}
@@ -663,7 +663,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               const { email, role } = attendee as { email: string; role?: string };
                               return (
                                 <li key={index} className="flex items-start">
-                                  <User className="text-neutral-500 mr-2 h-4 w-4" />
+                                  <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
                                   <div>
                                     <div className="font-medium">{email}</div>
                                     {role && (
@@ -844,7 +844,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               
                               return (
                                 <li key={index} className="flex items-start mb-2">
-                                  <span className="material-icons text-neutral-500 mr-2 text-sm mt-0.5">meeting_room</span>
+                                  <DoorClosed className="text-neutral-500 mr-2 h-4 w-4" />
                                   <div>
                                     <div className="font-medium">{subType}</div>
                                     <div className="text-xs text-neutral-600">
@@ -867,7 +867,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               
                               return (
                                 <li key={index} className="flex items-center">
-                                  <span className="material-icons text-neutral-500 mr-2 text-sm">room</span>
+                                  <MapPin className="text-neutral-500 mr-2 h-4 w-4" />
                                   {displayValue}
                                 </li>
                               );
@@ -876,7 +876,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             console.error('Error rendering resource:', error);
                             return (
                               <li key={index} className="flex items-center">
-                                <span className="material-icons text-neutral-500 mr-2 text-sm">error</span>
+                                <AlertTriangle className="text-neutral-500 mr-2 h-4 w-4" />
                                 Error displaying resource
                               </li>
                             );
@@ -941,7 +941,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               )}
               {isAuthError && (
                 <div className="text-sm text-muted-foreground py-2 flex items-center">
-                  <span className="material-icons text-amber-500 mr-1 text-sm">info</span>
+                  <Info className="text-amber-500 mr-1 h-4 w-4" />
                   <Button 
                     variant="link" 
                     className="p-0 h-auto text-primary hover:text-primary/80 font-normal"
