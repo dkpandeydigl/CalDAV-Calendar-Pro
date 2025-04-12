@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Calendar, CalendarSharing } from '@shared/schema';
 import { shareCalendar, getCalendarShares, removeCalendarSharing, updateSharingPermission } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
-import { CalendarIcon, Users, UserPlus, Trash, MoreHorizontal, ShieldAlert, Info } from 'lucide-react';
+import { CalendarIcon, Users, UserPlus, Trash, MoreHorizontal, ShieldAlert, Info, RefreshCw } from 'lucide-react';
 import { useCalendars } from '@/hooks/useCalendars';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -175,9 +175,19 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
   
   // Force the component to show shares when switching to the manage tab
   const handleTabChange = (value: string) => {
-    if (value === 'manage' && activeCalendarId) {
-      console.log(`Re-loading shares for calendar ID ${activeCalendarId} (from tab change)`);
-      loadCalendarShares(activeCalendarId);
+    if (value === 'manage') {
+      // If we already have an active calendar, reload its shares
+      if (activeCalendarId) {
+        console.log(`Re-loading shares for calendar ID ${activeCalendarId} (from tab change)`);
+        loadCalendarShares(activeCalendarId);
+      } 
+      // Otherwise, select the first calendar and load its shares
+      else if (calendars.length > 0 && !activeCalendarId) {
+        const firstCalendarId = calendars[0].id;
+        console.log(`Automatically selecting first calendar ID ${firstCalendarId} on tab change`);
+        setActiveCalendarId(firstCalendarId);
+        // The useEffect will handle loading the shares
+      }
     }
   };
   
@@ -264,7 +274,7 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs defaultValue="share" className="mt-2">
+        <Tabs defaultValue="share" className="mt-2" onValueChange={handleTabChange}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="share">Share New</TabsTrigger>
             <TabsTrigger value="manage">Manage Shares</TabsTrigger>
@@ -418,6 +428,14 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
                     <h3 className="text-sm font-medium">
                       {calendarShares[activeCalendarId].length} Share(s) for {calendars.find(c => c.id === activeCalendarId)?.name}
                     </h3>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="ml-auto" 
+                      onClick={() => loadCalendarShares(activeCalendarId)}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" /> Refresh
+                    </Button>
                   </div>
                   
                   <ScrollArea className="max-h-40">
@@ -469,6 +487,15 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
                 <div className="flex flex-col items-center justify-center py-6 text-center">
                   <Info className="h-8 w-8 text-muted-foreground mb-2" />
                   <p className="text-muted-foreground">This calendar is not shared with anyone.</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="mt-3" 
+                    onClick={() => loadCalendarShares(activeCalendarId)}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" /> Refresh Share Data
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-2">Calendar ID: {activeCalendarId}</p>
                 </div>
               )
             ) : (
