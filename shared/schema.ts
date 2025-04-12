@@ -103,6 +103,9 @@ export const events = pgTable("events", {
   lastSyncAttempt: timestamp("last_sync_attempt"), // When we last tried to sync
   emailSent: text("email_sent"), // Values: 'sent', 'failed', 'not_sent', null (if no attendees)
   emailError: text("email_error"), // Error message if email sending failed
+  lastModifiedBy: integer("last_modified_by"), // User ID who last modified the event
+  lastModifiedByName: text("last_modified_by_name"), // Username or email of user who last modified (for display)
+  lastModifiedAt: timestamp("last_modified_at").defaultNow(), // Timestamp of last modification
 });
 
 export const insertEventSchema = createInsertSchema(events).pick({
@@ -127,6 +130,9 @@ export const insertEventSchema = createInsertSchema(events).pick({
   lastSyncAttempt: true,
   emailSent: true,
   emailError: true,
+  lastModifiedBy: true,
+  lastModifiedByName: true,
+  lastModifiedAt: true,
 });
 
 export type InsertEvent = z.infer<typeof insertEventSchema>;
