@@ -677,9 +677,22 @@ export class SyncService {
    */
   private preprocessICSData(icsData: string): string {
     try {
+      // First, log a sample of the data to help with debugging
+      console.log(`Preprocessing ICS data (first 100 chars): ${icsData.substring(0, 100)}...`);
+      
+      // Check for SCHEDULE-STATUS in the entire file and remove it if found
+      // This is a more aggressive approach to handle problematic data
+      let processedData = icsData;
+      
+      // Special case for SCHEDULE-STATUS which might appear anywhere
+      if (processedData.includes('SCHEDULE-STATUS')) {
+        console.log('Found SCHEDULE-STATUS property, removing it');
+        processedData = processedData.replace(/SCHEDULE-STATUS=[^;\r\n]+[;\r\n]/g, '');
+      }
+      
       // Find any RRULE lines
       const rruleRegex = /RRULE:([^\r\n]+)/g;
-      return icsData.replace(rruleRegex, (match, rruleContent) => {
+      processedData = processedData.replace(rruleRegex, (match, rruleContent) => {
         // List of standard RRULE properties according to RFC 5545
         const standardProperties = [
           'FREQ', 'UNTIL', 'COUNT', 'INTERVAL', 'BYSECOND', 'BYMINUTE',
@@ -690,8 +703,16 @@ export class SyncService {
         // Split the RRULE content by semicolons to get individual properties
         const properties = rruleContent.split(';');
         
+        // Log all properties for debugging
+        properties.forEach((prop: string) => {
+          const propName = prop.split('=')[0];
+          if (!standardProperties.includes(propName)) {
+            console.log(`Found non-standard RRULE property: ${propName}`);
+          }
+        });
+        
         // Filter out non-standard properties
-        const filteredProperties = properties.filter(prop => {
+        const filteredProperties = properties.filter((prop: string) => {
           const propName = prop.split('=')[0];
           return standardProperties.includes(propName);
         });
@@ -704,6 +725,8 @@ export class SyncService {
         // Reconstruct the RRULE line
         return `RRULE:${filteredProperties.join(';')}`;
       });
+      
+      return processedData;
     } catch (error) {
       console.error('Error preprocessing ICS data:', error);
       return icsData; // Return original if preprocessing fails
@@ -1437,7 +1460,7 @@ export class SyncService {
                   await storage.updateEvent(event.id, {
                     syncStatus: 'sync_failed',
                     lastSyncAttempt: new Date(),
-                    lastSyncError: 'Event modified on server (412 Precondition Failed)'
+                    syncError: 'Event modified on server (412 Precondition Failed)'
                   });
                   
                   // Force a calendar refresh to get the latest version
@@ -1453,7 +1476,7 @@ export class SyncService {
                   await storage.updateEvent(event.id, {
                     syncStatus: 'error',
                     lastSyncAttempt: new Date(),
-                    lastSyncError: errorMessage.substring(0, 255) // Truncate to a reasonable length
+                    syncError: errorMessage.substring(0, 255) // Truncate to a reasonable length
                   });
                 }
               }
