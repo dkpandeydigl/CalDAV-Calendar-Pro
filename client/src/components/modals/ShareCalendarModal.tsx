@@ -114,7 +114,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
   const calendarsToFetch = React.useRef<number[]>([]);
   const authLoadingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
-  // Effect to identify calendars needing loading
+  // Effect to setup timeout and cleanup when modal opens/closes
   useEffect(() => {
     if (!open) {
       // Reset when modal closes
@@ -130,7 +130,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       return;
     }
     
-    // Setup timeout only once when modal opens, not on every selectedCalendars change
+    // Setup timeout only once when modal opens
     if (!authLoadingTimeoutRef.current) {
       authLoadingTimeoutRef.current = setTimeout(() => {
         console.log("Auth loading timeout - forcing UI to proceed with available permissions");
@@ -148,10 +148,40 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       }, 2000); // 2 second timeout
     }
     
+    // Cleanup function
+    return () => {
+      if (authLoadingTimeoutRef.current) {
+        clearTimeout(authLoadingTimeoutRef.current);
+        authLoadingTimeoutRef.current = null;
+      }
+    };
+  }, [open]); // Only depends on modal open state
+
+  // Separate effect to handle identifying calendars that need loading
+  // This is in a separate effect to avoid infinite loops with selectedCalendars
+  useEffect(() => {
+    // Skip if modal is not open
+    if (!open) return;
+    
+    // Only process when we have calendars and the effect won't re-run frequently
+    // Use a ref to track last run time to debounce the effect
+    const now = Date.now();
+    const lastRun = React.useRef(0);
+    
+    if (now - lastRun.current < 500) {
+      // Avoid running this logic more than once per 500ms
+      return;
+    }
+    lastRun.current = now;
+    
+    // Get a safe reference to the current state to avoid closure issues
+    const calendarItems = [...selectedCalendars];
+    
     // Collect list of calendars that need fetching (avoids modifying state inside effect)
     const needFetching: number[] = [];
     
-    selectedCalendars.forEach(item => {
+    calendarItems.forEach(item => {
+      // Only check loading items that aren't already being fetched
       if (item.loading && 
           !fetchedCalendarIds.current.has(item.calendar.id) && 
           !loadingCalendarIds.current.has(item.calendar.id)) {
@@ -167,16 +197,13 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     // Store the list of calendars to fetch only if we have new ones
     if (needFetching.length > 0) {
       calendarsToFetch.current = needFetching;
+      
+      // Schedule fetches immediately
+      setTimeout(() => {
+        needFetching.forEach(id => requestSharesFetch(id));
+      }, 0);
     }
-    
-    // Cleanup function
-    return () => {
-      if (authLoadingTimeoutRef.current) {
-        clearTimeout(authLoadingTimeoutRef.current);
-        authLoadingTimeoutRef.current = null;
-      }
-    };
-  }, [open]); // FIXED: Remove selectedCalendars from dependencies to prevent infinite rerender loop
+  }, [selectedCalendars, open]);
   
   // Separate effect to handle the actual fetching
   useEffect(() => {
