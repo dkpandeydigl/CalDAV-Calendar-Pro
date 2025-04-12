@@ -829,6 +829,47 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     setSelectedTemplate(null);
     setIsBusy(true);
     setErrors({});
+    setIsNextDayAdjusted(false);
+  };
+  
+  // This function handles the automatic next-day adjustment when end time is earlier than start time
+  const checkAndAdjustNextDay = () => {
+    if (allDay || !startDate || !endDate || !startTime || !endTime) return;
+    
+    // Only apply this when the user has selected the same date for start and end
+    if (startDate === endDate) {
+      // Create date objects to compare times
+      const [startHour, startMinute] = startTime.split(':').map(Number);
+      const [endHour, endMinute] = endTime.split(':').map(Number);
+      
+      // Compare times - if end time is earlier than start time on the same day
+      if ((endHour < startHour) || (endHour === startHour && endMinute < startMinute)) {
+        // Calculate next day date
+        const startDateObj = new Date(startDate);
+        const nextDay = new Date(startDateObj);
+        nextDay.setDate(nextDay.getDate() + 1);
+        
+        // Format the next day as YYYY-MM-DD
+        const nextDayFormatted = nextDay.toISOString().split('T')[0];
+        
+        // Set the end date to the next day and mark as adjusted
+        setEndDate(nextDayFormatted);
+        setIsNextDayAdjusted(true);
+        
+        // Clear any endDate validation errors since we've fixed the issue
+        if (errors.endDate) {
+          const { endDate, ...restErrors } = errors;
+          setErrors(restErrors);
+        }
+        
+        console.log(`[AUTO ADJUST] End time ${endTime} is earlier than start time ${startTime}, adjusted end date to next day: ${nextDayFormatted}`);
+      } else if (isNextDayAdjusted) {
+        // If times are now valid and we previously adjusted, reset back to same day
+        setEndDate(startDate);
+        setIsNextDayAdjusted(false);
+        console.log(`[AUTO ADJUST] Times are now valid, reset end date to match start date: ${startDate}`);
+      }
+    }
   };
   
   // Helper function that determines which tabs have errors
@@ -1376,7 +1417,19 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             id="start-date"
                             type="date"
                             value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
+                            onChange={(e) => {
+                              const newStartDate = e.target.value;
+                              setStartDate(newStartDate);
+                              
+                              // If dates were previously the same, update end date to match new start date
+                              // This keeps the behavior consistent with how calendar apps typically work
+                              if (startDate === endDate) {
+                                setEndDate(newStartDate);
+                              }
+                              
+                              // Reset adjustment flag since user manually changed the date
+                              setIsNextDayAdjusted(false);
+                            }}
                             className={errors.startDate ? 'border-destructive' : ''}
                           />
                           {errors.startDate && (
@@ -1390,7 +1443,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                               id="start-time"
                               type="time"
                               value={startTime}
-                              onChange={(e) => setStartTime(e.target.value)}
+                              onChange={(e) => {
+                                setStartTime(e.target.value);
+                                // Check for adjustment after setting time
+                                setTimeout(checkAndAdjustNextDay, 0);
+                              }}
                               className={`${errors.startTime ? 'border-destructive' : ''} [&::-webkit-calendar-picker-indicator]:z-50 [&::-webkit-calendar-picker-indicator]:relative`}
                             />
                             {errors.startTime && (
@@ -1409,7 +1466,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                             id="end-date"
                             type="date"
                             value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
+                            onChange={(e) => {
+                              setEndDate(e.target.value);
+                              // Reset the next day adjustment flag when date is manually changed
+                              setIsNextDayAdjusted(false);
+                            }}
                             className={errors.endDate ? 'border-destructive' : ''}
                           />
                           {errors.endDate && (
@@ -1423,7 +1484,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                               id="end-time"
                               type="time"
                               value={endTime}
-                              onChange={(e) => setEndTime(e.target.value)}
+                              onChange={(e) => {
+                                setEndTime(e.target.value);
+                                // Check for adjustment after setting time
+                                setTimeout(checkAndAdjustNextDay, 0);
+                              }}
                               className={`${errors.endTime ? 'border-destructive' : ''} [&::-webkit-calendar-picker-indicator]:z-50 [&::-webkit-calendar-picker-indicator]:relative`}
                             />
                             {errors.endTime && (
