@@ -643,33 +643,201 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       timeZoneName: 'short'
     });
     
-    const formattedStart = dateFormat.format(validStartDate);
-    const formattedEnd = dateFormat.format(validEndDate);
+    const timeFormat = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: 'numeric',
+      timeZoneName: 'short'
+    });
     
-    // Create the email content similar to what we'd send
+    const dateOnlyFormat = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric'
+    });
+    
+    const formattedDate = dateOnlyFormat.format(validStartDate);
+    const formattedStartTime = timeFormat.format(validStartDate);
+    const formattedEndTime = timeFormat.format(validEndDate);
+    
+    // Process attendees to ensure proper display (fix for Unknown/No email address)
+    const processedAttendees = attendees.map(attendee => {
+      // Ensure email exists
+      const email = attendee.email || '';
+      
+      // Create proper name from email if not provided
+      let name = attendee.name;
+      if (!name && email) {
+        // Extract the user part and format it nicely
+        const userPart = email.split('@')[0];
+        name = userPart
+          .split(/[._-]/)
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+          .join(' ');
+      }
+      
+      // Fallback if we couldn't create a proper name
+      if (!name && !email) {
+        name = 'Unknown Attendee';
+      }
+      
+      return {
+        ...attendee,
+        email,
+        name,
+        // Normalize roles and status
+        role: attendee.role || 'Attendee',
+        status: attendee.status || 'Needs Action'
+      };
+    });
+    
+    // Create the email content with horizontal layout for better information display
     const htmlContent = `
     <html>
       <head>
         <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+          .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; border-bottom: 2px solid #e0e0e0; }
           .header h2 { margin: 0; color: #333; }
           .content { padding: 20px 15px; }
-          .event-details { margin-bottom: 20px; }
-          .detail-row { margin-bottom: 10px; }
-          .label { font-weight: bold; display: inline-block; width: 100px; vertical-align: top; }
-          .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
-          .preview-note { background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ffeeba; }
-          .attendees-list { margin-top: 15px; }
-          .attendee-item { margin-bottom: 5px; }
-          
-          /* Rich text styling */
-          .description-container { display: flex; align-items: start; }
-          .description-content { 
-            display: inline-block; 
-            margin-left: 10px; 
-            max-width: 450px; 
+          .event-card { 
+            border: 1px solid #e0e0e0; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            overflow: hidden;
+            margin-bottom: 25px;
+          }
+          .event-header { 
+            background-color: #4a86e8; 
+            color: white; 
+            padding: 15px; 
+            font-size: 18px; 
+            font-weight: bold;
+          }
+          .event-body { display: flex; flex-wrap: wrap; padding: 0; }
+          .event-col { 
+            padding: 15px; 
+            box-sizing: border-box; 
+          }
+          .event-main-col { width: 65%; border-right: 1px solid #e0e0e0; }
+          .event-side-col { width: 35%; background-color: #f9f9f9; }
+          .detail-section { margin-bottom: 20px; }
+          .detail-section h3 { 
+            margin-top: 0; 
+            margin-bottom: 10px; 
+            padding-bottom: 5px; 
+            border-bottom: 1px solid #eee;
+            font-size: 16px;
+            color: #555;
+          }
+          .detail-row { 
+            display: flex; 
+            margin-bottom: 8px; 
+            align-items: flex-start;
+          }
+          .label { 
+            font-weight: 600; 
+            width: 100px; 
+            color: #555;
+            flex-shrink: 0;
+          }
+          .value { flex: 1; }
+          .time-badge {
+            background-color: #ebf4ff;
+            border: 1px solid #cce3ff;
+            border-radius: 4px;
+            padding: 8px 12px;
+            display: inline-block;
+            margin-bottom: 10px;
+            color: #0052cc;
+            font-weight: 500;
+          }
+          .location-badge {
+            background-color: #f0f4f9;
+            border: 1px solid #dee4ed;
+            border-radius: 4px;
+            padding: 8px 12px;
+            display: inline-block;
+            margin-bottom: 10px;
+            color: #505a68;
+          }
+          .attendee-list { 
+            padding: 0; 
+            margin: 0;
+            list-style-type: none;
+          }
+          .attendee-item { 
+            padding: 8px 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .attendee-item:last-child { border-bottom: none; }
+          .attendee-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: #4a86e8;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+          }
+          .attendee-info {
+            flex: 1;
+          }
+          .attendee-name {
+            font-weight: 500;
+            margin-bottom: 2px;
+          }
+          .attendee-email {
+            font-size: 12px;
+            color: #666;
+          }
+          .attendee-role {
+            font-size: 11px;
+            background-color: #e8f0fe;
+            color: #1a73e8;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 5px;
+          }
+          .resource-list {
+            padding: 0;
+            margin: 0;
+            list-style-type: none;
+          }
+          .resource-item {
+            padding: 8px 10px;
+            border-bottom: 1px solid #eee;
+          }
+          .resource-item:last-child { border-bottom: none; }
+          .resource-type {
+            font-weight: 500;
+            color: #0b5394;
+          }
+          .resource-admin {
+            font-size: 12px;
+            color: #666;
+            margin-top: 3px;
+          }
+          .footer { 
+            font-size: 12px; 
+            color: #666; 
+            margin-top: 30px; 
+            border-top: 1px solid #eee; 
+            padding-top: 15px; 
+          }
+          .preview-note { 
+            background-color: #fff3cd; 
+            padding: 10px; 
+            border-radius: 5px; 
+            margin-bottom: 20px; 
+            border: 1px solid #ffeeba; 
           }
           .description-content p { margin-top: 0; margin-bottom: 0.5rem; }
           .description-content strong, .description-content b { font-weight: bold; }
@@ -681,6 +849,16 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
             font-weight: bold; 
             margin-top: 0.5rem;
             margin-bottom: 0.5rem; 
+          }
+          
+          /* Responsive adjustments */
+          @media (max-width: 600px) {
+            .event-body { flex-direction: column; }
+            .event-main-col, .event-side-col { 
+              width: 100%; 
+              border-right: none;
+              border-bottom: 1px solid #e0e0e0;
+            }
           }
         </style>
       </head>
@@ -698,58 +876,86 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
             <p>Hello [Recipient],</p>
             <p>You have been invited to the following event:</p>
             
-            <div class="event-details">
-              <div class="detail-row">
-                <span class="label">Event:</span> ${title}
-              </div>
-              ${description ? `
-              <div class="detail-row">
-                <span class="label">Description:</span>
-                <div class="description-content">${description}</div>
-              </div>` : ''}
-              ${location ? `
-              <div class="detail-row">
-                <span class="label">Location:</span> ${location}
-              </div>` : ''}
-              <div class="detail-row">
-                <span class="label">Start:</span> ${formattedStart}
-              </div>
-              <div class="detail-row">
-                <span class="label">End:</span> ${formattedEnd}
-              </div>
-              <div class="detail-row">
-                <span class="label">Organizer:</span> ${organizer ? (organizer.name || organizer.email) : 'Unknown'}
+            <div class="event-card">
+              <div class="event-header">
+                ${title}
               </div>
               
-              <div class="detail-row">
-                <span class="label">Attendees:</span> 
-                <div class="attendees-list">
-                  ${attendees && attendees.length > 0 ? attendees.map(attendee => `
-                    <div class="attendee-item">
-                      ${attendee.name ? `${attendee.name} (${attendee.email})` : attendee.email} 
-                      - Role: ${attendee.role || 'Participant'}
+              <div class="event-body">
+                <div class="event-main-col">
+                  <div class="detail-section">
+                    <div class="time-badge">
+                      <span>${formattedDate}</span><br>
+                      <span>${formattedStartTime} - ${formattedEndTime}</span>
                     </div>
-                  `).join('') : '<div class="attendee-item">No attendees</div>'}
+                    
+                    ${location ? `
+                    <div class="location-badge">
+                      <span>${location}</span>
+                    </div>` : ''}
+                    
+                    <div class="detail-row">
+                      <span class="label">Organizer:</span>
+                      <span class="value">${organizer ? (organizer.name || organizer.email) : 'Unknown'}</span>
+                    </div>
+                  </div>
+                  
+                  ${description ? `
+                  <div class="detail-section">
+                    <h3>Description</h3>
+                    <div class="description-content">${description}</div>
+                  </div>` : ''}
+                </div>
+                
+                <div class="event-side-col">
+                  <div class="detail-section">
+                    <h3>Attendees (${processedAttendees.length})</h3>
+                    <ul class="attendee-list">
+                      ${processedAttendees.length > 0 ? processedAttendees.map(att => {
+                        // Create the initials for the avatar
+                        const initials = att.name
+                          ? att.name.split(' ').map(n => n.charAt(0)).slice(0, 2).join('').toUpperCase()
+                          : att.email.charAt(0).toUpperCase();
+                        
+                        return `
+                          <li class="attendee-item">
+                            <div class="attendee-avatar">${initials}</div>
+                            <div class="attendee-info">
+                              <div class="attendee-name">
+                                ${att.name}
+                                <span class="attendee-role">${att.role}</span>
+                              </div>
+                              <div class="attendee-email">${att.email}</div>
+                            </div>
+                          </li>
+                        `;
+                      }).join('') : 
+                      '<li class="attendee-item">No attendees added</li>'}
+                    </ul>
+                  </div>
+                  
+                  ${resources && resources.length > 0 ? `
+                  <div class="detail-section">
+                    <h3>Resources (${resources.length})</h3>
+                    <ul class="resource-list">
+                      ${resources.map((resource: Resource) => `
+                        <li class="resource-item">
+                          <div class="resource-type">${resource.subType}</div>
+                          <div class="resource-admin">
+                            Admin: ${resource.adminName || resource.adminEmail}
+                          </div>
+                          ${resource.capacity ? `<div>Capacity: ${resource.capacity}</div>` : ''}
+                          ${resource.remarks ? `<div><em>Notes: ${resource.remarks}</em></div>` : ''}
+                        </li>
+                      `).join('')}
+                    </ul>
+                  </div>
+                  ` : ''}
                 </div>
               </div>
-              
-              ${resources && resources.length > 0 ? `
-              <div class="detail-row">
-                <span class="label">Resources:</span> 
-                <div class="resources-list">
-                  ${resources.map((resource: Resource) => `
-                    <div class="resource-item">
-                      ${resource.subType} (Capacity: ${resource.capacity !== undefined ? resource.capacity : 'Not specified'}) 
-                      ${resource.remarks ? `<br><em>Notes: ${resource.remarks}</em>` : ''}
-                      <br>Admin: ${resource.adminName || resource.adminEmail}
-                    </div>
-                  `).join('')}
-                </div>
-              </div>
-              ` : ''}
             </div>
             
-            <p>The event details will be attached in an iCalendar file that recipients can import into their calendar application.</p>
+            <p>The event details will be attached in an iCalendar file that you can import into your calendar application.</p>
           </div>
           
           <div class="footer">
