@@ -2227,6 +2227,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Check if this calendar is already shared with this email address or user ID
+      const existingShares = await storage.getCalendarSharing(calendarId);
+      const duplicateShare = existingShares.find(share => 
+        share.sharedWithEmail === req.body.email || 
+        (sharedWithUserId && share.sharedWithUserId === sharedWithUserId)
+      );
+      
+      if (duplicateShare) {
+        return res.status(400).json({ 
+          message: "This calendar is already shared with this user",
+          existing: duplicateShare
+        });
+      }
+      
       // Create the sharing data
       const sharingData = {
         calendarId,
