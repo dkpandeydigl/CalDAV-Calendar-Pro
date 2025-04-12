@@ -671,94 +671,11 @@ export class SyncService {
    * @param etag The ETag header value from the server
    * @param url The URL of the event
    */
-  /**
-   * Pre-process ICS data to remove non-standard RRULE properties that could cause parsing errors
-   * @param icsData The raw ICS data as a string
-   */
-  private preprocessICSData(icsData: string): string {
-    try {
-      console.log(`Preprocessing ICS data (first 100 chars): ${icsData.substring(0, 100)}...`);
-      
-      // Replace any SCHEDULE-STATUS properties found in RRULE
-      if (icsData.indexOf('SCHEDULE-STATUS') >= 0) {
-        console.log('Found SCHEDULE-STATUS property, removing it');
-        icsData = icsData.replace(/SCHEDULE-STATUS=[^;\r\n]+/g, '');
-        // Also remove any double semicolons that might be left
-        icsData = icsData.replace(/;;/g, ';');
-      }
-      
-      // Find and clean RRULE properties
-      icsData = icsData.replace(/RRULE:([^\r\n]+)/g, (match: string, rruleContent: string) => {
-        // List of standard RRULE properties according to RFC 5545
-        const standardProperties = [
-          'FREQ', 'UNTIL', 'COUNT', 'INTERVAL', 'BYSECOND', 'BYMINUTE',
-          'BYHOUR', 'BYDAY', 'BYMONTHDAY', 'BYYEARDAY', 'BYWEEKNO',
-          'BYMONTH', 'BYSETPOS', 'WKST'
-        ];
-        
-        // Check if there are any non-standard properties
-        const properties = rruleContent.split(';');
-        const nonStandardProps = properties.filter((prop: string) => {
-          const propName = prop.split('=')[0];
-          return !standardProperties.includes(propName);
-        });
-        
-        // If there are non-standard properties, filter them out
-        if (nonStandardProps.length > 0) {
-          console.log(`Found non-standard RRULE properties: ${nonStandardProps.join(', ')}`);
-          
-          // Filter out non-standard properties
-          const filteredProperties = properties.filter((prop: string) => {
-            const propName = prop.split('=')[0];
-            return standardProperties.includes(propName);
-          });
-          
-          console.log(`Filtered RRULE: ${filteredProperties.join(';')}`);
-          return `RRULE:${filteredProperties.join(';')}`;
-        }
-        
-        // If no non-standard properties, return the original match
-        return match;
-      });
-      
-      return icsData;
-    } catch (error) {
-      console.error('Error preprocessing ICS data:', error);
-      return icsData; // Return original if preprocessing fails
-    }
-  }
-
   private parseRawICSData(icsData: string, etag?: string, url?: string): CalDAVEvent | null {
     try {
-      // Pre-process the ICS data to handle non-standard properties
-      const processedICSData = this.preprocessICSData(icsData);
-      
       // Parse the ICS data using node-ical
       const parseICS = (nodeIcal as any).default?.parseICS || nodeIcal.parseICS;
-      let parsedCal;
-      
-      try {
-        parsedCal = parseICS(processedICSData);
-      } catch (parseError) {
-        console.error('Error parsing ICS data with node-ical:', parseError);
-        
-        // If RRULE is causing issues, try removing it completely for parsing
-        if (processedICSData.includes('RRULE:')) {
-          console.log('Attempting to parse without RRULE');
-          const noRruleData = processedICSData.replace(/RRULE:[^\r\n]+\r\n/g, '');
-          try {
-            parsedCal = parseICS(noRruleData);
-            console.log('Successfully parsed ICS data without RRULE');
-          } catch (secondError) {
-            console.error('Still failed to parse ICS data after removing RRULE:', secondError);
-            return null;
-          }
-        } else {
-          return null;
-        }
-      }
-      
-      // Continue with parsed data from node-ical (if successful)
+      const parsedCal = parseICS(icsData);
       
       // Find the first VEVENT in the parsed calendar
       const eventKey = Object.keys(parsedCal).find(key => 
@@ -1469,34 +1386,11 @@ export class SyncService {
               } catch (error) {
                 console.error(`Error updating event on server:`, error);
                 
-                // Check for 412 Precondition Failed error (someone else modified the event)
-                const errorMessage = error.toString();
-                if (errorMessage.includes('412 Precondition Failed')) {
-                  console.log(`Event was modified on server. Will refresh in next sync cycle.`);
-                  
-                  // Update the event to mark it for refresh
-                  await storage.updateEvent(event.id, {
-                    syncStatus: 'sync_failed',
-                    lastSyncAttempt: new Date(),
-                    syncError: 'Event modified on server (412 Precondition Failed)'
-                  });
-                  
-                  // Force a calendar refresh to get the latest version
-                  try {
-                    console.log(`Forcing refresh for calendar ${calendar.id} to get latest event data`);
-                    // Use syncNow to refresh the calendar data from server
-                    await this.syncNow(userId, { forceRefresh: true, calendarId: calendar.id });
-                  } catch (refreshError) {
-                    console.error(`Error refreshing calendar after 412 error:`, refreshError);
-                  }
-                } else {
-                  // Update the event as failed for other errors
-                  await storage.updateEvent(event.id, {
-                    syncStatus: 'error',
-                    lastSyncAttempt: new Date(),
-                    syncError: errorMessage.substring(0, 255) // Truncate to a reasonable length
-                  });
-                }
+                // Update the event as failed
+                await storage.updateEvent(event.id, {
+                  syncStatus: 'error',
+                  lastSyncAttempt: new Date()
+                });
               }
             } else {
               // Create new event on server
