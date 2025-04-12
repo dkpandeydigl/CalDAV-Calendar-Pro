@@ -671,11 +671,53 @@ export class SyncService {
    * @param etag The ETag header value from the server
    * @param url The URL of the event
    */
+  /**
+   * Pre-process ICS data to remove non-standard RRULE properties that could cause parsing errors
+   * @param icsData The raw ICS data as a string
+   */
+  private preprocessICSData(icsData: string): string {
+    try {
+      // Find any RRULE lines
+      const rruleRegex = /RRULE:([^\r\n]+)/g;
+      return icsData.replace(rruleRegex, (match, rruleContent) => {
+        // List of standard RRULE properties according to RFC 5545
+        const standardProperties = [
+          'FREQ', 'UNTIL', 'COUNT', 'INTERVAL', 'BYSECOND', 'BYMINUTE',
+          'BYHOUR', 'BYDAY', 'BYMONTHDAY', 'BYYEARDAY', 'BYWEEKNO',
+          'BYMONTH', 'BYSETPOS', 'WKST'
+        ];
+        
+        // Split the RRULE content by semicolons to get individual properties
+        const properties = rruleContent.split(';');
+        
+        // Filter out non-standard properties
+        const filteredProperties = properties.filter(prop => {
+          const propName = prop.split('=')[0];
+          return standardProperties.includes(propName);
+        });
+        
+        // If we've removed properties, log it
+        if (filteredProperties.length < properties.length) {
+          console.log(`Removed non-standard RRULE properties. Original: "${rruleContent}", Filtered: "${filteredProperties.join(';')}"`);
+        }
+        
+        // Reconstruct the RRULE line
+        return `RRULE:${filteredProperties.join(';')}`;
+      });
+    } catch (error) {
+      console.error('Error preprocessing ICS data:', error);
+      return icsData; // Return original if preprocessing fails
+    }
+  }
+
   private parseRawICSData(icsData: string, etag?: string, url?: string): CalDAVEvent | null {
     try {
+      // Pre-process the ICS data to handle non-standard properties
+      const processedICSData = this.preprocessICSData(icsData);
+      
       // Parse the ICS data using node-ical
       const parseICS = (nodeIcal as any).default?.parseICS || nodeIcal.parseICS;
-      const parsedCal = parseICS(icsData);
+      const parsedCal = parseICS(processedICSData);
       
       // Find the first VEVENT in the parsed calendar
       const eventKey = Object.keys(parsedCal).find(key => 
@@ -1401,7 +1443,8 @@ export class SyncService {
                   // Force a calendar refresh to get the latest version
                   try {
                     console.log(`Forcing refresh for calendar ${calendar.id} to get latest event data`);
-                    await this.syncCalendarFromServer(serverConnection, calendar, { forceRefresh: true });
+                    // Use syncNow to refresh the calendar data from server
+                    await this.syncNow(userId, { forceRefresh: true, calendarId: calendar.id });
                   } catch (refreshError) {
                     console.error(`Error refreshing calendar after 412 error:`, refreshError);
                   }
