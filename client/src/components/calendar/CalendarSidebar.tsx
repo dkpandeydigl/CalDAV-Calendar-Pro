@@ -76,6 +76,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
     isUnsharing, 
     bulkUnshareCalendars, 
     isBulkUnsharing,
+    updatePermission,
+    isUpdatingPermission,
     isLoading: isLoadingSharedCalendars,
     error: sharedCalendarsError
   } = useSharedCalendars();
