@@ -123,18 +123,23 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       return;
     }
     
-    // Set a timeout to force loading state to complete if it takes too long
-    authLoadingTimeoutRef.current = setTimeout(() => {
-      console.log("Auth loading timeout - forcing UI to proceed with available permissions");
-      
-      // Force update any calendars that are still loading
-      setSelectedCalendars(prev => 
-        prev.map(item => item.loading ? { ...item, loading: false } : item)
-      );
-      
-      // Clear loading state
-      loadingCalendarIds.current.clear();
-    }, 2000); // 2 second timeout
+    // Setup timeout only once when modal opens, not on every selectedCalendars change
+    if (!authLoadingTimeoutRef.current) {
+      authLoadingTimeoutRef.current = setTimeout(() => {
+        console.log("Auth loading timeout - forcing UI to proceed with available permissions");
+        
+        // Force update any calendars that are still loading
+        setSelectedCalendars(prev => 
+          prev.map(item => item.loading ? { ...item, loading: false } : item)
+        );
+        
+        // Clear loading state
+        loadingCalendarIds.current.clear();
+        
+        // Clear the timeout reference
+        authLoadingTimeoutRef.current = null;
+      }, 2000); // 2 second timeout
+    }
     
     // Collect list of calendars that need fetching (avoids modifying state inside effect)
     const needFetching: number[] = [];
@@ -152,8 +157,10 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       }
     });
     
-    // Store the list of calendars to fetch
-    calendarsToFetch.current = needFetching;
+    // Store the list of calendars to fetch only if we have new ones
+    if (needFetching.length > 0) {
+      calendarsToFetch.current = needFetching;
+    }
     
     // Cleanup function
     return () => {
@@ -162,7 +169,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         authLoadingTimeoutRef.current = null;
       }
     };
-  }, [open, selectedCalendars]); // Include selectedCalendars in dependencies
+  }, [open]); // FIXED: Remove selectedCalendars from dependencies to prevent infinite rerender loop
   
   // Separate effect to handle the actual fetching
   useEffect(() => {

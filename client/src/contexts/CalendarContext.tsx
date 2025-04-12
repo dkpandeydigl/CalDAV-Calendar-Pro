@@ -178,8 +178,21 @@ export const CalendarProvider = ({ children }: CalendarProviderProps) => {
 
   // Function to save timezone preference
   const saveTimezonePreference = async (timezone: string) => {
-    await saveTimezoneAsync(timezone);
-    setSelectedTimezone(timezone);
+    try {
+      // Update UI state immediately for responsive feel
+      setSelectedTimezone(timezone);
+      
+      // Then save to server - if this fails, we already updated the UI
+      const result = await saveTimezoneAsync(timezone);
+      
+      // Log success for debugging
+      console.log('Timezone preference saved successfully:', timezone);
+      
+      return result;
+    } catch (error) {
+      console.error('Error saving timezone preference:', error);
+      throw error; // Re-throw to allow calling code to handle it
+    }
   };
 
   const value = {
