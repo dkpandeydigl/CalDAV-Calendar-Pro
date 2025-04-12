@@ -674,11 +674,64 @@ export class SyncService {
    */
   private parseRawICSData(icsData: string, etag?: string, url?: string): CalDAVEvent | null {
     try {
-      // Parse the ICS data using node-ical
-      const parseICS = (nodeIcal as any).default?.parseICS || nodeIcal.parseICS;
-      const parsedCal = parseICS(icsData);
+      // First, preprocess the ICS data to fix common issues before parsing
+      if (!icsData) {
+        console.warn('Empty ICS data provided');
+        return null;
+      }
+      
+      // Preprocess: Fix SCHEDULE-STATUS problems
+      if (icsData.includes('SCHEDULE-STATUS')) {
+        console.log('Found SCHEDULE-STATUS in raw ICS data - preprocessing...');
+        
+        // 1. Fix RRULE lines that contain SCHEDULE-STATUS
+        const rruleRegex = /RRULE:[^\r\n]*/g;
+        icsData = icsData.replace(rruleRegex, (match) => {
+          if (match.includes('SCHEDULE-STATUS')) {
+            console.log('Fixing RRULE with SCHEDULE-STATUS');
+            // Extract just the valid RRULE parameters
+            const parts = match.substring(6).split(';'); // Remove RRULE: prefix
+            const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST', 'BYSETPOS'];
+            const validParts = parts.filter(part => {
+              if (!part.includes('=')) return false;
+              const paramName = part.split('=')[0];
+              return validParams.includes(paramName);
+            });
+            return 'RRULE:' + validParts.join(';');
+          }
+          return match;
+        });
+        
+        // 2. Fix broken ATTENDEE lines with line breaks or continuation
+        icsData = icsData.replace(/ATTENDEE[^:]*\r?\n\s+[^:]*:/g, (match) => {
+          return match.replace(/\r?\n\s+/g, '');
+        });
+      }
+      
+      // Try to parse the ICS data with node-ical
+      let parsedCal;
+      try {
+        const parseICS = (nodeIcal as any).default?.parseICS || nodeIcal.parseICS;
+        parsedCal = parseICS(icsData);
+      } catch (parsingError) {
+        console.error('Error parsing ICS data with node-ical:', parsingError);
+        // Try more aggressive preprocessing if parsing fails
+        try {
+          const fixedIcsData = this.applyAggressiveFixesToICS(icsData);
+          const parseICS = (nodeIcal as any).default?.parseICS || nodeIcal.parseICS;
+          parsedCal = parseICS(fixedIcsData);
+        } catch (secondError) {
+          console.error('Error parsing ICS data even after fixes:', secondError);
+          return null;
+        }
+      }
       
       // Find the first VEVENT in the parsed calendar
+      if (!parsedCal) {
+        console.warn('No valid calendar found in ICS data');
+        return null;
+      }
+      
       const eventKey = Object.keys(parsedCal).find(key => 
         parsedCal[key]?.type === 'VEVENT'
       );
@@ -690,7 +743,7 @@ export class SyncService {
       
       const event = parsedCal[eventKey];
       
-      // Initialize dates
+      // Process event dates
       let startDate: Date | null = null;
       let endDate: Date | null = null;
       let allDay = false;
@@ -705,12 +758,10 @@ export class SyncService {
         const seconds = event.start.getSeconds();
         
         if (hours === 0 && minutes === 0 && seconds === 0) {
-          // Potential all-day event
           allDay = true;
         }
       } else if (event.start && typeof event.start === 'object' && 'toJSDate' in event.start) {
         startDate = (event.start as any).toJSDate();
-        // Check if it's marked as a date-only event
         if ((event.start as any).dateOnly) {
           allDay = true;
         }
@@ -723,98 +774,61 @@ export class SyncService {
         endDate = (event.end as any).toJSDate();
       }
       
-      // If no end date is provided, derive from start date
+      // If no end date, derive from start date
       if (!endDate && startDate) {
         endDate = new Date(startDate);
         if (allDay) {
-          // For all-day events, set end to next day
           endDate.setDate(endDate.getDate() + 1);
         } else {
-          // For timed events, set end to 1 hour after start
           endDate.setHours(endDate.getHours() + 1);
         }
       }
       
-      // Parse RRULE if present - with error handling for SCHEDULE-STATUS
+      if (!startDate || !endDate) {
+        console.warn('Event has invalid dates');
+        return null;
+      }
+      
+      // Process recurrence rules
       let recurrenceRule: string | undefined = undefined;
       try {
-        // First check if we need to preprocess RRULE in the raw data
-        if (icsData.includes('RRULE:') && icsData.includes('SCHEDULE-STATUS')) {
-          console.log('Found potential SCHEDULE-STATUS in raw RRULE data - preprocessing');
-          // Fix any lines that incorrectly joined RRULE with SCHEDULE-STATUS
-          // This happens when SCHEDULE-STATUS is incorrectly included as a RRULE parameter
-          icsData = icsData.replace(/(RRULE:[^\r\n]*);SCHEDULE-STATUS=[^;\r\n]*/g, '$1');
-          
-          // Remove any standalone SCHEDULE-STATUS from RRULE lines
-          icsData = icsData.replace(/RRULE:[^\r\n]*SCHEDULE-STATUS=[^;\r\n]*([;\r\n])/g, '$1');
-        }
-        
         if (event.rrule) {
           if (typeof event.rrule === 'string') {
-            // Make sure RRULE doesn't contain attendee information (a common corruption)
-            const sanitizedRrule = this.sanitizeRRULE(event.rrule);
-            recurrenceRule = sanitizedRrule;
-          } else if (event.rrule && typeof event.rrule === 'object') {
-            // Try to extract the original RRULE string
+            recurrenceRule = this.sanitizeRRULE(event.rrule);
+          } else if (typeof event.rrule === 'object') {
             recurrenceRule = event.rrule.toString();
-            // If it's not a standard string representation, try to extract it from original ICS data
             if (recurrenceRule && !recurrenceRule.startsWith('FREQ=')) {
               const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
               if (rruleMatch && rruleMatch[1]) {
-                // Sanitize the extracted RRULE
                 recurrenceRule = this.sanitizeRRULE(rruleMatch[1]);
                 console.log(`Extracted RRULE from raw ICS data: ${recurrenceRule}`);
               }
             }
           }
         } else {
-          // If node-ical failed to parse the RRULE, try to extract it from raw data
+          // Try to extract from raw data
           const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
           if (rruleMatch && rruleMatch[1]) {
-            // Sanitize the extracted RRULE
             recurrenceRule = this.sanitizeRRULE(rruleMatch[1]);
-            console.log(`Extracted RRULE from raw ICS data (fallback): ${recurrenceRule}`);
           }
         }
       } catch (error) {
-        console.error('Error parsing recurrence rule', error);
-        // Try a more aggressive extraction and sanitization if the normal one failed
-        try {
-          const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
-          if (rruleMatch && rruleMatch[1]) {
-            // Sanitize the extracted RRULE - only keeping FREQ and COUNT/UNTIL
-            const parts = rruleMatch[1].split(';');
-            const freqPart = parts.find(p => p.startsWith('FREQ='));
-            const countPart = parts.find(p => p.startsWith('COUNT='));
-            const untilPart = parts.find(p => p.startsWith('UNTIL='));
-            const validParts = [freqPart, countPart, untilPart].filter(Boolean);
-            
-            if (validParts.length > 0) {
-              recurrenceRule = validParts.join(';');
-              console.log(`Fallback RRULE extraction (minimal): ${recurrenceRule}`);
-            }
-          }
-        } catch (e) {
-          console.error('Fatal error parsing recurrence rule, setting to empty', e);
-          recurrenceRule = undefined;
-        }
+        console.error('Error processing recurrence rule, setting to undefined:', error);
+        recurrenceRule = undefined;
       }
       
-      // Handle attendees - extract from node-ical parsed data
+      // Process attendees and resources
       let attendees: CalDAVAttendee[] = [];
       let resources: CalDAVResource[] = [];
       
-      // First try to get attendees from node-ical's parsing
-      if (event.attendees && Array.isArray(event.attendees)) {
-        attendees = event.attendees;
-      } else if (event.attendee) {
-        // Handle case where it might be a single attendee
-        attendees = Array.isArray(event.attendee) ? event.attendee : [event.attendee];
-      } else {
-        // Fallback: Try to extract attendees from raw ICS data using regex
-        try {
-          // Clean up any lines with SCHEDULE-STATUS improperly formatted
-          // Replace any multiline ATTENDEE properties
+      try {
+        // First try to get from node-ical's parsing
+        if (event.attendees && Array.isArray(event.attendees)) {
+          attendees = event.attendees;
+        } else if (event.attendee) {
+          attendees = Array.isArray(event.attendee) ? event.attendee : [event.attendee];
+        } else {
+          // Fallback: Extract from raw ICS data
           const normalizedIcsData = icsData.replace(/ATTENDEE[^:]*\r?\n\s+[^:]*:/g, line => {
             return line.replace(/\r?\n\s+/g, '');
           });
@@ -823,21 +837,15 @@ export class SyncService {
           if (attendeeMatches && attendeeMatches.length > 0) {
             console.log(`Found ${attendeeMatches.length} attendees/resources in raw ICS data`);
             
-            // Process each attendee line
             attendeeMatches.forEach(line => {
-              // Skip any line with SCHEDULE-STATUS but without proper attendee info
               if (!line.includes('mailto:')) {
-                console.log('Skipping invalid attendee line without email:', line);
                 return;
               }
               
-              // Extract common properties from the attendee line
               const emailMatch = line.match(/mailto:([^>\r\n]+)/);
               const email = emailMatch ? emailMatch[1] : '';
               
-              // Skip if no valid email
               if (!email) {
-                console.log('Skipping attendee line with invalid email:', line);
                 return;
               }
               
@@ -850,15 +858,11 @@ export class SyncService {
               const statusMatch = line.match(/PARTSTAT=([^;:]+)/);
               const status = statusMatch ? statusMatch[1] : 'NEEDS-ACTION';
               
-              // Extract SCHEDULE-STATUS if present
               const scheduleStatusMatch = line.match(/SCHEDULE-STATUS=([^;:]+)/);
               const scheduleStatus = scheduleStatusMatch ? scheduleStatusMatch[1] : undefined;
               
-              // Check if this is a resource
-              const isResource = line.includes('CUTYPE=RESOURCE');
-              
-              if (isResource) {
-                // Process as a resource
+              if (line.includes('CUTYPE=RESOURCE')) {
+                // Process as resource
                 const resourceType = line.match(/X-RESOURCE-TYPE=([^;:]+)/) || 
                                     line.match(/RESOURCE-TYPE=([^;:]+)/);
                 resources.push({
@@ -867,7 +871,7 @@ export class SyncService {
                   type: resourceType ? resourceType[1] : undefined
                 });
               } else {
-                // Process as a regular attendee with schedule status if present
+                // Process as regular attendee
                 const attendeeData: CalDAVAttendee = {
                   email,
                   name,
@@ -875,38 +879,28 @@ export class SyncService {
                   status
                 };
                 
-                // Add schedule status if present
                 if (scheduleStatus) {
-                  (attendeeData as any).scheduleStatus = scheduleStatus;
+                  attendeeData.scheduleStatus = scheduleStatus;
                 }
                 
                 attendees.push(attendeeData);
               }
             });
-            
-            console.log(`Parsed ${attendees.length} attendees and ${resources.length} resources`);
           }
-        } catch (e) {
-          console.error('Error extracting attendees/resources from raw ICS data:', e);
         }
+      } catch (error) {
+        console.error('Error processing attendees/resources:', error);
       }
       
-      if (!startDate || !endDate) {
-        console.warn('Event has invalid dates');
-        return null;
-      }
-      
-      // Check timezone information
-      let timezone = 'UTC'; // Default timezone
-      
-      // Try to extract timezone from the event
+      // Determine timezone
+      let timezone = 'UTC';
       if (event.timezone) {
         timezone = event.timezone;
       } else if (event.start && (event.start as any).tz) {
         timezone = (event.start as any).tz;
       }
       
-      // Create the CalDAVEvent object
+      // Create the final CalDAVEvent
       const caldavEvent: CalDAVEvent = {
         uid: event.uid || `auto-generated-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         summary: event.summary || 'Untitled Event',
@@ -921,13 +915,53 @@ export class SyncService {
         resources: resources.length > 0 ? resources : undefined,
         etag,
         url,
-        data: icsData // Store the original ICS data
+        data: icsData
       };
       
       return caldavEvent;
     } catch (error) {
       console.error('Error parsing ICS data:', error);
       return null;
+    }
+  }
+  
+  /**
+   * Apply aggressive fixes to ICS data when normal parsing fails
+   * This is a last resort to try to salvage unparseable ICS data
+   */
+  private applyAggressiveFixesToICS(icsData: string): string {
+    try {
+      // Fix 1: Remove any SCHEDULE-STATUS parameters entirely
+      icsData = icsData.replace(/SCHEDULE-STATUS=[^;:\r\n]+(;|:|[\r\n])/g, '$1');
+      
+      // Fix 2: Clean up RRULE properties
+      icsData = icsData.replace(/RRULE:[^\r\n]+/g, (match) => {
+        const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST', 'BYSETPOS'];
+        const parts = match.substring(6).split(';'); // Remove RRULE: prefix
+        const validParts = parts.filter(part => {
+          if (!part.includes('=')) return false;
+          const paramName = part.split('=')[0];
+          return validParams.includes(paramName);
+        });
+        
+        if (validParts.length > 0) {
+          return 'RRULE:' + validParts.join(';');
+        }
+        
+        // If no valid parts, get at least the FREQ
+        const freqPart = parts.find(p => p.startsWith('FREQ='));
+        if (freqPart) {
+          return 'RRULE:' + freqPart;
+        }
+        
+        // If no FREQ, just remove the line
+        return '';
+      });
+      
+      return icsData;
+    } catch (error) {
+      console.error('Error applying aggressive fixes to ICS data:', error);
+      return icsData; // Return original if fixes fail
     }
   }
   
