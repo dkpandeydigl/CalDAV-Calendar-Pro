@@ -205,6 +205,35 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
     }
   };
   
+  // Handle permission update for shared calendars
+  const handleUpdatePermission = async (calendarId: number, sharingId: number, newPermission: 'view' | 'edit') => {
+    try {
+      // Make API call to update the permission
+      await fetch(`/api/calendar-sharings/${sharingId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ permissionLevel: newPermission })
+      });
+      
+      // Update the local state through query invalidation
+      queryClient.invalidateQueries({ queryKey: ['/api/shared-calendars'] });
+      
+      toast({
+        title: 'Permission Updated',
+        description: `Calendar permission changed to ${newPermission === 'edit' ? 'Can edit' : 'View only'}`,
+      });
+    } catch (error) {
+      console.error('Failed to update calendar permission:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update calendar permission',
+        variant: 'destructive'
+      });
+    }
+  };
+  
   // Calendar name validation
   const validateCalendarName = (name: string): boolean => {
     if (!name.trim()) {
