@@ -10,7 +10,7 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle, Trash2 } from 'lucide-react';
+import { MailCheck, AlertTriangle, User as UserIcon, UserRound, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle, Trash2, Calendar, History } from 'lucide-react';
 import DirectResourceExtractor from './DirectResourceExtractor';
 import ResourceManager from '@/components/resources/ResourceManager';
 import DirectAttendeeExtractor from './DirectAttendeeExtractor';
@@ -591,6 +591,36 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         })()
                       }}
                     />
+                  </div>
+                )}
+                
+                {/* Event Modification History - show when available */}
+                {event.lastModifiedByName && event.lastModifiedAt && (
+                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 shadow-sm">
+                    <h3 className="font-medium mb-2 flex items-center text-purple-800">
+                      <History className="text-purple-600 mr-2 h-4 w-4" />
+                      Change History
+                    </h3>
+                    <div className="text-sm text-purple-700 space-y-1">
+                      <div className="flex items-center">
+                        <UserRound className="text-purple-500 mr-2 h-4 w-4" />
+                        <span>
+                          Last modified by: <span className="font-medium">{event.lastModifiedByName}</span>
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <Calendar className="text-purple-500 mr-2 h-4 w-4" />
+                        <span>
+                          Date: {new Date(event.lastModifiedAt).toLocaleDateString()} 
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <Clock className="text-purple-500 mr-2 h-4 w-4" />
+                        <span>
+                          Time: {new Date(event.lastModifiedAt).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
                 
