@@ -610,165 +610,257 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </div>
           </DialogHeader>
           
-          <div className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between">
-                <h1 className="text-xl font-semibold" title={event.title.length > 30 ? event.title : undefined}>
-                  {event.title.length > 30 ? `${event.title.substring(0, 30)}...` : event.title}
-                </h1>
-                
-                {/* Sync status indicator */}
-                {event.syncStatus && (
-                  <div 
-                    className={`text-xs px-2 py-1 rounded-full ${
-                      event.syncStatus === 'synced' 
-                        ? 'bg-green-100 text-green-800' 
+          {/* Two-column horizontal layout */}
+          <div className="flex flex-col lg:flex-row gap-6">
+              <div>
+                <div className="flex items-center justify-between">
+                  <h1 className="text-xl font-semibold" title={event.title.length > 50 ? event.title : undefined}>
+                    {event.title.length > 50 ? `${event.title.substring(0, 50)}...` : event.title}
+                  </h1>
+                  
+                  {/* Sync status indicator */}
+                  {event.syncStatus && (
+                    <div 
+                      className={`text-xs px-2 py-1 rounded-full ${
+                        event.syncStatus === 'synced' 
+                          ? 'bg-green-100 text-green-800' 
+                          : event.syncStatus === 'syncing' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : event.syncStatus === 'sync_failed' 
+                              ? 'bg-red-100 text-red-800' 
+                              : 'bg-yellow-100 text-yellow-800'
+                      }`}
+                    >
+                      {event.syncStatus === 'synced' 
+                        ? 'Synced' 
                         : event.syncStatus === 'syncing' 
-                          ? 'bg-blue-100 text-blue-800' 
+                          ? 'Syncing...' 
                           : event.syncStatus === 'sync_failed' 
-                            ? 'bg-red-100 text-red-800' 
-                            : 'bg-yellow-100 text-yellow-800'
-                    }`}
-                  >
-                    {event.syncStatus === 'synced' 
-                      ? 'Synced' 
-                      : event.syncStatus === 'syncing' 
-                        ? 'Syncing...' 
-                        : event.syncStatus === 'sync_failed' 
-                          ? 'Sync Failed' 
-                          : 'Local'}
+                            ? 'Sync Failed' 
+                            : 'Local'}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Show calendar info if available */}
+                {calendar && (
+                  <div className="text-sm text-neutral-500 flex items-center">
+                    <span 
+                      className="w-3 h-3 rounded-full mr-2" 
+                      style={{ backgroundColor: calendarColor || calendar.color }}
+                    ></span>
+                    {calendarName || calendar.name} {!calendarName && "Calendar"}
                   </div>
                 )}
               </div>
               
-              {/* Show calendar info if available */}
-              {calendar && (
-                <div className="text-sm text-neutral-500 flex items-center">
-                  <span 
-                    className="w-3 h-3 rounded-full mr-2" 
-                    style={{ backgroundColor: calendarColor || calendar.color }}
-                  ></span>
-                  {calendarName || calendar.name} {!calendarName && "Calendar"}
+              {/* Date and time card with improved visual design */}
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-sm">
+                <div className="flex flex-col space-y-3">
+                  <div className="flex items-center">
+                    <Clock className="text-blue-600 mr-3 h-5 w-5 flex-shrink-0" />
+                    <div>
+                      <div className="font-medium">
+                        {formatDayOfWeekDate(startDate)}
+                      </div>
+                      <div className="text-sm text-blue-700">
+                        {event.allDay 
+                          ? 'All Day' 
+                          : formatEventTimeRange(startDate, endDate)}
+                        {event.timezone && <span className="text-blue-600/70 text-xs ml-1">({event.timezone})</span>}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Location section - only show if there's a location */}
+                  {event.location && (
+                    <div className="flex items-start pt-2 border-t border-blue-200">
+                      <MapPinned className="text-blue-600 mr-3 h-5 w-5 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <div className="font-medium">Location</div>
+                        <div className="text-sm text-blue-700">{event.location}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Description section - only show if there's a description */}
+              {event.description && (
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                  <h3 className="font-medium mb-2 flex items-center">
+                    <Info className="text-gray-600 mr-2 h-4 w-4" />
+                    Description
+                  </h3>
+                  <div 
+                    className="text-sm prose prose-sm max-w-none overflow-auto max-h-[150px] bg-white p-3 rounded border border-gray-100"
+                    dangerouslySetInnerHTML={{ 
+                      __html: (() => {
+                        if (!event.description) return '';
+                        
+                        const description = String(event.description);
+                        
+                        // Case 1: Thunderbird special JSON-like format with ALTREP
+                        if (description.includes('"ALTREP"') || description.includes('"params"')) {
+                          try {
+                            // Extract the actual content
+                            // Format is typically: ["params":["ALTREP":"data:text/html..."],"val":"actual text"]
+                            
+                            // First try to find the "val" property
+                            const valMatch = description.match(/"val"\s*:\s*"([^"]+)"/);
+                            if (valMatch && valMatch[1]) {
+                              return valMatch[1]
+                                .replace(/\\n/g, '<br>')
+                                .replace(/\\/g, ''); // Remove any remaining backslashes
+                            }
+                            
+                            // Try to extract from ALTREP if val wasn't found
+                            const altrepMatch = description.match(/"ALTREP"\s*:\s*"data:text\/html[^"]*,([^"]+)"/);
+                            if (altrepMatch && altrepMatch[1]) {
+                              // It's URL encoded, so decode it
+                              try {
+                                return decodeURIComponent(altrepMatch[1]);
+                              } catch (e) {
+                                // If decoding fails, just return it as is
+                                return altrepMatch[1];
+                              }
+                            }
+                            
+                            // Fallback - use whatever text is available
+                            const textContent = description
+                              .replace(/["[\]{}]/g, '') // Remove JSON-like symbols
+                              .replace(/params:|ALTREP:|val:/g, '') // Remove JSON keys
+                              .replace(/data:text\/html[^,]*,/g, '') // Remove MIME type info
+                              .trim();
+                              
+                            return textContent;
+                          } catch (e) {
+                            console.error('Error parsing Thunderbird special format:', e);
+                          }
+                        }
+                        
+                        // Case 2: It's already valid HTML with tags
+                        if (description.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
+                          return description;
+                        }
+                        
+                        // Case 3: It has escaped HTML tags (from Thunderbird)
+                        if (description.includes('&lt;') && description.includes('&gt;')) {
+                          // First unescape the HTML entities
+                          const unescaped = description
+                            .replace(/&lt;/g, '<')
+                            .replace(/&gt;/g, '>')
+                            .replace(/&quot;/g, '"')
+                            .replace(/&amp;/g, '&');
+                          
+                          // Check if it now has valid HTML
+                          if (unescaped.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
+                            return unescaped;
+                          }
+                        }
+                        
+                        // Case 4: Plain text with escaped newlines
+                        return description
+                          .replace(/\\n/g, '<br>')
+                          .replace(/\n/g, '<br>');
+                      })()
+                    }}
+                  />
                 </div>
               )}
+              
+              {/* Resources section with improved visual display */}
+              {(() => {
+                const resources = (() => {
+                  // First look for resources in the event object
+                  if (event.resources) {
+                    if (typeof event.resources === 'string') {
+                      try {
+                        return JSON.parse(event.resources);
+                      } catch (e) {
+                        console.warn('Error parsing resources:', e);
+                      }
+                    } else if (Array.isArray(event.resources)) {
+                      return event.resources;
+                    }
+                  }
+                  
+                  // If no resources found, try to extract from raw data
+                  if (typeof event.rawData === 'string') {
+                    try {
+                      const extractedResources = extractResourcesFromRawData();
+                      console.log('Parsed resources:', extractedResources);
+                      return extractedResources;
+                    } catch (e) {
+                      console.warn('Error extracting resources:', e);
+                    }
+                  }
+                  
+                  return [];
+                })();
+                
+                if (resources.length > 0) {
+                  return (
+                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 shadow-sm">
+                      <h3 className="font-medium mb-2 flex items-center text-amber-800">
+                        <Settings className="text-amber-600 mr-2 h-4 w-4" />
+                        Resources ({resources.length})
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {resources.map((resource, index) => {
+                          // Get resource name/email/type from various possible formats
+                          const name = resource.name || resource.adminName || 'Resource';
+                          const email = resource.email || resource.adminEmail || '';
+                          const type = resource.type || resource.subType || '';
+                          const capacity = resource.capacity || '';
+                          
+                          return (
+                            <div key={index} className="flex items-start bg-white p-3 rounded-md border border-amber-100">
+                              {type.toLowerCase().includes('proj') ? (
+                                <VideoIcon className="text-amber-500 mr-2 h-5 w-5 mt-0.5" />
+                              ) : type.toLowerCase().includes('room') ? (
+                                <DoorClosed className="text-blue-500 mr-2 h-5 w-5 mt-0.5" />
+                              ) : type.toLowerCase().includes('laptop') || type.toLowerCase().includes('computer') ? (
+                                <Laptop className="text-green-500 mr-2 h-5 w-5 mt-0.5" />
+                              ) : (
+                                <Wrench className="text-neutral-500 mr-2 h-5 w-5 mt-0.5" />
+                              )}
+                              <div>
+                                <div className="font-medium">{name}</div>
+                                <div className="text-xs text-amber-700">
+                                  {type || 'General Resource'}
+                                  {capacity && ` • Capacity: ${capacity}`}
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Admin: {email}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                }
+                
+                return null;
+              })()}
             </div>
             
-            <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
-              <Clock className="text-primary mr-2 bg-white p-1 rounded-md shadow-sm h-5 w-5" />
-              <div>
-                <div className="text-sm font-medium text-primary/90">{formatDayOfWeekDate(startDate)}</div>
-                <div className="text-sm text-primary/80">
-                  {event.allDay 
-                    ? '🕒 All Day' 
-                    : `🕒 ${formatEventTimeRange(startDate, endDate)}`}
-                  {' '}({event.timezone})
-                </div>
-              </div>
-            </div>
-            
-            {event.location && (
-              <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
-                <MapPinned className="text-blue-500 mr-2 bg-white p-1 rounded-md shadow-sm h-5 w-5" />
-                <div className="text-sm font-medium text-blue-700">{event.location}</div>
-              </div>
-            )}
-            
-            {event.description && (
-              <div>
-                <div className="text-sm font-medium mb-1">
-                  <span>Description</span>
-                </div>
-                <div 
-                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 line-clamp-3 pr-2"
-                  dangerouslySetInnerHTML={{ 
-                    __html: (() => {
-                      if (!event.description) return '';
-                      
-                      const description = String(event.description);
-                      
-                      // Case 1: Thunderbird special JSON-like format with ALTREP
-                      if (description.includes('"ALTREP"') || description.includes('"params"')) {
-                        try {
-                          // Extract the actual content
-                          // Format is typically: ["params":["ALTREP":"data:text/html..."],"val":"actual text"]
-                          
-                          // First try to find the "val" property
-                          const valMatch = description.match(/"val"\s*:\s*"([^"]+)"/);
-                          if (valMatch && valMatch[1]) {
-                            return valMatch[1]
-                              .replace(/\\n/g, '<br>')
-                              .replace(/\\/g, ''); // Remove any remaining backslashes
-                          }
-                          
-                          // Try to extract from ALTREP if val wasn't found
-                          const altrepMatch = description.match(/"ALTREP"\s*:\s*"data:text\/html[^"]*,([^"]+)"/);
-                          if (altrepMatch && altrepMatch[1]) {
-                            // It's URL encoded, so decode it
-                            try {
-                              return decodeURIComponent(altrepMatch[1]);
-                            } catch (e) {
-                              // If decoding fails, just return it as is
-                              return altrepMatch[1];
-                            }
-                          }
-                          
-                          // Fallback - use whatever text is available
-                          const textContent = description
-                            .replace(/["[\]{}]/g, '') // Remove JSON-like symbols
-                            .replace(/params:|ALTREP:|val:/g, '') // Remove JSON keys
-                            .replace(/data:text\/html[^,]*,/g, '') // Remove MIME type info
-                            .trim();
-                            
-                          return textContent;
-                        } catch (e) {
-                          console.error('Error parsing Thunderbird special format:', e);
-                        }
-                      }
-                      
-                      // Case 2: It's already valid HTML with tags
-                      if (description.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
-                        return description;
-                      }
-                      
-                      // Case 3: It has escaped HTML tags (from Thunderbird)
-                      if (description.includes('&lt;') && description.includes('&gt;')) {
-                        // First unescape the HTML entities
-                        const unescaped = description
-                          .replace(/&lt;/g, '<')
-                          .replace(/&gt;/g, '>')
-                          .replace(/&quot;/g, '"')
-                          .replace(/&amp;/g, '&');
-                        
-                        // Check if it now has valid HTML
-                        if (unescaped.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
-                          return unescaped;
-                        }
-                      }
-                      
-                      // Case 4: Plain text with escaped newlines
-                      return description
-                        .replace(/\\n/g, '<br>')
-                        .replace(/\n/g, '<br>');
-                    })()
-                  }}
-                />
-              </div>
-            )}
-            
-            {/* Debug info removed */}
-            
-            {/* Direct Resource Extractor Component - show all resources in detail view */}
-            {typeof event.rawData === 'string' && (
-              <DirectResourceExtractor rawData={event.rawData} isPreview={true} />
-            )}
-            
-            {/* Attendees and Response Section */}
-            <div className="mt-6">
-              <Tabs defaultValue="status" className="w-full">
-                <TabsList className="grid grid-cols-2 mb-4">
-                  <TabsTrigger value="status">Attendee Status</TabsTrigger>
-                  <TabsTrigger value="response">Your Response</TabsTrigger>
-                </TabsList>
+            {/* Right column - Attendees */}
+            <div className="flex-1 space-y-4">
+              {/* Direct Resource Extractor Component - show all resources in detail view */}
+              {typeof event.rawData === 'string' && (
+                <DirectResourceExtractor rawData={event.rawData} isPreview={true} />
+              )}
+              
+              {/* Attendees and Response Section */}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                <Tabs defaultValue="status" className="w-full">
+                  <TabsList className="grid grid-cols-2 mb-4">
+                    <TabsTrigger value="status">Attendee Status</TabsTrigger>
+                    <TabsTrigger value="response">Your Response</TabsTrigger>
+                  </TabsList>
                 
                 <TabsContent value="status" className="space-y-4">
                   {/* Attendee Status Display */}
@@ -1122,7 +1214,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             })()}
           </div>
           
-          <DialogFooter className="flex justify-between space-x-2">
+          <DialogFooter className="flex justify-between items-center mt-4 pt-4 border-t">
             <div className="flex space-x-2">
               {!isUserLoading && (
                 <>
@@ -1130,7 +1222,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   {shouldShowCancelButton && (
                     <Button 
                       variant="outline" 
-                      className="border-amber-200 text-amber-600 hover:bg-amber-50 flex items-center gap-1" 
+                      className="border-amber-200 text-amber-600 hover:bg-amber-50 flex items-center gap-1 shadow-sm" 
                       onClick={() => setCancelDialogOpen(true)}
                     >
                       <MailCheck className="h-4 w-4" />
@@ -1143,14 +1235,16 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     <>
                       <Button 
                         variant="outline" 
-                        className="border-red-200 text-red-600 hover:bg-red-50" 
+                        className="border-red-200 text-red-600 hover:bg-red-50 shadow-sm" 
                         onClick={() => setDeleteDialogOpen(true)}
                       >
+                        <Trash2 className="h-4 w-4 mr-1" />
                         Delete
                       </Button>
                       <Button 
                         variant="outline"
                         onClick={onEdit}
+                        className="shadow-sm"
                       >
                         Edit
                       </Button>
