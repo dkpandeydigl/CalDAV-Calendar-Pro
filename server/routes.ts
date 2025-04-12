@@ -2092,6 +2092,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Individual calendar sharing API
+  app.post("/api/calendars/:id/shares", isAuthenticated, async (req, res) => {
+    try {
+      const calendarId = parseInt(req.params.id);
+      
+      // Check if calendar exists and if user has permission to share it
+      const calendar = await storage.getCalendar(calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Only allow the owner to share the calendar
+      if (calendar.userId !== req.user!.id) {
+        return res.status(403).json({ message: "You don't have permission to share this calendar" });
+      }
+      
+      // Determine the user ID of the recipient if they exist in our system
+      let sharedWithUserId: number | null = null;
+      if (req.body.email) {
+        const user = await storage.getUserByUsername(req.body.email);
+        if (user) {
+          sharedWithUserId = user.id;
+        }
+      }
+      
+      // Create the sharing data
+      const sharingData = {
+        calendarId,
+        sharedWithEmail: req.body.email,
+        sharedWithUserId: sharedWithUserId || undefined,
+        permissionLevel: req.body.permissionLevel || 'view',
+        // We don't need to add sharedByUserId as it gets added by the shareCalendar method
+      };
+      
+      console.log(`Creating calendar sharing: Calendar ID ${calendarId} shared with email ${req.body.email}, permission ${req.body.permissionLevel}`);
+      
+      const validatedData = insertCalendarSharingSchema.parse({
+        ...sharingData,
+        sharedByUserId: req.user!.id
+      });
+      
+      const newSharing = await storage.shareCalendar(validatedData);
+      res.status(201).json(newSharing);
+      
+    } catch (err) {
+      console.error("Error sharing calendar:", err);
+      return handleZodError(err, res);
+    }
+  });
+  
   // SERVER CONNECTION API
   app.get("/api/server-connection", isAuthenticated, async (req, res) => {
     try {
