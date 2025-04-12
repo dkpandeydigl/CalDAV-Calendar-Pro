@@ -86,6 +86,7 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
               email: email,
               permissionLevel: permission,
               syncWithServer: calendar.url ? syncWithServer : false
+              // Note: sharedByUserId is automatically added by the server
             }),
           });
           
