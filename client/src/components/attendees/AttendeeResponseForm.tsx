@@ -192,7 +192,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                       <FormLabel>Add a note</FormLabel>
                       <FormControl>
                         <div className="border rounded-md">
-                          <TiptapEditor 
+                          <Tiptap 
                             content={field.value || ''} 
                             onChange={field.onChange}
                             placeholder="Add a note to your response..."
@@ -507,7 +507,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                           <FormLabel>Add a note to your response</FormLabel>
                           <FormControl>
                             <div className="border rounded-md">
-                              <TiptapEditor 
+                              <Tiptap 
                                 content={field.value || ''} 
                                 onChange={field.onChange}
                                 placeholder="Add a note to your response..."

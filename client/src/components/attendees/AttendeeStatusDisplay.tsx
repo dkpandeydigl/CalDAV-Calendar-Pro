@@ -1,5 +1,5 @@
-import React from 'react';
-import { CheckCircle, XCircle, HelpCircle, Clock, User, MessageSquare } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckCircle, XCircle, HelpCircle, Clock, User, MessageSquare, ChevronRight } from 'lucide-react';
 import { 
   Tooltip, 
   TooltipContent, 
@@ -15,9 +15,11 @@ import {
   DialogDescription, 
   DialogHeader, 
   DialogTitle,
-  DialogTrigger 
+  DialogTrigger,
+  DialogFooter
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 type Attendee = {
   id?: string;
@@ -41,9 +43,49 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   isOrganizer,
   onTimeProposalAccept
 }) => {
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  
+  // Helper to get normalized status from various formats
+  const normalizeStatus = (status?: string): string => {
+    if (!status) return 'needs-action';
+    const statusLower = status.toLowerCase();
+    
+    if (statusLower.includes('accept')) return 'accepted';
+    if (statusLower.includes('decline')) return 'declined';
+    if (statusLower.includes('tentative')) return 'tentative';
+    return 'needs-action';
+  };
+  
+  // Clean up attendees data to ensure all have proper email and name
+  const processedAttendees = attendees.map(attendee => {
+    // Ensure email exists and is not null/undefined
+    const email = attendee.email || '';
+    
+    // Get properly formatted name
+    let name = attendee.name;
+    if (!name && email) {
+      name = email.split('@')[0];
+      // Capitalize first letter of each word
+      name = name.split('.').map(part => 
+        part.charAt(0).toUpperCase() + part.slice(1)
+      ).join(' ');
+    }
+    
+    // Normalize status
+    const status = normalizeStatus(attendee.status);
+    
+    return {
+      ...attendee,
+      email,
+      name,
+      status
+    };
+  });
+  
   // Helper to get status icon
   const getStatusIcon = (status?: string) => {
-    const statusLower = status?.toLowerCase() || 'needs-action';
+    const statusLower = normalizeStatus(status);
     
     if (statusLower === 'accepted') {
       return <CheckCircle className="h-4 w-4 text-green-600" />;
@@ -58,7 +100,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   
   // Helper to get text status
   const getStatusText = (status?: string) => {
-    const statusLower = status?.toLowerCase() || 'needs-action';
+    const statusLower = normalizeStatus(status);
     
     if (statusLower === 'accepted') {
       return 'Accepted';
@@ -73,7 +115,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   
   // Helper to get status color class
   const getStatusColorClass = (status?: string) => {
-    const statusLower = status?.toLowerCase() || 'needs-action';
+    const statusLower = normalizeStatus(status);
     
     if (statusLower === 'accepted') {
       return 'bg-green-100 text-green-800 border-green-300';
@@ -86,21 +128,38 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
     }
   };
   
+  // Helper to get button hover class
+  const getStatusButtonHoverClass = (status: string) => {
+    if (status === 'accepted') {
+      return 'hover:bg-green-50';
+    } else if (status === 'declined') {
+      return 'hover:bg-red-50'; 
+    } else if (status === 'tentative') {
+      return 'hover:bg-amber-50';
+    } else {
+      return 'hover:bg-gray-50';
+    }
+  };
+  
   // Helper to get role badge
   const getRoleBadge = (role?: string) => {
     if (!role) return null;
     
     const roleLower = role.toLowerCase();
     
-    if (roleLower === 'chair' || roleLower === 'organizer') {
+    if (roleLower === 'chair' || roleLower === 'chairman' || roleLower === 'organizer') {
       return <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 border-blue-200">Organizer</Badge>;
     } else if (roleLower === 'req-participant' || roleLower.includes('required')) {
       return <Badge variant="outline" className="ml-2 bg-purple-50 text-purple-700 border-purple-200">Required</Badge>;
     } else if (roleLower === 'opt-participant' || roleLower.includes('optional')) {
       return <Badge variant="outline" className="ml-2 bg-teal-50 text-teal-700 border-teal-200">Optional</Badge>;
+    } else if (roleLower === 'secretary') {
+      return <Badge variant="outline" className="ml-2 bg-indigo-50 text-indigo-700 border-indigo-200">Secretary</Badge>;
+    } else if (roleLower === 'member') {
+      return <Badge variant="outline" className="ml-2 bg-violet-50 text-violet-700 border-violet-200">Member</Badge>;
     }
     
-    return null;
+    return <Badge variant="outline" className="ml-2 bg-gray-50 text-gray-700 border-gray-200">{role}</Badge>;
   };
   
   // Helper to format date and time
@@ -111,43 +170,87 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
     return `${formatDayOfWeekDate(dateObj)} at ${formatTime(dateObj)}`;
   };
   
+  // Get attendees filtered by status
+  const getAttendeesByStatus = (status: string) => {
+    if (status === 'needs-action') {
+      return processedAttendees.filter(attendee => 
+        normalizeStatus(attendee.status) === 'needs-action'
+      );
+    }
+    return processedAttendees.filter(attendee => 
+      normalizeStatus(attendee.status) === status
+    );
+  };
+  
   // Count of responses by type
-  const countByStatus = attendees.reduce((acc, attendee) => {
-    const status = (attendee.status || 'needs-action').toLowerCase();
+  const countByStatus = processedAttendees.reduce((acc, attendee) => {
+    const status = normalizeStatus(attendee.status);
     acc[status] = (acc[status] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+  
+  // Show status dialog
+  const openStatusDialog = (status: string) => {
+    setSelectedStatus(status);
+    setStatusDialogOpen(true);
+  };
+  
+  // Limit displayed attendees to just one in the main view
+  const displayedAttendees = processedAttendees.slice(0, 1);
   
   // Main component render
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 mb-2">
-        <Badge variant="outline" className="bg-green-50 border-green-200">
-          <CheckCircle className="h-3 w-3 mr-1 text-green-600" />
-          <span className="text-green-700">{countByStatus['accepted'] || 0} Accepted</span>
-        </Badge>
-        <Badge variant="outline" className="bg-red-50 border-red-200">
-          <XCircle className="h-3 w-3 mr-1 text-red-600" />
-          <span className="text-red-700">{countByStatus['declined'] || 0} Declined</span>
-        </Badge>
-        <Badge variant="outline" className="bg-amber-50 border-amber-200">
-          <HelpCircle className="h-3 w-3 mr-1 text-amber-600" />
-          <span className="text-amber-700">{countByStatus['tentative'] || 0} Tentative</span>
-        </Badge>
-        <Badge variant="outline" className="bg-gray-50 border-gray-200">
-          <Clock className="h-3 w-3 mr-1 text-gray-600" />
-          <span className="text-gray-700">
-            {(countByStatus['needs-action'] || 0) + (countByStatus[''] || 0)} No Response
+        <Button 
+          variant="outline" 
+          className={`p-1 px-2 h-auto flex items-center gap-1 bg-green-50 border-green-200 text-green-700 ${getStatusButtonHoverClass('accepted')}`}
+          onClick={() => openStatusDialog('accepted')}
+        >
+          <CheckCircle className="h-3 w-3 text-green-600" />
+          <span>{countByStatus['accepted'] || 0} Accepted</span>
+          <ChevronRight className="h-3 w-3 ml-1" />
+        </Button>
+        
+        <Button 
+          variant="outline" 
+          className={`p-1 px-2 h-auto flex items-center gap-1 bg-red-50 border-red-200 text-red-700 ${getStatusButtonHoverClass('declined')}`}
+          onClick={() => openStatusDialog('declined')}
+        >
+          <XCircle className="h-3 w-3 text-red-600" />
+          <span>{countByStatus['declined'] || 0} Declined</span>
+          <ChevronRight className="h-3 w-3 ml-1" />
+        </Button>
+        
+        <Button 
+          variant="outline" 
+          className={`p-1 px-2 h-auto flex items-center gap-1 bg-amber-50 border-amber-200 text-amber-700 ${getStatusButtonHoverClass('tentative')}`}
+          onClick={() => openStatusDialog('tentative')}
+        >
+          <HelpCircle className="h-3 w-3 text-amber-600" />
+          <span>{countByStatus['tentative'] || 0} Tentative</span>
+          <ChevronRight className="h-3 w-3 ml-1" />
+        </Button>
+        
+        <Button 
+          variant="outline" 
+          className={`p-1 px-2 h-auto flex items-center gap-1 bg-gray-50 border-gray-200 text-gray-700 ${getStatusButtonHoverClass('needs-action')}`}
+          onClick={() => openStatusDialog('needs-action')}
+        >
+          <Clock className="h-3 w-3 text-gray-600" />
+          <span>
+            {countByStatus['needs-action'] || 0} No Response
           </span>
-        </Badge>
+          <ChevronRight className="h-3 w-3 ml-1" />
+        </Button>
       </div>
 
       <div className="border rounded-md">
         <div className="bg-muted/30 p-2 border-b">
-          <h3 className="font-medium">Attendees ({attendees.length})</h3>
+          <h3 className="font-medium">Attendees ({processedAttendees.length})</h3>
         </div>
         <ul className="divide-y">
-          {attendees.map((attendee, index) => (
+          {displayedAttendees.map((attendee, index) => (
             <li key={attendee.id || `${attendee.email}-${index}`} className="p-3 flex items-start">
               <div className="flex-shrink-0 mr-3 mt-1">
                 {getStatusIcon(attendee.status)}
@@ -155,7 +258,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
               <div className="flex-grow min-w-0">
                 <div className="flex items-center flex-wrap gap-1">
                   <span className="font-medium truncate">
-                    {attendee.name || (attendee.email ? attendee.email.split('@')[0] : 'Unknown')}
+                    {attendee.name || 'Unknown'}
                   </span>
                   {getRoleBadge(attendee.role)}
                   <TooltipProvider>
@@ -187,12 +290,12 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button variant="link" className="p-0 h-auto text-xs">
-                            View comment from {attendee.name || (attendee.email ? attendee.email.split('@')[0] : 'Unknown')}
+                            View comment from {attendee.name || 'Unknown'}
                           </Button>
                         </DialogTrigger>
                         <DialogContent>
                           <DialogHeader>
-                            <DialogTitle>Comment from {attendee.name || (attendee.email ? attendee.email.split('@')[0] : 'Unknown')}</DialogTitle>
+                            <DialogTitle>Comment from {attendee.name || 'Unknown'}</DialogTitle>
                             <DialogDescription>
                               Response: <Badge 
                                 variant="outline" 
@@ -244,8 +347,149 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
               </div>
             </li>
           ))}
+          {processedAttendees.length > 1 && (
+            <li className="p-2 bg-muted/20">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="w-full text-xs flex justify-center items-center text-muted-foreground"
+                onClick={() => openStatusDialog('all')}
+              >
+                Show all {processedAttendees.length} attendees
+                <ChevronRight className="h-3 w-3 ml-1" />
+              </Button>
+            </li>
+          )}
         </ul>
       </div>
+      
+      {/* Status dialog for filtered attendees */}
+      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedStatus === 'all' 
+                ? 'All Attendees' 
+                : `${getStatusText(selectedStatus || '')} (${
+                    selectedStatus === 'all' 
+                      ? processedAttendees.length 
+                      : (getAttendeesByStatus(selectedStatus || '').length)
+                  })`
+              }
+            </DialogTitle>
+            <DialogDescription>
+              {selectedStatus === 'all' 
+                ? 'List of all attendees for this event'
+                : `List of attendees who have ${getStatusText(selectedStatus || '').toLowerCase()} this event`
+              }
+            </DialogDescription>
+          </DialogHeader>
+          
+          <ScrollArea className="h-[300px] border rounded-md">
+            <ul className="divide-y">
+              {(selectedStatus === 'all' ? processedAttendees : getAttendeesByStatus(selectedStatus || '')).map((attendee, index) => (
+                <li key={attendee.id || `${attendee.email}-${index}`} className="p-3 flex items-start">
+                  <div className="flex-shrink-0 mr-3 mt-1">
+                    {getStatusIcon(attendee.status)}
+                  </div>
+                  <div className="flex-grow min-w-0">
+                    <div className="flex items-center flex-wrap gap-1">
+                      <span className="font-medium truncate">
+                        {attendee.name || 'Unknown'}
+                      </span>
+                      {getRoleBadge(attendee.role)}
+                      <Badge 
+                        variant="outline" 
+                        className={`ml-auto ${getStatusColorClass(attendee.status)}`}
+                      >
+                        {getStatusText(attendee.status)}
+                      </Badge>
+                    </div>
+                    
+                    <div className="text-sm text-muted-foreground mt-0.5">
+                      {attendee.email || '(No email address)'}
+                    </div>
+                    
+                    {/* Display comment if available */}
+                    {attendee.comment && (
+                      <div className="mt-2 text-sm flex items-start">
+                        <MessageSquare className="h-4 w-4 text-gray-500 mr-1.5 mt-0.5 flex-shrink-0" />
+                        <div className="prose prose-sm">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button variant="link" className="p-0 h-auto text-xs">
+                                View comment from {attendee.name || 'Unknown'}
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Comment from {attendee.name || 'Unknown'}</DialogTitle>
+                                <DialogDescription>
+                                  Response: <Badge 
+                                    variant="outline" 
+                                    className={getStatusColorClass(attendee.status)}
+                                  >
+                                    {getStatusText(attendee.status)}
+                                  </Badge>
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div 
+                                className="mt-4 prose prose-sm max-w-none" 
+                                dangerouslySetInnerHTML={{ __html: attendee.comment }}
+                              />
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Display time proposal if available */}
+                    {attendee.proposedStart && attendee.proposedEnd && (
+                      <div className="mt-2 text-sm flex items-start">
+                        <Clock className="h-4 w-4 text-gray-500 mr-1.5 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="text-gray-700">Proposed time: </span>
+                          <span>
+                            {formatDateTime(attendee.proposedStart)} - {formatTime(new Date(attendee.proposedEnd))}
+                          </span>
+                          
+                          {/* Accept button for organizer */}
+                          {isOrganizer && onTimeProposalAccept && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="ml-2 mt-1"
+                              onClick={() => onTimeProposalAccept(
+                                attendee.email,
+                                new Date(attendee.proposedStart!),
+                                new Date(attendee.proposedEnd!)
+                              )}
+                            >
+                              Accept Proposal
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              ))}
+              {(selectedStatus === 'all' ? processedAttendees : getAttendeesByStatus(selectedStatus || '')).length === 0 && (
+                <li className="p-3 text-center text-muted-foreground">
+                  No attendees found with {getStatusText(selectedStatus || '')} status
+                </li>
+              )}
+            </ul>
+          </ScrollArea>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
