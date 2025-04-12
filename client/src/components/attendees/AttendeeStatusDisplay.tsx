@@ -201,10 +201,10 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   // Main component render
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 mb-2">
+      <div className="flex flex-row w-full gap-1 mb-2">
         <Button 
           variant="outline" 
-          className={`py-2 px-2 h-auto flex items-center justify-center gap-1 bg-green-50 border-green-200 text-green-700 ${getStatusButtonHoverClass('accepted')} rounded-md`}
+          className={`py-2 px-3 h-auto flex items-center justify-center gap-1 bg-green-50 border-green-200 text-green-700 ${getStatusButtonHoverClass('accepted')} rounded-md flex-1`}
           onClick={() => openStatusDialog('accepted')}
         >
           <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
@@ -214,7 +214,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
         
         <Button 
           variant="outline" 
-          className={`py-2 px-2 h-auto flex items-center justify-center gap-1 bg-red-50 border-red-200 text-red-700 ${getStatusButtonHoverClass('declined')} rounded-md`}
+          className={`py-2 px-3 h-auto flex items-center justify-center gap-1 bg-red-50 border-red-200 text-red-700 ${getStatusButtonHoverClass('declined')} rounded-md flex-1`}
           onClick={() => openStatusDialog('declined')}
         >
           <XCircle className="h-3 w-3 text-red-600 flex-shrink-0" />
@@ -224,7 +224,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
         
         <Button 
           variant="outline" 
-          className={`py-2 px-2 h-auto flex items-center justify-center gap-1 bg-amber-50 border-amber-200 text-amber-700 ${getStatusButtonHoverClass('tentative')} rounded-md`}
+          className={`py-2 px-3 h-auto flex items-center justify-center gap-1 bg-amber-50 border-amber-200 text-amber-700 ${getStatusButtonHoverClass('tentative')} rounded-md flex-1`}
           onClick={() => openStatusDialog('tentative')}
         >
           <HelpCircle className="h-3 w-3 text-amber-600 flex-shrink-0" />
@@ -234,7 +234,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
         
         <Button 
           variant="outline" 
-          className={`py-2 px-2 h-auto flex items-center justify-center gap-1 bg-gray-50 border-gray-200 text-gray-700 ${getStatusButtonHoverClass('needs-action')} rounded-md`}
+          className={`py-2 px-3 h-auto flex items-center justify-center gap-1 bg-gray-50 border-gray-200 text-gray-700 ${getStatusButtonHoverClass('needs-action')} rounded-md flex-1`}
           onClick={() => openStatusDialog('needs-action')}
         >
           <Clock className="h-3 w-3 text-gray-600 flex-shrink-0" />
