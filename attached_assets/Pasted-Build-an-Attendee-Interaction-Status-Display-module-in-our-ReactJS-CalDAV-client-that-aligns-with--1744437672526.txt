@@ -1,0 +1,78 @@
+Build an Attendee Interaction & Status Display module in our ReactJS CalDAV client that aligns with CalDAV/iTIP (RFC 5545 & RFC 5546) standards.
+
+🎯 Part 1: Attendee Response UI (RSVP Interface)
+User Interface:
+Section title: “Going?”
+
+Three RSVP buttons:
+
+Yes → PARTSTAT=ACCEPTED
+
+No → PARTSTAT=DECLINED
+
+Maybe → PARTSTAT=TENTATIVE
+
+Propose a new time button:
+
+Opens datetime pickers for start/end suggestion
+
+Add a note button:
+
+Opens a rich-text editor (WYSIWYG) for writing a message
+
+Support tags like {{organizer_name}}, {{start_time}} to be replaced with actual values
+
+Include “Preview” button to show the note with tag values replaced
+
+Submit Response button:
+
+Sends RSVP with note and optional time proposal
+
+Option to expand the whole section into full-screen modal for better UX
+
+Backend Behavior:
+Fetch the original event using UID
+
+Construct an iTIP REPLY object (RFC 5546 compliant)
+
+Update ATTENDEE with new PARTSTAT
+
+Include COMMENT field with the attendee’s note
+
+If proposing new time, add custom props like X-PROPOSED-START and X-PROPOSED-END
+
+Update DTSTAMP and increment SEQUENCE
+
+Send this as part of CalDAV update and also via emails
+
+🧾 Part 2: Attendee Status Display (Organizer View)
+In Event View Mode:
+Show all attendees and their current response status in a clear list or table
+
+Status icons or indicators:
+
+✅ Accepted
+
+❌ Declined
+
+❓ Tentative
+
+⏳ No Response
+
+Display the note/comment if one was submitted by the attendee
+
+If the user is the organizer, optionally allow them to accept/reject proposed new times (optional extension)
+
+Data Binding:
+Read from the ATTENDEE block in the VEVENT
+
+Match user emails to response status (PARTSTAT)
+
+If available, include COMMENT and custom fields (X-*)
+
+🧠 Notes:
+Use a clean, responsive design (Tailwind or Bootstrap preferred)
+
+Rich text editor can be Quill or Tiptap
+
+Template tags system should be flexible (suggest using {{ }} syntax with a replacement function)
