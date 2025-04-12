@@ -1025,13 +1025,50 @@ export class SyncService {
       icsData = icsData.replace(/SCHEDULE-STATUS=[^;:\r\n]+(;|:|[\r\n])/g, '$1');
       
       // Fix 3: Clean up RRULE properties - ensure they only contain valid recurrence parameters
+      // and extract any attendee data that may have been incorrectly merged
+      const extractedAttendees: string[] = [];
       icsData = icsData.replace(/RRULE:[^\r\n]+/g, (match) => {
         console.log(`Sanitizing RRULE: ${match}`);
-        // If it contains email or resource info, it's corrupted 
-        if (match.includes('mailto:') || match.includes('Projector') || match.includes('projector')) {
-          console.log('Found email or resource in RRULE - extracting just valid parts');
+        
+        // Check for attendee or resource info merged into RRULE
+        if (match.includes('mailto:')) {
+          console.log('Found email in RRULE - extracting and moving to separate ATTENDEE lines');
+          
+          // Try to extract attendees and resources from the corrupted RRULE
+          const mailtoMatches = match.match(/mailto:([^;\r\n\s]+)/g);
+          if (mailtoMatches && mailtoMatches.length > 0) {
+            mailtoMatches.forEach(mailtoMatch => {
+              const email = mailtoMatch.replace('mailto:', '');
+              console.log(`Extracted email from corrupted RRULE: ${email}`);
+              
+              // Check if this is likely a resource based on other terms in the line
+              const isResource = match.includes('RESOURCE') || 
+                               match.includes('CUTYPE=RESOURCE') || 
+                               match.includes('chairs') || 
+                               match.includes('room') || 
+                               match.includes('projector');
+                               
+              if (isResource) {
+                // Create a resource attendee line
+                const resourceType = match.match(/([a-zA-Z]+):[^;:\r\n]*mailto:/);
+                const resourceName = resourceType ? resourceType[1] : 'chairs';
+                
+                extractedAttendees.push(
+                  `ATTENDEE;CN=${email.split('@')[0]};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=${resourceName}:mailto:${email}`
+                );
+                console.log(`Created resource line from RRULE data: ${extractedAttendees[extractedAttendees.length-1]}`);
+              } else {
+                // Create a regular attendee line
+                extractedAttendees.push(
+                  `ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:${email}`
+                );
+                console.log(`Created attendee line from RRULE data: ${extractedAttendees[extractedAttendees.length-1]}`);
+              }
+            });
+          }
         }
         
+        // Now extract the valid RRULE parts
         const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST', 'BYSETPOS'];
         const parts = match.substring(6).split(';'); // Remove RRULE: prefix
         const validParts = parts.filter(part => {
@@ -1053,6 +1090,19 @@ export class SyncService {
         // If no FREQ, just remove the line
         return '';
       });
+      
+      // Add extracted attendees back to the ICS data
+      if (extractedAttendees.length > 0) {
+        console.log(`Adding ${extractedAttendees.length} extracted attendees back to ICS data`);
+        
+        // Find the end of the VEVENT section to add the extracted attendees
+        const endEventPos = icsData.lastIndexOf('END:VEVENT');
+        if (endEventPos > 0) {
+          const before = icsData.substring(0, endEventPos);
+          const after = icsData.substring(endEventPos);
+          icsData = before + extractedAttendees.join('\r\n') + '\r\n' + after;
+        }
+      }
       
       // Fix 4: Fix malformed ORGANIZER lines with unwrapped mailto:
       // This handles cases where an email appears on a separate line after ORGANIZER
@@ -1482,11 +1532,14 @@ export class SyncService {
                     if (Array.isArray(attendeesArray)) {
                       attendeesArray.forEach(attendee => {
                         if (attendee && attendee.email) {
-                          // Format: ATTENDEE;CN=Name;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION:mailto:email@example.com
+                          // Format: ATTENDEE;CN=Name;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;SCHEDULE-STATUS=x.x:mailto:email@example.com
                           const cn = attendee.name ? `;CN=${attendee.name}` : '';
                           const role = attendee.role ? `;ROLE=${attendee.role}` : ';ROLE=REQ-PARTICIPANT';
                           const status = attendee.status ? `;PARTSTAT=${attendee.status}` : ';PARTSTAT=NEEDS-ACTION';
-                          attendeesAndResourcesSection += `ATTENDEE${cn}${role}${status}:mailto:${attendee.email}\r\n`;
+                          const scheduleStatus = attendee.scheduleStatus ? `;SCHEDULE-STATUS=${attendee.scheduleStatus}` : '';
+                          
+                          console.log(`Adding attendee to event update: ${attendee.name || attendee.email} with status ${attendee.status || 'NEEDS-ACTION'}`);
+                          attendeesAndResourcesSection += `ATTENDEE${cn}${role}${status}${scheduleStatus}:mailto:${attendee.email}\r\n`;
                         }
                       });
                     }
@@ -1505,10 +1558,13 @@ export class SyncService {
                     if (Array.isArray(resourcesArray)) {
                       resourcesArray.forEach(resource => {
                         if (resource && resource.adminEmail) {
-                          // Format: ATTENDEE;CN=Resource Name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT:mailto:resource@example.com
+                          // Format: ATTENDEE;CN=Resource Name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=type;SCHEDULE-STATUS=x.x:mailto:resource@example.com
                           const cn = resource.adminName ? `;CN=${resource.adminName}` : '';
                           const subType = resource.subType ? `;X-RESOURCE-TYPE=${resource.subType}` : '';
-                          attendeesAndResourcesSection += `ATTENDEE${cn};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${subType}:mailto:${resource.adminEmail}\r\n`;
+                          const scheduleStatus = resource.scheduleStatus ? `;SCHEDULE-STATUS=${resource.scheduleStatus}` : '';
+                          
+                          console.log(`Adding resource to event update: ${resource.adminName || 'Unnamed Resource'} (${resource.adminEmail})`);
+                          attendeesAndResourcesSection += `ATTENDEE${cn};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${subType}${scheduleStatus}:mailto:${resource.adminEmail}\r\n`;
                         }
                       });
                     }
