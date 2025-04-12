@@ -7,6 +7,7 @@ import EventDetailModal from '@/components/modals/EventDetailModal';
 import ServerConnectionModal from '@/components/modals/ServerConnectionModal';
 import { SyncSettingsModal } from '@/components/modals/SyncSettingsModal';
 import ShareCalendarModal from '@/components/modals/SimplifiedShareCalendarModal';
+import MultiCalendarShareModal from '@/components/modals/MultiCalendarShareModal';
 import ExportCalendarModal from '@/components/modals/ExportCalendarModal';
 import ImportCalendarModal from '@/components/modals/ImportCalendarModal';
 import { BulkDeleteModal } from '@/components/modals/BulkDeleteModal';
@@ -272,6 +273,7 @@ function CalendarContent() {
   const [syncSettingsOpen, setSyncSettingsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [shareCalendarOpen, setShareCalendarOpen] = useState(false);
+  const [multiShareCalendarOpen, setMultiShareCalendarOpen] = useState(false);
   const [exportCalendarOpen, setExportCalendarOpen] = useState(false);
   const [importCalendarOpen, setImportCalendarOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -341,6 +343,11 @@ function CalendarContent() {
       setSelectedCalendar(null);
     }
     setShareCalendarOpen(true);
+  };
+  
+  // New function to handle multi-calendar sharing
+  const handleMultiShareCalendars = () => {
+    setMultiShareCalendarOpen(true);
   };
   
   const handleExportCalendar = () => {
@@ -511,6 +518,11 @@ function CalendarContent() {
       <BulkDeleteModal
         isOpen={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
+      />
+      
+      <MultiCalendarShareModal
+        open={multiShareCalendarOpen}
+        onClose={() => setMultiShareCalendarOpen(false)}
       />
     </div>
   );
