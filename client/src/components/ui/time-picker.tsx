@@ -1,118 +1,147 @@
-import React, { useState, useEffect } from 'react';
-import { Clock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { 
-  Select, 
-  SelectContent, 
-  SelectGroup, 
-  SelectItem, 
-  SelectTrigger, 
+import React, { useEffect, useState } from "react";
+import { format, isValid, parse, set } from "date-fns";
+import { Clock } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { format, set, parse } from 'date-fns';
+} from "@/components/ui/select";
 
-interface TimePickerDemoProps {
-  date: Date;
-  setDate: (date: Date) => void;
+interface TimePickerProps {
+  date: Date | undefined;
+  setDate: (date: Date | undefined) => void;
+  disabled?: boolean;
+  className?: string;
 }
 
-export function TimePickerDemo({ date, setDate }: TimePickerDemoProps) {
-  const [selectedHour, setSelectedHour] = useState<string>(
-    format(date, 'h')
+export function TimePicker({
+  date,
+  setDate,
+  disabled,
+  className,
+}: TimePickerProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedHour, setSelectedHour] = useState<string | undefined>(
+    date ? format(date, "HH") : undefined
   );
-  const [selectedMinute, setSelectedMinute] = useState<string>(
-    format(date, 'mm')
-  );
-  const [selectedMeridiem, setSelectedMeridiem] = useState<string>(
-    format(date, 'a')
+  const [selectedMinute, setSelectedMinute] = useState<string | undefined>(
+    date ? format(date, "mm") : undefined
   );
 
   useEffect(() => {
-    // Update the selected values when the date prop changes
-    setSelectedHour(format(date, 'h'));
-    setSelectedMinute(format(date, 'mm'));
-    setSelectedMeridiem(format(date, 'a'));
+    if (date && isValid(date)) {
+      setSelectedHour(format(date, "HH"));
+      setSelectedMinute(format(date, "mm"));
+    }
   }, [date]);
 
-  useEffect(() => {
-    // Update the parent's date when any of the time components change
-    // We need to preserve the date part and only update the time part
-    const hours = parseInt(selectedHour);
-    const minutes = parseInt(selectedMinute);
-    const isPM = selectedMeridiem === 'PM';
-    
-    // Convert to 24-hour format
-    const hours24 = isPM && hours < 12 ? hours + 12 : (!isPM && hours === 12 ? 0 : hours);
-    
-    // Create a new date with the same date part but updated time
-    const newDate = new Date(date);
-    newDate.setHours(hours24);
-    newDate.setMinutes(minutes);
-    newDate.setSeconds(0);
-    
-    setDate(newDate);
-  }, [selectedHour, selectedMinute, selectedMeridiem, setDate]);
+  const handleTimeChange = (hour: string, minute: string) => {
+    if (!date || !isValid(date)) {
+      const today = new Date();
+      const newDate = set(today, {
+        hours: parseInt(hour, 10),
+        minutes: parseInt(minute, 10),
+        seconds: 0,
+        milliseconds: 0,
+      });
+      setDate(newDate);
+    } else {
+      const newDate = set(date, {
+        hours: parseInt(hour, 10),
+        minutes: parseInt(minute, 10),
+      });
+      setDate(newDate);
+    }
+  };
+
+  const handleHourChange = (hour: string) => {
+    setSelectedHour(hour);
+    if (selectedMinute) {
+      handleTimeChange(hour, selectedMinute);
+    } else {
+      handleTimeChange(hour, "00");
+    }
+  };
+
+  const handleMinuteChange = (minute: string) => {
+    setSelectedMinute(minute);
+    if (selectedHour) {
+      handleTimeChange(selectedHour, minute);
+    } else {
+      // Default to current hour if none was selected
+      const currentHour = format(new Date(), "HH");
+      handleTimeChange(currentHour, minute);
+      setSelectedHour(currentHour);
+    }
+  };
+
+  const hoursArray = Array.from({ length: 24 }, (_, i) =>
+    i.toString().padStart(2, "0")
+  );
+  const minutesArray = Array.from({ length: 60 }, (_, i) =>
+    i.toString().padStart(2, "0")
+  );
+
+  // Create intervals of 5 or 15 minutes for more usable dropdown
+  const minuteIntervals = minutesArray.filter(
+    (minute) => parseInt(minute) % 5 === 0
+  );
 
   return (
-    <div className="flex items-center space-x-2">
-      <Select
-        value={selectedHour}
-        onValueChange={setSelectedHour}
-      >
-        <SelectTrigger className="w-16">
-          <SelectValue placeholder={selectedHour} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {Array.from({ length: 12 }, (_, i) => {
-              const hour = (i + 1).toString();
-              return (
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          className={cn(
+            "justify-start text-left font-normal h-8",
+            !date && "text-muted-foreground",
+            className
+          )}
+        >
+          <Clock className="mr-2 h-3.5 w-3.5" />
+          {date && isValid(date) ? format(date, "HH:mm") : "Select time"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-3" align="start">
+        <div className="flex items-center gap-2">
+          <Select value={selectedHour} onValueChange={handleHourChange}>
+            <SelectTrigger className="w-16">
+              <SelectValue placeholder="Hour" />
+            </SelectTrigger>
+            <SelectContent>
+              {hoursArray.map((hour) => (
                 <SelectItem key={hour} value={hour}>
                   {hour}
                 </SelectItem>
-              );
-            })}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      
-      <span>:</span>
-      
-      <Select
-        value={selectedMinute}
-        onValueChange={setSelectedMinute}
-      >
-        <SelectTrigger className="w-16">
-          <SelectValue placeholder={selectedMinute} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {Array.from({ length: 60 }, (_, i) => {
-              const minute = i.toString().padStart(2, '0');
-              return (
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-sm">:</span>
+          <Select value={selectedMinute} onValueChange={handleMinuteChange}>
+            <SelectTrigger className="w-16">
+              <SelectValue placeholder="Min" />
+            </SelectTrigger>
+            <SelectContent>
+              {minuteIntervals.map((minute) => (
                 <SelectItem key={minute} value={minute}>
                   {minute}
                 </SelectItem>
-              );
-            })}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      
-      <Select
-        value={selectedMeridiem}
-        onValueChange={setSelectedMeridiem}
-      >
-        <SelectTrigger className="w-16">
-          <SelectValue placeholder={selectedMeridiem} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectItem value="AM">AM</SelectItem>
-            <SelectItem value="PM">PM</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </div>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

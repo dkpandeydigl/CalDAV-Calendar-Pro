@@ -866,8 +866,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     // Only show response form if the current user is an attendee or if the event has attendees
                     if (user && processedAttendees.length > 0) {
                       // Check if the current user is an attendee
-                      const userEmail = user.email || user.username;
-                      const isAttendee = processedAttendees.some(attendee => 
+                      const userEmail = (user as any).email || user.username;
+                      const isAttendee = processedAttendees.some((attendee: any) => 
                         (typeof attendee === 'string' && attendee === userEmail) ||
                         (typeof attendee === 'object' && 
                          attendee.email && 
@@ -877,7 +877,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       // If user is not the organizer and is an attendee, show response form
                       if (isAttendee && !isUsersOwnCalendar) {
                         // Find organizer
-                        const organizer = processedAttendees.find(attendee => 
+                        const organizer = processedAttendees.find((attendee: any) => 
                           typeof attendee === 'object' && 
                           attendee.role && 
                           (attendee.role.toLowerCase() === 'chair' || 

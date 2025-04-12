@@ -155,7 +155,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
               <div className="flex-grow min-w-0">
                 <div className="flex items-center flex-wrap gap-1">
                   <span className="font-medium truncate">
-                    {attendee.name || attendee.email.split('@')[0]}
+                    {attendee.name || (attendee.email ? attendee.email.split('@')[0] : 'Unknown')}
                   </span>
                   {getRoleBadge(attendee.role)}
                   <TooltipProvider>
@@ -176,7 +176,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
                 </div>
                 
                 <div className="text-sm text-muted-foreground mt-0.5">
-                  {attendee.email}
+                  {attendee.email || '(No email address)'}
                 </div>
                 
                 {/* Display comment if available */}
@@ -187,12 +187,12 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button variant="link" className="p-0 h-auto text-xs">
-                            View comment from {attendee.name || attendee.email.split('@')[0]}
+                            View comment from {attendee.name || (attendee.email ? attendee.email.split('@')[0] : 'Unknown')}
                           </Button>
                         </DialogTrigger>
                         <DialogContent>
                           <DialogHeader>
-                            <DialogTitle>Comment from {attendee.name || attendee.email.split('@')[0]}</DialogTitle>
+                            <DialogTitle>Comment from {attendee.name || (attendee.email ? attendee.email.split('@')[0] : 'Unknown')}</DialogTitle>
                             <DialogDescription>
                               Response: <Badge 
                                 variant="outline" 
