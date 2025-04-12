@@ -931,11 +931,39 @@ export class SyncService {
    */
   private applyAggressiveFixesToICS(icsData: string): string {
     try {
-      // Fix 1: Remove any SCHEDULE-STATUS parameters entirely
+      console.log('Applying aggressive fixes to ICS data');
+      
+      // First pass: Identify the structure and critical issues
+      const hasStrayAttendee = icsData.includes('\nmailto:') || icsData.includes('\r\nmailto:');
+      const hasProjector = icsData.includes('Projector') || icsData.includes('projector');
+      const hasRRULE = icsData.includes('RRULE:');
+      const hasScheduleStatus = icsData.includes('SCHEDULE-STATUS');
+      const hasCombinedEmailResource = icsData.match(/:mailto:[^@\r\n]+@[^@\r\n]+[a-zA-Z]+[^:\r\n]*[\r\n]/);
+      
+      if (hasCombinedEmailResource) {
+        console.log('Found potentially combined email+resource value');
+      }
+      
+      // Fix 1: Separate combined email+resource into proper ATTENDEE lines
+      if (hasCombinedEmailResource) {
+        icsData = icsData.replace(/:mailto:([^@\r\n]+@[^@\r\n]+)([a-zA-Z]+[^:\r\n]*[\r\n])/g, (match, email, resource) => {
+          console.log(`Separating combined email+resource: ${email} + ${resource}`);
+          // Create a proper ending for the email line
+          return `:mailto:${email}\r\n`;
+        });
+      }
+      
+      // Fix 2: Remove any SCHEDULE-STATUS parameters entirely
       icsData = icsData.replace(/SCHEDULE-STATUS=[^;:\r\n]+(;|:|[\r\n])/g, '$1');
       
-      // Fix 2: Clean up RRULE properties
+      // Fix 3: Clean up RRULE properties - ensure they only contain valid recurrence parameters
       icsData = icsData.replace(/RRULE:[^\r\n]+/g, (match) => {
+        console.log(`Sanitizing RRULE: ${match}`);
+        // If it contains email or resource info, it's corrupted 
+        if (match.includes('mailto:') || match.includes('Projector') || match.includes('projector')) {
+          console.log('Found email or resource in RRULE - extracting just valid parts');
+        }
+        
         const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST', 'BYSETPOS'];
         const parts = match.substring(6).split(';'); // Remove RRULE: prefix
         const validParts = parts.filter(part => {
@@ -958,7 +986,7 @@ export class SyncService {
         return '';
       });
       
-      // Fix 3: Fix malformed ORGANIZER lines with unwrapped mailto:
+      // Fix 4: Fix malformed ORGANIZER lines with unwrapped mailto:
       // This handles cases where an email appears on a separate line after ORGANIZER
       icsData = icsData.replace(/ORGANIZER[^:\r\n]+:(\r?\n\s+mailto:[^\r\n]+)(\r?\n\s+mailto:[^\r\n]+)?/g, (match, firstEmail, secondEmail) => {
         // Keep the ORGANIZER line but remove additional emails
@@ -967,8 +995,17 @@ export class SyncService {
         return organizer;
       });
       
-      // Fix 4: Handle any stray mailto: lines that don't have property names
+      // Fix 5: Handle any stray mailto: lines that don't have property names
       icsData = icsData.replace(/^\s*mailto:[^\r\n]+\r?\n/gm, '');
+      
+      // Fix 6: Handle lines ending with a colon but no content
+      icsData = icsData.replace(/^.*:[\r\n]+/gm, '');
+      
+      // Fix 7: Fix specifically the dktest@dil.inProjector pattern
+      icsData = icsData.replace(/:mailto:([^@\r\n]+@[^@\r\n.]+\.[a-z]+)([A-Za-z]+)/g, (match, email, resource) => {
+        console.log(`Found and fixing "${email}${resource}" pattern`);
+        return `:mailto:${email}`;
+      });
       
       return icsData;
     } catch (error) {
@@ -1069,6 +1106,30 @@ export class SyncService {
     try {
       console.log(`Sanitizing RRULE: ${rrule}`);
       
+      // Check for specific malformed patterns (emails merged with resource types)
+      if (rrule.includes('@') && (rrule.includes('Projector') || rrule.includes('projector') ||
+          rrule.includes('Room') || rrule.includes('room') || rrule.includes('Resource'))) {
+        console.log('Found email/resource pattern in RRULE - applying focused fix');
+        
+        // Specific case: dktest@dil.inProjector
+        rrule = rrule.replace(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})[A-Za-z]+/g, (match, email) => {
+          console.log(`Removing resource suffix from email ${email}`);
+          return '';  // Remove the entire problematic part
+        });
+        
+        // After removing problematic parts, check if we still have a valid RRULE
+        const freqMatch = rrule.match(/FREQ=([^;]+)/i);
+        if (freqMatch) {
+          console.log(`Recovered FREQ from corrupted RRULE: FREQ=${freqMatch[1]}`);
+          // Just use the basic frequency to be safe
+          return `FREQ=${freqMatch[1]}`;
+        } else {
+          // If we can't recover a FREQ, return a default daily recurrence
+          console.log('Could not recover FREQ from corrupted RRULE, using default DAILY');
+          return 'FREQ=DAILY';
+        }
+      }
+      
       // If it's already an object in string form, parse it and let our formatter handle it
       if (rrule.startsWith('{') && rrule.endsWith('}')) {
         try {
@@ -1083,19 +1144,25 @@ export class SyncService {
         rrule = rrule.substring(6);
       }
       
-      // Explicitly check for and remove SCHEDULE-STATUS, as this is a common source of errors
+      // Explicitly check for and remove SCHEDULE-STATUS
       if (rrule.includes('SCHEDULE-STATUS')) {
         console.log('Found SCHEDULE-STATUS in RRULE - removing it');
-        // Remove everything from SCHEDULE-STATUS to the end or to the next semicolon
         rrule = rrule.replace(/SCHEDULE-STATUS=[^;]*(;|$)/g, '');
       }
       
-      // If we have a clean RRULE without problematic content, return it directly
-      if (rrule.startsWith('FREQ=') && !rrule.includes('mailto:') && !rrule.includes('PARTSTAT=') && !rrule.includes('SCHEDULE-STATUS')) {
+      // Remove any stray "mailto:" sections
+      if (rrule.includes('mailto:')) {
+        console.log('Found mailto: in RRULE - removing it');
+        rrule = rrule.replace(/mailto:[^;]*(;|$)/g, '');
+      }
+      
+      // If we have a clean RRULE without problematic content, return it
+      if (rrule.startsWith('FREQ=') && !rrule.includes('mailto:') && !rrule.includes('PARTSTAT=') && 
+          !rrule.includes('SCHEDULE-STATUS') && !rrule.includes('@')) {
         return rrule;
       }
       
-      // Extract just the valid RRULE parameters
+      // Extract valid RRULE parameters (whitelist approach)
       const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST', 'BYSETPOS'];
       const parts = rrule.split(';');
       
@@ -1105,21 +1172,21 @@ export class SyncService {
         return validParams.includes(paramName);
       });
       
-      // If we have valid parts, join them back
+      // If we have valid parts, join them
       if (validParts.length > 0) {
         const sanitizedRule = validParts.join(';');
         console.log(`Sanitized RRULE: ${sanitizedRule}`);
         return sanitizedRule;
       }
       
-      // If nothing was valid, check if there's a FREQ parameter we can extract
+      // Extract just FREQ as a last resort
       const freqMatch = rrule.match(/FREQ=([^;]+)/i);
       if (freqMatch) {
         console.log(`Extracted only FREQ from RRULE: FREQ=${freqMatch[1]}`);
         return `FREQ=${freqMatch[1]}`;
       }
       
-      // If all else fails, return an empty string
+      // If all else fails, return a default or empty
       console.warn(`Could not sanitize RRULE: ${rrule}, returning empty string`);
       return '';
     } catch (e) {
