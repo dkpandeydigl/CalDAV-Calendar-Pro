@@ -369,7 +369,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const handleCancel = async () => {
     if (!event || !event.id || isCancelling) return;
     
-    setCancelling(true);
+    setIsCancelling(true);
     setCancelError(null);
     
     try {
@@ -380,7 +380,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       console.error('Error cancelling event:', error);
       setCancelError('Failed to cancel the event. Please try again.');
     } finally {
-      setCancelling(false);
+      setIsCancelling(false);
     }
   };
 
@@ -627,11 +627,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               
               {/* Right column - Attendees */}
               <div className="space-y-4">
-                {/* Direct Resource Extractor Component - show all resources in detail view */}
-                {typeof event.rawData === 'string' && (
-                  <DirectResourceExtractor rawData={event.rawData} isPreview={true} />
-                )}
-                
                 {/* Attendees and Response Section */}
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
                   <Tabs defaultValue="status" className="w-full">
