@@ -677,24 +677,18 @@ export class SyncService {
    */
   private preprocessICSData(icsData: string): string {
     try {
-      // First, log a sample of the data to help with debugging
       console.log(`Preprocessing ICS data (first 100 chars): ${icsData.substring(0, 100)}...`);
       
-      // Check for problematic properties in the entire file and remove them
-      let processedData = icsData;
-      
-      // Special case for SCHEDULE-STATUS which might appear anywhere
-      if (processedData.includes('SCHEDULE-STATUS')) {
+      // Replace any SCHEDULE-STATUS properties found in RRULE
+      if (icsData.indexOf('SCHEDULE-STATUS') >= 0) {
         console.log('Found SCHEDULE-STATUS property, removing it');
-        processedData = processedData.replace(/SCHEDULE-STATUS=[^;\r\n]+[;\r\n]/g, '');
+        icsData = icsData.replace(/SCHEDULE-STATUS=[^;\r\n]+/g, '');
+        // Also remove any double semicolons that might be left
+        icsData = icsData.replace(/;;/g, ';');
       }
       
-      // Completely replace the RRULE line if it contains problematic properties
-      const rruleMatch = processedData.match(/RRULE:([^\r\n]+)/);
-      if (rruleMatch && rruleMatch[1]) {
-        const rruleContent = rruleMatch[1];
-        console.log(`Found RRULE content: ${rruleContent}`);
-        
+      // Find and clean RRULE properties
+      icsData = icsData.replace(/RRULE:([^\r\n]+)/g, (match: string, rruleContent: string) => {
         // List of standard RRULE properties according to RFC 5545
         const standardProperties = [
           'FREQ', 'UNTIL', 'COUNT', 'INTERVAL', 'BYSECOND', 'BYMINUTE',
@@ -702,35 +696,32 @@ export class SyncService {
           'BYMONTH', 'BYSETPOS', 'WKST'
         ];
         
-        // Split the RRULE content by semicolons to get individual properties
+        // Check if there are any non-standard properties
         const properties = rruleContent.split(';');
-        let hasNonStandardProps = false;
-        
-        // Log all properties for debugging and check for non-standard properties
-        properties.forEach((prop: string) => {
+        const nonStandardProps = properties.filter((prop: string) => {
           const propName = prop.split('=')[0];
-          if (!standardProperties.includes(propName)) {
-            console.log(`Found non-standard RRULE property: ${propName}`);
-            hasNonStandardProps = true;
-          }
+          return !standardProperties.includes(propName);
         });
         
-        if (hasNonStandardProps) {
+        // If there are non-standard properties, filter them out
+        if (nonStandardProps.length > 0) {
+          console.log(`Found non-standard RRULE properties: ${nonStandardProps.join(', ')}`);
+          
           // Filter out non-standard properties
           const filteredProperties = properties.filter((prop: string) => {
             const propName = prop.split('=')[0];
             return standardProperties.includes(propName);
           });
           
-          console.log(`Removed non-standard RRULE properties. Original: "${rruleContent}", Filtered: "${filteredProperties.join(';')}"`);
-          
-          // Replace the RRULE line in the entire file
-          const newRruleLine = `RRULE:${filteredProperties.join(';')}`;
-          processedData = processedData.replace(/RRULE:[^\r\n]+/, newRruleLine);
+          console.log(`Filtered RRULE: ${filteredProperties.join(';')}`);
+          return `RRULE:${filteredProperties.join(';')}`;
         }
-      }
+        
+        // If no non-standard properties, return the original match
+        return match;
+      });
       
-      return processedData;
+      return icsData;
     } catch (error) {
       console.error('Error preprocessing ICS data:', error);
       return icsData; // Return original if preprocessing fails
@@ -742,122 +733,29 @@ export class SyncService {
       // Pre-process the ICS data to handle non-standard properties
       const processedICSData = this.preprocessICSData(icsData);
       
-      // Create a safe wrapper around the node-ical parsing
-      let parsedCal: any;
+      // Parse the ICS data using node-ical
+      const parseICS = (nodeIcal as any).default?.parseICS || nodeIcal.parseICS;
+      let parsedCal;
+      
       try {
-        // Parse the ICS data using node-ical
-        const parseICS = (nodeIcal as any).default?.parseICS || nodeIcal.parseICS;
         parsedCal = parseICS(processedICSData);
       } catch (parseError) {
-        console.error('Error parsing ICS data with node-ical, falling back to manual parsing:', parseError);
+        console.error('Error parsing ICS data with node-ical:', parseError);
         
-        // We have a parsing error - extract basic information manually
-        // This is a safety fallback to ensure we can still process the event
-        
-        // Extract common fields with regex
-        const uid = icsData.match(/UID:([^\r\n]+)/)?.[1] || `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-        const summary = icsData.match(/SUMMARY:([^\r\n]+)/)?.[1] || 'Untitled Event';
-        const description = icsData.match(/DESCRIPTION:([^\r\n]+)/)?.[1];
-        const location = icsData.match(/LOCATION:([^\r\n]+)/)?.[1];
-        
-        // Extract dates - this is more complex but we'll try a simple approach
-        const dtstart = icsData.match(/DTSTART(?:[^:]*):([^\r\n]+)/)?.[1];
-        const dtend = icsData.match(/DTEND(?:[^:]*):([^\r\n]+)/)?.[1];
-        
-        // If we can't parse dates, we can't continue
-        if (!dtstart) {
-          console.error('Failed to extract start date from ICS data');
-          return null;
-        }
-        
-        // Try to parse dates
-        let startDate: Date | null = null;
-        let endDate: Date | null = null;
-        let allDay = false;
-        
-        try {
-          // Determine if it's an all-day event (no time component)
-          const isAllDay = dtstart.indexOf('T') === -1;
-          allDay = isAllDay;
-          
-          // Parse the dates
-          if (isAllDay) {
-            // Simple parsing for YYYYMMDD format
-            const year = parseInt(dtstart.substring(0, 4));
-            const month = parseInt(dtstart.substring(4, 6)) - 1; // JS months are 0-indexed
-            const day = parseInt(dtstart.substring(6, 8));
-            startDate = new Date(Date.UTC(year, month, day));
-            
-            if (dtend) {
-              const endYear = parseInt(dtend.substring(0, 4));
-              const endMonth = parseInt(dtend.substring(4, 6)) - 1;
-              const endDay = parseInt(dtend.substring(6, 8));
-              endDate = new Date(Date.UTC(endYear, endMonth, endDay));
-            } else {
-              // If no end date, use start date + 1 day
-              endDate = new Date(startDate);
-              endDate.setDate(endDate.getDate() + 1);
-            }
-          } else {
-            // Parse datetime format: YYYYMMDDTHHMMSSZ
-            const year = parseInt(dtstart.substring(0, 4));
-            const month = parseInt(dtstart.substring(4, 6)) - 1;
-            const day = parseInt(dtstart.substring(6, 8));
-            const hour = parseInt(dtstart.substring(9, 11));
-            const minute = parseInt(dtstart.substring(11, 13));
-            const second = parseInt(dtstart.substring(13, 15));
-            
-            if (dtstart.endsWith('Z')) {
-              // UTC time
-              startDate = new Date(Date.UTC(year, month, day, hour, minute, second));
-            } else {
-              // Local time
-              startDate = new Date(year, month, day, hour, minute, second);
-            }
-            
-            if (dtend) {
-              const endYear = parseInt(dtend.substring(0, 4));
-              const endMonth = parseInt(dtend.substring(4, 6)) - 1;
-              const endDay = parseInt(dtend.substring(6, 8));
-              const endHour = parseInt(dtend.substring(9, 11));
-              const endMinute = parseInt(dtend.substring(11, 13));
-              const endSecond = parseInt(dtend.substring(13, 15));
-              
-              if (dtend.endsWith('Z')) {
-                endDate = new Date(Date.UTC(endYear, endMonth, endDay, endHour, endMinute, endSecond));
-              } else {
-                endDate = new Date(endYear, endMonth, endDay, endHour, endMinute, endSecond);
-              }
-            } else {
-              // If no end date, use start + 1 hour
-              endDate = new Date(startDate);
-              endDate.setHours(endDate.getHours() + 1);
-            }
+        // If RRULE is causing issues, try removing it completely for parsing
+        if (processedICSData.includes('RRULE:')) {
+          console.log('Attempting to parse without RRULE');
+          const noRruleData = processedICSData.replace(/RRULE:[^\r\n]+\r\n/g, '');
+          try {
+            parsedCal = parseICS(noRruleData);
+            console.log('Successfully parsed ICS data without RRULE');
+          } catch (secondError) {
+            console.error('Still failed to parse ICS data after removing RRULE:', secondError);
+            return null;
           }
-        } catch (dateError) {
-          console.error('Error parsing dates from ICS data:', dateError);
+        } else {
           return null;
         }
-        
-        // Extract RRULE if present
-        const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
-        const recurrenceRule = rruleMatch?.[1];
-        
-        // Create CalDAVEvent object from manually extracted data
-        return {
-          uid,
-          summary,
-          description,
-          location,
-          startDate,
-          endDate,
-          allDay,
-          timezone: 'UTC', // Default timezone
-          recurrenceRule,
-          etag,
-          url,
-          data: icsData // Store the original data
-        };
       }
       
       // Continue with parsed data from node-ical (if successful)
