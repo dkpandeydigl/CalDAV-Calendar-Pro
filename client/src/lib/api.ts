@@ -75,7 +75,7 @@ export async function shareCalendar(
   }
   
   const response = await apiRequest('POST', apiUrl, {
-    sharedWithEmail: email,
+    email: email, // Server expects 'email', not 'sharedWithEmail'
     permissionLevel,
     sharedByUserId: currentUserId
   });
