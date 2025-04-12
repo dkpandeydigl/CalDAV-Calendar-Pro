@@ -758,9 +758,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           setStartDate(formattedDate);
           setEndDate(formattedDate);
           
-          // DEFAULT FOR SIMPLICITY: Always set events created by clicking to all-day
-          // This prevents most timezone issues and is the most intuitive behavior
-          setAllDay(true);
+          // Default to regular time-based events (not all-day) when clicking on a day
+          // This allows users to set specific start and end times for their events
+          setAllDay(false);
           
           // Set current time as defaults even though they won't be visible 
           // for all-day events. This way if user unchecks all-day, they'll see current time
@@ -776,15 +776,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           setStartTime(formattedStartTime);
           setEndTime(formattedEndTime);
           
-          // SIMPLIFIED: For all-day events, we always use UTC timezone
-          // This ensures consistent date storage regardless of user's local timezone
-          setTimezone('UTC');
+          // For regular (non-all-day) events, use the user's selected timezone
+          setTimezone(selectedTimezone);
           
-          console.log(`[DATE DEBUG] Form values set for all-day event:`, {
+          console.log(`[DATE DEBUG] Form values set for event:`, {
             startDate: formattedDate,
             endDate: formattedDate,
-            allDay: true,
-            timezone: 'UTC' // IMPORTANT: Always UTC for all-day events
+            allDay: false,
+            timezone: selectedTimezone
           });
         }
         
