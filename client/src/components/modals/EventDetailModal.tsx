@@ -16,6 +16,7 @@ import ResourceManager from '@/components/resources/ResourceManager';
 import DirectAttendeeExtractor from './DirectAttendeeExtractor';
 import AttendeeResponseForm from '../attendees/AttendeeResponseForm';
 import AttendeeStatusDisplay from '../attendees/AttendeeStatusDisplay';
+import AttendeeDialog from '../attendees/AttendeeDialog';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
@@ -104,6 +105,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [showAllAttendees, setShowAllAttendees] = useState(false); // For attendee display limit
   const [showAllResources, setShowAllResources] = useState(false); // For resource display limit (unused now - using dialog instead)
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null); // For attendee status dialog
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false); // For attendee status dialog
   // Section expansion has been removed in favor of always showing scrollable content
   
   // Add a timeout to prevent infinite loading state
@@ -687,15 +690,28 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 }}
                               />
                               
-                              {/* Toggle button for showing/hiding attendees */}
+                              {/* Button to open dialog showing all attendees */}
                               {attendeeCount > 3 && (
                                 <button 
-                                  onClick={() => setShowAllAttendees(!showAllAttendees)}
+                                  onClick={() => {
+                                    setSelectedStatus('all');
+                                    setStatusDialogOpen(true);
+                                  }}
                                   className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
                                 >
-                                  {showAllAttendees ? 'Show less' : `Show all ${attendeeCount} attendees`}
+                                  Show all {attendeeCount} attendees
                                 </button>
                               )}
+                              
+                              {/* All Attendees Dialog */}
+                              <AttendeeDialog
+                                open={statusDialogOpen}
+                                onOpenChange={setStatusDialogOpen}
+                                attendees={processedAttendees}
+                                title={`All Attendees (${processedAttendees.length})`}
+                                description="Complete list of all attendees for this event"
+                                selectedStatus={selectedStatus || 'all'}
+                              />
                             </>
                           );
                         }

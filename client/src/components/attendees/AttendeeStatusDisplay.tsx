@@ -45,8 +45,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   onTimeProposalAccept,
   showAll = false
 }) => {
-  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  // Dialog functionality moved to the parent component with AttendeeDialog
   
   // Helper to get normalized status from various formats
   const normalizeStatus = (status?: string): string => {
