@@ -219,6 +219,81 @@ export const useSharedCalendars = () => {
     }
   });
 
+  // Add permission update mutation
+  const updatePermissionMutation = useMutation({
+    mutationFn: async (params: { sharingId: number, permissionLevel: 'view' | 'edit' }) => {
+      const { sharingId, permissionLevel } = params;
+      const url = `/api/calendar-sharings/${sharingId}`;
+      const response = await apiRequest('PATCH', url, { permissionLevel });
+      return response.json();
+    },
+    onMutate: async ({ sharingId, permissionLevel }) => {
+      // Use proper query key with user ID
+      const queryKey = ['/api/shared-calendars', currentUserId];
+      
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey });
+      
+      // Snapshot the previous value
+      const previousSharedCalendars = queryClient.getQueryData<SharedCalendar[]>(queryKey);
+      
+      // Optimistically update the permission level in the cache
+      if (previousSharedCalendars) {
+        const updatedCalendars = previousSharedCalendars.map(calendar => {
+          if (calendar.sharingId === sharingId) {
+            return { 
+              ...calendar, 
+              permissionLevel,
+              permission: permissionLevel, // Update both fields for backward compatibility
+            };
+          }
+          return calendar;
+        });
+        
+        queryClient.setQueryData(queryKey, updatedCalendars);
+        
+        // Find the updated calendar for better error messages
+        const updatedCalendar = updatedCalendars.find(cal => cal.sharingId === sharingId);
+        
+        return { 
+          previousSharedCalendars, 
+          updatedCalendar,
+          queryKey,
+          permissionLevel
+        };
+      }
+      
+      return { previousSharedCalendars };
+    },
+    onSuccess: (_, { permissionLevel }, context) => {
+      const calendarName = context?.updatedCalendar?.name || 'calendar';
+      
+      toast({
+        title: "Permission updated",
+        description: `You now have ${permissionLevel === 'edit' ? 'edit' : 'view-only'} permission for "${calendarName}"`,
+      });
+    },
+    onError: (error, _, context) => {
+      // If the mutation fails, use the context we saved to roll back
+      if (context?.previousSharedCalendars && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previousSharedCalendars);
+      }
+      
+      console.error('Error updating calendar permission:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update calendar permission. Please try again.",
+        variant: "destructive"
+      });
+    },
+    onSettled: () => {
+      // Refetch after error or success to ensure server state
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/shared-calendars', currentUserId] 
+      });
+    }
+  });
+
   // Thanks to our strict server-side security filtering, we can now trust the shared calendars directly from the server
   // The server will never send calendars owned by the current user in the shared calendars API
   // This simplifies our client-side logic and prevents bugs
@@ -234,6 +309,9 @@ export const useSharedCalendars = () => {
     unshareCalendar: unshareCalendarMutation.mutate,
     isUnsharing: unshareCalendarMutation.isPending,
     bulkUnshareCalendars: bulkUnshareCalendarsMutation.mutate,
-    isBulkUnsharing: bulkUnshareCalendarsMutation.isPending
+    isBulkUnsharing: bulkUnshareCalendarsMutation.isPending,
+    // Add the new permission update mutation
+    updatePermission: updatePermissionMutation.mutate,
+    isUpdatingPermission: updatePermissionMutation.isPending
   };
 };
