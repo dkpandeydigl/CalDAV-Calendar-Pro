@@ -1562,57 +1562,80 @@ export class SyncService {
    * Format a recurrence rule for iCalendar
    */
   private formatRecurrenceRule(rule: string): string {
+    // If rule is empty, return empty string
+    if (!rule) return '';
+    
     try {
-      const parsedRule = JSON.parse(rule);
-      
-      // Start building the RRULE string
-      let rrule = '';
-      
-      // Pattern (FREQ)
-      if (parsedRule.pattern) {
-        rrule += `FREQ=${parsedRule.pattern.toUpperCase()};`;
+      // First sanitize the rule to ensure it doesn't contain any invalid data like attendee emails
+      if (typeof rule === 'string' && rule.includes('mailto:')) {
+        rule = this.sanitizeRRULE(rule);
       }
       
-      // Interval
-      if (parsedRule.interval && parsedRule.interval > 1) {
-        rrule += `INTERVAL=${parsedRule.interval};`;
+      // If the rule is already in FREQ=xxx format after sanitization, return it directly
+      if (typeof rule === 'string' && rule.startsWith('FREQ=')) {
+        return rule;
       }
       
-      // Weekdays (BYDAY) for weekly patterns
-      if (parsedRule.pattern === 'Weekly' && parsedRule.weekdays && parsedRule.weekdays.length > 0) {
-        const days = parsedRule.weekdays.map((day: string) => {
-          switch (day) {
-            case 'Monday': return 'MO';
-            case 'Tuesday': return 'TU';
-            case 'Wednesday': return 'WE';
-            case 'Thursday': return 'TH';
-            case 'Friday': return 'FR';
-            case 'Saturday': return 'SA';
-            case 'Sunday': return 'SU';
-            default: return '';
-          }
-        }).filter(Boolean).join(',');
+      try {
+        const parsedRule = JSON.parse(rule);
         
-        if (days) {
-          rrule += `BYDAY=${days};`;
+        // Start building the RRULE string
+        let rrule = '';
+        
+        // Pattern (FREQ)
+        if (parsedRule.pattern) {
+          rrule += `FREQ=${parsedRule.pattern.toUpperCase()};`;
         }
-      }
-      
-      // End type
-      if (parsedRule.endType) {
-        if (parsedRule.endType === 'After' && parsedRule.occurrences) {
-          rrule += `COUNT=${parsedRule.occurrences};`;
-        } else if (parsedRule.endType === 'On' && parsedRule.untilDate) {
-          const untilDate = new Date(parsedRule.untilDate);
-          rrule += `UNTIL=${this.formatICalDate(untilDate)};`;
+        
+        // Interval
+        if (parsedRule.interval && parsedRule.interval > 1) {
+          rrule += `INTERVAL=${parsedRule.interval};`;
         }
+        
+        // Weekdays (BYDAY) for weekly patterns
+        if (parsedRule.pattern === 'Weekly' && parsedRule.weekdays && parsedRule.weekdays.length > 0) {
+          const days = parsedRule.weekdays.map((day: string) => {
+            switch (day) {
+              case 'Monday': return 'MO';
+              case 'Tuesday': return 'TU';
+              case 'Wednesday': return 'WE';
+              case 'Thursday': return 'TH';
+              case 'Friday': return 'FR';
+              case 'Saturday': return 'SA';
+              case 'Sunday': return 'SU';
+              default: return '';
+            }
+          }).filter(Boolean).join(',');
+          
+          if (days) {
+            rrule += `BYDAY=${days};`;
+          }
+        }
+        
+        // End type
+        if (parsedRule.endType) {
+          if (parsedRule.endType === 'After' && parsedRule.occurrences) {
+            rrule += `COUNT=${parsedRule.occurrences};`;
+          } else if (parsedRule.endType === 'On' && parsedRule.untilDate) {
+            const untilDate = new Date(parsedRule.untilDate);
+            rrule += `UNTIL=${this.formatICalDate(untilDate)};`;
+          }
+        }
+        
+        // Remove trailing semicolon if it exists
+        return rrule.endsWith(';') ? rrule.slice(0, -1) : rrule;
+      } catch (error) {
+        // If JSON parsing fails but we have a string, try to sanitize it
+        if (typeof rule === 'string') {
+          return this.sanitizeRRULE(rule);
+        }
+        
+        console.error(`Error formatting recurrence rule:`, error);
+        return typeof rule === 'string' ? rule : '';
       }
-      
-      // Remove trailing semicolon if it exists
-      return rrule.endsWith(';') ? rrule.slice(0, -1) : rrule;
     } catch (error) {
-      console.error(`Error formatting recurrence rule:`, error);
-      return rule; // Return the original string if parsing fails
+      console.error(`Error in formatRecurrenceRule:`, error);
+      return typeof rule === 'string' ? rule : '';
     }
   }
 
