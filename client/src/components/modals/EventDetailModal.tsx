@@ -14,6 +14,8 @@ import { MailCheck, AlertTriangle, User as UserIcon, VideoIcon, DoorClosed, Lapt
 import DirectResourceExtractor from './DirectResourceExtractor';
 import ResourceManager from '@/components/resources/ResourceManager';
 import DirectAttendeeExtractor from './DirectAttendeeExtractor';
+import AttendeeResponseForm from '../attendees/AttendeeResponseForm';
+import AttendeeStatusDisplay from '../attendees/AttendeeStatusDisplay';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.

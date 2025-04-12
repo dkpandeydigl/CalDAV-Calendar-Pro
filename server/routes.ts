@@ -1169,6 +1169,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // EVENTS API
+
+  // Endpoint for attendees to respond to event invitations
+  app.post("/api/events/:id/respond", isAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+
+      // Get the existing event
+      const existingEvent = await storage.getEvent(eventId);
+      if (!existingEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+
+      // Validate the response data
+      const { status, comment, proposedStart, proposedEnd } = req.body;
+      
+      if (!status || !['ACCEPTED', 'DECLINED', 'TENTATIVE'].includes(status)) {
+        return res.status(400).json({ message: "Invalid response status" });
+      }
+
+      // Get the current user's information
+      const currentUser = req.user!;
+      const userDetails = await storage.getUser(currentUser.id);
+      
+      if (!userDetails) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Determine the attendee email to update (use email if available, otherwise username)
+      const attendeeEmail = userDetails.email || userDetails.username;
+      
+      // Parse the current attendees
+      let attendees = [];
+      if (existingEvent.attendees) {
+        if (typeof existingEvent.attendees === 'string') {
+          try {
+            attendees = JSON.parse(existingEvent.attendees);
+          } catch (e) {
+            console.error("Error parsing attendees from JSON string:", e);
+          }
+        } else if (Array.isArray(existingEvent.attendees)) {
+          attendees = existingEvent.attendees;
+        }
+      }
+
+      // Find if the current user is in the attendees list
+      let attendeeFound = false;
+      const updatedAttendees = attendees.map(attendee => {
+        if (
+          (typeof attendee === 'string' && attendee === attendeeEmail) ||
+          (typeof attendee === 'object' && 
+           attendee.email && 
+           attendee.email.toLowerCase() === attendeeEmail.toLowerCase())
+        ) {
+          attendeeFound = true;
+          // Update the attendee's status and add comment if provided
+          return {
+            ...attendee,
+            email: typeof attendee === 'string' ? attendee : attendee.email,
+            name: typeof attendee === 'string' ? attendee.split('@')[0] : (attendee.name || attendee.email.split('@')[0]),
+            status: status,
+            comment: comment || undefined,
+            proposedStart: proposedStart || undefined,
+            proposedEnd: proposedEnd || undefined
+          };
+        }
+        return attendee;
+      });
+
+      // If the user isn't in the attendee list, we can't process the response
+      if (!attendeeFound) {
+        return res.status(403).json({ 
+          message: "You are not listed as an attendee for this event" 
+        });
+      }
+
+      // Update the event with the new attendees list
+      const updatedEvent = await storage.updateEvent(eventId, {
+        attendees: updatedAttendees,
+        // Increment the sequence number to indicate a change
+        rawData: {
+          ...existingEvent.rawData,
+          SEQUENCE: existingEvent.rawData?.SEQUENCE 
+            ? parseInt(existingEvent.rawData.SEQUENCE) + 1 
+            : 1
+        }
+      });
+
+      // Construct and send an iTIP REPLY
+      try {
+        // Get the calendar for this event
+        const calendar = await storage.getCalendar(existingEvent.calendarId);
+        if (!calendar) {
+          throw new Error("Calendar not found");
+        }
+
+        // Get the user's server connection
+        const connection = await storage.getServerConnection(userDetails.id);
+        if (!connection) {
+          throw new Error("Server connection not found");
+        }
+
+        // Create iTIP REPLY object and update CalDAV server
+        // This is a simplified version - a real implementation would use a CalDAV client library
+        // to construct a proper iTIP REPLY and send it to the server
+
+        // Send email notification to the organizer
+        const eventData = {
+          eventId: existingEvent.id,
+          uid: existingEvent.uid,
+          title: existingEvent.title,
+          description: existingEvent.description,
+          location: existingEvent.location,
+          startDate: new Date(existingEvent.startDate),
+          endDate: new Date(existingEvent.endDate),
+          organizer: {
+            email: typeof existingEvent.attendees === 'object' && Array.isArray(existingEvent.attendees) 
+              ? existingEvent.attendees.find(att => 
+                  typeof att === 'object' && 
+                  att.role && 
+                  (att.role.toLowerCase() === 'chair' || att.role.toLowerCase() === 'organizer')
+                )?.email || ''
+              : '',
+            name: ''
+          },
+          attendees: [{
+            email: attendeeEmail,
+            name: userDetails.username,
+            role: 'REQ-PARTICIPANT',
+            status: status
+          }],
+          status: 'CONFIRMED'
+        };
+
+        // Only initialize email service if we have an organizer email
+        if (eventData.organizer.email) {
+          await emailService.initialize(userDetails.id);
+          
+          // If there's a comment, include it in the email
+          if (comment) {
+            eventData.description = `Attendee comment: ${comment}\n\n${eventData.description || ''}`;
+          }
+
+          // If there's a proposed time, include it in the email
+          if (proposedStart && proposedEnd) {
+            eventData.description = `Proposed new time: ${new Date(proposedStart).toLocaleString()} - ${new Date(proposedEnd).toLocaleString()}\n\n${eventData.description || ''}`;
+          }
+
+          await emailService.sendEventInvitation(userDetails.id, eventData);
+        }
+
+      } catch (error) {
+        console.error("Error sending response notification:", error);
+        // Continue without failing the request
+      }
+
+      res.json(updatedEvent);
+    } catch (err) {
+      console.error("Error responding to event invitation:", err);
+      return handleZodError(err, res);
+    }
+  });
+
   app.get("/api/events", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
