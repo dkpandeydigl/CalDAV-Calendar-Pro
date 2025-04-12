@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { TimePickerDemo } from '@/components/ui/time-picker';
-import { Tiptap } from '@/components/ui/tiptap';
+import { TimePicker } from '@/components/ui/time-picker';
+import { TiptapEditorEditor } from '@/components/ui/tiptap';
 import { CheckCircle, XCircle, HelpCircle, Calendar as CalendarIcon, Clock, MessageSquare } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -192,7 +192,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                       <FormLabel>Add a note</FormLabel>
                       <FormControl>
                         <div className="border rounded-md">
-                          <Tiptap 
+                          <TiptapEditor 
                             content={field.value || ''} 
                             onChange={field.onChange}
                             placeholder="Add a note to your response..."
@@ -244,7 +244,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                               />
                             </PopoverContent>
                           </Popover>
-                          <TimePickerDemo 
+                          <TimePicker 
                             date={field.value}
                             setDate={field.onChange}
                           />
@@ -277,7 +277,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                               />
                             </PopoverContent>
                           </Popover>
-                          <TimePickerDemo 
+                          <TimePicker 
                             date={field.value}
                             setDate={field.onChange}
                           />
@@ -454,7 +454,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                                 />
                               </PopoverContent>
                             </Popover>
-                            <TimePickerDemo 
+                            <TimePicker 
                               date={field.value}
                               setDate={field.onChange}
                             />
@@ -487,7 +487,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                                 />
                               </PopoverContent>
                             </Popover>
-                            <TimePickerDemo 
+                            <TimePicker 
                               date={field.value}
                               setDate={field.onChange}
                             />
@@ -507,7 +507,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                           <FormLabel>Add a note to your response</FormLabel>
                           <FormControl>
                             <div className="border rounded-md">
-                              <Tiptap 
+                              <TiptapEditor 
                                 content={field.value || ''} 
                                 onChange={field.onChange}
                                 placeholder="Add a note to your response..."
