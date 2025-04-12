@@ -958,6 +958,18 @@ export class SyncService {
         return '';
       });
       
+      // Fix 3: Fix malformed ORGANIZER lines with unwrapped mailto:
+      // This handles cases where an email appears on a separate line after ORGANIZER
+      icsData = icsData.replace(/ORGANIZER[^:\r\n]+:(\r?\n\s+mailto:[^\r\n]+)(\r?\n\s+mailto:[^\r\n]+)?/g, (match, firstEmail, secondEmail) => {
+        // Keep the ORGANIZER line but remove additional emails
+        const organizer = match.split('\r\n')[0];
+        console.log('Fixing malformed ORGANIZER line:', organizer);
+        return organizer;
+      });
+      
+      // Fix 4: Handle any stray mailto: lines that don't have property names
+      icsData = icsData.replace(/^\s*mailto:[^\r\n]+\r?\n/gm, '');
+      
       return icsData;
     } catch (error) {
       console.error('Error applying aggressive fixes to ICS data:', error);

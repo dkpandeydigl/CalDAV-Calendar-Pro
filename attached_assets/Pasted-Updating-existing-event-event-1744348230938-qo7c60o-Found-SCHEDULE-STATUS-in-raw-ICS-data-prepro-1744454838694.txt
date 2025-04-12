@@ -1,0 +1,43 @@
+Updating existing event: event-1744348230938-qo7c60o
+Found SCHEDULE-STATUS in raw ICS data - preprocessing...
+Error parsing ICS data with node-ical: Error: Unknown RRULE property 'SCHEDULE-STATUS'
+    at /home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:2234:23
+    at Array.forEach (<anonymous>)
+    at parseRrule (/home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:2191:11)
+    at parseLine (/home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:2174:16)
+    at Array.map (<anonymous>)
+    at Function.parseString (/home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:2151:10)
+    at RRule.fromString (/home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:3178:32)
+    at Object.END (/home/runner/workspace/node_modules/node-ical/ical.js:646:30)
+    at Object.handleObject (/home/runner/workspace/node_modules/node-ical/ical.js:696:39)
+    at Object.parseLines (/home/runner/workspace/node_modules/node-ical/ical.js:748:18)
+    at Object.parseICS (/home/runner/workspace/node_modules/node-ical/ical.js:784:18)
+    at sync.parseICS (/home/runner/workspace/node_modules/node-ical/node-ical.js:198:15)
+    at autodetect.parseICS (/home/runner/workspace/node_modules/node-ical/node-ical.js:229:17)
+    at SyncService.parseRawICSData (/home/runner/workspace/server/sync-service.ts:715:21)
+    at SyncService.syncNow (/home/runner/workspace/server/sync-service.ts:348:36)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async SyncService.pushLocalEvents (/home/runner/workspace/server/sync-service.ts:1561:17)
+    at async SyncService.syncNow (/home/runner/workspace/server/sync-service.ts:617:7)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:2502:23)
+Error parsing ICS data even after fixes: Error: Unknown RRULE property ':mailto:dktest@dil.in'
+    at /home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:2234:23
+    at Array.forEach (<anonymous>)
+    at parseRrule (/home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:2191:11)
+    at parseLine (/home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:2174:16)
+    at Array.map (<anonymous>)
+    at Function.parseString (/home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:2151:10)
+    at RRule.fromString (/home/runner/workspace/node_modules/rrule/dist/es5/rrule.js:3178:32)
+    at Object.END (/home/runner/workspace/node_modules/node-ical/ical.js:646:30)
+    at Object.handleObject (/home/runner/workspace/node_modules/node-ical/ical.js:696:39)
+    at Object.parseLines (/home/runner/workspace/node_modules/node-ical/ical.js:748:18)
+    at Object.parseICS (/home/runner/workspace/node_modules/node-ical/ical.js:784:18)
+    at sync.parseICS (/home/runner/workspace/node_modules/node-ical/node-ical.js:198:15)
+    at autodetect.parseICS (/home/runner/workspace/node_modules/node-ical/node-ical.js:229:17)
+    at SyncService.parseRawICSData (/home/runner/workspace/server/sync-service.ts:722:23)
+    at SyncService.syncNow (/home/runner/workspace/server/sync-service.ts:348:36)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async SyncService.pushLocalEvents (/home/runner/workspace/server/sync-service.ts:1561:17)
+    at async SyncService.syncNow (/home/runner/workspace/server/sync-service.ts:617:7)
+    at async <anonymous> (/home/runner/workspace/server/routes.ts:2502:23)
+Event is missing a UID, generating one for: Untitled Event
