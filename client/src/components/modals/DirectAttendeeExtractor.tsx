@@ -203,6 +203,9 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
     return role;
   };
   
+  const [showAllAttendees, setShowAllAttendees] = useState(false);
+  const displayCount = isPreview ? 1 : (showAllAttendees ? attendees.length : Math.min(4, attendees.length));
+  
   return (
     <div>
       <div className="text-sm font-medium mb-1">
@@ -211,7 +214,7 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
       <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
         <ul className="space-y-1">
           {attendees
-            .slice(0, isPreview ? 1 : attendees.length) // Show one attendee in preview mode, all in detail mode
+            .slice(0, displayCount) // Show limited attendees or all if viewing all
             .map((attendee, index) => (
               <li key={`attendee-${index}`} className="flex items-start mb-2">
                 <div className="mt-1 mr-3">
@@ -246,6 +249,30 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
                 <Users className="h-3 w-3 mr-1" />
                 + {attendees.length - 1} more attendee{attendees.length - 1 > 1 ? 's' : ''}
               </span>
+            </li>
+          )}
+          
+          {/* Show "View All" button if there are more than 4 attendees in detail mode */}
+          {!isPreview && attendees.length > 4 && !showAllAttendees && (
+            <li className="text-center mt-2">
+              <button 
+                onClick={() => setShowAllAttendees(true)}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+              >
+                Show all {attendees.length} attendees
+              </button>
+            </li>
+          )}
+          
+          {/* Show "Show Less" button when viewing all attendees */}
+          {!isPreview && showAllAttendees && attendees.length > 4 && (
+            <li className="text-center mt-2">
+              <button 
+                onClick={() => setShowAllAttendees(false)}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+              >
+                Show less
+              </button>
             </li>
           )}
         </ul>

@@ -678,18 +678,49 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     <TabsContent value="status" className="space-y-4">
                       {/* Attendee Status Display */}
                       {(() => {
+                        // State for managing attendee display limits
+                        const [showAllAttendees, setShowAllAttendees] = useState(false);
+                        const attendeeCount = processedAttendees.length;
+                        
                         // Get all attendees from processed attendees
-                        if (processedAttendees.length > 0) {
+                        if (attendeeCount > 0) {
+                          // Display up to 4 attendees by default, or all if "show all" is clicked
+                          const displayAttendees = showAllAttendees 
+                            ? processedAttendees 
+                            : processedAttendees.slice(0, 4);
+                            
                           return (
-                            <AttendeeStatusDisplay 
-                              attendees={processedAttendees} 
-                              isOrganizer={isUsersOwnCalendar}
-                              onTimeProposalAccept={(attendeeEmail, start, end) => {
-                                // This would update the event with the proposed time
-                                console.log('Accepting time proposal from', attendeeEmail, start, end);
-                                // We'd implement this in a future update
-                              }}
-                            />
+                            <>
+                              <AttendeeStatusDisplay 
+                                attendees={displayAttendees} 
+                                isOrganizer={isUsersOwnCalendar}
+                                onTimeProposalAccept={(attendeeEmail, start, end) => {
+                                  // This would update the event with the proposed time
+                                  console.log('Accepting time proposal from', attendeeEmail, start, end);
+                                  // We'd implement this in a future update
+                                }}
+                              />
+                              
+                              {/* Show the View All Attendees button if there are more than 4 attendees */}
+                              {attendeeCount > 4 && !showAllAttendees && (
+                                <button 
+                                  onClick={() => setShowAllAttendees(true)}
+                                  className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+                                >
+                                  Show all {attendeeCount} attendees
+                                </button>
+                              )}
+                              
+                              {/* Show Less button when viewing all attendees */}
+                              {showAllAttendees && attendeeCount > 4 && (
+                                <button 
+                                  onClick={() => setShowAllAttendees(false)}
+                                  className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+                                >
+                                  Show less
+                                </button>
+                              )}
+                            </>
                           );
                         }
                         
