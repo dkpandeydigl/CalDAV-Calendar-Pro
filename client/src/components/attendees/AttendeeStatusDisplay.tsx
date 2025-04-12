@@ -36,12 +36,14 @@ interface AttendeeStatusDisplayProps {
   attendees: Attendee[];
   isOrganizer: boolean;
   onTimeProposalAccept?: (attendeeEmail: string, start: Date, end: Date) => void;
+  showAll?: boolean; // Added prop to control showing all attendees vs. limited set
 }
 
 const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   attendees,
   isOrganizer,
-  onTimeProposalAccept
+  onTimeProposalAccept,
+  showAll = false
 }) => {
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
@@ -195,8 +197,10 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
     setStatusDialogOpen(true);
   };
   
-  // Display up to 3 attendees in the main view
-  const displayedAttendees = processedAttendees.slice(0, 3);
+  // Only display a limited set of attendees if showAll is false
+  const displayedAttendees = showAll 
+    ? processedAttendees 
+    : processedAttendees.slice(0, 3);
   
   // Main component render
   return (
@@ -359,19 +363,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
               </div>
             </li>
           ))}
-          {processedAttendees.length > 3 && (
-            <li className="p-2 bg-muted/20">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="w-full text-xs flex justify-center items-center text-muted-foreground"
-                onClick={() => openStatusDialog('all')}
-              >
-                Show all {processedAttendees.length} attendees
-                <ChevronRight className="h-3 w-3 ml-1" />
-              </Button>
-            </li>
-          )}
+          {/* "Show all attendees" button moved to EventDetailModal.tsx */}
         </ul>
       </div>
       

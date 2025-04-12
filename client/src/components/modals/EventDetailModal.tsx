@@ -672,16 +672,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         
                         // Get all attendees from processed attendees
                         if (attendeeCount > 0) {
-                          // Display up to 3 attendees by default, or all if "show all" is clicked
-                          const displayAttendees = showAllAttendees 
-                            ? processedAttendees 
-                            : processedAttendees.slice(0, 3);
+                          // We'll handle limiting attendees in the AttendeeStatusDisplay component
                             
                           return (
                             <>
                               <AttendeeStatusDisplay 
-                                attendees={displayAttendees} 
+                                attendees={processedAttendees} 
                                 isOrganizer={isUsersOwnCalendar}
+                                showAll={showAllAttendees}
                                 onTimeProposalAccept={(attendeeEmail, start, end) => {
                                   // This would update the event with the proposed time
                                   console.log('Accepting time proposal from', attendeeEmail, start, end);
