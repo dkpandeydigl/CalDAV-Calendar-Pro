@@ -762,82 +762,171 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               <DirectResourceExtractor rawData={event.rawData} isPreview={true} />
             )}
             
-            {/* Attendees section using DirectAttendeeExtractor - show all attendees in detail view */}
-            {(
-              <DirectAttendeeExtractor 
-                rawData={typeof event.rawData === 'string' ? event.rawData : null} 
-                showMoreCount={1}
-                isPreview={true}
-              />
-            )}
-            
-            {/* Fallback for legacy attendee format if raw data extraction doesn't work */}
-            {(() => {
-              // Only show this if DirectAttendeeExtractor didn't find anything
-              if (typeof event.rawData !== 'string') {
-                const attendees = event.attendees as unknown;
-                if (attendees && Array.isArray(attendees) && attendees.length > 0) {
-                  return (
-                    <div>
-                      <div className="text-sm font-medium mb-1">
-                        <span>Attendees ({attendees.length})</span>
+            {/* Attendees and Response Section */}
+            <div className="mt-6">
+              <Tabs defaultValue="status" className="w-full">
+                <TabsList className="grid grid-cols-2 mb-4">
+                  <TabsTrigger value="status">Attendee Status</TabsTrigger>
+                  <TabsTrigger value="response">Your Response</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="status" className="space-y-4">
+                  {/* Attendee Status Display */}
+                  {(() => {
+                    // Get all attendees from processed attendees
+                    if (processedAttendees.length > 0) {
+                      return (
+                        <AttendeeStatusDisplay 
+                          attendees={processedAttendees} 
+                          isOrganizer={isUsersOwnCalendar}
+                          onTimeProposalAccept={(attendeeEmail, start, end) => {
+                            // This would update the event with the proposed time
+                            console.log('Accepting time proposal from', attendeeEmail, start, end);
+                            // We'd implement this in a future update
+                          }}
+                        />
+                      );
+                    }
+                    
+                    // If no processed attendees, fall back to raw extraction
+                    return (
+                      <>
+                        <DirectAttendeeExtractor 
+                          rawData={typeof event.rawData === 'string' ? event.rawData : null} 
+                          showMoreCount={10}
+                          isPreview={false}
+                        />
+                        
+                        {/* Legacy fallback for attendee format */}
+                        {(() => {
+                          // Only show this if DirectAttendeeExtractor didn't find anything
+                          if (typeof event.rawData !== 'string') {
+                            const attendees = event.attendees as unknown;
+                            if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+                              return (
+                                <div>
+                                  <div className="text-sm font-medium mb-1">
+                                    <span>Attendees ({attendees.length})</span>
+                                  </div>
+                                  <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
+                                    <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
+                                      {attendees
+                                        .filter(Boolean)
+                                        // Show all attendees in detail view
+                                        .map((attendee, index) => {
+                                          // Handle both string and object formats
+                                          if (typeof attendee === 'object' && attendee !== null) {
+                                            // Object format with email and role
+                                            const { email, role } = attendee as { email: string; role?: string };
+                                            return (
+                                              <li key={index} className="flex items-start">
+                                                <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
+                                                <div>
+                                                  <div className="font-medium">{email}</div>
+                                                  {role && (
+                                                    <div className="text-xs text-muted-foreground">
+                                                      <span className={`inline-block px-2 py-0.5 rounded ${
+                                                        role === 'Chairman' ? 'bg-red-100 text-red-800' : 
+                                                        role === 'Secretary' ? 'bg-blue-100 text-blue-800' : 
+                                                        'bg-gray-100 text-gray-800'
+                                                      }`}>
+                                                        {role}
+                                                      </span>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              </li>
+                                            );
+                                          } else {
+                                            // Fallback for string format
+                                            return (
+                                              <li key={index} className="flex items-center">
+                                                <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
+                                                {String(attendee)}
+                                              </li>
+                                            );
+                                          }
+                                        })}
+                                    </ul>
+                                  </div>
+                                </div>
+                              );
+                            }
+                          }
+                          return null;
+                        })()}
+                      </>
+                    );
+                  })()}
+                </TabsContent>
+                
+                <TabsContent value="response" className="space-y-4">
+                  {/* Attendee Response Form */}
+                  {(() => {
+                    // Only show response form if the current user is an attendee or if the event has attendees
+                    if (user && processedAttendees.length > 0) {
+                      // Check if the current user is an attendee
+                      const userEmail = user.email || user.username;
+                      const isAttendee = processedAttendees.some(attendee => 
+                        (typeof attendee === 'string' && attendee === userEmail) ||
+                        (typeof attendee === 'object' && 
+                         attendee.email && 
+                         attendee.email.toLowerCase() === userEmail.toLowerCase())
+                      );
+                      
+                      // If user is not the organizer and is an attendee, show response form
+                      if (isAttendee && !isUsersOwnCalendar) {
+                        // Find organizer
+                        const organizer = processedAttendees.find(attendee => 
+                          typeof attendee === 'object' && 
+                          attendee.role && 
+                          (attendee.role.toLowerCase() === 'chair' || 
+                           attendee.role.toLowerCase() === 'organizer')
+                        );
+                        
+                        return (
+                          <AttendeeResponseForm
+                            eventId={event.id}
+                            eventTitle={event.title}
+                            eventStart={startDate}
+                            eventEnd={endDate}
+                            organizer={organizer ? {
+                              name: organizer.name,
+                              email: organizer.email
+                            } : undefined}
+                            currentUserEmail={userEmail}
+                            onResponseSuccess={() => {
+                              // Refresh the event data
+                              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+                            }}
+                          />
+                        );
+                      }
+                      
+                      // If user is the organizer, show a message
+                      if (isUsersOwnCalendar) {
+                        return (
+                          <div className="p-4 bg-muted rounded-md">
+                            <p className="text-sm text-muted-foreground">
+                              You are the organizer of this event. You cannot respond to your own event.
+                            </p>
+                          </div>
+                        );
+                      }
+                    }
+                    
+                    // If no attendees or user is not an attendee
+                    return (
+                      <div className="p-4 bg-muted rounded-md">
+                        <p className="text-sm text-muted-foreground">
+                          You are not listed as an attendee for this event.
+                        </p>
                       </div>
-                      <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                        <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
-                          {attendees
-                            .filter(Boolean)
-                            // Show all attendees in detail view
-                            .map((attendee, index) => {
-                              // Handle both string and object formats
-                              if (typeof attendee === 'object' && attendee !== null) {
-                                // Object format with email and role
-                                const { email, role } = attendee as { email: string; role?: string };
-                                return (
-                                  <li key={index} className="flex items-start">
-                                    <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
-                                    <div>
-                                      <div className="font-medium">{email}</div>
-                                      {role && (
-                                        <div className="text-xs text-muted-foreground">
-                                          <span className={`inline-block px-2 py-0.5 rounded ${
-                                            role === 'Chairman' ? 'bg-red-100 text-red-800' : 
-                                            role === 'Secretary' ? 'bg-blue-100 text-blue-800' : 
-                                            'bg-gray-100 text-gray-800'
-                                          }`}>
-                                            {role}
-                                          </span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </li>
-                                );
-                              } else {
-                                // Fallback for string format
-                                return (
-                                  <li key={index} className="flex items-center">
-                                    <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
-                                    {String(attendee)}
-                                  </li>
-                                );
-                              }
-                            })}
-                          {/* Don't show "more attendees" indicator in detail view */}
-                          {false && attendees.length > 2 && (
-                            <li className="text-xs text-center py-1">
-                              <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500 inline-flex items-center">
-                                <UserIcon className="h-3 w-3 mr-1" />
-                                + {attendees.length - 2} more attendee{attendees.length > 3 ? 's' : ''}
-                              </span>
-                            </li>
-                          )}
-                        </ul>
-                      </div>
-                    </div>
-                  );
-                }
-              }
-              return null;
-            })()}
+                    );
+                  })()}
+                </TabsContent>
+              </Tabs>
+            </div>
             
             {/* Resources section - handle safely with runtime checks */}
             {(() => {

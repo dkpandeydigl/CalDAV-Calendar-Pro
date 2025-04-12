@@ -200,7 +200,7 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                         </div>
                       </FormControl>
                       <div className="text-xs text-muted-foreground mt-1">
-                        Use {{organizer_name}}, {{start_time}}, {{event_title}} as template tags
+                        Use tags like &#123;&#123;organizer_name&#125;&#125;, &#123;&#123;start_time&#125;&#125;, &#123;&#123;event_title&#125;&#125;
                         <Button 
                           type="button" 
                           variant="link" 
@@ -517,10 +517,10 @@ const AttendeeResponseForm: React.FC<AttendeeResponseFormProps> = ({
                           <div className="text-xs text-muted-foreground mt-1">
                             Available template tags: 
                             <ul className="list-disc list-inside mt-1">
-                              <li>{{organizer_name}} - Name of the event organizer</li>
-                              <li>{{start_time}} - Start time of the event</li>
-                              <li>{{end_time}} - End time of the event</li>
-                              <li>{{event_title}} - Title of the event</li>
+                              <li>&#123;&#123;organizer_name&#125;&#125; - Name of the event organizer</li>
+                              <li>&#123;&#123;start_time&#125;&#125; - Start time of the event</li>
+                              <li>&#123;&#123;end_time&#125;&#125; - End time of the event</li>
+                              <li>&#123;&#123;event_title&#125;&#125; - Title of the event</li>
                             </ul>
                             <Button 
                               type="button" 
