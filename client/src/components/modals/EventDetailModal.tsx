@@ -588,7 +588,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 {(() => {
                   const extractedResources = extractResourcesFromRawData();
                   const resourceCount = extractedResources.length;
-                  const [showAllResources, setShowAllResources] = useState(false);
                   console.log('Parsed resources:', extractedResources);
                   
                   // Display resources if we have any
