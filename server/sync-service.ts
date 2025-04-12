@@ -1386,11 +1386,33 @@ export class SyncService {
               } catch (error) {
                 console.error(`Error updating event on server:`, error);
                 
-                // Update the event as failed
-                await storage.updateEvent(event.id, {
-                  syncStatus: 'error',
-                  lastSyncAttempt: new Date()
-                });
+                // Check for 412 Precondition Failed error (someone else modified the event)
+                const errorMessage = error.toString();
+                if (errorMessage.includes('412 Precondition Failed')) {
+                  console.log(`Event was modified on server. Will refresh in next sync cycle.`);
+                  
+                  // Update the event to mark it for refresh
+                  await storage.updateEvent(event.id, {
+                    syncStatus: 'sync_failed',
+                    lastSyncAttempt: new Date(),
+                    lastSyncError: 'Event modified on server (412 Precondition Failed)'
+                  });
+                  
+                  // Force a calendar refresh to get the latest version
+                  try {
+                    console.log(`Forcing refresh for calendar ${calendar.id} to get latest event data`);
+                    await this.syncCalendarFromServer(serverConnection, calendar, { forceRefresh: true });
+                  } catch (refreshError) {
+                    console.error(`Error refreshing calendar after 412 error:`, refreshError);
+                  }
+                } else {
+                  // Update the event as failed for other errors
+                  await storage.updateEvent(event.id, {
+                    syncStatus: 'error',
+                    lastSyncAttempt: new Date(),
+                    lastSyncError: errorMessage.substring(0, 255) // Truncate to a reasonable length
+                  });
+                }
               }
             } else {
               // Create new event on server
