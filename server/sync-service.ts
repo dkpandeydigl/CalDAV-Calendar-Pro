@@ -11,6 +11,7 @@ interface CalDAVAttendee {
   role?: string;
   status?: string;
   type?: string;
+  scheduleStatus?: string;
 }
 
 // Define resource interface
@@ -812,15 +813,33 @@ export class SyncService {
       } else {
         // Fallback: Try to extract attendees from raw ICS data using regex
         try {
-          const attendeeMatches = icsData.match(/ATTENDEE[^:\r\n]+:[^\r\n]+/g);
+          // Clean up any lines with SCHEDULE-STATUS improperly formatted
+          // Replace any multiline ATTENDEE properties
+          const normalizedIcsData = icsData.replace(/ATTENDEE[^:]*\r?\n\s+[^:]*:/g, line => {
+            return line.replace(/\r?\n\s+/g, '');
+          });
+          
+          const attendeeMatches = normalizedIcsData.match(/ATTENDEE[^:\r\n]+:[^\r\n]+/g);
           if (attendeeMatches && attendeeMatches.length > 0) {
             console.log(`Found ${attendeeMatches.length} attendees/resources in raw ICS data`);
             
             // Process each attendee line
             attendeeMatches.forEach(line => {
+              // Skip any line with SCHEDULE-STATUS but without proper attendee info
+              if (!line.includes('mailto:')) {
+                console.log('Skipping invalid attendee line without email:', line);
+                return;
+              }
+              
               // Extract common properties from the attendee line
               const emailMatch = line.match(/mailto:([^>\r\n]+)/);
               const email = emailMatch ? emailMatch[1] : '';
+              
+              // Skip if no valid email
+              if (!email) {
+                console.log('Skipping attendee line with invalid email:', line);
+                return;
+              }
               
               const nameMatch = line.match(/CN=([^;:]+)/);
               const name = nameMatch ? nameMatch[1] : '';
@@ -831,24 +850,37 @@ export class SyncService {
               const statusMatch = line.match(/PARTSTAT=([^;:]+)/);
               const status = statusMatch ? statusMatch[1] : 'NEEDS-ACTION';
               
+              // Extract SCHEDULE-STATUS if present
+              const scheduleStatusMatch = line.match(/SCHEDULE-STATUS=([^;:]+)/);
+              const scheduleStatus = scheduleStatusMatch ? scheduleStatusMatch[1] : undefined;
+              
               // Check if this is a resource
               const isResource = line.includes('CUTYPE=RESOURCE');
               
               if (isResource) {
                 // Process as a resource
+                const resourceType = line.match(/X-RESOURCE-TYPE=([^;:]+)/) || 
+                                    line.match(/RESOURCE-TYPE=([^;:]+)/);
                 resources.push({
                   name: name || 'Unnamed Resource',
                   adminEmail: email,
-                  type: line.match(/RESOURCE-TYPE=([^;:]+)/) ? line.match(/RESOURCE-TYPE=([^;:]+)/)?.[1] : undefined
+                  type: resourceType ? resourceType[1] : undefined
                 });
               } else {
-                // Process as a regular attendee
-                attendees.push({
+                // Process as a regular attendee with schedule status if present
+                const attendeeData: CalDAVAttendee = {
                   email,
                   name,
                   role,
                   status
-                });
+                };
+                
+                // Add schedule status if present
+                if (scheduleStatus) {
+                  (attendeeData as any).scheduleStatus = scheduleStatus;
+                }
+                
+                attendees.push(attendeeData);
               }
             });
             
