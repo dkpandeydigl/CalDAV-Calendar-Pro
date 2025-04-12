@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -101,6 +101,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [showAllAttendees, setShowAllAttendees] = useState(false); // For attendee display limit
+  const [showAllResources, setShowAllResources] = useState(false); // For resource display limit
   // Section expansion has been removed in favor of always showing scrollable content
   
   // Add a timeout to prevent infinite loading state
@@ -678,8 +680,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     <TabsContent value="status" className="space-y-4">
                       {/* Attendee Status Display */}
                       {(() => {
-                        // State for managing attendee display limits
-                        const [showAllAttendees, setShowAllAttendees] = useState(false);
                         const attendeeCount = processedAttendees.length;
                         
                         // Get all attendees from processed attendees
