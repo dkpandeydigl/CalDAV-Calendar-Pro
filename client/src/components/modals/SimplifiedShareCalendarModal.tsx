@@ -36,21 +36,34 @@ export function SimplifiedShareCalendarModal({ open, onClose, calendar }: ShareC
     }
     
     // Don't try to load if no calendar is selected
-    if (!calendar) return;
+    if (!calendar) {
+      console.log("No calendar selected, skipping shares fetch");
+      return;
+    }
     
     // Load calendar shares
     const loadShares = async () => {
       setIsLoading(true);
       try {
+        console.log(`SimplifiedShareCalendarModal: Loading shares for calendar ID ${calendar.id}`);
         const data = await getCalendarShares(calendar.id);
-        setShares(data);
+        console.log(`SimplifiedShareCalendarModal: Received shares:`, data);
+        
+        // Always set shares to the data (which might be an empty array)
+        setShares(Array.isArray(data) ? data : []);
       } catch (error) {
-        console.error('Error loading shares:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load calendar sharing information',
-          variant: 'destructive',
-        });
+        console.error('SimplifiedShareCalendarModal: Error loading shares:', error);
+        // The getCalendarShares function now handles errors and returns an empty array
+        setShares([]);
+        
+        // Only show the toast if we're still mounted
+        if (open) {
+          toast({
+            title: 'Note',
+            description: 'No sharing information available for this calendar',
+            variant: 'default',
+          });
+        }
       } finally {
         setIsLoading(false);
       }

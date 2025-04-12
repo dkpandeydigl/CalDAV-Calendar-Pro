@@ -30,14 +30,23 @@ export async function apiRequest(
  */
 export async function getCalendarShares(calendarId: number) {
   try {
+    console.log(`Fetching shares for calendar ID: ${calendarId}`);
     const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
+    
     if (response.ok) {
-      return await response.json();
+      const data = await response.json();
+      console.log(`Successfully fetched shares for calendar ${calendarId}:`, data);
+      return data;
     }
+    
+    console.error(`API Error: Failed to fetch shares for calendar ${calendarId}. Status: ${response.status}`);
+    const errorText = await response.text();
+    console.error(`Error response body:`, errorText);
     throw new Error(`Failed to fetch shares for calendar ${calendarId}`);
   } catch (error) {
-    console.error(`Error fetching calendar shares:`, error);
-    throw error;
+    console.error(`Exception fetching calendar shares:`, error);
+    // Return empty array instead of throwing, to make component more resilient
+    return [];
   }
 }
 
