@@ -6,10 +6,17 @@ import { useToast } from '@/hooks/use-toast';
 
 // Extended calendar type with permission information
 export interface SharedCalendar extends Calendar {
-  permission: 'view' | 'edit';
+  permissionLevel: 'view' | 'edit'; // The permission level (using the same field name as the server)
+  permission?: 'view' | 'edit';     // For backward compatibility
   isShared: boolean;
-  ownerEmail?: string; // Email address of the user who shared the calendar
-  enabled: boolean; // Must be explicitly defined, don't rely on inheritance
+  owner?: {
+    id: number;
+    username: string;
+    email?: string;
+  };
+  ownerEmail?: string;      // Derived from owner.email for backward compatibility
+  sharingId?: number;       // The ID of the sharing record for permission management
+  enabled: boolean;         // Must be explicitly defined, don't rely on inheritance
 }
 
 export const useSharedCalendars = () => {

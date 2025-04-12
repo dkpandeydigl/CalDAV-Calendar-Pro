@@ -95,6 +95,11 @@ export async function getSharedCalendars(userId: number, storage: any): Promise<
         records.map((record: any) => [record.calendar_id, record.permission_level])
       );
       
+      // Create a map to get the sharing record ID for each calendar (for permission management)
+      const sharingIdMap = new Map(
+        records.map((record: any) => [record.calendar_id, record.id])
+      );
+      
       // Add owner info and permissions to each calendar
       const enhancedCalendarsPromises = sharedCalendars.map(async (calendar: any) => {
         // Get owner information
@@ -105,9 +110,10 @@ export async function getSharedCalendars(userId: number, storage: any): Promise<
           owner: owner ? {
             id: owner.id,
             username: owner.username,
-            email: owner.email
+            email: owner.email || owner.username
           } : undefined,
           permissionLevel: permissionMap.get(calendar.id) || 'view',
+          sharingId: sharingIdMap.get(calendar.id), // Add the sharing ID for permission updates
           isShared: true
         };
       });

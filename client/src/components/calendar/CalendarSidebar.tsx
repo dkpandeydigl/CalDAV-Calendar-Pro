@@ -685,7 +685,9 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
               {Object.entries(sharedCalendars.reduce((acc, calendar) => {
                 // Trust server security - if it's in the shared calendars list, it should be displayed
                 // Our server-side filtering ensures that only properly shared calendars are returned
-                const ownerEmail = calendar.ownerEmail || 'Unknown';
+                
+                // Use owner information from the enhanced shared calendar response
+                const ownerEmail = calendar.owner?.email || calendar.owner?.username || calendar.ownerEmail || 'Unknown';
                 if (!acc[ownerEmail]) {
                   acc[ownerEmail] = [];
                 }
@@ -694,8 +696,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
               }, {} as Record<string, typeof sharedCalendars>)).map(([ownerEmail, ownerCalendars]) => (
                 <div key={ownerEmail} className="mb-3">
                   <div className="flex items-center justify-between mb-1">
-                    <div className="text-xs text-gray-500 italic">
-                      {ownerEmail}
+                    <div className="text-xs text-gray-500">
+                      <span className="italic">Shared by:</span> <span className="font-medium">{ownerEmail}</span>
                     </div>
                     
                     {/* Unshare all calendars from this email */}
@@ -720,12 +722,34 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                           className="h-4 w-4"
                           style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
                         />
-                        <Label htmlFor={`shared-cal-${calendar.id}`} className="ml-2 text-sm text-neutral-800 truncate">
-                          {calendar.name}
-                          {calendar.permission === 'edit' && (
-                            <span className="ml-1 text-xs text-green-600">(Can edit)</span>
-                          )}
-                        </Label>
+                        <div className="ml-2 flex flex-col">
+                          <Label htmlFor={`shared-cal-${calendar.id}`} className="text-sm text-neutral-800 truncate">
+                            {calendar.name}
+                          </Label>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            {(calendar.permissionLevel === 'edit' || calendar.permission === 'edit') ? (
+                              <span className="text-green-600">Can edit</span>
+                            ) : (
+                              <span>View only</span>
+                            )}
+                            
+                            {/* Permission toggle button - only appears if the calendar has sharingId for permission management */}
+                            {calendar.sharingId && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-4 px-1 py-0 text-xs hover:text-primary"
+                                onClick={() => handleUpdatePermission(
+                                  calendar.id,
+                                  calendar.sharingId!,
+                                  (calendar.permissionLevel === 'edit' || calendar.permission === 'edit') ? 'view' : 'edit'
+                                )}
+                              >
+                                (Change)
+                              </Button>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       
                       {/* Unshare option for individual calendar */}
