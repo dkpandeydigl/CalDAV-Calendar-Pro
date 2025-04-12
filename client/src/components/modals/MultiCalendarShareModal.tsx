@@ -84,11 +84,7 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
             calendar.url ? syncWithServer : false
           );
           
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Failed to share calendar');
-          }
-          
+          // If we got here, the share was successful
           successfulShares.push(calendar.name);
         } catch (error: any) {
           console.error(`Error sharing calendar ${calendar.name}:`, error);
