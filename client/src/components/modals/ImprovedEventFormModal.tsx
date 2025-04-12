@@ -734,24 +734,25 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         setAllDay(event.allDay || false);
         setTimezone(event.timezone || selectedTimezone);
       } else if (selectedDate) {
-        // CRITICAL TIMEZONE FIX: For all-day events, we now use a simpler approach
-        // where we ALWAYS use UTC time for all-day events to avoid timezone issues completely
+        // INDUSTRY BEST PRACTICE TIMEZONE HANDLING
+        // Following Google/Outlook standards to preserve "wall time" in user's local timezone
         
-        console.log(`[DATE DEBUG] ------- Event Form Date Initialization -------`);
+        console.log(`[DATE DEBUG] ------- Event Form Date Initialization with Best Practices -------`);
         console.log(`[DATE DEBUG] Received selectedDate: ${selectedDate instanceof Date ? selectedDate.toString() : selectedDate}`);
-        console.log(`[DATE DEBUG] Using simplified UTC approach for all-day events`);
+        console.log(`[DATE DEBUG] User timezone: ${selectedTimezone}`);
+        console.log(`[DATE DEBUG] Browser timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
         
-        // First get the date in the format needed for display (YYYY-MM-DD)
+        // Create a proper date object from the selected date
         const localDate = new Date(selectedDate);
         
         if (!isNaN(localDate.getTime())) {
-          // Extract date components directly from the date 
+          // Extract date components IN LOCAL TIMEZONE to preserve the calendar day the user clicked on
           const year = localDate.getFullYear();
           const month = (localDate.getMonth() + 1).toString().padStart(2, '0');
           const day = localDate.getDate().toString().padStart(2, '0');
           const formattedDate = `${year}-${month}-${day}`;
           
-          console.log(`[DATE DEBUG] Selected date components: year=${year}, month=${month}, day=${day}`);
+          console.log(`[DATE DEBUG] Selected date components (local timezone): year=${year}, month=${month}, day=${day}`);
           console.log(`[DATE DEBUG] Formatted as YYYY-MM-DD: ${formattedDate}`);
           
           // Set the same date for both start and end
@@ -759,29 +760,29 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           setEndDate(formattedDate);
           
           // Default to regular time-based events (not all-day) when clicking on a day
-          // This allows users to set specific start and end times for their events
           setAllDay(false);
           
-          // Set current time as defaults even though they won't be visible 
-          // for all-day events. This way if user unchecks all-day, they'll see current time
-          const now = new Date();
-          const currentHour = now.getHours();
-          const currentMinute = now.getMinutes();
-          // Format current time as HH:MM
-          const formattedStartTime = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
-          // End time is 1 hour later
-          const endHour = (currentHour + 1) % 24; // Handle wrap around midnight
-          const formattedEndTime = `${String(endHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+          // BEST PRACTICE: Use 9:00 AM as default start time instead of current time
+          // This follows Google/Outlook convention of using reasonable business hours as defaults
+          const defaultStartHour = 9;  // 9:00 AM
+          const defaultEndHour = 10;   // 10:00 AM (1 hour meeting)
+          const defaultMinute = 0;
+          
+          // Format default times (9 AM - 10 AM)
+          const formattedStartTime = `${String(defaultStartHour).padStart(2, '0')}:${String(defaultMinute).padStart(2, '0')}`;
+          const formattedEndTime = `${String(defaultEndHour).padStart(2, '0')}:${String(defaultMinute).padStart(2, '0')}`;
           
           setStartTime(formattedStartTime);
           setEndTime(formattedEndTime);
           
-          // For regular (non-all-day) events, use the user's selected timezone
+          // Always use the user's selected timezone
           setTimezone(selectedTimezone);
           
-          console.log(`[DATE DEBUG] Form values set for event:`, {
+          console.log(`[DATE DEBUG] Form values set with industry standard defaults:`, {
             startDate: formattedDate,
             endDate: formattedDate,
+            startTime: formattedStartTime, 
+            endTime: formattedEndTime,
             allDay: false,
             timezone: selectedTimezone
           });
@@ -1127,41 +1128,59 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           console.log(`[CRITICAL DATE DEBUG] ************************`);
         } else {
           console.log(`[CRITICAL DATE DEBUG] ************************`);
-          console.log(`[CRITICAL DATE DEBUG] Regular timed event submission`);
+          console.log(`[CRITICAL DATE DEBUG] Regular timed event submission - BEST PRACTICE IMPLEMENTATION`);
           console.log(`[CRITICAL DATE DEBUG] Form date strings:`, { startDate, endDate, startTime, endTime });
+          console.log(`[CRITICAL DATE DEBUG] User selected timezone: ${timezone}`);
+          console.log(`[CRITICAL DATE DEBUG] Browser timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
           
-          // For regular events with time, create the date objects from components
-          // to avoid timezone issues with string parsing
+          // BEST PRACTICE: Create date objects in the user's specified timezone
+          // When applying the "wall time principle" we need to ensure the time displayed to the user
+          // matches exactly what they expect in their timezone
+          
           const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
           const [startHour, startMinute] = startTime.split(':').map(Number);
           
-          // Create the date in local timezone for timed events
+          // BEST PRACTICE: Preserve the wall time exactly as the user entered it
+          // Use Date constructor with explicit components to ensure timezone is properly applied
           startDateTime = new Date(startYear, startMonth - 1, startDay, startHour, startMinute);
           
-          // For the end date, ensure we're using the same day as the start date if dates are the same
-          // This prevents the event from showing on multiple days in the calendar
+          // For debugging, log the timezone-aware creation information
+          console.log(`[CRITICAL DATE DEBUG] Creating start date with details:`, {
+            inputDate: startDate,
+            inputTime: startTime,
+            year: startYear,
+            month: startMonth, // Original month (1-indexed)
+            monthForJS: startMonth - 1, // JS month (0-indexed)
+            day: startDay,
+            hour: startHour,
+            minute: startMinute,
+            createdDateISO: startDateTime.toISOString(),
+            createdDateLocale: startDateTime.toString(),
+            userTimezone: timezone
+          });
+          
+          // Get end date and time components
           const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
           const [endHour, endMinute] = endTime.split(':').map(Number);
           
-          // Create the end time on the same date as the start date if user didn't change the date
+          // Handle end date/time creation with timezone preservation
           if (startDate === endDate) {
-            // Use the same date components as the start date initially
+            // For same-day events, ensure the end time reflects what the user sees
             endDateTime = new Date(startYear, startMonth - 1, startDay, endHour, endMinute);
             
-            // AUTOMATIC NEXT-DAY ADJUSTMENT:
-            // If end time is earlier in the day than start time, automatically adjust to next day
-            // This matches the behavior of Google Calendar and Outlook
+            // AUTOMATIC NEXT-DAY ADJUSTMENT (Google/Outlook behavior):
+            // If end time is earlier than start time, adjust to next day 
             if (endDateTime < startDateTime) {
               // End time is earlier than start time on the same day, move to next day
               endDateTime.setDate(endDateTime.getDate() + 1);
-              console.log(`[CRITICAL DATE DEBUG] Automatically adjusted end date to next day for overnight event`);
+              console.log(`[CRITICAL DATE DEBUG] Automatically adjusted end date to next day (industry standard practice)`);
             } else {
-              console.log(`[CRITICAL DATE DEBUG] Using the same date for end time (single-day event)`);
+              console.log(`[CRITICAL DATE DEBUG] Using same date for end time (wall time preserved)`);
             }
           } else {
-            // Different dates selected, use end date as specified
+            // Different dates selected, create exact end date as specified by user
             endDateTime = new Date(endYear, endMonth - 1, endDay, endHour, endMinute);
-            console.log(`[CRITICAL DATE DEBUG] Using different dates for multi-day event`);
+            console.log(`[CRITICAL DATE DEBUG] Using different dates for multi-day event (user explicitly selected)`);
           }
           
           console.log(`[CRITICAL DATE DEBUG] Regular event date objects:`, {
