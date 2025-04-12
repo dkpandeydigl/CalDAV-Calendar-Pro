@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -689,8 +689,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 }}
                               />
                               
-                              {/* Show the View All Attendees button if there are more than 4 attendees */}
-                              {attendeeCount > 4 && !showAllAttendees && (
+                              {/* Show the View All Attendees button if there are more than 3 attendees */}
+                              {attendeeCount > 3 && !showAllAttendees && (
                                 <button 
                                   onClick={() => setShowAllAttendees(true)}
                                   className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
@@ -700,7 +700,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               )}
                               
                               {/* Show Less button when viewing all attendees */}
-                              {showAllAttendees && attendeeCount > 4 && (
+                              {showAllAttendees && attendeeCount > 3 && (
                                 <button 
                                   onClick={() => setShowAllAttendees(false)}
                                   className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
