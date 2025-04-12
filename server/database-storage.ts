@@ -6,7 +6,7 @@ import {
   users, calendars, events, serverConnections, calendarSharing, smtpConfigurations
 } from "@shared/schema";
 import { createId } from '@paralleldrive/cuid2';
-import { neon, neonConfig } from '@neondatabase/serverless';
+import { neon, neonConfig, NeonQueryFunction } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { eq, and, or, inArray, ne, sql, count } from 'drizzle-orm';
 import connectPg from "connect-pg-simple";
@@ -16,8 +16,8 @@ import { IStorage } from './storage';
 neonConfig.fetchConnectionCache = true;
 
 // Create a connection to the database
-const neonClient = neon(process.env.DATABASE_URL!);
-const db = drizzle(neonClient);
+const neonDb: NeonQueryFunction<any, any> = neon(process.env.DATABASE_URL!);
+const db = drizzle(neonDb);
 
 const PostgresSessionStore = connectPg(session);
 
@@ -470,119 +470,97 @@ export class DatabaseStorage implements IStorage {
         return [];
       }
       
-      console.log(`STRICT SHARING: Looking for calendars EXPLICITLY shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'none'}`);
+      console.log(`SHARING: Looking for calendars shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'none'}`);
       
-      // We only retrieve calendar sharing records that EXACTLY match this user
-      // DO NOT allow backup matching logic - if we can't find an exact match for this user, we don't show them any shared calendars
-      const sharingRecordsQuery = db.select()
-        .from(calendarSharing);
-      
-      // Build the exact matching conditions
-      const matchConditions = [];
-      
-      // 1. Exact match by user ID (primary key match)
-      if (userId) {
-        matchConditions.push(eq(calendarSharing.sharedWithUserId, userId));
-      }
-      
-      // 2. Exact match by email (secondary match)
-      if (user.email && user.email.trim() !== '') {
-        matchConditions.push(eq(calendarSharing.sharedWithEmail, user.email));
-      }
-      
-      // 3. Exact match by username if it's an email (tertiary match)
-      if (user.username && user.username.includes('@')) {
-        matchConditions.push(eq(calendarSharing.sharedWithEmail, user.username));
-      }
-      
-      // Apply the OR conditions - any ONE of these exact matches is acceptable
-      let sharingRecords: CalendarSharing[] = [];
-      if (matchConditions.length > 0) {
-        sharingRecords = await sharingRecordsQuery.where(or(...matchConditions));
-      }
-      
-      console.log(`STRICT SHARING: Found ${sharingRecords.length} exact calendar sharing matches for user ${user.username}`);
-      
-      // Detailed log of every sharing record for debugging
-      sharingRecords.forEach(record => {
-        console.log(`STRICT SHARING: Record ID ${record.id}: Calendar ID ${record.calendarId} shared with user ID ${record.sharedWithUserId || 'none'}, email ${record.sharedWithEmail || 'none'}`);
-      });
-      
-      // If no matches, just return early - CRITICAL security principle!
-      if (sharingRecords.length === 0) {
-        console.log(`STRICT SHARING: No sharing records found for user ${user.username}, returning empty list`);
-        return [];
-      }
-      
-      // Get the IDs of calendars that have been EXPLICITLY shared with this user
-      const sharedCalendarIds = Array.from(new Set(sharingRecords.map(record => record.calendarId)));
-      console.log(`STRICT SHARING: Found ${sharedCalendarIds.length} unique shared calendar IDs: ${sharedCalendarIds.join(', ')}`);
-      
-      // Fetch ONLY those specific calendars, and ONLY if they're not owned by the current user
-      const sharedCalendars = await db.select()
-        .from(calendars)
-        .where(
-          and(
-            // MUST be in our list of calendars explicitly shared with this user
-            inArray(calendars.id, sharedCalendarIds),
-            // MUST NOT be owned by the current user
-            ne(calendars.userId, userId)
-          )
-        );
-      
-      console.log(`STRICT SHARING: Found ${sharedCalendars.length} shared calendars for user ${user.username}`);
-      
-      // Create a map of permissions for each calendar
-      const calendarPermissionMap = new Map(
-        sharingRecords.map(record => [record.calendarId, record.permissionLevel])
-      );
-      
-      // Add permission info to calendars
-      // We need to ensure that each calendar has accurate owner information
-      const enhancedCalendarsPromises = sharedCalendars.map(async (calendar) => {
-        // Additional log for each calendar
-        console.log(`STRICT SHARING: Calendar ${calendar.id} (${calendar.name}), owned by user ${calendar.userId}, shared with user ${userId}, permission: ${calendarPermissionMap.get(calendar.id) || 'unknown'}`);
+      try {
+        // Try a direct SQL query that avoids the sharedByUserId column
+        const rawSql = `
+          SELECT * FROM calendar_sharing 
+          WHERE shared_with_user_id = $1 
+          OR shared_with_email = $2
+          ${user.username && user.username.includes('@') ? 'OR shared_with_email = $3' : ''}
+        `;
         
-        // CRITICAL FIX: Get accurate owner information for each calendar
-        const owner = await this.getUser(calendar.userId);
-        let ownerEmail = 'Unknown';
+        const params = user.username && user.username.includes('@') 
+          ? [userId, user.email || '', user.username] 
+          : [userId, user.email || ''];
         
-        // Use the actual owner email if available
-        if (owner && owner.email) {
-          ownerEmail = owner.email;
-        } else if (owner && owner.username) {
-          // Fall back to username if it looks like an email
-          ownerEmail = owner.username;
-        } else if (calendar.url && calendar.url.includes('@')) {
-          // As a last resort, try to extract from the URL
-          const urlMatch = calendar.url.match(/\/([^/]+%40[^/]+|[^/]+@[^/]+)\//i);
-          if (urlMatch && urlMatch[1]) {
-            let extractedEmail = urlMatch[1];
-            // Replace URL-encoded @ with regular @
-            if (extractedEmail.includes('%40')) {
-              extractedEmail = extractedEmail.replace(/%40/g, '@');
-            }
-            console.log(`Extracted email from URL: ${extractedEmail}`);
-            ownerEmail = extractedEmail;
+        // Execute query directly
+        const result = await neonDb(rawSql, params);
+        let records: any[] = [];
+        
+        // Handle different response formats that neonDb might return
+        if (Array.isArray(result)) {
+          if (result.length === 0) {
+            console.log('No shared calendars found (array format)');
+            return [];
           }
+          records = result;
+        } else if (result && typeof result === 'object' && 'rows' in result && Array.isArray(result.rows)) {
+          if (result.rows.length === 0) {
+            console.log('No shared calendars found (rows format)');
+            return [];
+          }
+          records = result.rows;
+        } else {
+          console.log('No shared calendars found (unknown format)');
+          return [];
         }
         
-        console.log(`Calendar ${calendar.id} (${calendar.name}) - Owner email: ${ownerEmail}`);
+        console.log(`Found ${records.length} sharing records`);
         
-        return {
-          ...calendar,
-          permission: calendarPermissionMap.get(calendar.id) || 'view', // Default to view
-          ownerEmail // Add the accurate owner email
-        };
-      });
-      
-      // Resolve all enhanced calendars
-      const calendarsWithOwnerInfo = await Promise.all(enhancedCalendarsPromises);
-      
-      // Final list of shared calendars
-      return calendarsWithOwnerInfo;
+        // Extract calendar IDs from sharing records
+        const calendarIds = Array.from(new Set(
+          records.map((record: any) => record.calendar_id)
+        ));
+        
+        if (!calendarIds.length) {
+          return [];
+        }
+        
+        // Fetch the actual calendar objects
+        const sharedCalendars = await db.select()
+          .from(calendars)
+          .where(
+            and(
+              inArray(calendars.id, calendarIds as number[]),
+              ne(calendars.userId, userId)
+            )
+          );
+          
+        console.log(`Found ${sharedCalendars.length} calendars`);
+        
+        // Create a permission map
+        const permissionMap = new Map(
+          records.map((record: any) => [record.calendar_id, record.permission_level])
+        );
+        
+        // Enhance the calendars with additional info
+        const enhancedCalendarsPromises = sharedCalendars.map(async (calendar) => {
+          const owner = await this.getUser(calendar.userId);
+          
+          return {
+            ...calendar,
+            owner: owner ? {
+              id: owner.id,
+              username: owner.username,
+              email: owner.email
+            } : undefined,
+            permissionLevel: permissionMap.get(calendar.id) || 'view',
+            isShared: true
+          };
+        });
+        
+        // Wait for all owner info to be fetched
+        const enhancedCalendars = await Promise.all(enhancedCalendarsPromises);
+        
+        return enhancedCalendars;
+      } catch (dbError) {
+        console.error('Database error in getSharedCalendars:', dbError);
+        return [];
+      }
     } catch (error) {
-      console.error("Error fetching shared calendars:", error);
+      console.error('Error fetching shared calendars:', error);
       return [];
     }
   }

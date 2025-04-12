@@ -2065,9 +2065,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/shared-calendars", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
-      const sharedCalendars = await storage.getSharedCalendars(userId);
-      res.setHeader('Content-Type', 'application/json');
-      res.json(sharedCalendars);
+      
+      try {
+        // Import our fixed implementation that doesn't rely on missing columns
+        const { getSharedCalendars } = await import('./calendar-sharing-fix');
+        
+        // Use the fixed implementation
+        const sharedCalendars = await getSharedCalendars(userId, storage);
+        console.log(`Returning ${sharedCalendars.length} shared calendars using fixed implementation`);
+        
+        res.setHeader('Content-Type', 'application/json');
+        res.json(sharedCalendars);
+      } catch (fixError) {
+        console.error("Error with fixed implementation, falling back to standard method:", fixError);
+        
+        // Fall back to standard method
+        const sharedCalendars = await storage.getSharedCalendars(userId);
+        res.setHeader('Content-Type', 'application/json');
+        res.json(sharedCalendars);
+      }
     } catch (err) {
       console.error("Error fetching shared calendars:", err);
       res.setHeader('Content-Type', 'application/json');
