@@ -6,7 +6,7 @@ import ImprovedEventFormModal from '@/components/modals/ImprovedEventFormModal';
 import EventDetailModal from '@/components/modals/EventDetailModal';
 import ServerConnectionModal from '@/components/modals/ServerConnectionModal';
 import { SyncSettingsModal } from '@/components/modals/SyncSettingsModal';
-import ShareCalendarModal from '@/components/modals/ShareCalendarModal';
+import ShareCalendarModal from '@/components/modals/SimplifiedShareCalendarModal';
 import ExportCalendarModal from '@/components/modals/ExportCalendarModal';
 import ImportCalendarModal from '@/components/modals/ImportCalendarModal';
 import { BulkDeleteModal } from '@/components/modals/BulkDeleteModal';
