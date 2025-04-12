@@ -2108,6 +2108,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Update calendar sharing permissions
+  app.patch("/api/calendar-sharings/:id", isAuthenticated, async (req, res) => {
+    try {
+      const sharingId = parseInt(req.params.id);
+      
+      // Validate the permission level
+      if (req.body.permissionLevel && !['view', 'edit'].includes(req.body.permissionLevel)) {
+        return res.status(400).json({ message: "Invalid permission level. Must be 'view' or 'edit'." });
+      }
+      
+      // Get the current sharing record to check permissions
+      const sharingRecords = await storage.getCalendarSharing(null);
+      const sharingRecord = sharingRecords.find(record => record.id === sharingId);
+      
+      if (!sharingRecord) {
+        return res.status(404).json({ message: "Calendar sharing record not found" });
+      }
+      
+      // Check if the user has permission to update this sharing record
+      // Only allow update if they are the calendar owner (they shared it) or the recipient
+      const calendar = await storage.getCalendar(sharingRecord.calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      const isCalendarOwner = calendar.userId === req.user!.id;
+      const isRecipient = sharingRecord.sharedWithUserId === req.user!.id;
+      
+      if (!isCalendarOwner && !isRecipient) {
+        return res.status(403).json({ 
+          message: "You don't have permission to update this sharing record" 
+        });
+      }
+      
+      // Update the sharing record
+      const updatedSharing = await storage.updateCalendarSharing(sharingId, {
+        permissionLevel: req.body.permissionLevel
+      });
+      
+      if (!updatedSharing) {
+        return res.status(500).json({ message: "Failed to update calendar sharing" });
+      }
+      
+      res.json(updatedSharing);
+    } catch (err) {
+      console.error("Error updating calendar sharing:", err);
+      return handleZodError(err, res);
+    }
+  });
+  
+  // Unshare a calendar (remove sharing record)
+  app.delete("/api/calendars/unshare/:id", isAuthenticated, async (req, res) => {
+    try {
+      const calendarId = parseInt(req.params.id);
+      
+      // Get the calendar to check if it exists
+      const calendar = await storage.getCalendar(calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Get all sharing records for this calendar
+      const sharingRecords = await storage.getCalendarSharing(calendarId);
+      
+      // Filter sharing records to find those related to the current user
+      const userSharingRecords = sharingRecords.filter(record => 
+        // User is either the recipient or the sharer
+        record.sharedWithUserId === req.user!.id || 
+        (calendar.userId === req.user!.id && record.calendarId === calendarId)
+      );
+      
+      if (userSharingRecords.length === 0) {
+        return res.status(404).json({ message: "No sharing record found for this calendar and user" });
+      }
+      
+      // Remove all relevant sharing records
+      const results = await Promise.all(
+        userSharingRecords.map(record => storage.removeCalendarSharing(record.id))
+      );
+      
+      // Check if all removals were successful
+      const allSuccessful = results.every(result => result === true);
+      
+      if (allSuccessful) {
+        res.json({ message: "Calendar unshared successfully" });
+      } else {
+        res.status(500).json({ message: "Failed to unshare calendar completely", partial: true });
+      }
+    } catch (err) {
+      console.error("Error unsharing calendar:", err);
+      res.status(500).json({ message: "Failed to unshare calendar", error: String(err) });
+    }
+  });
+  
   // Individual calendar sharing API
   app.post("/api/calendars/:id/shares", isAuthenticated, async (req, res) => {
     try {
