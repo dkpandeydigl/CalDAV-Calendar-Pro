@@ -2030,6 +2030,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       updateData.syncStatus = 'pending';
       updateData.lastSyncAttempt = new Date();
       
+      // Add event modification tracking information
+      if (req.user) {
+        // Get user information for tracking who made the change
+        const userId = req.user.id;
+        const username = req.user.username || req.user.email || `User ${userId}`;
+        
+        // Add change tracking fields
+        updateData.lastModifiedBy = userId;
+        updateData.lastModifiedByName = username;
+        updateData.lastModifiedAt = new Date();
+        
+        console.log(`Tracking event modification by ${username} (ID: ${userId})`);
+      } else {
+        console.warn('Event modified without user context - cannot track changes properly');
+      }
+      
       // Update the event
       const updatedEvent = await storage.updateEvent(eventId, updateData);
       
