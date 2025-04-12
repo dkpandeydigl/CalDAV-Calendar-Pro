@@ -689,23 +689,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 }}
                               />
                               
-                              {/* Show the View All Attendees button if there are more than 3 attendees */}
-                              {attendeeCount > 3 && !showAllAttendees && (
+                              {/* Toggle button for showing/hiding attendees */}
+                              {attendeeCount > 3 && (
                                 <button 
-                                  onClick={() => setShowAllAttendees(true)}
+                                  onClick={() => setShowAllAttendees(!showAllAttendees)}
                                   className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
                                 >
-                                  Show all {attendeeCount} attendees
-                                </button>
-                              )}
-                              
-                              {/* Show Less button when viewing all attendees */}
-                              {showAllAttendees && attendeeCount > 3 && (
-                                <button 
-                                  onClick={() => setShowAllAttendees(false)}
-                                  className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
-                                >
-                                  Show less
+                                  {showAllAttendees ? 'Show less' : `Show all ${attendeeCount} attendees`}
                                 </button>
                               )}
                             </>
