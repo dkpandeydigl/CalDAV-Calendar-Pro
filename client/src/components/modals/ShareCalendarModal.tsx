@@ -48,19 +48,26 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
   const { toast } = useToast();
 
   // Initialize with the initial calendar (for backward compatibility) or all user calendars
+  // We use a ref to track initialization to prevent re-running the initialization logic
+  const hasInitialized = React.useRef(false);
+
   useEffect(() => {
-    // Clear selections when the modal is closed
+    // Clear selections and reset initialization state when the modal is closed
     if (!open) {
       setSelectedCalendars([]);
       setIsMultiSelectionMode(false);
+      hasInitialized.current = false;
       return;
     }
 
     // We need to initialize only when:
     // 1. The modal is open
-    // 2. We have no selected calendars
+    // 2. We haven't initialized yet
     // 3. Either we have an initial calendar or userCalendars are loaded
-    if (selectedCalendars.length === 0) {
+    if (!hasInitialized.current) {
+      // Mark as initialized to prevent re-running
+      hasInitialized.current = true;
+      
       // If an initial calendar is provided (backward compatibility), add it only
       if (initialCalendar) {
         setSelectedCalendars([{ 
@@ -70,11 +77,10 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         }]);
         setIsMultiSelectionMode(false);
         
-        // Trigger fetch for this calendar after state update
+        // Schedule request after state update completes
+        const calendarId = initialCalendar.id;
         setTimeout(() => {
-          if (initialCalendar) {
-            requestSharesFetch(initialCalendar.id);
-          }
+          requestSharesFetch(calendarId);
         }, 0);
       } else if (userCalendars && userCalendars.length > 0) {
         // Multi-selection mode - select all user calendars by default
@@ -89,13 +95,14 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           }))
         );
         
-        // Trigger fetch for all calendars after state update
+        // Make a copy of the calendar IDs to reference after state update
+        const calendarIds = userCalendars.map(cal => cal.id);
+        
+        // Schedule request after state update completes
         setTimeout(() => {
-          if (userCalendars) {
-            userCalendars.forEach(calendar => {
-              requestSharesFetch(calendar.id);
-            });
-          }
+          calendarIds.forEach(id => {
+            requestSharesFetch(id);
+          });
         }, 0);
       }
     }

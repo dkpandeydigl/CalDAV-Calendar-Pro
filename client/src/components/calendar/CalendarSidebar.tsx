@@ -760,7 +760,14 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
               <Button 
                 size="sm" 
                 className="w-full"
-                onClick={() => saveTimezonePreference(selectedTimezone)}
+                onClick={async () => {
+                  try {
+                    await saveTimezonePreference(selectedTimezone);
+                  } catch (error) {
+                    console.error('Error saving timezone preference in sidebar:', error);
+                    // Error is already handled in the context via toast
+                  }
+                }}
                 disabled={isSavingTimezone}
               >
                 {isSavingTimezone ? 'Saving...' : 'Save Timezone Preference'}
