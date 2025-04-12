@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Calendar } from "@shared/schema";
-import { Trash2, Server, PlusCircle, Calendar as CalendarIcon, Check, X } from 'lucide-react';
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from '@/lib/queryClient';
-import { queryClient } from '@/lib/queryClient';
-import { Switch } from "@/components/ui/switch";
-import { Checkbox } from '@/components/ui/checkbox';
-import { useCalendars } from '@/hooks/useCalendars';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
+import { Calendar, CalendarSharing } from '@shared/schema';
+import { apiRequest } from '@/lib/apiRequest';
+import { useCalendars } from '@/hooks/useCalendars';
+import { queryClient } from '@/lib/queryClient';
+import { CalendarIcon, Check, MoreHorizontal, PlusCircle, Server, Trash, UserPlus, X } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 interface ShareCalendarModalProps {
   open: boolean;
@@ -21,16 +21,6 @@ interface ShareCalendarModalProps {
   calendar: Calendar | null | undefined; // For backward compatibility, now supports multiple calendars
 }
 
-interface CalendarSharing {
-  id: number;
-  calendarId: number;
-  userId: number | null;
-  email: string;
-  username: string | null;
-  permission: 'read' | 'write';
-}
-
-// Extended interface to track selected calendars and their shares
 interface SelectedCalendarInfo {
   calendar: Calendar;
   shares: CalendarSharing[];
@@ -50,7 +40,14 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
   // Initialize with the initial calendar (for backward compatibility) or all user calendars
   // We use a ref to track initialization to prevent re-running the initialization logic
   const hasInitialized = React.useRef(false);
+  
+  // Use refs to track loading state to prevent circular dependencies
+  const loadingCalendarIds = React.useRef(new Set<number>());
+  const fetchedCalendarIds = React.useRef(new Set<number>());
+  const calendarsToFetch = React.useRef<number[]>([]);
+  const authLoadingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
+  // Effect for initializing the modal
   useEffect(() => {
     // Clear selections and reset initialization state when the modal is closed
     if (!open) {
@@ -60,10 +57,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       return;
     }
 
-    // We need to initialize only when:
-    // 1. The modal is open
-    // 2. We haven't initialized yet
-    // 3. Either we have an initial calendar or userCalendars are loaded
+    // Only initialize when not already initialized and necessary data is available
     if (!hasInitialized.current) {
       // Mark as initialized to prevent re-running
       hasInitialized.current = true;
@@ -80,13 +74,14 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         // Schedule request after state update completes
         const calendarId = initialCalendar.id;
         setTimeout(() => {
-          requestSharesFetch(calendarId);
+          if (open) { // Verify still open
+            requestSharesFetch(calendarId);
+          }
         }, 0);
       } else if (userCalendars && userCalendars.length > 0) {
-        // Multi-selection mode - select all user calendars by default
+        // Multi-selection mode with auto-selected calendars
         setIsMultiSelectionMode(true);
         
-        // Pre-select all user calendars
         setSelectedCalendars(
           userCalendars.map(calendar => ({
             calendar,
@@ -95,34 +90,27 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           }))
         );
         
-        // Make a copy of the calendar IDs to reference after state update
         const calendarIds = userCalendars.map(cal => cal.id);
         
-        // Schedule request after state update completes
         setTimeout(() => {
-          calendarIds.forEach(id => {
-            requestSharesFetch(id);
-          });
+          if (open) { // Verify still open
+            calendarIds.forEach(id => {
+              requestSharesFetch(id);
+            });
+          }
         }, 0);
       }
     }
   }, [initialCalendar, open, userCalendars]);
-
-  // Use a ref to track which calendars need loading and prevent excessive rerenders
-  const loadingCalendarIds = React.useRef(new Set<number>());
-  const fetchedCalendarIds = React.useRef(new Set<number>());
-  const calendarsToFetch = React.useRef<number[]>([]);
-  const authLoadingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
-  // Effect to setup timeout and cleanup when modal opens/closes
+  // Timeout effect to handle long-running loading states
   useEffect(() => {
     if (!open) {
-      // Reset when modal closes
+      // Reset everything when modal closes
       loadingCalendarIds.current.clear();
       fetchedCalendarIds.current.clear();
       calendarsToFetch.current = [];
       
-      // Clear any pending timeout
       if (authLoadingTimeoutRef.current) {
         clearTimeout(authLoadingTimeoutRef.current);
         authLoadingTimeoutRef.current = null;
@@ -130,170 +118,48 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       return;
     }
     
-    // Setup timeout only once when modal opens
+    // Setup timeout for loading
     if (!authLoadingTimeoutRef.current) {
       authLoadingTimeoutRef.current = setTimeout(() => {
         console.log("Auth loading timeout - forcing UI to proceed with available permissions");
         
-        // Force update any calendars that are still loading
+        // Force update loading states
         setSelectedCalendars(prev => 
           prev.map(item => item.loading ? { ...item, loading: false } : item)
         );
         
-        // Clear loading state
         loadingCalendarIds.current.clear();
-        
-        // Clear the timeout reference
         authLoadingTimeoutRef.current = null;
       }, 2000); // 2 second timeout
     }
     
-    // Cleanup function
     return () => {
       if (authLoadingTimeoutRef.current) {
         clearTimeout(authLoadingTimeoutRef.current);
         authLoadingTimeoutRef.current = null;
       }
     };
-  }, [open]); // Only depends on modal open state
-
-  // Separate effect to handle identifying calendars that need loading
-  // This is in a separate effect to avoid infinite loops with selectedCalendars
-  useEffect(() => {
-    // Skip if modal is not open
-    if (!open) return;
-    
-    // Get a safe reference to the current state to avoid closure issues
-    const calendarItems = [...selectedCalendars];
-    
-    // Skip processing if we don't have any calendars
-    if (calendarItems.length === 0) return;
-    
-    // Collect list of calendars that need fetching (avoids modifying state inside effect)
-    const needFetching: number[] = [];
-    
-    calendarItems.forEach(item => {
-      // Only check loading items that aren't already being fetched
-      if (item.loading && 
-          !fetchedCalendarIds.current.has(item.calendar.id) && 
-          !loadingCalendarIds.current.has(item.calendar.id)) {
-            
-        // Add to our fetch queue
-        needFetching.push(item.calendar.id);
-        
-        // Mark as loading so we don't try to fetch it again
-        loadingCalendarIds.current.add(item.calendar.id);
-      }
-    });
-    
-    // Store the list of calendars to fetch only if we have new ones
-    if (needFetching.length > 0) {
-      calendarsToFetch.current = needFetching;
-      
-      // Schedule fetches immediately
-      setTimeout(() => {
-        needFetching.forEach(id => requestSharesFetch(id));
-      }, 0);
-    }
-    
-    // We're not including selectedCalendars in the dependency array to break the cycle
-    // Instead, we only run this when the modal opens or when manually triggered
   }, [open]);
-  
-  // Separate effect to handle the actual fetching
-  useEffect(() => {
-    // Preserve reference stability for cleanup function
-    const fetchedIds = fetchedCalendarIds.current;
-    const loadingIds = loadingCalendarIds.current;
-    
-    if (!open || calendarsToFetch.current.length === 0) return;
-    
-    // Copy the current fetch list and clear it
-    const toFetch = [...calendarsToFetch.current];
-    calendarsToFetch.current = [];
-    
-    // Track fetch operations for cleanup
-    const fetchOperations: Promise<void>[] = [];
-    
-    // Fetch each calendar's shares
-    toFetch.forEach(calendarId => {
-      const fetchPromise = (async () => {
-        try {
-          // Exit early if modal has closed during fetch
-          if (!open) return;
-          
-          const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
-          if (response.ok) {
-            const data = await response.json();
-            
-            // Only update if modal is still open
-            if (open) {
-              setSelectedCalendars(prev => prev.map(c => 
-                c.calendar.id === calendarId
-                  ? { ...c, shares: data, loading: false } 
-                  : c
-              ));
-            }
-          } else {
-            throw new Error(`Failed to fetch shares for calendar ${calendarId}`);
-          }
-        } catch (error) {
-          console.error(`Error fetching calendar shares:`, error);
-          
-          // Only update if modal is still open
-          if (open) {
-            // Mark as not loading on error
-            setSelectedCalendars(prev => prev.map(c => 
-              c.calendar.id === calendarId
-                ? { ...c, loading: false } 
-                : c
-            ));
-          }
-        } finally {
-          // Mark as fetched and remove from loading
-          if (open) {
-            fetchedIds.add(calendarId);
-            loadingIds.delete(calendarId);
-          }
-        }
-      })();
-      
-      fetchOperations.push(fetchPromise);
-    });
-    
-    // Cleanup function to abort any pending operations when component unmounts or effect re-runs
-    return () => {
-      // No need to handle the pending promises, just making sure refs are cleaned up
-      fetchedIds.clear();
-      loadingIds.clear();
-      calendarsToFetch.current = [];
-    };
-  }, [open]); // Only refetch when modal opens/closes
 
+  // Function to fetch calendar shares
   const fetchShares = async (calendarId: number) => {
-    // Skip if modal is no longer open
     if (!open) return;
     
     try {
-      // Mark as fetched to prevent refetching during any re-renders that might happen
       fetchedCalendarIds.current.add(calendarId);
       
       const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
       if (response.ok) {
         const data = await response.json();
         
-        // Final check to make sure the modal is still open before updating state
         if (open) {
-          // Update the shares for this calendar
-          setSelectedCalendars(prev => {
-            // Make a copy to prevent unnecessary re-renders if nothing changed
-            const updatedState = prev.map(item => 
+          setSelectedCalendars(prev => 
+            prev.map(item => 
               item.calendar.id === calendarId 
                 ? { ...item, shares: data, loading: false } 
                 : item
-            );
-            return updatedState;
-          });
+            )
+          );
         }
       } else {
         throw new Error(`Failed to fetch shares for calendar ${calendarId}`);
@@ -301,7 +167,6 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     } catch (error) {
       console.error(`Error fetching calendar shares for calendar ${calendarId}:`, error);
       
-      // Only show toast and update if still open
       if (open) {
         toast({
           title: 'Error',
@@ -309,7 +174,6 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           variant: 'destructive',
         });
         
-        // Mark as not loading even on error
         setSelectedCalendars(prev => prev.map(item => 
           item.calendar.id === calendarId 
             ? { ...item, loading: false } 
@@ -317,68 +181,56 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         ));
       }
     } finally {
-      // Regardless of outcome, remove from loading
       loadingCalendarIds.current.delete(calendarId);
     }
   };
 
-  // Request a fetch of calendar shares to avoid loop issues
+  // Request a fetch of calendar shares
   const requestSharesFetch = (calendarId: number) => {
-    // Only request fetch if not already loaded or loading
     if (!fetchedCalendarIds.current.has(calendarId) && 
         !loadingCalendarIds.current.has(calendarId)) {
       
-      // Mark this calendar as loading
       loadingCalendarIds.current.add(calendarId);
       
-      // Use setTimeout to break out of the current execution context
-      // This prevents state updates from triggering re-renders during useEffect execution
       setTimeout(() => {
-        // Only proceed if the modal is still open and calendar is still being loaded
         if (open && loadingCalendarIds.current.has(calendarId)) {
-          // Fetch data for this calendar using our existing fetch function
           fetchShares(calendarId);
         }
       }, 10);
     }
   };
 
-  // Toggle a calendar selection
+  // Toggle calendar selection
   const toggleCalendarSelection = (calendar: Calendar) => {
     setSelectedCalendars(prev => {
-      // Check if this calendar is already selected
       const isSelected = prev.some(item => item.calendar.id === calendar.id);
       
       if (isSelected) {
-        // Remove it
         return prev.filter(item => item.calendar.id !== calendar.id);
       } else {
-        // Add it and manually request a fetch afterwards
         const result = [...prev, { calendar, shares: [], loading: true }];
         
-        // Schedule a fetch after the state update completes
-        setTimeout(() => requestSharesFetch(calendar.id), 0);
+        setTimeout(() => {
+          if (open) requestSharesFetch(calendar.id);
+        }, 0);
         
         return result;
       }
     });
   };
 
-  // Share selected calendars with the recipient
+  // Handle share calendar action
   const handleShareCalendars = async () => {
     if (selectedCalendars.length === 0 || !email) return;
 
     setIsSubmitting(true);
     
     try {
-      // Track successful shares to show in toast
       const successfulShares = [];
       const failedShares = [];
       
-      // Share each selected calendar
       for (const { calendar } of selectedCalendars) {
         try {
-          // Build the API URL with sync flag if enabled and calendar has a URL
           const apiUrl = calendar.url && syncWithServer
             ? `/api/calendars/${calendar.id}/shares?syncWithServer=true`
             : `/api/calendars/${calendar.id}/shares`;
@@ -390,7 +242,6 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
           if (response.ok) {
             successfulShares.push(calendar.name);
-            // Refresh the shares list for this calendar
             fetchShares(calendar.id);
           } else {
             const errorData = await response.json();
@@ -401,7 +252,6 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         }
       }
       
-      // Show toast with results
       if (successfulShares.length > 0) {
         toast({
           title: 'Calendars Shared',
@@ -417,10 +267,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         });
       }
       
-      // Clear email after sharing attempt (regardless of success)
       setEmail('');
-      
-      // Invalidate calendars query to refresh
       queryClient.invalidateQueries({queryKey: ['/api/calendars']});
       
     } catch (error: any) {
@@ -434,12 +281,12 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     }
   };
 
+  // Remove sharing
   const handleRemoveShare = async (calendarId: number, shareId: number) => {
     const calendarInfo = selectedCalendars.find(c => c.calendar.id === calendarId);
     if (!calendarInfo) return;
 
     try {
-      // Build the API URL with sync flag if enabled and calendar has a URL
       const apiUrl = calendarInfo.calendar.url && syncWithServer
         ? `/api/calendars/shares/${shareId}?syncWithServer=true`
         : `/api/calendars/shares/${shareId}`;
@@ -452,14 +299,12 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           description: `Calendar sharing has been removed${syncWithServer && calendarInfo.calendar.url ? ' and synchronized with CalDAV server' : ''}`
         });
         
-        // Update the local state to remove this share
         setSelectedCalendars(prev => prev.map(item => 
           item.calendar.id === calendarId 
             ? { ...item, shares: item.shares.filter(share => share.id !== shareId) } 
             : item
         ));
         
-        // Invalidate any related queries
         queryClient.invalidateQueries({queryKey: ['/api/calendars']});
       } else {
         throw new Error('Failed to remove calendar sharing');
@@ -473,12 +318,12 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     }
   };
 
+  // Update permission for sharing
   const handleUpdatePermission = async (calendarId: number, shareId: number, newPermission: 'read' | 'write') => {
     const calendarInfo = selectedCalendars.find(c => c.calendar.id === calendarId);
     if (!calendarInfo) return;
 
     try {
-      // Build the API URL with sync flag if enabled and calendar has a URL
       const apiUrl = calendarInfo.calendar.url && syncWithServer
         ? `/api/calendars/shares/${shareId}?syncWithServer=true`
         : `/api/calendars/shares/${shareId}`;
@@ -493,7 +338,6 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           description: `Calendar sharing permission has been updated${syncWithServer && calendarInfo.calendar.url ? ' and synchronized with CalDAV server' : ''}`
         });
         
-        // Update the local state with the new permission
         setSelectedCalendars(prev => prev.map(item => 
           item.calendar.id === calendarId 
             ? { 
@@ -505,7 +349,6 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
             : item
         ));
         
-        // Invalidate any related queries
         queryClient.invalidateQueries({queryKey: ['/api/calendars']});
       } else {
         throw new Error('Failed to update sharing permission');
@@ -519,7 +362,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     }
   };
 
-  // Calculate title based on selected calendars
+  // Dialog title
   const getDialogTitle = () => {
     if (selectedCalendars.length === 0) {
       return 'Share Calendars';
@@ -530,7 +373,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     }
   };
 
-  // Description based on selection mode and selected calendars
+  // Dialog description
   const getDialogDescription = () => {
     if (isMultiSelectionMode) {
       if (selectedCalendars.length === 0) {
@@ -547,14 +390,12 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
 
   const canShareWithServer = selectedCalendars.some(c => c.calendar.url);
 
-  // Custom close handler to properly clean up
+  // Clean up handler
   const handleClose = () => {
-    // Reset all refs when closing
     fetchedCalendarIds.current.clear();
     loadingCalendarIds.current.clear();
     calendarsToFetch.current = [];
     
-    // Clear any pending timeout
     if (authLoadingTimeoutRef.current) {
       clearTimeout(authLoadingTimeoutRef.current);
       authLoadingTimeoutRef.current = null;
@@ -643,9 +484,11 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                     
                     // Request fetches for all calendars after state update
                     setTimeout(() => {
-                      allCalendars.forEach(calendar => {
-                        requestSharesFetch(calendar.id);
-                      });
+                      if (open) {
+                        allCalendars.forEach(calendar => {
+                          requestSharesFetch(calendar.id);
+                        });
+                      }
                     }, 0);
                   }}
                 >
@@ -729,55 +572,65 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
                 {isSubmitting ? 'Sharing...' : `Share ${selectedCalendars.length === 1 ? 'Calendar' : 'Calendars'}`}
               </Button>
 
-              {/* Existing shares - Show in tabs or accordion for multiple calendars */}
+              {/* Render shared with section for each calendar */}
               {selectedCalendars.map(({ calendar, shares, loading }) => (
-                <div key={calendar.id} className="border-t pt-4 mt-4">
-                  <h3 className="font-medium mb-2 flex items-center">
-                    <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: calendar.color }}></span>
-                    {calendar.name} - Shared with
-                    {loading && <span className="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-current border-r-transparent"></span>}
-                  </h3>
+                <div key={calendar.id} className="mt-6 border-t pt-4">
+                  <div className="flex items-center mb-3">
+                    <span 
+                      className="w-3 h-3 rounded-full mr-2 flex-shrink-0"
+                      style={{ backgroundColor: calendar.color }}
+                    ></span>
+                    <h3 className="font-medium">{calendar.name} - Shared with</h3>
+                  </div>
                   
-                  {!loading && shares.length === 0 && (
-                    <div className="text-sm text-muted-foreground italic p-2">
+                  {loading ? (
+                    <div className="text-center py-3 text-sm text-muted-foreground">
+                      Loading shares...
+                    </div>
+                  ) : shares.length === 0 ? (
+                    <div className="text-center py-3 text-sm text-muted-foreground">
                       Not shared with anyone yet
                     </div>
-                  )}
-                  
-                  {!loading && shares.length > 0 && (
-                    <div>
+                  ) : (
+                    <div className="space-y-2">
                       {shares.map(share => (
-                        <div key={share.id} className="flex items-center justify-between p-2 bg-secondary/20 rounded-md mb-1">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium">{share.username || share.email}</span>
-                            <Badge variant={share.permission === 'write' ? 'default' : 'secondary'} className="mt-1 w-fit">
-                              {share.permission === 'write' ? 'Can edit' : 'View only'}
-                            </Badge>
+                        <div key={share.id} className="flex items-center justify-between p-2 hover:bg-muted rounded-md">
+                          <div className="flex items-center gap-2">
+                            <UserPlus className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">{share.sharedWithEmail}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {share.permissionLevel === 'view' ? 'View only' : 'Can edit'}
+                              </p>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <Select
-                              value={share.permission}
-                              onValueChange={(value: 'read' | 'write') => 
-                                handleUpdatePermission(calendar.id, share.id, value)
-                              }
-                            >
-                              <SelectTrigger type="button" className="h-8 w-24">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="read">View only</SelectItem>
-                                <SelectItem value="write">Can edit</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              onClick={() => handleRemoveShare(calendar.id, share.id)}
-                              className="h-8 w-8 text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <span className="sr-only">Open menu</span>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => handleUpdatePermission(
+                                  calendar.id, 
+                                  share.id, 
+                                  share.permissionLevel === 'view' ? 'write' : 'read'
+                                )}
+                              >
+                                Change to {share.permissionLevel === 'view' ? 'Can edit' : 'View only'}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleRemoveShare(calendar.id, share.id)}
+                                className="text-destructive"
+                              >
+                                <Trash className="h-4 w-4 mr-2" />
+                                Remove sharing
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       ))}
                     </div>
@@ -788,21 +641,7 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
           )}
         </div>
         
-        <DialogFooter className="sm:justify-between flex-shrink-0">
-          {/* Toggle multi-selection mode button */}
-          {!isMultiSelectionMode && (
-            <Button 
-              type="button" 
-              variant="outline" 
-              size="sm"
-              onClick={() => setIsMultiSelectionMode(true)}
-              className="gap-1"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Add More Calendars
-            </Button>
-          )}
-          
+        <DialogFooter className="flex-shrink-0">
           <Button 
             type="button" 
             variant="secondary" 
