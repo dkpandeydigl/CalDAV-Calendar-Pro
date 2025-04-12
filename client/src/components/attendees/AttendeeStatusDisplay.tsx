@@ -201,53 +201,65 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   // Main component render
   return (
     <div className="space-y-4">
-      <div className="flex flex-row w-full gap-1 mb-2">
-        <Button 
-          variant="outline" 
-          className={`py-2 px-3 h-auto flex items-center justify-center gap-1 bg-green-50 border-green-200 text-green-700 ${getStatusButtonHoverClass('accepted')} rounded-md flex-1`}
-          onClick={() => openStatusDialog('accepted')}
-        >
-          <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
-          <span className="whitespace-nowrap text-xs sm:text-sm">{countByStatus['accepted'] || 0} Accepted</span>
-          <ChevronRight className="h-3 w-3 ml-1 flex-shrink-0" />
-        </Button>
-        
-        <Button 
-          variant="outline" 
-          className={`py-2 px-3 h-auto flex items-center justify-center gap-1 bg-red-50 border-red-200 text-red-700 ${getStatusButtonHoverClass('declined')} rounded-md flex-1`}
-          onClick={() => openStatusDialog('declined')}
-        >
-          <XCircle className="h-3 w-3 text-red-600 flex-shrink-0" />
-          <span className="whitespace-nowrap text-xs sm:text-sm">{countByStatus['declined'] || 0} Declined</span>
-          <ChevronRight className="h-3 w-3 ml-1 flex-shrink-0" />
-        </Button>
-        
-        <Button 
-          variant="outline" 
-          className={`py-2 px-3 h-auto flex items-center justify-center gap-1 bg-amber-50 border-amber-200 text-amber-700 ${getStatusButtonHoverClass('tentative')} rounded-md flex-1`}
-          onClick={() => openStatusDialog('tentative')}
-        >
-          <HelpCircle className="h-3 w-3 text-amber-600 flex-shrink-0" />
-          <span className="whitespace-nowrap text-xs sm:text-sm">{countByStatus['tentative'] || 0} Tentative</span>
-          <ChevronRight className="h-3 w-3 ml-1 flex-shrink-0" />
-        </Button>
-        
-        <Button 
-          variant="outline" 
-          className={`py-2 px-3 h-auto flex items-center justify-center gap-1 bg-gray-50 border-gray-200 text-gray-700 ${getStatusButtonHoverClass('needs-action')} rounded-md flex-1`}
-          onClick={() => openStatusDialog('needs-action')}
-        >
-          <Clock className="h-3 w-3 text-gray-600 flex-shrink-0" />
-          <span className="whitespace-nowrap text-xs sm:text-sm">
-            {countByStatus['needs-action'] || 0} No Response
-          </span>
-          <ChevronRight className="h-3 w-3 ml-1 flex-shrink-0" />
-        </Button>
+      <div className="w-full">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-4">
+          <div 
+            className="flex items-center cursor-pointer" 
+            onClick={() => openStatusDialog('accepted')}
+          >
+            <div className="mr-2 flex-shrink-0">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+            </div>
+            <div className="text-green-700 font-medium">
+              {countByStatus['accepted'] || 0} Accepted
+            </div>
+          </div>
+          
+          <div 
+            className="flex items-center cursor-pointer" 
+            onClick={() => openStatusDialog('declined')}
+          >
+            <div className="mr-2 flex-shrink-0">
+              <div className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-red-600">
+                <XCircle className="h-5 w-5 text-red-600" />
+              </div>
+            </div>
+            <div className="text-red-700 font-medium">
+              {countByStatus['declined'] || 0} Declined
+            </div>
+          </div>
+          
+          <div 
+            className="flex items-center cursor-pointer" 
+            onClick={() => openStatusDialog('tentative')}
+          >
+            <div className="mr-2 flex-shrink-0">
+              <div className="inline-flex items-center justify-center rounded-full border border-amber-500 w-5 h-5">
+                <span className="text-amber-600 font-medium text-sm">?</span>
+              </div>
+            </div>
+            <div className="text-amber-700 font-medium">
+              {countByStatus['tentative'] || 0} Tentative
+            </div>
+          </div>
+          
+          <div 
+            className="flex items-center cursor-pointer" 
+            onClick={() => openStatusDialog('needs-action')}
+          >
+            <div className="mr-2 flex-shrink-0 opacity-0">
+              <Clock className="h-5 w-5" />
+            </div>
+            <div className="text-gray-700 font-medium">
+              No Response
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="border rounded-md">
         <div className="bg-muted/30 p-2 border-b">
-          <h3 className="font-medium">Attendees ({processedAttendees.length})</h3>
+          <h3 className="font-medium">Attendee List</h3>
         </div>
         <ul className="divide-y">
           {displayedAttendees.map((attendee, index) => (
