@@ -412,6 +412,54 @@ export function setupAuth(app: Express) {
       res.status(401).json({ message: "Not authenticated" });
     }
   });
+  
+  // Update user timezone preference
+  app.put("/api/user/timezone", (req, res) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    
+    try {
+      const userId = req.user.id;
+      const { timezone } = req.body;
+      
+      if (!timezone || typeof timezone !== 'string') {
+        return res.status(400).json({ message: "Invalid timezone" });
+      }
+      
+      // Validate timezone (basic validation)
+      if (timezone.length > 100) {
+        return res.status(400).json({ message: "Timezone string too long" });
+      }
+      
+      // Update the user's preferred timezone
+      storage.updateUser(userId, {
+        preferredTimezone: timezone
+      }).then(updatedUser => {
+        if (!updatedUser) {
+          return res.status(404).json({ message: "User not found" });
+        }
+        
+        res.json({
+          success: true,
+          message: "Timezone preference updated successfully",
+          timezone
+        });
+      }).catch(error => {
+        console.error("Error updating timezone preference:", error);
+        res.status(500).json({ 
+          message: "Failed to update timezone preference",
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    } catch (err) {
+      console.error("Error updating timezone preference:", err);
+      res.status(500).json({ 
+        message: "Failed to update timezone preference",
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
 
   // Helper middleware for checking authentication
   const isAuthenticated = (req: any, res: any, next: any) => {
