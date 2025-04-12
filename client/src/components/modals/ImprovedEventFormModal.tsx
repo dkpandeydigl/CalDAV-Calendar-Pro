@@ -137,43 +137,94 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const [attendeeInput, setAttendeeInput] = useState('');
   const [attendeeRole, setAttendeeRole] = useState<AttendeeRole>('Member');
   const [resources, setResources] = useState<Resource[]>([]);
-  // This works around a bug in the rendering by creating a useEffect that runs once
-  // and sets the resources directly from the raw event data
-  useEffect(() => {
-    if (event && event.rawData && open) {
-      const rawData = event.rawData.toString();
-      // Now look for resource entries in the raw data
-      const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:]*?mailto:([^\s\r\n]+)/g;
-      const resourceMatches = [...rawData.matchAll(resourceRegex)];
+  // Enhanced resource extraction function with deduplication
+  const extractResourcesFromRawData = (eventData: any) => {
+    if (!eventData) return [];
+    
+    try {
+      // Create a Map to track resources by email for deduplication
+      const resourceMap = new Map();
       
-      if (resourceMatches.length > 0) {
-        console.log('Found resource matches in raw data:', resourceMatches);
+      // STEP 1: Try to get resources from the event.resources field first
+      if (eventData.resources) {
+        let parsedResources = [];
         
-        const extractedResources = resourceMatches.map((match, index) => {
-          const line = match[0];
-          const email = match[1]; // The captured group for the email
-          
-          // Extract resource name from CN
-          const cnMatch = line.match(/CN=([^;:]+)/);
-          const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
-          
-          // Extract resource type
-          const typeMatch = line.match(/X-RESOURCE-TYPE=([^;:]+)/);
-          const subType = typeMatch ? typeMatch[1].trim() : '';
-          
-          return {
-            id: `resource-${index}-${Date.now()}`,
-            name,
-            adminEmail: email,
-            subType,
-            capacity: 1
-          };
-        });
-        
-        console.log('Directly extracted resources:', extractedResources);
-        if (extractedResources.length > 0) {
-          setResources(extractedResources);
+        if (typeof eventData.resources === 'string') {
+          try {
+            parsedResources = JSON.parse(eventData.resources);
+          } catch (e) { /* Silent fail */ }
+        } else if (Array.isArray(eventData.resources)) {
+          parsedResources = eventData.resources;
         }
+        
+        // Add resources to our map for deduplication
+        if (Array.isArray(parsedResources)) {
+          parsedResources.forEach((resource, index) => {
+            const email = resource.adminEmail || resource.email; 
+            if (email) {
+              resourceMap.set(email.toLowerCase(), {
+                id: resource.id || `resource-${index}-${Date.now()}`,
+                name: resource.name || resource.adminName || 'Resource',
+                adminEmail: email,
+                subType: resource.subType || resource.type || '',
+                capacity: resource.capacity || 1
+              });
+            }
+          });
+        }
+      }
+      
+      // STEP 2: Now extract from VCALENDAR data if available (but don't overwrite existing entries)
+      if (eventData.rawData && typeof eventData.rawData === 'string') {
+        const rawDataStr = eventData.rawData.toString();
+        
+        // Use a simple regex to find any ATTENDEE lines containing CUTYPE=RESOURCE
+        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
+        const matches = Array.from(rawDataStr.matchAll(resourceRegex));
+        
+        if (matches && matches.length > 0) {
+          matches.forEach((match, index) => {
+            const fullLine = match[0]; // The complete ATTENDEE line 
+            const email = match[1]; // The captured email group
+            
+            // Skip if we already have this resource by email
+            if (email && !resourceMap.has(email.toLowerCase())) {
+              // Extract resource name from CN
+              const cnMatch = fullLine.match(/CN=([^;:]+)/);
+              const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
+              
+              // Extract resource type
+              const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
+              const resourceType = typeMatch ? typeMatch[1].trim() : '';
+              
+              resourceMap.set(email.toLowerCase(), {
+                id: `resource-${index}-${Date.now()}`,
+                name: name,
+                adminEmail: email,
+                subType: resourceType,
+                capacity: 1
+              });
+            }
+          });
+        }
+      }
+      
+      // Convert map back to array
+      return Array.from(resourceMap.values());
+    } catch (error) {
+      console.error('Error extracting resources:', error);
+      return [];
+    }
+  };
+
+  // This works around a bug in the rendering by creating a useEffect that runs once
+  // and sets the resources directly using our enhanced extraction function
+  useEffect(() => {
+    if (event && open) {
+      const extractedResources = extractResourcesFromRawData(event);
+      console.log('Extracted deduplicated resources:', extractedResources);
+      if (extractedResources.length > 0) {
+        setResources(extractedResources);
       }
     }
   }, [event, open]);
