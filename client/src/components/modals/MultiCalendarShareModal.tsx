@@ -63,22 +63,41 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
       const successfulShares = [];
       const failedShares = [];
       
+      console.log(`Attempting to share ${selectedCalendarIds.length} calendars with ${email}`);
+      
       // Process each selected calendar
       for (const calendarId of selectedCalendarIds) {
         const calendar = calendars.find(cal => cal.id === calendarId);
-        if (!calendar) continue;
+        if (!calendar) {
+          console.error(`Calendar with ID ${calendarId} not found`);
+          continue;
+        }
         
         try {
-          await shareCalendar(
-            calendarId,
-            email,
-            permission,
-            calendar.url ? syncWithServer : false
-          );
+          console.log(`Sharing calendar ID ${calendarId} (${calendar.name}) with ${email}`);
+          
+          // Make direct API call instead of using the imported function
+          const response = await fetch(`/api/calendars/${calendarId}/shares`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              email: email,
+              permissionLevel: permission,
+              syncWithServer: calendar.url ? syncWithServer : false
+            }),
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Failed to share calendar');
+          }
           
           successfulShares.push(calendar.name);
         } catch (error: any) {
-          failedShares.push({ name: calendar.name, error: error.message });
+          console.error(`Error sharing calendar ${calendar.name}:`, error);
+          failedShares.push({ name: calendar.name, error: error.message || "Unknown error" });
         }
       }
       
@@ -97,6 +116,9 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
           description: `Failed to share ${failedShares.length} calendar(s). Please try again.`,
           variant: 'destructive'
         });
+        
+        // Log details for debugging
+        console.error('Failed shares:', failedShares);
       }
       
       // Clear the email field on success
@@ -109,6 +131,7 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
       queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
       
     } catch (error: any) {
+      console.error('Error in handleShareCalendars:', error);
       toast({
         title: 'Sharing Failed',
         description: error.message || 'Could not share calendars',
