@@ -62,6 +62,7 @@ export const calendarSharing = pgTable("calendar_sharing", {
   calendarId: integer("calendar_id").notNull(),
   sharedWithEmail: text("shared_with_email").notNull(), // Email of the user the calendar is shared with
   sharedWithUserId: integer("shared_with_user_id"), // User ID if the email corresponds to a registered user
+  sharedByUserId: integer("shared_by_user_id").notNull(), // User ID of the calendar owner who shared it
   permissionLevel: text("permission_level").notNull(), // 'view' or 'edit'
   createdAt: timestamp("created_at").defaultNow(),
   lastModified: timestamp("last_modified").defaultNow(),
@@ -71,6 +72,7 @@ export const insertCalendarSharingSchema = createInsertSchema(calendarSharing).p
   calendarId: true,
   sharedWithEmail: true,
   sharedWithUserId: true,
+  sharedByUserId: true,
   permissionLevel: true,
 });
 
