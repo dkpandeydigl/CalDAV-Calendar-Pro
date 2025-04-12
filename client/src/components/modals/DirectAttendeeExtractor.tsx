@@ -41,6 +41,22 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
       const unfoldedData = rawData.replace(/\r?\n[ \t]/g, '');
       console.log('ATTENDEE DEBUG: Unfolded data example:', unfoldedData.substring(0, 200));
       
+      // Check also for description that might have attendee information
+      const descriptionMatch = unfoldedData.match(/DESCRIPTION:(.+?)(?=\r?\n[A-Z])/s);
+      const descriptionText = descriptionMatch ? descriptionMatch[1] : '';
+      
+      // Extract potential emails from description
+      const emailsFromDescription: Record<string, string> = {};
+      if (descriptionText) {
+        const emailRegex = /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/g;
+        let emailMatch;
+        while ((emailMatch = emailRegex.exec(descriptionText)) !== null) {
+          const email = emailMatch[1].trim();
+          // Use the email as both key and initial name
+          emailsFromDescription[email] = email.split('@')[0];
+        }
+      }
+      
       // STEP 2: Use a direct regex approach to find all ATTENDEE lines that aren't resources
       const attendeeRegex = /ATTENDEE(?!.*CUTYPE=RESOURCE).*?:.*?mailto:([^\s;>,\n\r]+)/g;
       const extractedAttendees: Attendee[] = [];
@@ -56,7 +72,17 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
         
         // Extract attendee name from CN if available
         const cnMatch = fullLine.match(/CN=([^;:]+)/);
-        const name = cnMatch ? cnMatch[1].trim() : email.split('@')[0];
+        let name = cnMatch ? cnMatch[1].trim() : '';
+        
+        // If no name found, try to get it from the description or use email username
+        if (!name || name === '') {
+          name = emailsFromDescription[email] || email.split('@')[0];
+        }
+        
+        // Format name - capitalize first letter of each part
+        name = name.split(/[\s._-]+/).map(part => 
+          part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+        ).join(' ');
         
         // Extract attendee role
         const roleMatch = fullLine.match(/ROLE=([^;:]+)/);
@@ -109,7 +135,17 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
             
             // Extract other attendee info if available
             const cnMatch = line.match(/CN=([^;:]+)/);
-            const name = cnMatch ? cnMatch[1].trim() : email.split('@')[0];
+            let name = cnMatch ? cnMatch[1].trim() : '';
+            
+            // If no name found, try to get it from the description or use email username
+            if (!name || name === '') {
+              name = emailsFromDescription[email] || email.split('@')[0];
+            }
+            
+            // Format name - capitalize first letter of each part
+            name = name.split(/[\s._-]+/).map(part => 
+              part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+            ).join(' ');
             
             const roleMatch = line.match(/ROLE=([^;:]+)/);
             const role = roleMatch ? roleMatch[1].trim() : 'Attendee';
@@ -148,12 +184,20 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
               const email = mailtoMatch[1].trim();
               console.log(`ATTENDEE DEBUG: Found email via mailto search: ${email}`);
               
+              // Get name either from description or email
+              let name = emailsFromDescription[email] || email.split('@')[0];
+              
+              // Format name - capitalize first letter of each part
+              name = name.split(/[\s._-]+/).map(part => 
+                part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+              ).join(' ');
+              
               mailtoMatches.push({
                 id: `attendee-mailto-${mailtoMatches.length}-${Date.now()}`,
                 email,
-                name: email.split('@')[0],
+                name,
                 role: 'Attendee',
-                status: 'Unknown'
+                status: 'Needs Action'
               });
             }
             
