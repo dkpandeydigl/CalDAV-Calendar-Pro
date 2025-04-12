@@ -860,7 +860,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       const start = new Date(`${startDate}T${startTime || '00:00'}`);
       const end = new Date(`${endDate}T${endTime || '23:59'}`);
       
-      if (end < start) {
+      // For same-day events with end time before start time, we'll auto-adjust to next day when submitting
+      // so we should only show the validation error if different days are explicitly chosen and end is still before start
+      if (end < start && startDate !== endDate) {
         newErrors.endDate = 'End date/time must be after start date/time';
       }
     }
@@ -1102,9 +1104,19 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           
           // Create the end time on the same date as the start date if user didn't change the date
           if (startDate === endDate) {
-            // Use the same date components as the start date
+            // Use the same date components as the start date initially
             endDateTime = new Date(startYear, startMonth - 1, startDay, endHour, endMinute);
-            console.log(`[CRITICAL DATE DEBUG] Using the same date for end time (single-day event)`);
+            
+            // AUTOMATIC NEXT-DAY ADJUSTMENT:
+            // If end time is earlier in the day than start time, automatically adjust to next day
+            // This matches the behavior of Google Calendar and Outlook
+            if (endDateTime < startDateTime) {
+              // End time is earlier than start time on the same day, move to next day
+              endDateTime.setDate(endDateTime.getDate() + 1);
+              console.log(`[CRITICAL DATE DEBUG] Automatically adjusted end date to next day for overnight event`);
+            } else {
+              console.log(`[CRITICAL DATE DEBUG] Using the same date for end time (single-day event)`);
+            }
           } else {
             // Different dates selected, use end date as specified
             endDateTime = new Date(endYear, endMonth - 1, endDay, endHour, endMinute);
