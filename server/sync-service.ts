@@ -738,7 +738,9 @@ export class SyncService {
       let recurrenceRule: string | undefined = undefined;
       if (event.rrule) {
         if (typeof event.rrule === 'string') {
-          recurrenceRule = event.rrule;
+          // Make sure RRULE doesn't contain attendee information (a common corruption)
+          const sanitizedRrule = this.sanitizeRRULE(event.rrule);
+          recurrenceRule = sanitizedRrule;
         } else if (event.rrule && typeof event.rrule === 'object') {
           // Try to extract the original RRULE string
           recurrenceRule = event.rrule.toString();
@@ -746,7 +748,8 @@ export class SyncService {
           if (recurrenceRule && !recurrenceRule.startsWith('FREQ=')) {
             const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
             if (rruleMatch && rruleMatch[1]) {
-              recurrenceRule = rruleMatch[1];
+              // Sanitize the extracted RRULE
+              recurrenceRule = this.sanitizeRRULE(rruleMatch[1]);
               console.log(`Extracted RRULE from raw ICS data: ${recurrenceRule}`);
             }
           }
@@ -755,7 +758,8 @@ export class SyncService {
         // If node-ical failed to parse the RRULE, try to extract it from raw data
         const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
         if (rruleMatch && rruleMatch[1]) {
-          recurrenceRule = rruleMatch[1];
+          // Sanitize the extracted RRULE
+          recurrenceRule = this.sanitizeRRULE(rruleMatch[1]);
           console.log(`Extracted RRULE from raw ICS data (fallback): ${recurrenceRule}`);
         }
       }
@@ -938,6 +942,59 @@ export class SyncService {
       inProgress: job.running,
       autoSync: job.autoSync
     };
+  }
+
+  /**
+   * Sanitize a RRULE string by removing any non-recurrence data that might have been incorrectly added
+   * This helps fix corrupted RRULE properties that might contain email addresses or other invalid data
+   * @param rrule The possibly corrupted RRULE string
+   * @returns A cleaned RRULE string containing only valid recurrence parameters
+   */
+  private sanitizeRRULE(rrule: string): string {
+    if (!rrule) return '';
+    
+    try {
+      // If it's already an object in string form, parse it and let our formatter handle it
+      if (rrule.startsWith('{') && rrule.endsWith('}')) {
+        try {
+          return icalUtils.formatRecurrenceRule(rrule);
+        } catch (e) {
+          console.error("Error parsing recurrence rule JSON:", e);
+        }
+      }
+      
+      // If we have a clean RRULE, return it directly
+      if (rrule.startsWith('FREQ=') && !rrule.includes('mailto:')) {
+        return rrule;
+      }
+      
+      // Extract just the valid RRULE parameters
+      const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST'];
+      const parts = rrule.split(';');
+      
+      const validParts = parts.filter(part => {
+        const paramName = part.split('=')[0];
+        return validParams.includes(paramName);
+      });
+      
+      // If we have valid parts, join them back
+      if (validParts.length > 0) {
+        return validParts.join(';');
+      }
+      
+      // If nothing was valid, check if there's a FREQ parameter we can extract
+      const freqMatch = rrule.match(/FREQ=([^;]+)/i);
+      if (freqMatch) {
+        return `FREQ=${freqMatch[1]}`;
+      }
+      
+      // If all else fails, return an empty string
+      console.warn(`Could not sanitize RRULE: ${rrule}, returning empty string`);
+      return '';
+    } catch (e) {
+      console.error(`Error sanitizing RRULE: ${e}`);
+      return '';
+    }
   }
 
   /**
