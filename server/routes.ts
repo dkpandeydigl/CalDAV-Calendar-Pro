@@ -2202,6 +2202,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Get calendar shares
+  app.get("/api/calendars/:id/shares", isAuthenticated, async (req, res) => {
+    try {
+      const calendarId = parseInt(req.params.id);
+      
+      // Validate that the calendar exists
+      const calendar = await storage.getCalendar(calendarId);
+      
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      // Get the shares for this calendar
+      const shares = await storage.getCalendarSharing(calendarId);
+      
+      // Return the shares
+      res.setHeader('Content-Type', 'application/json');
+      return res.json(shares);
+    } catch (err) {
+      console.error("Error fetching calendar shares:", err);
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(500).json({ message: "Failed to fetch calendar shares" });
+    }
+  });
+  
   // Individual calendar sharing API
   app.post("/api/calendars/:id/shares", isAuthenticated, async (req, res) => {
     try {

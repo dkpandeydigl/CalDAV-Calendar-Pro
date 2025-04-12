@@ -150,10 +150,12 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
   const loadCalendarShares = async (calendarId: number) => {
     if (!calendarId) return;
     
+    console.log(`Loading shares for calendar ID ${calendarId}`);
     setLoadingShares(prev => ({ ...prev, [calendarId]: true }));
     
     try {
       const shares = await getCalendarShares(calendarId);
+      console.log(`Retrieved ${shares.length} shares for calendar ID ${calendarId}:`, shares);
       setCalendarShares(prev => ({ ...prev, [calendarId]: shares }));
     } catch (error) {
       console.error(`Failed to load shares for calendar ID ${calendarId}:`, error);
@@ -166,9 +168,18 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
   // When a calendar is selected in the management tab, load its shares
   useEffect(() => {
     if (activeCalendarId) {
+      console.log(`Loading shares for calendar ID ${activeCalendarId} (trigger from useEffect)`);
       loadCalendarShares(activeCalendarId);
     }
   }, [activeCalendarId]);
+  
+  // Force the component to show shares when switching to the manage tab
+  const handleTabChange = (value: string) => {
+    if (value === 'manage' && activeCalendarId) {
+      console.log(`Re-loading shares for calendar ID ${activeCalendarId} (from tab change)`);
+      loadCalendarShares(activeCalendarId);
+    }
+  };
   
   // Handle removing a calendar share
   const handleRemoveShare = async (calendarId: number, shareId: number) => {
