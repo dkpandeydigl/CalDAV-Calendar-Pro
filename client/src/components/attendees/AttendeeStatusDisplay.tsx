@@ -195,8 +195,8 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
     setStatusDialogOpen(true);
   };
   
-  // Display up to 4 attendees in the main view
-  const displayedAttendees = processedAttendees.slice(0, 4);
+  // Display up to 3 attendees in the main view
+  const displayedAttendees = processedAttendees.slice(0, 3);
   
   // Main component render
   return (
@@ -359,7 +359,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
               </div>
             </li>
           ))}
-          {processedAttendees.length > 4 && (
+          {processedAttendees.length > 3 && (
             <li className="p-2 bg-muted/20">
               <Button 
                 variant="ghost" 

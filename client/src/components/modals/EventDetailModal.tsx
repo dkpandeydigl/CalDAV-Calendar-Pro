@@ -96,13 +96,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // State hooks - always place ALL hooks at the top level before any conditional logic
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [resourcesDialogOpen, setResourcesDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [showAllAttendees, setShowAllAttendees] = useState(false); // For attendee display limit
-  const [showAllResources, setShowAllResources] = useState(false); // For resource display limit
+  const [showAllResources, setShowAllResources] = useState(false); // For resource display limit (unused now - using dialog instead)
   // Section expansion has been removed in favor of always showing scrollable content
   
   // Add a timeout to prevent infinite loading state
@@ -592,10 +593,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   
                   // Display resources if we have any
                   if (resourceCount > 0) {
-                    // Display only 2 resources by default unless "show all" is clicked
-                    const displayResources = showAllResources 
-                      ? extractedResources 
-                      : extractedResources.slice(0, 2);
+                    // Display only 2 resources by default, with dialog for viewing all
+                    const displayResources = extractedResources.slice(0, 2);
                     
                     return (
                       <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 shadow-sm">
@@ -638,22 +637,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         </div>
                         
                         {/* Show the View All Resources button if there are more than 2 resources */}
-                        {resourceCount > 2 && !showAllResources && (
+                        {resourceCount > 2 && (
                           <button 
-                            onClick={() => setShowAllResources(true)}
+                            onClick={() => setResourcesDialogOpen(true)}
                             className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
                           >
                             Show all {resourceCount} resources
-                          </button>
-                        )}
-                        
-                        {/* Show Less button when viewing all resources */}
-                        {showAllResources && resourceCount > 2 && (
-                          <button 
-                            onClick={() => setShowAllResources(false)}
-                            className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
-                          >
-                            Show less
                           </button>
                         )}
                       </div>
@@ -683,10 +672,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         
                         // Get all attendees from processed attendees
                         if (attendeeCount > 0) {
-                          // Display up to 4 attendees by default, or all if "show all" is clicked
+                          // Display up to 3 attendees by default, or all if "show all" is clicked
                           const displayAttendees = showAllAttendees 
                             ? processedAttendees 
-                            : processedAttendees.slice(0, 4);
+                            : processedAttendees.slice(0, 3);
                             
                           return (
                             <>
@@ -1003,6 +992,63 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               className="bg-amber-500 hover:bg-amber-600 text-white"
             >
               {isCancelling ? 'Sending Cancellations...' : 'Send Cancellation & Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Resources Dialog */}
+      <Dialog open={resourcesDialogOpen} onOpenChange={setResourcesDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="text-amber-600 h-5 w-5" />
+              Resources ({resources.length})
+            </DialogTitle>
+            <DialogDescription>
+              All resources booked for this event
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {resources.map((resource: any, index: number) => {
+                // Get resource name/email/type from various possible formats
+                const name = resource.name || resource.adminName || 'Resource';
+                const email = resource.email || resource.adminEmail || '';
+                const type = resource.type || resource.subType || '';
+                const capacity = resource.capacity || '';
+                
+                return (
+                  <div key={index} className="flex items-start bg-white p-3 rounded-md border border-amber-100">
+                    {type.toLowerCase().includes('proj') ? (
+                      <VideoIcon className="text-amber-500 mr-2 h-5 w-5 mt-0.5" />
+                    ) : type.toLowerCase().includes('room') ? (
+                      <DoorClosed className="text-blue-500 mr-2 h-5 w-5 mt-0.5" />
+                    ) : type.toLowerCase().includes('laptop') || type.toLowerCase().includes('computer') ? (
+                      <Laptop className="text-green-500 mr-2 h-5 w-5 mt-0.5" />
+                    ) : (
+                      <Wrench className="text-neutral-500 mr-2 h-5 w-5 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="font-medium">{name}</div>
+                      <div className="text-xs text-amber-700">
+                        {type || 'General Resource'}
+                        {capacity && ` • Capacity: ${capacity}`}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Admin: {email}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResourcesDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
