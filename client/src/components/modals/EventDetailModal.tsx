@@ -18,53 +18,22 @@ import AttendeeResponseForm from '../attendees/AttendeeResponseForm';
 import AttendeeStatusDisplay from '../attendees/AttendeeStatusDisplay';
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
-// since they come from dynamic sources. Instead we'll do runtime checks.
-
-/**
- * Helper function to sanitize and process description content for display
- * Handles both HTML and plain text descriptions from different CalDAV clients
- */
 function sanitizeDescriptionForDisplay(description: string | any): string {
   if (!description) return '';
   
-  // If it's not a string, try to convert it
-  if (typeof description !== 'string') {
-    try {
-      description = JSON.stringify(description);
-    } catch (e) {
-      description = String(description);
-    }
-  }
-  
-  // Check if this is an HTML description (has HTML tags)
-  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(description);
-  
-  if (hasHtmlTags) {
-    // It's already HTML content, return as is
+  // If it's already a string, return it
+  if (typeof description === 'string') {
     return description;
   }
   
-  // Check if it has line breaks that should be converted to <br> tags
-  if (description.includes('\\n') || description.includes('\n')) {
-    // Convert escape sequences and line breaks to HTML
-    return description
-      .replace(/\\n/g, '<br>')
-      .replace(/\n/g, '<br>')
-      .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+  // If it's some other type of object, try to stringify it
+  try {
+    return JSON.stringify(description);
+  } catch (e) {
+    return String(description);
   }
-  
-  // Plain text - escape HTML characters and preserve spaces
-  return description
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-    .replace(/  /g, '&nbsp;&nbsp;');
 }
 
-// Define a User interface that matches the schema with email
-// Based on shared/schema.ts where email is text("email") (optional)
 interface UserWithEmail {
   id: number;
   username: string;
@@ -80,1325 +49,279 @@ interface EventDetailModalProps {
   onEdit: () => void;
 }
 
-const EventDetailModal: React.FC<EventDetailModalProps> = ({ 
-  open, 
-  event, 
-  onClose,
-  onEdit
-}) => {
-  // Hook calls - all must be at the top level
-  const { calendars } = useCalendars();
-  const { deleteEvent, cancelEvent } = useCalendarEvents();
-  const { getCalendarPermission } = useCalendarPermissions();
-  const { user, isLoading: isUserLoadingFromAuth } = useAuth();
-  const queryClient = useQueryClient();
-  
-  // State hooks - always place ALL hooks at the top level before any conditional logic
+export default function EventDetailModal({ open, event, onClose, onEdit }: EventDetailModalProps) {
+  const { user } = useAuth();
+  const { data: calendars } = useCalendars();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
-  const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-  // Section expansion has been removed in favor of always showing scrollable content
+  const [emailPreviewDialogOpen, setEmailPreviewDialogOpen] = useState(false);
+  const [resources, setResources] = useState<any[]>([]);
+  const [attendees, setAttendees] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState("details");
+  const [initialAttendeeEmail, setInitialAttendeeEmail] = useState<string | null>(null);
+  const [attendeeListExpanded, setAttendeeListExpanded] = useState(false);
   
-  // Add a timeout to prevent infinite loading state
+  const queryClient = useQueryClient();
+  const { deleteEvent } = useCalendarEvents();
+  const { hasCreatePermission, hasModifyPermission } = useCalendarPermissions();
+  
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    
-    if (isUserLoadingFromAuth) {
-      setIsUserLoading(true);
-      timeoutId = setTimeout(() => {
-        // Force loading to end after 2 seconds to prevent UI getting stuck
-        setIsUserLoading(false);
-        console.log("Auth loading timeout - forcing UI to proceed with available permissions");
-      }, 2000);
-    } else {
-      setIsUserLoading(isUserLoadingFromAuth);
-    }
-    
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
-  }, [isUserLoadingFromAuth]);
-  
-  // If event is null, show an error state
-  if (!event) {
-    return (
-      <Dialog open={open} onOpenChange={open => !open && onClose()}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Error</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p>Unable to load event details.</p>
-          </div>
-          <DialogFooter>
-            <Button onClick={onClose}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
-  }
-
-  // Parse the event data
-  const calendarMetadata = event.rawData as any || {};
-  const calendarName = calendarMetadata?.calendarName;
-  const calendarColor = calendarMetadata?.calendarColor;
-  const calendar = calendars.find(cal => cal.id === event.calendarId);
-  
-  // Get permissions in a safe way
-  const permissions = event.calendarId ? getCalendarPermission(event.calendarId) : { canEdit: false, isOwner: false };
-  const canEdit = permissions.canEdit;
-  const isOwner = permissions.isOwner;
-  
-  // For events in user's own calendars, always allow edit
-  // First check direct match
-  let isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
-  
-  // Special handling for DK Pandey (user ID 4) - consider all events in his calendar as his own
-  // This is specifically requested by the client to restore critical functionality
-  if (!isUsersOwnCalendar && calendar && user?.id === 4) {
-    // For DK Pandey, if it's his calendar, force isUsersOwnCalendar = true
-    if (
-      calendar.name.toLowerCase().includes('d k pandey') || 
-      calendar.name.toLowerCase().includes('pandey')
-    ) {
-      console.log('Calendar ownership granted to DK Pandey via special case');
-      isUsersOwnCalendar = true;
-    }
-  }
-  
-  // Second check: if the event has organizer information that matches the current user
-  if (!isUsersOwnCalendar && event.rawData && user) {
-    try {
-      const rawData = typeof event.rawData === 'string' 
-        ? JSON.parse(event.rawData) 
-        : event.rawData;
-        
-      // Look for organizer info in the raw data
-      if (rawData && typeof rawData === 'object') {
-        const organizerEmail = rawData.organizer?.email || 
-                              rawData.ORGANIZER?.email ||
-                              rawData.organizer || 
-                              rawData.ORGANIZER;
-                              
-        // If we found organizer info, check if it matches the current user
-        if (organizerEmail && typeof organizerEmail === 'string') {
-          const emailLower = organizerEmail.toLowerCase();
-          const usernameLower = user.username.toLowerCase();
-          const userEmailLower = (user as any).email?.toLowerCase() || '';
-          
-          if (emailLower === usernameLower || emailLower === userEmailLower) {
-            console.log(`Calendar ownership detected via organizer email match: ${emailLower}`);
-            isUsersOwnCalendar = true;
-          }
+    if (event?.description) {
+      try {
+        // Extract resources from the description if available
+        const resourceData = DirectResourceExtractor({ rawData: event.description });
+        if (resourceData && resourceData.length > 0) {
+          setResources(resourceData);
+        } else {
+          setResources([]);
         }
+        
+        // Extract attendees from the description if available
+        const attendeeData = DirectAttendeeExtractor({ rawData: event.description });
+        if (attendeeData && attendeeData.length > 0) {
+          setAttendees(attendeeData);
+        } else {
+          setAttendees([]);
+        }
+      } catch (error) {
+        console.error("Error parsing event description data:", error);
       }
-    } catch (e) {
-      console.warn('Error parsing event raw data for organizer info:', e);
+    } else {
+      setResources([]);
+      setAttendees([]);
     }
-  }
+    
+    // Reset the expanded state whenever the modal is opened
+    setAttendeeListExpanded(false);
+    
+  }, [event]);
   
-  // Check if this event is from a shared calendar with edit permissions
-  // Use the currentUser ID for proper cache key
-  const currentUser = queryClient.getQueryData<any>(['/api/user']);
-  const currentUserId = currentUser?.id;
+  // Determine if the current user is an attendee
+  useEffect(() => {
+    if (user && user.email && attendees.length > 0) {
+      const userAttendee = attendees.find(
+        (att) => att.email && att.email.toLowerCase() === user.email?.toLowerCase()
+      );
+      
+      if (userAttendee) {
+        setInitialAttendeeEmail(userAttendee.email);
+      } else {
+        setInitialAttendeeEmail(null);
+      }
+    } else {
+      setInitialAttendeeEmail(null);
+    }
+  }, [attendees, user]);
   
-  // Get shared calendars from the cache using proper query key with user ID
-  const sharedCalendars = queryClient.getQueryData<any[]>(['/api/shared-calendars', currentUserId]);
+  if (!open || !event) return null;
   
-  const isFromSharedCalendarWithEditPermission = 
-    calendarMetadata?.isShared === true && 
-    event.calendarId && 
-    sharedCalendars?.some?.(
-      cal => cal.id === event.calendarId && cal.permission === 'edit'
-    );
+  const calendarOfEvent = calendars?.find(cal => cal.id === event.calendarId);
   
-  console.log(`Event ${event.id} permission check:`, {
-    isUsersOwnCalendar,
-    canEdit,
-    isOwner,
-    isFromSharedCalendarWithEditPermission,
-    calendarMetadata
-  });
+  const handleDelete = async () => {
+    if (event) {
+      try {
+        await deleteEvent.mutateAsync(event.id);
+        setDeleteDialogOpen(false);
+        onClose();
+        // Invalidate the events query to refresh the list
+        queryClient.invalidateQueries({ queryKey: ['/api/calendars', event.calendarId, 'events'] });
+      } catch (error) {
+        console.error('Error deleting event:', error);
+      }
+    }
+  };
   
-  const effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner || isFromSharedCalendarWithEditPermission;
+  const canModifyEvent = calendarOfEvent ? hasModifyPermission(calendarOfEvent) : false;
   
-  // Only show auth error if we don't have user info AND don't have calendar data
-  // If we have calendar data, assume server session is valid even if client-side auth state is missing
-  const isAuthError = !isUserLoading && !user && !calendar;
-  
-  // Parse dates safely
+  // Determine the date/time display for the event
   let startDate: Date;
   let endDate: Date;
   
   try {
     startDate = new Date(event.startDate);
     endDate = new Date(event.endDate);
-    
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      console.error(`Invalid event dates for "${event.title}"`);
-      startDate = new Date();
-      endDate = new Date();
-      endDate.setHours(endDate.getHours() + 1);
-    }
   } catch (error) {
-    console.error(`Error parsing dates for event "${event.title}":`, error);
+    console.error("Error parsing event dates:", error);
     startDate = new Date();
     endDate = new Date();
-    endDate.setHours(endDate.getHours() + 1);
   }
-  
-  // Parse and extract attendees from raw data if needed
-  const extractAttendeesFromRawData = () => {
-    if (!event.rawData) return [];
-    
-    try {
-      // First, try to parse the raw data as JSON
-      let rawData;
-      
-      if (typeof event.rawData === 'string') {
-        try {
-          rawData = JSON.parse(event.rawData);
-        } catch (e) {
-          // If it can't be parsed as JSON, it might be a raw iCalendar string
-          // Look for attendee lines in iCalendar format
-          const attendeeRegex = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
-          const matches = event.rawData.match(attendeeRegex);
-          
-          if (matches && matches.length > 0) {
-            console.log(`Found ${matches.length} attendee lines in raw iCalendar data`);
-            
-            return matches.map(line => {
-              const emailMatch = line.match(/mailto:([^>\r\n]+)/);
-              const email = emailMatch ? emailMatch[1].trim() : '';
-              
-              const nameMatch = line.match(/CN=([^;:]+)/);
-              const name = nameMatch ? nameMatch[1].trim() : '';
-              
-              const roleMatch = line.match(/ROLE=([^;:]+)/);
-              const role = roleMatch ? roleMatch[1].trim() : '';
-              
-              const isResource = line.includes('CUTYPE=RESOURCE');
-              
-              return {
-                email,
-                name: name || email,
-                role,
-                isResource
-              };
-            }).filter(attendee => !attendee.isResource && attendee.email);
-          }
-          
-          return []; // No attendees found in iCalendar format
-        }
-      } else {
-        // It's already an object
-        rawData = event.rawData;
-      }
-      
-      if (rawData && typeof rawData === 'object') {
-        // Check for attendees in various possible formats
-        const attendeesInRaw = rawData.attendees || rawData.ATTENDEE || rawData.ATTENDEES;
-        
-        if (attendeesInRaw) {
-          if (Array.isArray(attendeesInRaw)) {
-            return attendeesInRaw;
-          } else if (typeof attendeesInRaw === 'string') {
-            try {
-              // It might be a stringified array
-              return JSON.parse(attendeesInRaw);
-            } catch (e) {
-              // It's a single attendee as string
-              return [{ email: attendeesInRaw }];
-            }
-          } else {
-            // It's a single attendee object
-            return [attendeesInRaw];
-          }
-        }
-      }
-      
-      return []; // No attendees found
-    } catch (e) {
-      console.warn('Error extracting attendees from raw data:', e);
-      return [];
-    }
-  };
-  
-  // Parse and extract resources from raw data if needed
-  const extractResourcesFromRawData = () => {
-    if (!event) return [];
-    
-    console.log('RESOURCE DEBUG - Extracting resources from event:', event.title);
-    
-    try {
-      // DIRECT EXTRACTION FROM VCALENDAR DATA
-      // This is the most reliable method as it works with the raw iCalendar data
-      if (event.rawData && typeof event.rawData === 'string') {
-        const rawDataStr = event.rawData;
-        console.log('RESOURCE DEBUG - Raw data available, length:', rawDataStr.length);
-        
-        // Use a simple regex to find any ATTENDEE lines containing CUTYPE=RESOURCE
-        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
-        const matches = [...rawDataStr.matchAll(resourceRegex)];
-        
-        if (matches && matches.length > 0) {
-          console.log(`RESOURCE DEBUG - Found ${matches.length} resource matches in raw data:`, matches);
-          
-          const extractedResources = matches.map((match, index) => {
-            const fullLine = match[0]; // The complete ATTENDEE line 
-            const email = match[1]; // The captured email group
-            
-            // Extract resource name from CN
-            const cnMatch = fullLine.match(/CN=([^;:]+)/);
-            const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
-            
-            // Extract resource type
-            const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
-            const resourceType = typeMatch ? typeMatch[1].trim() : '';
-            
-            const resource = {
-              id: `resource-${index}-${Date.now()}`,
-              adminEmail: email,
-              adminName: name,
-              subType: resourceType,
-              capacity: 1
-            };
-            
-            console.log(`RESOURCE DEBUG - Extracted resource: ${name}, email: ${email}, type: ${resourceType}`);
-            return resource;
-          });
-          
-          if (extractedResources.length > 0) {
-            console.log('RESOURCE DEBUG - Successfully extracted resources from raw VCALENDAR data', extractedResources);
-            return extractedResources;
-          }
-        } else {
-          console.log('RESOURCE DEBUG - No resource matches found in raw data');
-        }
-      }
-      
-      // FALLBACK 1: Check already parsed resources
-      if (event.resources) {
-        console.log('RESOURCE DEBUG - Checking event.resources:', event.resources);
-        
-        if (typeof event.resources === 'string') {
-          try {
-            const parsedResources = JSON.parse(event.resources);
-            if (Array.isArray(parsedResources) && parsedResources.length > 0) {
-              console.log('RESOURCE DEBUG - Successfully parsed resources from JSON string');
-              return parsedResources;
-            }
-          } catch (e) {
-            console.warn('RESOURCE DEBUG - Failed to parse resources JSON:', e);
-          }
-        } else if (Array.isArray(event.resources) && event.resources.length > 0) {
-          console.log('RESOURCE DEBUG - Using existing resources array');
-          return event.resources;
-        }
-      }
-      
-      // FALLBACK 2: Try one last time with manual regex on the title
-      // This is very hacky but can catch resources mentioned in the title
-      if (event.title && event.title.toLowerCase().includes('resource')) {
-        console.log('RESOURCE DEBUG - Trying to extract resources from title');
-        const match = event.title.match(/resource\s*[:,-]?\s*([^,]+)/i);
-        if (match && match[1]) {
-          const resourceName = match[1].trim();
-          console.log(`RESOURCE DEBUG - Extracted potential resource from title: ${resourceName}`);
-          return [{
-            id: `resource-title-${Date.now()}`,
-            adminName: resourceName,
-            adminEmail: '',
-            subType: '',
-            capacity: 1
-          }];
-        }
-      }
-    } catch (error) {
-      console.error('RESOURCE DEBUG - Error extracting resources:', error);
-    }
-    
-    console.log('RESOURCE DEBUG - No resources found');
-    return [];
-  };
-  
-  // Process attendees data
-  const processedAttendees = (() => {
-    // First check if we already have parsed attendees
-    if (event.attendees) {
-      if (typeof event.attendees === 'string') {
-        try {
-          const parsedAttendees = JSON.parse(event.attendees);
-          if (Array.isArray(parsedAttendees) && parsedAttendees.length > 0) {
-            return parsedAttendees;
-          }
-        } catch (e) {
-          console.warn('Failed to parse attendees JSON:', e);
-        }
-      } else if (Array.isArray(event.attendees) && event.attendees.length > 0) {
-        return event.attendees;
-      }
-    }
-    
-    // If we don't have attendees yet, try to extract them from raw data
-    return extractAttendeesFromRawData();
-  })();
-  
-  // Process resources data
-  const processedResources = (() => {
-    // First check if we already have parsed resources
-    if (event.resources) {
-      if (typeof event.resources === 'string') {
-        try {
-          const parsedResources = JSON.parse(event.resources);
-          if (Array.isArray(parsedResources) && parsedResources.length > 0) {
-            return parsedResources;
-          }
-        } catch (e) {
-          console.warn('Failed to parse resources JSON:', e);
-        }
-      } else if (Array.isArray(event.resources) && event.resources.length > 0) {
-        return event.resources;
-      }
-    }
-    
-    // If we don't have resources yet, try to extract them from raw data
-    return extractResourcesFromRawData();
-  })();
-  
-  console.log('Raw resources data:', event.resources);
-  console.log('Parsed resources:', processedResources);
-  
-  // Check if event has attendees
-  const hasAttendees = processedAttendees.length > 0;
-  
-  // Check if event has resources
-  const hasResources = processedResources.length > 0;
-
-  // Determine if the event should show a Cancel Event button
-  // We want to show this button for ANY of these cases:
-  // 1. User is DK Pandey (ID 4) and viewing ANY event with attendees/resources (per client request)
-  // 2. The event belongs to user's own calendar AND has attendees/resources
-  // 3. User has edit permissions for this calendar AND the event has attendees/resources
-  
-  let shouldShowCancelButton = false;
-  
-  // Special case for DK Pandey (USER ID 4) - allow cancelling any events with attendees
-  if (user?.id === 4 && (hasAttendees || hasResources)) {
-    shouldShowCancelButton = true;
-    console.log('Cancel button enabled for DK Pandey via special case');
-  }
-  // Standard case: user owns the event and it has attendees or resources
-  else if (isUsersOwnCalendar && (hasAttendees || hasResources)) {
-    shouldShowCancelButton = true;
-    console.log('Cancel button enabled: User owns calendar and event has attendees/resources');
-  }
-  // User has edit permissions and event has attendees/resources
-  else if (effectiveCanEdit && (hasAttendees || hasResources)) {
-    shouldShowCancelButton = true;
-    console.log('Cancel button enabled: User has edit permissions and event has attendees/resources');
-  }
-  
-  console.log('Cancel button check:', { 
-    shouldShowCancelButton, 
-    isDKPandey: user?.id === 4,
-    hasAttendees, 
-    hasResources,
-    isUsersOwnCalendar,
-    effectiveCanEdit
-  });
-  
-  // Handle delete event
-  const handleDelete = async () => {
-    if (!event) return;
-    
-    // Clear any previous errors
-    setDeleteError(null);
-    
-    try {
-      setIsDeleting(true);
-      
-      // Call the delete mutation
-      await deleteEvent(event.id);
-      
-      // Force UI refresh after successful deletion
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      
-      if (event.calendarId) {
-        queryClient.invalidateQueries({ 
-          queryKey: ['/api/calendars', event.calendarId, 'events'] 
-        });
-      }
-      
-      // Close dialogs and cleanup
-      setIsDeleting(false);
-      setDeleteDialogOpen(false);
-      onClose();
-    } catch (error) {
-      console.error(`Error during delete: ${(error as Error).message}`);
-      
-      // Show the error in the alert dialog
-      setDeleteError((error as Error).message || 'Failed to delete event');
-      setIsDeleting(false);
-      
-      // We don't close dialogs on error so user can retry
-    }
-  };
-  
-  // Handle cancel event with notifications
-  const handleCancel = async () => {
-    if (!event) return;
-    
-    // Clear any previous errors
-    setCancelError(null);
-    
-    try {
-      setIsCancelling(true);
-      
-      // Call the cancel mutation
-      await cancelEvent(event.id);
-      
-      // Force UI refresh after successful cancellation
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      
-      if (event.calendarId) {
-        queryClient.invalidateQueries({ 
-          queryKey: ['/api/calendars', event.calendarId, 'events'] 
-        });
-      }
-      
-      // Close dialogs and cleanup
-      setIsCancelling(false);
-      setCancelDialogOpen(false);
-      onClose();
-    } catch (error) {
-      console.error(`Error during cancel: ${(error as Error).message}`);
-      
-      // Show the error in the dialog
-      setCancelError((error as Error).message || 'Failed to cancel event');
-      setIsCancelling(false);
-      
-      // We don't close dialogs on error so user can retry
-    }
-  };
   
   return (
     <>
-      <Dialog open={open} onOpenChange={open => !open && onClose()}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <div className="flex justify-between items-center">
-              <DialogTitle>
-                Event Details
-                {isUserLoading && (
-                  <span className="ml-2 inline-block w-4 h-4 rounded-full border-2 border-t-transparent border-primary animate-spin" />
-                )}
-              </DialogTitle>
-              {isUserLoading ? (
-                <div className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-secondary">
-                  Loading...
-                </div>
-              ) : !(isUsersOwnCalendar || effectiveCanEdit) ? (
-                <div className="text-xs text-muted-foreground px-2 py-1 rounded-full bg-secondary">
-                  View only
-                </div>
-              ) : null}
-            </div>
+            <DialogTitle className="text-xl font-bold">{event.title || "Untitled Event"}</DialogTitle>
           </DialogHeader>
           
-          <div className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between">
-                <h1 className="text-xl font-semibold" title={event.title.length > 30 ? event.title : undefined}>
-                  {event.title.length > 30 ? `${event.title.substring(0, 30)}...` : event.title}
-                </h1>
-                
-                {/* Sync status indicator */}
-                {event.syncStatus && (
-                  <div 
-                    className={`text-xs px-2 py-1 rounded-full ${
-                      event.syncStatus === 'synced' 
-                        ? 'bg-green-100 text-green-800' 
-                        : event.syncStatus === 'syncing' 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : event.syncStatus === 'sync_failed' 
-                            ? 'bg-red-100 text-red-800' 
-                            : 'bg-yellow-100 text-yellow-800'
-                    }`}
-                  >
-                    {event.syncStatus === 'synced' 
-                      ? 'Synced' 
-                      : event.syncStatus === 'syncing' 
-                        ? 'Syncing...' 
-                        : event.syncStatus === 'sync_failed' 
-                          ? 'Sync Failed' 
-                          : 'Local'}
+          <Tabs defaultValue="details" className="mt-4" onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="attendees">Attendees</TabsTrigger>
+              <TabsTrigger value="resources">Resources</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="details" className="pt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  {/* Time & Date */}
+                  <div className="flex items-start space-x-2">
+                    <Clock className="h-5 w-5 text-gray-500 mt-0.5" />
+                    <div>
+                      <h3 className="font-medium">Time & Date</h3>
+                      <p className="text-sm text-gray-700">{formatDayOfWeekDate(startDate)}</p>
+                      <p className="text-sm text-gray-700">{formatEventTimeRange(startDate, endDate)}</p>
+                    </div>
                   </div>
-                )}
-              </div>
-              
-              {/* Show calendar info if available */}
-              {calendar && (
-                <div className="text-sm text-neutral-500 flex items-center">
-                  <span 
-                    className="w-3 h-3 rounded-full mr-2" 
-                    style={{ backgroundColor: calendarColor || calendar.color }}
-                  ></span>
-                  {calendarName || calendar.name} {!calendarName && "Calendar"}
+                  
+                  {/* Location */}
+                  {event.location && (
+                    <div className="flex items-start space-x-2">
+                      <MapPin className="h-5 w-5 text-gray-500 mt-0.5" />
+                      <div>
+                        <h3 className="font-medium">Location</h3>
+                        <p className="text-sm text-gray-700">{event.location}</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Calendar */}
+                  <div className="flex items-start space-x-2">
+                    <Info className="h-5 w-5 text-gray-500 mt-0.5" />
+                    <div>
+                      <h3 className="font-medium">Calendar</h3>
+                      <p className="text-sm text-gray-700">{calendarOfEvent?.name || "Unknown Calendar"}</p>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-            
-            <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-primary/5 to-primary/10 rounded-lg border border-primary/20">
-              <Clock className="text-primary mr-2 bg-white p-1 rounded-md shadow-sm h-5 w-5" />
-              <div>
-                <div className="text-sm font-medium text-primary/90">{formatDayOfWeekDate(startDate)}</div>
-                <div className="text-sm text-primary/80">
-                  {event.allDay 
-                    ? '🕒 All Day' 
-                    : `🕒 ${formatEventTimeRange(startDate, endDate)}`}
-                  {' '}({event.timezone})
-                </div>
-              </div>
-            </div>
-            
-            {event.location && (
-              <div className="flex items-start mb-3 p-2 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
-                <MapPinned className="text-blue-500 mr-2 bg-white p-1 rounded-md shadow-sm h-5 w-5" />
-                <div className="text-sm font-medium text-blue-700">{event.location}</div>
-              </div>
-            )}
-            
-            {event.description && (
-              <div>
-                <div className="text-sm font-medium mb-1">
-                  <span>Description</span>
-                </div>
-                <div 
-                  className="text-sm p-3 bg-neutral-50 rounded-md rich-text-content shadow-inner border border-neutral-200 line-clamp-3 pr-2"
-                  dangerouslySetInnerHTML={{ 
-                    __html: (() => {
-                      if (!event.description) return '';
-                      
-                      const description = String(event.description);
-                      
-                      // Case 1: Thunderbird special JSON-like format with ALTREP
-                      if (description.includes('"ALTREP"') || description.includes('"params"')) {
-                        try {
-                          // Extract the actual content
-                          // Format is typically: ["params":["ALTREP":"data:text/html..."],"val":"actual text"]
-                          
-                          // First try to find the "val" property
-                          const valMatch = description.match(/"val"\s*:\s*"([^"]+)"/);
-                          if (valMatch && valMatch[1]) {
-                            return valMatch[1]
-                              .replace(/\\n/g, '<br>')
-                              .replace(/\\/g, ''); // Remove any remaining backslashes
-                          }
-                          
-                          // Try to extract from ALTREP if val wasn't found
-                          const altrepMatch = description.match(/"ALTREP"\s*:\s*"data:text\/html[^"]*,([^"]+)"/);
-                          if (altrepMatch && altrepMatch[1]) {
-                            // It's URL encoded, so decode it
-                            try {
-                              return decodeURIComponent(altrepMatch[1]);
-                            } catch (e) {
-                              // If decoding fails, just return it as is
-                              return altrepMatch[1];
-                            }
-                          }
-                          
-                          // Fallback - use whatever text is available
-                          const textContent = description
-                            .replace(/["[\]{}]/g, '') // Remove JSON-like symbols
-                            .replace(/params:|ALTREP:|val:/g, '') // Remove JSON keys
-                            .replace(/data:text\/html[^,]*,/g, '') // Remove MIME type info
-                            .trim();
-                            
-                          return textContent;
-                        } catch (e) {
-                          console.error('Error parsing Thunderbird special format:', e);
-                        }
-                      }
-                      
-                      // Case 2: It's already valid HTML with tags
-                      if (description.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
-                        return description;
-                      }
-                      
-                      // Case 3: It has escaped HTML tags (from Thunderbird)
-                      if (description.includes('&lt;') && description.includes('&gt;')) {
-                        // First unescape the HTML entities
-                        const unescaped = description
-                          .replace(/&lt;/g, '<')
-                          .replace(/&gt;/g, '>')
-                          .replace(/&quot;/g, '"')
-                          .replace(/&amp;/g, '&');
-                        
-                        // Check if it now has valid HTML
-                        if (unescaped.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
-                          return unescaped;
-                        }
-                      }
-                      
-                      // Case 4: Plain text with escaped newlines
-                      return description
-                        .replace(/\\n/g, '<br>')
-                        .replace(/\n/g, '<br>');
-                    })()
-                  }}
-                />
-              </div>
-            )}
-            
-            {/* Debug info removed */}
-            
-            {/* Direct Resource Extractor Component - show all resources in detail view */}
-            {typeof event.rawData === 'string' && (
-              <DirectResourceExtractor rawData={event.rawData} isPreview={true} />
-            )}
-            
-            {/* Attendees and Response Section */}
-            <div className="mt-6">
-              <Tabs defaultValue="status" className="w-full">
-                <TabsList className="grid grid-cols-2 mb-4">
-                  <TabsTrigger value="status">Attendee Status</TabsTrigger>
-                  <TabsTrigger value="response">Your Response</TabsTrigger>
-                </TabsList>
                 
-                <TabsContent value="status" className="space-y-4">
-                  {/* Attendee Status Display */}
-                  {(() => {
-                    // Get all attendees from processed attendees
-                    if (processedAttendees.length > 0) {
-                      return (
-                        <AttendeeStatusDisplay 
-                          attendees={processedAttendees} 
-                          isOrganizer={isUsersOwnCalendar}
-                          onTimeProposalAccept={(attendeeEmail, start, end) => {
-                            // This would update the event with the proposed time
-                            console.log('Accepting time proposal from', attendeeEmail, start, end);
-                            // We'd implement this in a future update
+                <div className="space-y-4">
+                  {/* Description */}
+                  <div>
+                    <h3 className="font-medium mb-1">Description</h3>
+                    <div className="text-sm text-gray-700 p-3 bg-gray-50 rounded-md max-h-48 overflow-y-auto">
+                      {event.description ? (
+                        <div 
+                          dangerouslySetInnerHTML={{ 
+                            __html: sanitizeDescriptionForDisplay(event.description)
+                          }} 
+                        />
+                      ) : (
+                        <p className="text-gray-500 italic">No description provided</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="attendees" className="pt-4">
+              <div className="space-y-4">
+                <h3 className="font-medium">Attendees</h3>
+                
+                {attendees.length > 0 ? (
+                  <div>
+                    <AttendeeStatusDisplay 
+                      attendees={attendees}
+                      isExpanded={attendeeListExpanded}
+                      onToggleExpand={() => setAttendeeListExpanded(!attendeeListExpanded)}
+                    />
+                    
+                    {initialAttendeeEmail && (
+                      <div className="mt-6 pt-4 border-t">
+                        <h3 className="font-medium mb-2">Your Response</h3>
+                        <AttendeeResponseForm
+                          eventId={event.id}
+                          attendeeEmail={initialAttendeeEmail}
+                          onResponseSubmitted={() => {
+                            // Refresh the event data to update the attendee status
+                            queryClient.invalidateQueries({ 
+                              queryKey: ['/api/calendars', event.calendarId, 'events'] 
+                            });
                           }}
                         />
-                      );
-                    }
-                    
-                    // If no processed attendees, fall back to raw extraction
-                    return (
-                      <>
-                        <DirectAttendeeExtractor 
-                          rawData={typeof event.rawData === 'string' ? event.rawData : null} 
-                          showMoreCount={10}
-                          isPreview={false}
-                        />
-                        
-                        {/* Legacy fallback for attendee format */}
-                        {(() => {
-                          // Only show this if DirectAttendeeExtractor didn't find anything
-                          if (typeof event.rawData !== 'string') {
-                            const attendees = event.attendees as unknown;
-                            if (attendees && Array.isArray(attendees) && attendees.length > 0) {
-                              return (
-                                <div>
-                                  <div className="text-sm font-medium mb-1">
-                                    <span>Attendees ({attendees.length})</span>
-                                  </div>
-                                  <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                                    <ul className="space-y-2 max-h-[10em] overflow-y-auto pr-2">
-                                      {attendees
-                                        .filter(Boolean)
-                                        // Show all attendees in detail view
-                                        .map((attendee, index) => {
-                                          // Handle both string and object formats
-                                          if (typeof attendee === 'object' && attendee !== null) {
-                                            // Object format with email and role
-                                            const { email, role } = attendee as { email: string; role?: string };
-                                            return (
-                                              <li key={index} className="flex items-start">
-                                                <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
-                                                <div>
-                                                  <div className="font-medium">{email}</div>
-                                                  {role && (
-                                                    <div className="text-xs text-muted-foreground">
-                                                      <span className={`inline-block px-2 py-0.5 rounded ${
-                                                        role === 'Chairman' ? 'bg-red-100 text-red-800' : 
-                                                        role === 'Secretary' ? 'bg-blue-100 text-blue-800' : 
-                                                        'bg-gray-100 text-gray-800'
-                                                      }`}>
-                                                        {role}
-                                                      </span>
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              </li>
-                                            );
-                                          } else {
-                                            // Fallback for string format
-                                            return (
-                                              <li key={index} className="flex items-center">
-                                                <UserIcon className="text-neutral-500 mr-2 h-4 w-4" />
-                                                {String(attendee)}
-                                              </li>
-                                            );
-                                          }
-                                        })}
-                                    </ul>
-                                  </div>
-                                </div>
-                              );
-                            }
-                          }
-                          return null;
-                        })()}
-                      </>
-                    );
-                  })()}
-                </TabsContent>
-                
-                <TabsContent value="response" className="space-y-4">
-                  {/* Attendee Response Form */}
-                  {(() => {
-                    // Only show response form if the current user is an attendee or if the event has attendees
-                    if (user && processedAttendees.length > 0) {
-                      // Check if the current user is an attendee
-                      const userEmail = (user as any).email || user.username;
-                      const isAttendee = processedAttendees.some((attendee: any) => 
-                        (typeof attendee === 'string' && attendee === userEmail) ||
-                        (typeof attendee === 'object' && 
-                         attendee.email && 
-                         attendee.email.toLowerCase() === userEmail.toLowerCase())
-                      );
-                      
-                      // If user is not the organizer and is an attendee, show response form
-                      if (isAttendee && !isUsersOwnCalendar) {
-                        // Find organizer
-                        const organizer = processedAttendees.find((attendee: any) => 
-                          typeof attendee === 'object' && 
-                          attendee.role && 
-                          (attendee.role.toLowerCase() === 'chair' || 
-                           attendee.role.toLowerCase() === 'organizer')
-                        );
-                        
-                        return (
-                          <AttendeeResponseForm
-                            eventId={event.id}
-                            eventTitle={event.title}
-                            eventStart={startDate}
-                            eventEnd={endDate}
-                            organizer={organizer ? {
-                              name: organizer.name,
-                              email: organizer.email
-                            } : undefined}
-                            currentUserEmail={userEmail}
-                            onResponseSuccess={() => {
-                              // Refresh the event data
-                              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-                            }}
-                          />
-                        );
-                      }
-                      
-                      // If user is the organizer, show a message
-                      if (isUsersOwnCalendar) {
-                        return (
-                          <div className="p-4 bg-muted rounded-md">
-                            <p className="text-sm text-muted-foreground">
-                              You are the organizer of this event. You cannot respond to your own event.
-                            </p>
-                          </div>
-                        );
-                      }
-                    }
-                    
-                    // If no attendees or user is not an attendee
-                    return (
-                      <div className="p-4 bg-muted rounded-md">
-                        <p className="text-sm text-muted-foreground">
-                          You are not listed as an attendee for this event.
-                        </p>
                       </div>
-                    );
-                  })()}
-                </TabsContent>
-              </Tabs>
-            </div>
-            
-            {/* Resources section - handle safely with runtime checks */}
-            {(() => {
-              // Advanced handling of resources with enhanced parsing logic
-              let resourcesData = event.resources as unknown;
-              console.log('Raw resources data:', resourcesData);
-              
-              // Handle cases where resources might be deeply nested in JSON strings
-              const parseResourcesData = (data: any): any[] => {
-                if (!data) return [];
-                
-                // If already an array, use it
-                if (Array.isArray(data)) return data;
-                
-                // If it's a string, try to parse it
-                if (typeof data === 'string') {
-                  try {
-                    // First try direct JSON.parse
-                    const parsed = JSON.parse(data);
-                    return Array.isArray(parsed) ? parsed : [parsed];
-                  } catch (e) {
-                    // If that fails, try removing extra quotes (double-escaped JSON)
-                    try {
-                      // Handle double-escaped JSON strings from PostgreSQL or CalDAV server
-                      const cleanedString = data
-                        .replace(/\\"/g, '"')
-                        .replace(/^"|"$/g, '')
-                        .replace(/\\\\/g, '\\');
-                        
-                      try {
-                        const parsed = JSON.parse(cleanedString);
-                        return Array.isArray(parsed) ? parsed : [parsed];
-                      } catch (e3) {
-                        // Try one more level of escaping for deeply nested cases
-                        const deepCleanedString = cleanedString
-                          .replace(/\\\\"/g, '"')
-                          .replace(/\\\"/g, '"');
-                        try {
-                          const parsed = JSON.parse(deepCleanedString);
-                          return Array.isArray(parsed) ? parsed : [parsed];
-                        } catch (e4) {
-                          console.warn('Failed all attempts to parse complex JSON string');
-                          // If it's just a simple string, return it as an item
-                          return [data];
-                        }
-                      }
-                    } catch (e2) {
-                      console.warn('Failed to parse resources string:', e2);
-                      // If it's just a simple string, return it as an item
-                      return [data];
-                    }
-                  }
-                }
-                
-                // If it's an object but not an array, wrap it
-                if (typeof data === 'object' && data !== null) {
-                  return [data];
-                }
-                
-                return [];
-              };
-              
-              // Process the resources data
-              const parsedResources = parseResourcesData(resourcesData);
-              console.log('Parsed resources:', parsedResources);
-              
-              if (parsedResources.length > 0) {
-                return (
-                  <div>
-                    <div className="text-sm font-medium mb-1">
-                      <span>Resources ({parsedResources.length})</span>
-                    </div>
-                    <div className="text-sm p-3 bg-neutral-50 rounded-md shadow-inner border border-neutral-200">
-                      <ul className="space-y-1 pr-2">
-                        {parsedResources
-                          // Show all resources in detail view
-                          .map((resource: any, index) => {
-                          try {
-                            // Parse resource if it's a string that might be JSON
-                            let resourceObj = resource;
-                            if (typeof resource === 'string') {
-                              try {
-                                if (resource.startsWith('{') || resource.startsWith('[')) {
-                                  resourceObj = JSON.parse(resource);
-                                } else if (resource.includes('\\\"') || resource.includes('\\\\')) {
-                                  // Handle escaped JSON strings
-                                  const cleanedString = resource
-                                    .replace(/\\"/g, '"')
-                                    .replace(/^"|"$/g, '')
-                                    .replace(/\\\\/g, '\\');
-                                    
-                                  try {
-                                    resourceObj = JSON.parse(cleanedString);
-                                  } catch (e2) {
-                                    // Try one more level of escaping for deeply nested cases
-                                    const deepCleanedString = cleanedString
-                                      .replace(/\\\\"/g, '"')
-                                      .replace(/\\\"/g, '"');
-                                    try {
-                                      resourceObj = JSON.parse(deepCleanedString);
-                                    } catch (e3) {
-                                      // Keep original
-                                    }
-                                  }
-                                }
-                              } catch (e) {
-                                // Keep as string if parsing fails
-                                console.warn('Failed to parse individual resource JSON:', e);
-                              }
-                            }
-                            
-                            // Check if we have a structured resource object with more flexible criteria
-                            const isResourceObject = 
-                              resourceObj && 
-                              typeof resourceObj === 'object' && 
-                              !Array.isArray(resourceObj) &&
-                              (
-                                // Either has type info
-                                ('subType' in resourceObj || 'type' in resourceObj) ||
-                                // Or admin contact info
-                                ('adminEmail' in resourceObj || 'email' in resourceObj) ||
-                                // Or is a resource with capacity info
-                                ('id' in resourceObj && 'capacity' in resourceObj) ||
-                                // Or has specific resource markers
-                                ('resourceId' in resourceObj || 'resourceType' in resourceObj)
-                              );
-                            
-                            if (isResourceObject) {
-                              // Handle both property naming conventions
-                              const subType = resourceObj.subType || resourceObj.type || 'Resource';
-                              const adminEmail = resourceObj.adminEmail || resourceObj.email || 'No admin email';
-                              const adminName = resourceObj.adminName || resourceObj.name || adminEmail;
-                              const capacity = 
-                                resourceObj.capacity !== undefined 
-                                  ? resourceObj.capacity 
-                                  : 'Not specified';
-                              const remarks = resourceObj.remarks || resourceObj.description || '';
-                              
-                              return (
-                                <li key={index} className="flex items-start mb-2">
-                                  <DoorClosed className="text-neutral-500 mr-2 h-4 w-4" />
-                                  <div>
-                                    <div className="font-medium">{subType}</div>
-                                    <div className="text-xs text-neutral-600">
-                                      Capacity: {capacity}
-                                    </div>
-                                    <div className="text-xs text-neutral-600">
-                                      Administrator: {adminName}
-                                    </div>
-                                    {remarks && (
-                                      <div className="text-xs text-neutral-600 italic mt-1">{remarks}</div>
-                                    )}
-                                  </div>
-                                </li>
-                              );
-                            } else {
-                              // Display simple string resources
-                              const displayValue = typeof resourceObj === 'object' 
-                                ? 'Resource' // Fallback for objects without expected properties
-                                : String(resourceObj);
-                              
-                              return (
-                                <li key={index} className="flex items-center">
-                                  <MapPin className="text-neutral-500 mr-2 h-4 w-4" />
-                                  {displayValue}
-                                </li>
-                              );
-                            }
-                          } catch (error) {
-                            console.error('Error rendering resource:', error);
-                            return (
-                              <li key={index} className="flex items-center">
-                                <AlertTriangle className="text-neutral-500 mr-2 h-4 w-4" />
-                                Error displaying resource
-                              </li>
-                            );
-                          }
-                        })}
-                        {/* Don't show "more resources" indicator in detail view */}
-                        {false && parsedResources.length > 1 && (
-                          <li className="text-xs text-muted-foreground italic text-center py-1">
-                            <span className="bg-slate-200 px-2 py-0.5 rounded-full text-slate-500">
-                              + {parsedResources.length - 1} more resource{parsedResources.length > 2 ? 's' : ''}
-                            </span>
-                          </li>
-                        )}
-                      </ul>
-                    </div>
+                    )}
                   </div>
-                );
-              }
-              return null;
-            })()}
-          </div>
-          
-          <DialogFooter className="flex justify-between space-x-2">
-            <div className="flex space-x-2">
-              {!isUserLoading && (
-                <>
-                  {/* Show Cancel Event button for events with attendees or resources on the user's calendar, or for DK Pandey */}
-                  {shouldShowCancelButton && (
-                    <Button 
-                      variant="outline" 
-                      className="border-amber-200 text-amber-600 hover:bg-amber-50 flex items-center gap-1" 
-                      onClick={() => setCancelDialogOpen(true)}
-                    >
-                      <MailCheck className="h-4 w-4" />
-                      Cancel Event
-                    </Button>
-                  )}
-                  
-                  {/* Only show edit/delete buttons if user has permission */}
-                  {effectiveCanEdit && (
-                    <>
-                      <Button 
-                        variant="outline" 
-                        className="border-red-200 text-red-600 hover:bg-red-50" 
-                        onClick={() => setDeleteDialogOpen(true)}
-                      >
-                        Delete
-                      </Button>
-                      <Button 
-                        variant="outline"
-                        onClick={onEdit}
-                      >
-                        Edit
-                      </Button>
-                    </>
-                  )}
-                </>
-              )}
-              {isUserLoading && (
-                <div className="text-sm text-muted-foreground py-2">
-                  Loading permission information...
-                </div>
-              )}
-              {isAuthError && (
-                <div className="text-sm text-muted-foreground py-2 flex items-center">
-                  <Info className="text-amber-500 mr-1 h-4 w-4" />
-                  <Button 
-                    variant="link" 
-                    className="p-0 h-auto text-primary hover:text-primary/80 font-normal"
-                    onClick={() => {
-                      onClose();
-                      window.location.href = '/auth';
-                    }}
-                  >
-                    Log in to edit events
-                  </Button>
-                </div>
-              )}
-            </div>
-            <Button onClick={onClose}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Use a Dialog instead of AlertDialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-red-600 flex items-center gap-2">
-              <AlertTriangle className="text-red-500 h-5 w-5" />
-              Delete Event
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="py-4">
-            <div className="mb-4">
-              <p className="text-lg font-medium mb-2">"{event.title}"</p>
-              <p className="mb-1">Are you sure you want to delete this event? This action cannot be undone.</p>
-            </div>
-            
-            <div className="text-sm bg-gray-50 p-3 rounded-md">
-              <p className="mb-1">
-                <span className="font-medium">Date:</span> {formatDayOfWeekDate(startDate)}
-              </p>
-              <p>
-                <span className="font-medium">Time:</span> {event.allDay ? 'All Day' : formatEventTimeRange(startDate, endDate)}
-              </p>
-            </div>
-            
-            {deleteError && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-sm text-red-600 flex items-start">
-                  <AlertCircle className="text-red-500 mr-1 h-4 w-4" />
-                  <span>Error: {deleteError}</span>
-                </p>
+                ) : (
+                  <p className="text-gray-500 italic">No attendees for this event</p>
+                )}
               </div>
-            )}
-          </div>
-          
-          <DialogFooter className="flex justify-end gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => setDeleteDialogOpen(false)}
-              disabled={isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleDelete}
-              disabled={isDeleting}
-              variant="destructive"
-              className="bg-red-500 hover:bg-red-600"
-            >
-              {isDeleting ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      
-      {/* Cancel Event Dialog */}
-      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-amber-600 flex items-center gap-2">
-              <MailCheck className="h-5 w-5" />
-              Cancel Event with Notifications
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="py-4">
-            <div className="mb-4">
-              <p className="text-lg font-medium mb-2">"{event.title}"</p>
-              <p className="mb-1 text-sm">
-                This will notify all attendees that the event has been cancelled and remove it from their calendars.
-              </p>
-              
-              {/* Show attendees */}
-              {(() => {
-                const attendees = event.attendees as unknown;
-                if (attendees && Array.isArray(attendees) && attendees.length > 0) {
-                  return (
-                    <div className="mt-3">
-                      <p className="text-sm font-medium mb-1">Attendees to be notified:</p>
-                      <div className="text-sm p-3 bg-gray-50 rounded-md">
-                        <ul className="space-y-1 list-disc pl-5">
-                          {attendees
-                            .filter(Boolean)
-                            .map((attendee, index) => {
-                              if (typeof attendee === 'object' && attendee !== null) {
-                                return <li key={index}>{(attendee as any).email}</li>;
-                              } else {
-                                return <li key={index}>{String(attendee)}</li>;
-                              }
-                            })}
-                        </ul>
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-              
-              {/* Show resources */}
-              {(() => {
-                // Use the same parsing approach we used above for resources
-                let resourcesData = event.resources as unknown;
-                if (!resourcesData) return null;
+            </TabsContent>
+            
+            <TabsContent value="resources" className="pt-4">
+              <div className="space-y-4">
+                <h3 className="font-medium">Resources</h3>
                 
-                // Parse the resources data
-                const parseResourcesData = (data: any): any[] => {
-                  if (!data) return [];
-                  
-                  // If already an array, use it
-                  if (Array.isArray(data)) return data;
-                  
-                  // If it's a string, try to parse it
-                  if (typeof data === 'string') {
-                    try {
-                      // First try direct JSON.parse
-                      const parsed = JSON.parse(data);
-                      return Array.isArray(parsed) ? parsed : [parsed];
-                    } catch (e) {
-                      // If that fails, try removing extra quotes
-                      try {
-                        const cleanedString = data.replace(/\\"/g, '"').replace(/^"|"$/g, '').replace(/\\\\/g, '\\');
-                        const parsed = JSON.parse(cleanedString);
-                        return Array.isArray(parsed) ? parsed : [parsed];
-                      } catch (e2) {
-                        // Last resort, treat as a simple string
-                        return [data];
-                      }
-                    }
-                  }
-                  
-                  // If it's an object but not an array, wrap it
-                  if (typeof data === 'object' && data !== null) {
-                    return [data];
-                  }
-                  
-                  return [];
-                };
-                
-                // Process the resources
-                const resources = parseResourcesData(resourcesData);
-                if (resources.length > 0) {
-                  return (
-                    <div className="mt-3">
-                      <p className="text-sm font-medium mb-1">Resources to be released:</p>
-                      <div className="text-sm p-3 bg-gray-50 rounded-md">
-                        <ul className="space-y-1 list-disc pl-5">
-                          {resources.map((resource, index) => {
-                            // Handle both string and object formats
-                            if (typeof resource === 'object' && resource !== null) {
-                              // Extract the email, name, or id for display
-                              const email = resource.email || resource.adminEmail;
-                              const name = resource.name || resource.subType || resource.id;
-                              const display = name || email || 'Resource';
-                              const detail = resource.subType || resource.id;
-                              
-                              return <li key={index}>{display} {detail ? `(${detail})` : ''}</li>;
-                            } else {
-                              // Simple string format
-                              return <li key={index}>{String(resource)}</li>;
-                            }
-                          })}
-                        </ul>
+                {resources.length > 0 ? (
+                  <div className="space-y-3">
+                    {resources.map((resource, index) => (
+                      <div key={index} className="p-3 bg-gray-50 rounded-md flex items-start">
+                        {resource.subType === 'Conference Room' ? (
+                          <DoorClosed className="h-5 w-5 text-blue-500 mr-2 mt-0.5" />
+                        ) : resource.subType === 'Equipment' ? (
+                          <Wrench className="h-5 w-5 text-orange-500 mr-2 mt-0.5" />
+                        ) : resource.subType === 'Virtual Meeting' ? (
+                          <VideoIcon className="h-5 w-5 text-purple-500 mr-2 mt-0.5" />
+                        ) : (
+                          <Laptop className="h-5 w-5 text-gray-500 mr-2 mt-0.5" />
+                        )}
+                        
+                        <div>
+                          <p className="font-medium">{resource.id}</p>
+                          <p className="text-sm text-gray-600">{resource.subType}</p>
+                          {resource.capacity && <p className="text-sm text-gray-600">Capacity: {resource.capacity}</p>}
+                          {resource.remarks && <p className="text-sm text-gray-600">Notes: {resource.remarks}</p>}
+                          {resource.adminName && <p className="text-sm text-gray-600">Managed by: {resource.adminName}</p>}
+                        </div>
                       </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-            </div>
-            
-            <div className="text-sm bg-amber-50 p-3 rounded-md border border-amber-200">
-              <div className="flex items-start mb-2">
-                <AlertTriangle className="h-4 w-4 text-amber-600 mr-2 mt-0.5" />
-                <p className="text-amber-800">
-                  This action will send a cancellation email to all attendees, release any booked resources, and then delete the event.
-                </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-500 italic">No resources reserved for this event</p>
+                )}
               </div>
-              <p className="text-xs text-amber-700">
-                The event will be marked as CANCELLED in all calendars, and any reserved resources will be released.
-              </p>
-            </div>
-            
-            {cancelError && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
-                <p className="text-sm text-red-600 flex items-start">
-                  <AlertCircle className="text-red-500 mr-1 h-4 w-4" />
-                  <span>Error: {cancelError}</span>
-                </p>
-              </div>
-            )}
-          </div>
+            </TabsContent>
+          </Tabs>
           
-          <DialogFooter className="flex justify-end gap-2">
-            <Button 
-              variant="outline" 
-              onClick={() => setCancelDialogOpen(false)}
-              disabled={isCancelling}
-            >
-              Back
-            </Button>
-            <Button 
-              onClick={handleCancel}
-              disabled={isCancelling}
-              variant="default"
-              className="bg-amber-500 hover:bg-amber-600 text-white"
-            >
-              {isCancelling ? 'Sending Cancellations...' : 'Send Cancellation & Delete'}
-            </Button>
+          <DialogFooter className="flex justify-between">
+            <div>
+              {canModifyEvent && (
+                <Button variant="outline" onClick={() => setDeleteDialogOpen(true)} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                  Delete
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+              {canModifyEvent && (
+                <Button onClick={onEdit}>
+                  Edit
+                </Button>
+              )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the event.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
-};
-
-export default EventDetailModal;
+}
