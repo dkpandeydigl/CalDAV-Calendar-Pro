@@ -2544,6 +2544,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  /**
+   * Endpoint to handle attendee responses to event invitations
+   * This allows attendees to accept, decline, or tentatively accept invitations
+   * and optionally propose new times or add comments
+   */
+  app.post("/api/events/:eventId/respond", isAuthenticated, async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.user!.id;
+      const { status, comment, proposedStart, proposedEnd } = req.body;
+      
+      // Validate status
+      if (!status || !['ACCEPTED', 'DECLINED', 'TENTATIVE'].includes(status)) {
+        return res.status(400).json({ error: "Invalid status. Must be ACCEPTED, DECLINED, or TENTATIVE" });
+      }
+      
+      // Get the event
+      const event = await storage.getEvent(parseInt(eventId, 10));
+      if (!event) {
+        return res.status(404).json({ error: "Event not found" });
+      }
+      
+      // Get the user's email
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const userEmail = user.email || user.username;
+      
+      // Parse the current attendees
+      let attendees: any[] = [];
+      try {
+        if (event.attendees) {
+          if (typeof event.attendees === 'string') {
+            attendees = JSON.parse(event.attendees);
+          } else if (Array.isArray(event.attendees)) {
+            attendees = event.attendees;
+          }
+        }
+      } catch (error) {
+        console.error("Error parsing attendees:", error);
+        attendees = [];
+      }
+      
+      // Find the attendee in the list or create a new entry
+      const attendeeIndex = attendees.findIndex(
+        (a: any) => (typeof a === 'string' && a === userEmail) || 
+             (typeof a === 'object' && a.email === userEmail)
+      );
+      
+      const attendeeData = {
+        email: userEmail,
+        name: user.username,
+        status,
+        comment: comment || undefined,
+        proposedStart: proposedStart ? new Date(proposedStart).toISOString() : undefined,
+        proposedEnd: proposedEnd ? new Date(proposedEnd).toISOString() : undefined
+      };
+      
+      if (attendeeIndex >= 0) {
+        // Update existing attendee
+        if (typeof attendees[attendeeIndex] === 'string') {
+          // Replace string entry with object
+          attendees[attendeeIndex] = attendeeData;
+        } else {
+          // Update object
+          attendees[attendeeIndex] = {
+            ...attendees[attendeeIndex],
+            ...attendeeData
+          };
+        }
+      } else {
+        // Add new attendee
+        attendees.push(attendeeData);
+      }
+      
+      // Update the event
+      const updatedEvent = await storage.updateEvent(event.id, {
+        attendees: JSON.stringify(attendees)
+      });
+      
+      // If the event is from a CalDAV server, we should update it there as well
+      // This would require additional work with the CalDAV client
+      // For now, we'll just update the local record
+      
+      res.json({ 
+        success: true, 
+        message: `Successfully ${status.toLowerCase()} the event`,
+        updatedEvent
+      });
+    } catch (error) {
+      console.error("Error handling event response:", error);
+      res.status(500).json({ 
+        error: "Error processing your response", 
+        details: String(error) 
+      });
+    }
+  });
+  
   // Create HTTP server
   // Add WebSocket server
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
