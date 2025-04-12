@@ -683,6 +683,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 attendees={processedAttendees} 
                                 isOrganizer={isUsersOwnCalendar}
                                 showAll={showAllAttendees}
+                                onStatusClick={(status) => {
+                                  setSelectedStatus(status);
+                                  setStatusDialogOpen(true);
+                                }}
                                 onTimeProposalAccept={(attendeeEmail, start, end) => {
                                   // This would update the event with the proposed time
                                   console.log('Accepting time proposal from', attendeeEmail, start, end);
