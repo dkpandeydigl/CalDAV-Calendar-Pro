@@ -407,6 +407,7 @@ function CalendarContent() {
           onOpenServerSettings={handleOpenServerSettings}
           onOpenSyncSettings={handleOpenSyncSettings}
           onShareCalendar={handleShareCalendar}
+          onMultiShareCalendars={handleMultiShareCalendars}
           onImportCalendar={handleImportCalendar}
         />
         

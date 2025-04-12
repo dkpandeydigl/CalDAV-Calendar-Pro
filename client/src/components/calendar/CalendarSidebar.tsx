@@ -48,10 +48,11 @@ interface CalendarSidebarProps {
   onOpenServerSettings: () => void;
   onOpenSyncSettings?: () => void;
   onShareCalendar?: (calendar: Calendar | undefined) => void;
+  onMultiShareCalendars?: () => void;
   onImportCalendar?: () => void;
 }
 
-const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onOpenServerSettings, onOpenSyncSettings, onShareCalendar, onImportCalendar }) => {
+const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onOpenServerSettings, onOpenSyncSettings, onShareCalendar, onMultiShareCalendars, onImportCalendar }) => {
   const { 
     selectedTimezone, 
     setSelectedTimezone, 
@@ -454,7 +455,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                   variant="ghost" 
                   size="icon" 
                   className="h-6 w-6" 
-                  onClick={() => onShareCalendar && onShareCalendar(undefined)}
+                  onClick={() => onMultiShareCalendars && onMultiShareCalendars()}
                   title="Share Multiple Calendars"
                 >
                   <Share2 className="h-3.5 w-3.5" />
