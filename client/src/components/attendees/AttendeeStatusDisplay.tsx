@@ -37,13 +37,15 @@ interface AttendeeStatusDisplayProps {
   isOrganizer: boolean;
   onTimeProposalAccept?: (attendeeEmail: string, start: Date, end: Date) => void;
   showAll?: boolean; // Added prop to control showing all attendees vs. limited set
+  onStatusClick?: (status: string) => void; // Callback for when a status is clicked
 }
 
 const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   attendees,
   isOrganizer,
   onTimeProposalAccept,
-  showAll = false
+  showAll = false,
+  onStatusClick
 }) => {
   // Dialog functionality moved to the parent component with AttendeeDialog
   
@@ -190,10 +192,12 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
     return acc;
   }, {} as Record<string, number>);
   
-  // Show status dialog
+  // Delegate to parent component via props
   const openStatusDialog = (status: string) => {
-    setSelectedStatus(status);
-    setStatusDialogOpen(true);
+    // These functions are now expected to be passed via props
+    if (onStatusClick) {
+      onStatusClick(status);
+    }
   };
   
   // Only display a limited set of attendees if showAll is false
@@ -366,133 +370,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
         </ul>
       </div>
       
-      {/* Status dialog for filtered attendees */}
-      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedStatus === 'all' 
-                ? 'All Attendees' 
-                : `${getStatusText(selectedStatus || '')} (${
-                    selectedStatus === 'all' 
-                      ? processedAttendees.length 
-                      : (getAttendeesByStatus(selectedStatus || '').length)
-                  })`
-              }
-            </DialogTitle>
-            <DialogDescription>
-              {selectedStatus === 'all' 
-                ? 'List of all attendees for this event'
-                : `List of attendees who have ${getStatusText(selectedStatus || '').toLowerCase()} this event`
-              }
-            </DialogDescription>
-          </DialogHeader>
-          
-          <ScrollArea className="h-[300px] border rounded-md">
-            <ul className="divide-y">
-              {(selectedStatus === 'all' ? processedAttendees : getAttendeesByStatus(selectedStatus || '')).map((attendee, index) => (
-                <li key={attendee.id || `${attendee.email}-${index}`} className="p-3 flex items-start">
-                  <div className="flex-shrink-0 mr-3 mt-1">
-                    {getStatusIcon(attendee.status)}
-                  </div>
-                  <div className="flex-grow min-w-0">
-                    <div className="flex items-center flex-wrap gap-1">
-                      <span className="font-medium truncate">
-                        {attendee.name || 'Unknown'}
-                      </span>
-                      {getRoleBadge(attendee.role)}
-                      <Badge 
-                        variant="outline" 
-                        className={`ml-auto ${getStatusColorClass(attendee.status)}`}
-                      >
-                        {getStatusText(attendee.status)}
-                      </Badge>
-                    </div>
-                    
-                    <div className="text-sm text-muted-foreground mt-0.5">
-                      {attendee.email || '(No email address)'}
-                    </div>
-                    
-                    {/* Display comment if available */}
-                    {attendee.comment && (
-                      <div className="mt-2 text-sm flex items-start">
-                        <MessageSquare className="h-4 w-4 text-gray-500 mr-1.5 mt-0.5 flex-shrink-0" />
-                        <div className="prose prose-sm">
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button variant="link" className="p-0 h-auto text-xs">
-                                View comment from {attendee.name || 'Unknown'}
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Comment from {attendee.name || 'Unknown'}</DialogTitle>
-                                <DialogDescription>
-                                  Response: <Badge 
-                                    variant="outline" 
-                                    className={getStatusColorClass(attendee.status)}
-                                  >
-                                    {getStatusText(attendee.status)}
-                                  </Badge>
-                                </DialogDescription>
-                              </DialogHeader>
-                              <div 
-                                className="mt-4 prose prose-sm max-w-none" 
-                                dangerouslySetInnerHTML={{ __html: attendee.comment }}
-                              />
-                            </DialogContent>
-                          </Dialog>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Display time proposal if available */}
-                    {attendee.proposedStart && attendee.proposedEnd && (
-                      <div className="mt-2 text-sm flex items-start">
-                        <Clock className="h-4 w-4 text-gray-500 mr-1.5 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="text-gray-700">Proposed time: </span>
-                          <span>
-                            {formatDateTime(attendee.proposedStart)} - {formatTime(new Date(attendee.proposedEnd))}
-                          </span>
-                          
-                          {/* Accept button for organizer */}
-                          {isOrganizer && onTimeProposalAccept && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="ml-2 mt-1"
-                              onClick={() => onTimeProposalAccept(
-                                attendee.email,
-                                new Date(attendee.proposedStart!),
-                                new Date(attendee.proposedEnd!)
-                              )}
-                            >
-                              Accept Proposal
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </li>
-              ))}
-              {(selectedStatus === 'all' ? processedAttendees : getAttendeesByStatus(selectedStatus || '')).length === 0 && (
-                <li className="p-3 text-center text-muted-foreground">
-                  No attendees found with {getStatusText(selectedStatus || '')} status
-                </li>
-              )}
-            </ul>
-          </ScrollArea>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Dialog functionality moved to parent component (AttendeeDialog) */}
     </div>
   );
 };
