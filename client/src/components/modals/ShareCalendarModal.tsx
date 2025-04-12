@@ -163,19 +163,11 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
     // Skip if modal is not open
     if (!open) return;
     
-    // Only process when we have calendars and the effect won't re-run frequently
-    // Use a ref to track last run time to debounce the effect
-    const now = Date.now();
-    const lastRun = React.useRef(0);
-    
-    if (now - lastRun.current < 500) {
-      // Avoid running this logic more than once per 500ms
-      return;
-    }
-    lastRun.current = now;
-    
     // Get a safe reference to the current state to avoid closure issues
     const calendarItems = [...selectedCalendars];
+    
+    // Skip processing if we don't have any calendars
+    if (calendarItems.length === 0) return;
     
     // Collect list of calendars that need fetching (avoids modifying state inside effect)
     const needFetching: number[] = [];
@@ -203,7 +195,10 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
         needFetching.forEach(id => requestSharesFetch(id));
       }, 0);
     }
-  }, [selectedCalendars, open]);
+    
+    // We're not including selectedCalendars in the dependency array to break the cycle
+    // Instead, we only run this when the modal opens or when manually triggered
+  }, [open]);
   
   // Separate effect to handle the actual fetching
   useEffect(() => {
@@ -276,32 +271,54 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
   }, [open]); // Only refetch when modal opens/closes
 
   const fetchShares = async (calendarId: number) => {
+    // Skip if modal is no longer open
+    if (!open) return;
+    
     try {
+      // Mark as fetched to prevent refetching during any re-renders that might happen
+      fetchedCalendarIds.current.add(calendarId);
+      
       const response = await apiRequest('GET', `/api/calendars/${calendarId}/shares`);
       if (response.ok) {
         const data = await response.json();
-        // Update the shares for this calendar
-        setSelectedCalendars(prev => prev.map(item => 
-          item.calendar.id === calendarId 
-            ? { ...item, shares: data, loading: false } 
-            : item
-        ));
+        
+        // Final check to make sure the modal is still open before updating state
+        if (open) {
+          // Update the shares for this calendar
+          setSelectedCalendars(prev => {
+            // Make a copy to prevent unnecessary re-renders if nothing changed
+            const updatedState = prev.map(item => 
+              item.calendar.id === calendarId 
+                ? { ...item, shares: data, loading: false } 
+                : item
+            );
+            return updatedState;
+          });
+        }
       } else {
         throw new Error(`Failed to fetch shares for calendar ${calendarId}`);
       }
     } catch (error) {
       console.error(`Error fetching calendar shares for calendar ${calendarId}:`, error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load calendar sharing information',
-        variant: 'destructive',
-      });
-      // Mark as not loading even on error
-      setSelectedCalendars(prev => prev.map(item => 
-        item.calendar.id === calendarId 
-          ? { ...item, loading: false } 
-          : item
-      ));
+      
+      // Only show toast and update if still open
+      if (open) {
+        toast({
+          title: 'Error',
+          description: 'Failed to load calendar sharing information',
+          variant: 'destructive',
+        });
+        
+        // Mark as not loading even on error
+        setSelectedCalendars(prev => prev.map(item => 
+          item.calendar.id === calendarId 
+            ? { ...item, loading: false } 
+            : item
+        ));
+      }
+    } finally {
+      // Regardless of outcome, remove from loading
+      loadingCalendarIds.current.delete(calendarId);
     }
   };
 
@@ -314,8 +331,15 @@ export function ShareCalendarModal({ open, onClose, calendar: initialCalendar }:
       // Mark this calendar as loading
       loadingCalendarIds.current.add(calendarId);
       
-      // Fetch data for this calendar using our existing fetch function
-      fetchShares(calendarId);
+      // Use setTimeout to break out of the current execution context
+      // This prevents state updates from triggering re-renders during useEffect execution
+      setTimeout(() => {
+        // Only proceed if the modal is still open and calendar is still being loaded
+        if (open && loadingCalendarIds.current.has(calendarId)) {
+          // Fetch data for this calendar using our existing fetch function
+          fetchShares(calendarId);
+        }
+      }, 10);
     }
   };
 
