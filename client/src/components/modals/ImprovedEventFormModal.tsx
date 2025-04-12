@@ -48,7 +48,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import EmailPreview from '@/components/email/EmailPreview';
 import { useEmailPreview } from '@/hooks/useEmailPreview';
 import ResourceManager, { Resource } from '@/components/resources/ResourceManager';
-import DirectResourceExtractor from '@/components/modals/DirectResourceExtractor';
+// Removed DirectResourceExtractor import - now using our enhanced resource extraction function
 import { parseResourcesFromEvent } from '@/utils/resourceUtils';
 import type { Event } from '@shared/schema';
 import { 
@@ -183,9 +183,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         const matches = Array.from(rawDataStr.matchAll(resourceRegex));
         
         if (matches && matches.length > 0) {
-          matches.forEach((match, index) => {
-            const fullLine = match[0]; // The complete ATTENDEE line 
-            const email = match[1]; // The captured email group
+          matches.forEach((match: RegExpMatchArray, index) => {
+            const fullLine = match[0] || ''; // The complete ATTENDEE line 
+            const email = match[1] || ''; // The captured email group
             
             // Skip if we already have this resource by email
             if (email && !resourceMap.has(email.toLowerCase())) {
@@ -1810,36 +1810,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               </TabsContent>
               
               <TabsContent value="resources" className="mt-0 p-0 min-h-[500px]">
-                {/* Show existing resources from raw data if available */}
-                {(event?.rawData && typeof event.rawData === 'string') && (
-                  <div className="mb-4 border-b pb-4">
-                    <h3 className="text-sm font-medium mb-2">Current Resources</h3>
-                    <DirectResourceExtractor 
-                      rawData={event.rawData} 
-                      isPreview={false}
-                      onEdit={(oldResource, newResource) => {
-                        console.log('Edit resource:', oldResource, 'to', newResource);
-                        // Here you would typically update the event's resources in the database
-                        // For now, we'll just show a toast notification
-                        toast({
-                          title: "Resource Updated",
-                          description: `Updated ${oldResource.name} resource information.`,
-                        });
-                      }}
-                      onDelete={(resource) => {
-                        console.log('Delete resource:', resource);
-                        // Here you would typically remove the resource from the event in the database
-                        // For now, we'll just show a toast notification
-                        toast({
-                          title: "Resource Removed",
-                          description: `Removed ${resource.name} from event resources.`,
-                          variant: "destructive"
-                        });
-                      }}
-                    />
-                  </div>
-                )}
-                
+                {/* No need for DirectResourceExtractor since resources are already extracted and deduplicated */}
                 <ResourceManager 
                   resources={resources}
                   onResourcesChange={setResources}
