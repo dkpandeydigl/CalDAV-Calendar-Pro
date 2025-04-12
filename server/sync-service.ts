@@ -1382,8 +1382,17 @@ export class SyncService {
                     else if (line.startsWith('RRULE:') && event.recurrenceRule) {
                       newLines.push(`RRULE:${this.formatRecurrenceRule(event.recurrenceRule)}`);
                     }
-                    // Skip attendee and resource lines - we'll add them back if needed
-                    else if (!line.startsWith('ATTENDEE')) {
+                    // Keep existing attendee lines
+                    else if (line.startsWith('ATTENDEE')) {
+                      // If we have explicit attendees in the event object, we'll handle them separately
+                      // Otherwise preserve the existing attendee lines
+                      if (!event.attendees || (typeof event.attendees === 'string' && event.attendees === '[]') || 
+                          (Array.isArray(event.attendees) && event.attendees.length === 0)) {
+                        newLines.push(line);
+                      }
+                    }
+                    // Keep all other lines
+                    else {
                       newLines.push(line);
                     }
                   } else {
