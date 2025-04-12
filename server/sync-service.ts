@@ -1480,9 +1480,19 @@ export class SyncService {
         rrule = rrule.replace(/SCHEDULE-STATUS=[^;]*(;|$)/g, '');
       }
       
-      // Remove any stray "mailto:" sections
-      if (rrule.includes('mailto:')) {
-        console.log('Found mailto: in RRULE - removing it');
+      // Remove any stray "mailto:" sections and anything after a colon that's not part of a valid parameter
+      if (rrule.includes('mailto:') || rrule.includes(':')) {
+        console.log('Found mailto: or colon in RRULE - cleaning it properly');
+        
+        // First, separate at any colon that's not part of a parameter definition
+        const cleanParts = rrule.split(':');
+        if (cleanParts.length > 1) {
+          // Only keep the first part before any colon (which should contain the actual RRULE)
+          rrule = cleanParts[0];
+          console.log(`Split RRULE at colon, keeping only: ${rrule}`);
+        }
+        
+        // Also remove any remaining mailto sections
         rrule = rrule.replace(/mailto:[^;]*(;|$)/g, '');
       }
       
