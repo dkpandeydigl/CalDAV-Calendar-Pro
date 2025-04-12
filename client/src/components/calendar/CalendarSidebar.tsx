@@ -57,7 +57,9 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
     setSelectedTimezone, 
     saveTimezonePreference, 
     isSavingTimezone, 
-    serverStatus, 
+    serverStatus,
+    timezoneLabel,
+    refreshCalendarData
   } = useCalendarContext();
   
   const { serverConnection, syncWithServer, isSyncing } = useServerConnection();
@@ -745,6 +747,11 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
           <div className="mb-6">
             <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Timezone</h3>
             <div className="space-y-2">
+              {/* Display the current timezone in a user-friendly format */}
+              <div className="text-xs text-muted-foreground mb-1 px-1">
+                Current: <span className="font-medium">{timezoneLabel}</span>
+              </div>
+              
               <Select value={selectedTimezone} onValueChange={setSelectedTimezone}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select timezone" />
@@ -757,12 +764,14 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                   ))}
                 </SelectContent>
               </Select>
+              
               <Button 
                 size="sm" 
                 className="w-full"
                 onClick={async () => {
                   try {
                     await saveTimezonePreference(selectedTimezone);
+                    // No need to explicitly call refreshCalendarData as it's now handled in the context
                   } catch (error) {
                     console.error('Error saving timezone preference in sidebar:', error);
                     // Error is already handled in the context via toast
@@ -770,8 +779,17 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                 }}
                 disabled={isSavingTimezone}
               >
-                {isSavingTimezone ? 'Saving...' : 'Save Timezone Preference'}
+                {isSavingTimezone ? (
+                  <span className="flex items-center">
+                    <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                    Saving...
+                  </span>
+                ) : 'Save Timezone Preference'}
               </Button>
+              
+              <div className="text-xs text-muted-foreground mt-1 px-1">
+                <span className="italic">All events will display in your selected timezone</span>
+              </div>
             </div>
           </div>
           
