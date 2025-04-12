@@ -251,12 +251,44 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     endDate.setHours(endDate.getHours() + 1);
   }
 
-  // Function for resource extraction
+  // Function for resource extraction with improved deduplication
   const extractResourcesFromRawData = () => {
     if (!event) return [];
     
     try {
-      // DIRECT EXTRACTION FROM VCALENDAR DATA
+      // Create a Map to track resources by email for deduplication
+      const resourceMap = new Map();
+      
+      // STEP 1: Try to get resources from the event.resources field first
+      if (event.resources) {
+        let parsedResources = [];
+        
+        if (typeof event.resources === 'string') {
+          try {
+            parsedResources = JSON.parse(event.resources);
+          } catch (e) { /* Silent fail */ }
+        } else if (Array.isArray(event.resources)) {
+          parsedResources = event.resources;
+        }
+        
+        // Add resources to our map for deduplication
+        if (Array.isArray(parsedResources)) {
+          parsedResources.forEach((resource, index) => {
+            const email = resource.adminEmail || resource.email; 
+            if (email) {
+              resourceMap.set(email.toLowerCase(), {
+                id: resource.id || `resource-${index}-${Date.now()}`,
+                adminEmail: email,
+                adminName: resource.adminName || resource.name || 'Resource',
+                subType: resource.subType || resource.type || '',
+                capacity: resource.capacity || 1
+              });
+            }
+          });
+        }
+      }
+      
+      // STEP 2: Now extract from VCALENDAR data if available (but don't overwrite existing entries)
       if (event.rawData && typeof event.rawData === 'string') {
         const rawDataStr = event.rawData;
         
@@ -265,48 +297,34 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         const matches = Array.from(rawDataStr.matchAll(resourceRegex));
         
         if (matches && matches.length > 0) {
-          const extractedResources = matches.map((match, index) => {
+          matches.forEach((match, index) => {
             const fullLine = match[0]; // The complete ATTENDEE line 
             const email = match[1]; // The captured email group
             
-            // Extract resource name from CN
-            const cnMatch = fullLine.match(/CN=([^;:]+)/);
-            const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
-            
-            // Extract resource type
-            const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
-            const resourceType = typeMatch ? typeMatch[1].trim() : '';
-            
-            return {
-              id: `resource-${index}-${Date.now()}`,
-              adminEmail: email,
-              adminName: name,
-              subType: resourceType,
-              capacity: 1
-            };
-          });
-          
-          if (extractedResources.length > 0) {
-            return extractedResources;
-          }
-        }
-      }
-      
-      // FALLBACK: Check already parsed resources
-      if (event.resources) {
-        if (typeof event.resources === 'string') {
-          try {
-            const parsedResources = JSON.parse(event.resources);
-            if (Array.isArray(parsedResources) && parsedResources.length > 0) {
-              return parsedResources;
+            // Skip if we already have this resource by email
+            if (email && !resourceMap.has(email.toLowerCase())) {
+              // Extract resource name from CN
+              const cnMatch = fullLine.match(/CN=([^;:]+)/);
+              const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
+              
+              // Extract resource type
+              const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
+              const resourceType = typeMatch ? typeMatch[1].trim() : '';
+              
+              resourceMap.set(email.toLowerCase(), {
+                id: `resource-${index}-${Date.now()}`,
+                adminEmail: email,
+                adminName: name,
+                subType: resourceType,
+                capacity: 1
+              });
             }
-          } catch (e) { /* Silent fail, continue to next approach */ }
-        } else if (Array.isArray(event.resources) && event.resources.length > 0) {
-          return event.resources;
+          });
         }
       }
       
-      return [];
+      // Convert map back to array
+      return Array.from(resourceMap.values());
     } catch (error) {
       console.error('Error extracting resources:', error);
       return [];
@@ -319,17 +337,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     (Array.isArray(event.attendees) ? event.attendees.length > 0 : true)
   );
   
-  // For resource check, try to get them from the event or extract from raw data
-  let resources = [];
-  if (event.resources) {
-    try {
-      resources = typeof event.resources === 'string' 
-        ? JSON.parse(event.resources) 
-        : event.resources;
-    } catch (e) { /* Silent fail */ }
-  } else if (event.rawData) {
-    resources = extractResourcesFromRawData();
-  }
+  // Always use our enhanced extractResourcesFromRawData function to deduplicate resources
+  // from all possible sources
+  const resources = extractResourcesFromRawData();
   
   const hasResources = Array.isArray(resources) && resources.length > 0;
   
@@ -369,7 +379,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const handleCancel = async () => {
     if (!event || !event.id || isCancelling) return;
     
-    setCancelling(true);
+    setIsCancelling(true);
     setCancelError(null);
     
     try {
@@ -380,7 +390,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       console.error('Error cancelling event:', error);
       setCancelError('Failed to cancel the event. Please try again.');
     } finally {
-      setCancelling(false);
+      setIsCancelling(false);
     }
   };
 
