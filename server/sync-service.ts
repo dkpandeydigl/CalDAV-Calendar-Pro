@@ -833,20 +833,74 @@ export class SyncService {
             return line.replace(/\r?\n\s+/g, '');
           });
           
-          const attendeeMatches = normalizedIcsData.match(/ATTENDEE[^:\r\n]+:[^\r\n]+/g);
-          if (attendeeMatches && attendeeMatches.length > 0) {
-            console.log(`Found ${attendeeMatches.length} attendees/resources in raw ICS data`);
+          // First, try to capture multi-line attendee entries
+          const lines = normalizedIcsData.split(/\r?\n/);
+          let combinedAttendeeLines: string[] = [];
+          
+          // Process line by line to handle broken formats
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
             
-            attendeeMatches.forEach(line => {
+            if (line.startsWith('ATTENDEE')) {
+              // Start of an attendee line
+              let fullLine = line;
+              
+              // Look ahead for continuation lines (starting with spaces or containing mailto: without ATTENDEE)
+              let j = i + 1;
+              while (j < lines.length && 
+                    (lines[j].startsWith(' ') || 
+                     (!lines[j].includes('ATTENDEE') && lines[j].includes('mailto:')))) {
+                fullLine += ' ' + lines[j].trim();
+                j++;
+              }
+              
+              // Skip the lines we've merged
+              i = j - 1;
+              
+              // Add the combined line
+              combinedAttendeeLines.push(fullLine);
+            }
+          }
+          
+          // If we didn't find any combined lines, try regular regex matching
+          if (combinedAttendeeLines.length === 0) {
+            const attendeeMatches = normalizedIcsData.match(/ATTENDEE[^:\r\n]+:[^\r\n]+/g);
+            if (attendeeMatches && attendeeMatches.length > 0) {
+              combinedAttendeeLines = attendeeMatches;
+            }
+          }
+          
+          if (combinedAttendeeLines.length > 0) {
+            console.log(`Found ${combinedAttendeeLines.length} attendees/resources in raw ICS data`);
+            
+            combinedAttendeeLines.forEach(line => {
+              // Make sure it has an email
               if (!line.includes('mailto:')) {
                 return;
               }
               
-              const emailMatch = line.match(/mailto:([^>\r\n]+)/);
+              const emailMatch = line.match(/mailto:([^>\r\n\s]+)/);
               const email = emailMatch ? emailMatch[1] : '';
               
               if (!email) {
                 return;
+              }
+              
+              // Clean up weird combined resource types like "dktest@dil.inProjector"
+              let cleanedEmail = email;
+              if (email.match(/[^@\s]+@[^@\s.]+\.[a-z]+[A-Za-z]+/)) {
+                const domainParts = email.split('@');
+                if (domainParts.length === 2) {
+                  const domain = domainParts[1];
+                  // Find the first TLD dot
+                  const dotIndex = domain.indexOf('.');
+                  if (dotIndex > 0) {
+                    // Get just the proper part of the domain
+                    const properDomain = domain.substring(0, dotIndex + 3); // +3 to include the dot and 2 char TLD
+                    cleanedEmail = `${domainParts[0]}@${properDomain}`;
+                    console.log(`Fixed malformed email from ${email} to ${cleanedEmail}`);
+                  }
+                }
               }
               
               const nameMatch = line.match(/CN=([^;:]+)/);
@@ -865,16 +919,30 @@ export class SyncService {
                 // Process as resource
                 const resourceType = line.match(/X-RESOURCE-TYPE=([^;:]+)/) || 
                                     line.match(/RESOURCE-TYPE=([^;:]+)/);
+                
+                // Extract resource type from malformed emails if needed
+                let resourceTypeValue = resourceType ? resourceType[1] : undefined;
+                
+                // Try to extract resource type from email if it looks malformed
+                if (!resourceTypeValue && email !== cleanedEmail) {
+                  // The difference should be the resource type appended to the domain
+                  const resourceSuffix = email.substring(cleanedEmail.length);
+                  if (resourceSuffix) {
+                    resourceTypeValue = resourceSuffix;
+                    console.log(`Extracted resource type "${resourceSuffix}" from malformed email`);
+                  }
+                }
+                
                 resources.push({
                   name: name || 'Unnamed Resource',
-                  adminEmail: email,
-                  type: resourceType ? resourceType[1] : undefined
+                  adminEmail: cleanedEmail, // Use the cleaned email
+                  type: resourceTypeValue
                 });
               } else {
                 // Process as regular attendee
                 const attendeeData: CalDAVAttendee = {
-                  email,
-                  name,
+                  email: cleanedEmail, // Use the cleaned email
+                  name: name || undefined,
                   role,
                   status
                 };
