@@ -590,6 +590,14 @@ export class SyncService {
                     } else {
                       // Normal update for events without pending changes
                       console.log(`Updating existing event: ${caldavEvent.uid}`);
+                      
+                      // Preserve recurrence settings from the existing event if they are present
+                      // but missing in the incoming data
+                      if (!eventData.recurrenceRule && existingEvent.recurrenceRule) {
+                        console.log(`Preserving existing recurrence rule for event ${existingEvent.id}`);
+                        eventData.recurrenceRule = existingEvent.recurrenceRule;
+                      }
+                      
                       await storage.updateEvent(existingEvent.id, eventData as any);
                     }
                   } else {
