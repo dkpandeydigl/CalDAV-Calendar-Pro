@@ -821,12 +821,122 @@ export class SyncService {
       let attendees: CalDAVAttendee[] = [];
       let resources: CalDAVResource[] = [];
       
+      // Create a set to track already processed resource emails to avoid duplicates
+      const resourceEmails = new Set<string>();
+      
       try {
-        // First try to get from node-ical's parsing
+        // First, extract all resources from the ICS data to prevent duplication
+        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
+        const resourceMatches = Array.from(icsData.matchAll(resourceRegex));
+        
+        // Process all resources first
+        if (resourceMatches && resourceMatches.length > 0) {
+          console.log(`RESOURCE EXTRACTION: Found ${resourceMatches.length} resources in ICS data`);
+          
+          for (const match of resourceMatches) {
+            const fullLine = match[0]; // The complete ATTENDEE line 
+            const email = match[1]; // The captured email group
+            
+            // Skip if already processed
+            if (resourceEmails.has(email)) {
+              continue;
+            }
+            
+            // Add to our set for deduplication
+            resourceEmails.add(email);
+            
+            // Extract resource name from CN
+            const cnMatch = fullLine.match(/CN=([^;:]+)/);
+            const name = cnMatch ? cnMatch[1].trim() : `Resource`;
+            
+            // Extract resource type
+            const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
+            const resourceTypeValue = typeMatch ? typeMatch[1].trim() : 'chairs';
+            
+            resources.push({
+              name: name,
+              adminEmail: email,
+              type: resourceTypeValue
+            });
+            
+            console.log(`Added resource: ${name} (${email}) of type ${resourceTypeValue}`);
+          }
+        }
+        
+        // Now process attendees from node-ical parsing
         if (event.attendees && Array.isArray(event.attendees)) {
-          attendees = event.attendees;
+          // Filter out any attendees that are actually resources
+          attendees = event.attendees.filter((att: any) => {
+            if (typeof att === 'object' && att.email) {
+              return !resourceEmails.has(att.email);
+            }
+            return true;
+          });
+          console.log(`Using ${attendees.length} attendees from event.attendees after filtering out resources`);
         } else if (event.attendee) {
-          attendees = Array.isArray(event.attendee) ? event.attendee : [event.attendee];
+          const rawAttendees = Array.isArray(event.attendee) ? event.attendee : [event.attendee];
+          
+          // Process each attendee and filter out resources
+          for (const attendee of rawAttendees) {
+            // Skip if no value or missing email
+            if (!attendee.val || !attendee.val.includes('mailto:')) {
+              continue;
+            }
+            
+            // Extract email
+            const email = attendee.val.replace('mailto:', '');
+            
+            // Skip this attendee if it's already in our resources set
+            if (resourceEmails.has(email)) {
+              console.log(`Skipping attendee ${email} as it's already processed as a resource`);
+              continue;
+            }
+            
+            // Check if it's a resource or a regular attendee
+            // More aggressive resource detection to prevent "Unknown (No email)" attendees
+            const isResource = attendee.params && (
+                attendee.params.CUTYPE === 'RESOURCE' || 
+                (attendee.params.ROLE && attendee.params.ROLE === 'NON-PARTICIPANT') ||
+                (email.includes('projector') || email.includes('room') || email.includes('chair')) ||
+                (attendee.params.CN && 
+                  (attendee.params.CN.includes('Projector') || 
+                   attendee.params.CN.includes('Room') ||
+                   attendee.params.CN.includes('Chair')))
+            );
+            
+            if (isResource) {
+              // Add to our set for deduplication
+              resourceEmails.add(email);
+              
+              // Process as resource
+              const name = attendee.params.CN || email.split('@')[0];
+              const resourceType = attendee.params['X-RESOURCE-TYPE'] || '';
+              
+              resources.push({
+                name: name,
+                adminEmail: email,
+                type: resourceType
+              });
+              
+              console.log(`Added node-ical resource: ${name} (${email}) of type ${resourceType}`);
+            } else {
+              // Process as regular attendee
+              const name = attendee.params?.CN;
+              const role = attendee.params?.ROLE || 'REQ-PARTICIPANT';
+              const status = attendee.params?.PARTSTAT || 'NEEDS-ACTION';
+              const scheduleStatus = attendee.params?.['SCHEDULE-STATUS'];
+              
+              attendees.push({
+                email,
+                name,
+                role,
+                status,
+                scheduleStatus
+              });
+              
+              console.log(`Added node-ical attendee: ${name || email} (${email})`);
+            }
+          }
         } else {
           // Fallback: Extract from raw ICS data
           const normalizedIcsData = icsData.replace(/ATTENDEE[^:]*\r?\n\s+[^:]*:/g, line => {
@@ -995,6 +1105,22 @@ export class SyncService {
         timezone = (event.start as any).tz;
       }
       
+      // Final check: Filter out any attendees that might also be resources
+      // This ensures no duplicates between attendees and resources
+      const filteredAttendees = attendees.filter((att: any) => {
+        if (typeof att === 'string') return true;
+        if (!att.email) return true;
+        
+        // Skip if this attendee's email exists in our resource set
+        if (resourceEmails.has(att.email)) {
+          console.log(`Final filter: Removing ${att.email} from attendees as it's already in resources`);
+          return false;
+        }
+        return true;
+      });
+      
+      console.log(`Final attendees count: ${filteredAttendees.length}, Resources count: ${resources.length}`);
+      
       // Create the final CalDAVEvent
       const caldavEvent: CalDAVEvent = {
         uid: event.uid || `auto-generated-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -1006,7 +1132,7 @@ export class SyncService {
         allDay,
         timezone,
         recurrenceRule,
-        attendees: attendees.length > 0 ? attendees : undefined,
+        attendees: filteredAttendees.length > 0 ? filteredAttendees : undefined,
         resources: resources.length > 0 ? resources : undefined,
         etag,
         url,

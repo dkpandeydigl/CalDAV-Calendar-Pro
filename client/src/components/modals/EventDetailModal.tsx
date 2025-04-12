@@ -627,10 +627,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               
               {/* Right column - Attendees */}
               <div className="space-y-4">
-                {/* Direct Resource Extractor Component - show all resources in detail view */}
-                {typeof event.rawData === 'string' && (
-                  <DirectResourceExtractor rawData={event.rawData} isPreview={true} />
-                )}
+                {/* We've removed DirectResourceExtractor here as it causes duplication with the main resources section */}
                 
                 {/* Attendees and Response Section */}
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
