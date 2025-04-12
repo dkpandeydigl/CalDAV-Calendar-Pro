@@ -585,17 +585,25 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 {/* Resources section with improved visual display */}
                 {(() => {
                   const extractedResources = extractResourcesFromRawData();
+                  const resourceCount = extractedResources.length;
+                  const [showAllResources, setShowAllResources] = useState(false);
                   console.log('Parsed resources:', extractedResources);
                   
-                  if (extractedResources.length > 0) {
+                  // Display resources if we have any
+                  if (resourceCount > 0) {
+                    // Display only 2 resources by default unless "show all" is clicked
+                    const displayResources = showAllResources 
+                      ? extractedResources 
+                      : extractedResources.slice(0, 2);
+                    
                     return (
                       <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 shadow-sm">
                         <h3 className="font-medium mb-2 flex items-center text-amber-800">
                           <Settings className="text-amber-600 mr-2 h-4 w-4" />
-                          Resources ({extractedResources.length})
+                          Resources ({resourceCount})
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {extractedResources.map((resource: any, index: number) => {
+                          {displayResources.map((resource: any, index: number) => {
                             // Get resource name/email/type from various possible formats
                             const name = resource.name || resource.adminName || 'Resource';
                             const email = resource.email || resource.adminEmail || '';
@@ -627,6 +635,26 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             );
                           })}
                         </div>
+                        
+                        {/* Show the View All Resources button if there are more than 2 resources */}
+                        {resourceCount > 2 && !showAllResources && (
+                          <button 
+                            onClick={() => setShowAllResources(true)}
+                            className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+                          >
+                            Show all {resourceCount} resources
+                          </button>
+                        )}
+                        
+                        {/* Show Less button when viewing all resources */}
+                        {showAllResources && resourceCount > 2 && (
+                          <button 
+                            onClick={() => setShowAllResources(false)}
+                            className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+                          >
+                            Show less
+                          </button>
+                        )}
                       </div>
                     );
                   }
