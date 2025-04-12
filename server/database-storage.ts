@@ -629,13 +629,22 @@ export class DatabaseStorage implements IStorage {
         const updated = await this.updateCalendarSharing(sharingId, updateData);
         return updated || existingSharing[0];
       } else {
-        // Create new sharing
+        // Create new sharing - ensure sharedByUserId is included
+        const insertData = {
+          ...sharing,
+          // Make sure sharedByUserId is never missing
+          sharedByUserId: sharing.sharedByUserId, 
+          createdAt: new Date(),
+          lastModified: new Date()
+        };
+        
+        // Verify all required fields are present
+        if (!insertData.sharedByUserId) {
+          throw new Error("Calendar sharing requires sharedByUserId to be set");
+        }
+        
         const result = await db.insert(calendarSharing)
-          .values({
-            ...sharing,
-            createdAt: new Date(),
-            lastModified: new Date()
-          })
+          .values(insertData)
           .returning();
         
         return result[0];

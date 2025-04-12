@@ -63,9 +63,21 @@ export async function shareCalendar(
     ? `/api/calendars/${calendarId}/shares?syncWithServer=true`
     : `/api/calendars/${calendarId}/shares`;
   
+  // Get current user data to include sharedByUserId
+  const userResponse = await apiRequest('GET', '/api/user');
+  let currentUserId = null;
+  
+  if (userResponse.ok) {
+    const userData = await userResponse.json();
+    currentUserId = userData.id;
+  } else {
+    throw new Error('Failed to get current user data');
+  }
+  
   const response = await apiRequest('POST', apiUrl, {
     sharedWithEmail: email,
-    permissionLevel
+    permissionLevel,
+    sharedByUserId: currentUserId
   });
 
   if (!response.ok) {

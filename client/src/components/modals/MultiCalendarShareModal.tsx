@@ -76,19 +76,13 @@ export function MultiCalendarShareModal({ open, onClose }: MultiCalendarShareMod
         try {
           console.log(`Sharing calendar ID ${calendarId} (${calendar.name}) with ${email}`);
           
-          // Make direct API call instead of using the imported function
-          const response = await fetch(`/api/calendars/${calendarId}/shares`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              email: email,
-              permissionLevel: permission,
-              syncWithServer: calendar.url ? syncWithServer : false
-              // Note: sharedByUserId is automatically added by the server
-            }),
-          });
+          // Use the updated shareCalendar function that includes the user ID
+          await shareCalendar(
+            calendarId,
+            email,
+            permission,
+            calendar.url ? syncWithServer : false
+          );
           
           if (!response.ok) {
             const errorData = await response.json();
