@@ -742,21 +742,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                               <span>View only</span>
                             )}
                             
-                            {/* Permission toggle button - only appears if the calendar has sharingId for permission management */}
-                            {calendar.sharingId && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-4 px-1 py-0 text-xs hover:text-primary"
-                                onClick={() => handleUpdatePermission(
-                                  calendar.id,
-                                  calendar.sharingId!,
-                                  (calendar.permissionLevel === 'edit' || calendar.permission === 'edit') ? 'view' : 'edit'
-                                )}
-                              >
-                                (Change)
-                              </Button>
-                            )}
+                            {/* Permission change button removed - only calendar owners can change permissions */}
                           </div>
                         </div>
                       </div>
