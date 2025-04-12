@@ -201,10 +201,10 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   // Main component render
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 mb-2">
+      <div className="grid grid-cols-2 md:flex md:flex-row gap-2 mb-2">
         <Button 
           variant="outline" 
-          className={`p-1 px-2 h-auto flex items-center gap-1 bg-green-50 border-green-200 text-green-700 ${getStatusButtonHoverClass('accepted')}`}
+          className={`p-1 px-2 h-auto flex items-center gap-1 bg-green-50 border-green-200 text-green-700 ${getStatusButtonHoverClass('accepted')} flex-1`}
           onClick={() => openStatusDialog('accepted')}
         >
           <CheckCircle className="h-3 w-3 text-green-600" />
@@ -214,7 +214,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
         
         <Button 
           variant="outline" 
-          className={`p-1 px-2 h-auto flex items-center gap-1 bg-red-50 border-red-200 text-red-700 ${getStatusButtonHoverClass('declined')}`}
+          className={`p-1 px-2 h-auto flex items-center gap-1 bg-red-50 border-red-200 text-red-700 ${getStatusButtonHoverClass('declined')} flex-1`}
           onClick={() => openStatusDialog('declined')}
         >
           <XCircle className="h-3 w-3 text-red-600" />
@@ -224,7 +224,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
         
         <Button 
           variant="outline" 
-          className={`p-1 px-2 h-auto flex items-center gap-1 bg-amber-50 border-amber-200 text-amber-700 ${getStatusButtonHoverClass('tentative')}`}
+          className={`p-1 px-2 h-auto flex items-center gap-1 bg-amber-50 border-amber-200 text-amber-700 ${getStatusButtonHoverClass('tentative')} flex-1`}
           onClick={() => openStatusDialog('tentative')}
         >
           <HelpCircle className="h-3 w-3 text-amber-600" />
@@ -234,7 +234,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
         
         <Button 
           variant="outline" 
-          className={`p-1 px-2 h-auto flex items-center gap-1 bg-gray-50 border-gray-200 text-gray-700 ${getStatusButtonHoverClass('needs-action')}`}
+          className={`p-1 px-2 h-auto flex items-center gap-1 bg-gray-50 border-gray-200 text-gray-700 ${getStatusButtonHoverClass('needs-action')} flex-1`}
           onClick={() => openStatusDialog('needs-action')}
         >
           <Clock className="h-3 w-3 text-gray-600" />
