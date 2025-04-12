@@ -734,33 +734,68 @@ export class SyncService {
         }
       }
       
-      // Parse RRULE if present
+      // Parse RRULE if present - with error handling for SCHEDULE-STATUS
       let recurrenceRule: string | undefined = undefined;
-      if (event.rrule) {
-        if (typeof event.rrule === 'string') {
-          // Make sure RRULE doesn't contain attendee information (a common corruption)
-          const sanitizedRrule = this.sanitizeRRULE(event.rrule);
-          recurrenceRule = sanitizedRrule;
-        } else if (event.rrule && typeof event.rrule === 'object') {
-          // Try to extract the original RRULE string
-          recurrenceRule = event.rrule.toString();
-          // If it's not a standard string representation, try to extract it from original ICS data
-          if (recurrenceRule && !recurrenceRule.startsWith('FREQ=')) {
-            const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
-            if (rruleMatch && rruleMatch[1]) {
-              // Sanitize the extracted RRULE
-              recurrenceRule = this.sanitizeRRULE(rruleMatch[1]);
-              console.log(`Extracted RRULE from raw ICS data: ${recurrenceRule}`);
+      try {
+        // First check if we need to preprocess RRULE in the raw data
+        if (icsData.includes('RRULE:') && icsData.includes('SCHEDULE-STATUS')) {
+          console.log('Found potential SCHEDULE-STATUS in raw RRULE data - preprocessing');
+          // Fix any lines that incorrectly joined RRULE with SCHEDULE-STATUS
+          // This happens when SCHEDULE-STATUS is incorrectly included as a RRULE parameter
+          icsData = icsData.replace(/(RRULE:[^\r\n]*);SCHEDULE-STATUS=[^;\r\n]*/g, '$1');
+          
+          // Remove any standalone SCHEDULE-STATUS from RRULE lines
+          icsData = icsData.replace(/RRULE:[^\r\n]*SCHEDULE-STATUS=[^;\r\n]*([;\r\n])/g, '$1');
+        }
+        
+        if (event.rrule) {
+          if (typeof event.rrule === 'string') {
+            // Make sure RRULE doesn't contain attendee information (a common corruption)
+            const sanitizedRrule = this.sanitizeRRULE(event.rrule);
+            recurrenceRule = sanitizedRrule;
+          } else if (event.rrule && typeof event.rrule === 'object') {
+            // Try to extract the original RRULE string
+            recurrenceRule = event.rrule.toString();
+            // If it's not a standard string representation, try to extract it from original ICS data
+            if (recurrenceRule && !recurrenceRule.startsWith('FREQ=')) {
+              const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
+              if (rruleMatch && rruleMatch[1]) {
+                // Sanitize the extracted RRULE
+                recurrenceRule = this.sanitizeRRULE(rruleMatch[1]);
+                console.log(`Extracted RRULE from raw ICS data: ${recurrenceRule}`);
+              }
             }
           }
+        } else {
+          // If node-ical failed to parse the RRULE, try to extract it from raw data
+          const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
+          if (rruleMatch && rruleMatch[1]) {
+            // Sanitize the extracted RRULE
+            recurrenceRule = this.sanitizeRRULE(rruleMatch[1]);
+            console.log(`Extracted RRULE from raw ICS data (fallback): ${recurrenceRule}`);
+          }
         }
-      } else {
-        // If node-ical failed to parse the RRULE, try to extract it from raw data
-        const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
-        if (rruleMatch && rruleMatch[1]) {
-          // Sanitize the extracted RRULE
-          recurrenceRule = this.sanitizeRRULE(rruleMatch[1]);
-          console.log(`Extracted RRULE from raw ICS data (fallback): ${recurrenceRule}`);
+      } catch (error) {
+        console.error('Error parsing recurrence rule', error);
+        // Try a more aggressive extraction and sanitization if the normal one failed
+        try {
+          const rruleMatch = icsData.match(/RRULE:([^\r\n]+)/);
+          if (rruleMatch && rruleMatch[1]) {
+            // Sanitize the extracted RRULE - only keeping FREQ and COUNT/UNTIL
+            const parts = rruleMatch[1].split(';');
+            const freqPart = parts.find(p => p.startsWith('FREQ='));
+            const countPart = parts.find(p => p.startsWith('COUNT='));
+            const untilPart = parts.find(p => p.startsWith('UNTIL='));
+            const validParts = [freqPart, countPart, untilPart].filter(Boolean);
+            
+            if (validParts.length > 0) {
+              recurrenceRule = validParts.join(';');
+              console.log(`Fallback RRULE extraction (minimal): ${recurrenceRule}`);
+            }
+          }
+        } catch (e) {
+          console.error('Fatal error parsing recurrence rule, setting to empty', e);
+          recurrenceRule = undefined;
         }
       }
       
@@ -954,6 +989,8 @@ export class SyncService {
     if (!rrule) return '';
     
     try {
+      console.log(`Sanitizing RRULE: ${rrule}`);
+      
       // If it's already an object in string form, parse it and let our formatter handle it
       if (rrule.startsWith('{') && rrule.endsWith('}')) {
         try {
@@ -963,28 +1000,44 @@ export class SyncService {
         }
       }
       
-      // If we have a clean RRULE, return it directly
-      if (rrule.startsWith('FREQ=') && !rrule.includes('mailto:')) {
+      // Remove any RRULE: prefix if present
+      if (rrule.startsWith('RRULE:')) {
+        rrule = rrule.substring(6);
+      }
+      
+      // Explicitly check for and remove SCHEDULE-STATUS, as this is a common source of errors
+      if (rrule.includes('SCHEDULE-STATUS')) {
+        console.log('Found SCHEDULE-STATUS in RRULE - removing it');
+        // Remove everything from SCHEDULE-STATUS to the end or to the next semicolon
+        rrule = rrule.replace(/SCHEDULE-STATUS=[^;]*(;|$)/g, '');
+      }
+      
+      // If we have a clean RRULE without problematic content, return it directly
+      if (rrule.startsWith('FREQ=') && !rrule.includes('mailto:') && !rrule.includes('PARTSTAT=') && !rrule.includes('SCHEDULE-STATUS')) {
         return rrule;
       }
       
       // Extract just the valid RRULE parameters
-      const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST'];
+      const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST', 'BYSETPOS'];
       const parts = rrule.split(';');
       
       const validParts = parts.filter(part => {
+        if (!part.includes('=')) return false;
         const paramName = part.split('=')[0];
         return validParams.includes(paramName);
       });
       
       // If we have valid parts, join them back
       if (validParts.length > 0) {
-        return validParts.join(';');
+        const sanitizedRule = validParts.join(';');
+        console.log(`Sanitized RRULE: ${sanitizedRule}`);
+        return sanitizedRule;
       }
       
       // If nothing was valid, check if there's a FREQ parameter we can extract
       const freqMatch = rrule.match(/FREQ=([^;]+)/i);
       if (freqMatch) {
+        console.log(`Extracted only FREQ from RRULE: FREQ=${freqMatch[1]}`);
         return `FREQ=${freqMatch[1]}`;
       }
       
