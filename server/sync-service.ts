@@ -982,17 +982,17 @@ export class SyncService {
         // Get all events for this calendar
         const events = await storage.getEvents(calendar.id);
         
-        // Filter to events that need to be pushed to the server (local/pending)
-        const localEvents = events.filter(event => 
-          event.syncStatus === 'local' || event.syncStatus === 'pending'
-        );
+        // First handle pending updates (they should get priority in case of duplicate UIDs)
+        const pendingEvents = events.filter(event => event.syncStatus === 'pending');
+        const localEvents = events.filter(event => event.syncStatus === 'local');
         
-        console.log(`Found ${localEvents.length} local events to push for calendar ${calendar.name}`);
+        // Log what we're doing
+        console.log(`Found ${pendingEvents.length} pending events and ${localEvents.length} local events to push for calendar ${calendar.name}`);
         
-        // For each local event
-        for (const event of localEvents) {
+        // Process pending updates first
+        for (const event of pendingEvents) {
           try {
-            console.log(`Pushing event ${event.title} (ID: ${event.id}) to server`);
+            console.log(`Pushing update for event "${event.title}" (ID: ${event.id}) to server`);
             
             // Create iCalendar data
             let icalData = "";
