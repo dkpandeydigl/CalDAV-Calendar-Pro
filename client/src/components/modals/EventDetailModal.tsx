@@ -660,140 +660,142 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               <div className="space-y-4">
                 {/* We've removed DirectResourceExtractor here as it causes duplication with the main resources section */}
                 
-                {/* Attendees and Response Section */}
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
-                  <Tabs defaultValue="status" className="w-full">
-                    <TabsList className="grid grid-cols-2 mb-4">
-                      <TabsTrigger value="status">Attendee Status</TabsTrigger>
-                      <TabsTrigger value="response">Your Response</TabsTrigger>
-                    </TabsList>
-                    
-                    <TabsContent value="status" className="space-y-4">
-                      {/* Attendee Status Display */}
-                      {(() => {
-                        const attendeeCount = processedAttendees.length;
-                        
-                        // Get all attendees from processed attendees
-                        if (attendeeCount > 0) {
-                          // We'll handle limiting attendees in the AttendeeStatusDisplay component
-                            
-                          return (
-                            <>
-                              <AttendeeStatusDisplay 
-                                attendees={processedAttendees} 
-                                isOrganizer={isUsersOwnCalendar}
-                                showAll={showAllAttendees}
-                                onStatusClick={(status) => {
-                                  setSelectedStatus(status);
-                                  setStatusDialogOpen(true);
-                                }}
-                                onTimeProposalAccept={(attendeeEmail, start, end) => {
-                                  // This would update the event with the proposed time
-                                  console.log('Accepting time proposal from', attendeeEmail, start, end);
-                                  // We'd implement this in a future update
-                                }}
-                              />
+                {/* Attendees and Response Section - Only shown when event has attendees */}
+                {hasAttendees && processedAttendees.length > 0 && (
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                    <Tabs defaultValue="status" className="w-full">
+                      <TabsList className="grid grid-cols-2 mb-4">
+                        <TabsTrigger value="status">Attendee Status</TabsTrigger>
+                        <TabsTrigger value="response">Your Response</TabsTrigger>
+                      </TabsList>
+                      
+                      <TabsContent value="status" className="space-y-4">
+                        {/* Attendee Status Display */}
+                        {(() => {
+                          const attendeeCount = processedAttendees.length;
+                          
+                          // Get all attendees from processed attendees
+                          if (attendeeCount > 0) {
+                            // We'll handle limiting attendees in the AttendeeStatusDisplay component
                               
-                              {/* Button to open dialog showing all attendees */}
-                              {attendeeCount > 3 && (
-                                <button 
-                                  onClick={() => {
-                                    setSelectedStatus('all');
+                            return (
+                              <>
+                                <AttendeeStatusDisplay 
+                                  attendees={processedAttendees} 
+                                  isOrganizer={isUsersOwnCalendar}
+                                  showAll={showAllAttendees}
+                                  onStatusClick={(status) => {
+                                    setSelectedStatus(status);
                                     setStatusDialogOpen(true);
                                   }}
-                                  className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
-                                >
-                                  Show all {attendeeCount} attendees
-                                </button>
-                              )}
-                              
-                              {/* All Attendees Dialog */}
-                              <AttendeeDialog
-                                open={statusDialogOpen}
-                                onOpenChange={setStatusDialogOpen}
-                                attendees={processedAttendees}
-                                title={`All Attendees (${processedAttendees.length})`}
-                                description="Complete list of all attendees for this event"
-                                selectedStatus={selectedStatus || 'all'}
+                                  onTimeProposalAccept={(attendeeEmail, start, end) => {
+                                    // This would update the event with the proposed time
+                                    console.log('Accepting time proposal from', attendeeEmail, start, end);
+                                    // We'd implement this in a future update
+                                  }}
+                                />
+                                
+                                {/* Button to open dialog showing all attendees */}
+                                {attendeeCount > 3 && (
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedStatus('all');
+                                      setStatusDialogOpen(true);
+                                    }}
+                                    className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+                                  >
+                                    Show all {attendeeCount} attendees
+                                  </button>
+                                )}
+                                
+                                {/* All Attendees Dialog */}
+                                <AttendeeDialog
+                                  open={statusDialogOpen}
+                                  onOpenChange={setStatusDialogOpen}
+                                  attendees={processedAttendees}
+                                  title={`All Attendees (${processedAttendees.length})`}
+                                  description="Complete list of all attendees for this event"
+                                  selectedStatus={selectedStatus || 'all'}
+                                />
+                              </>
+                            );
+                          }
+                          
+                          // If no processed attendees, fall back to raw extraction
+                          return (
+                            <>
+                              <DirectAttendeeExtractor 
+                                rawData={typeof event.rawData === 'string' ? event.rawData : null} 
+                                showMoreCount={10}
+                                isPreview={false}
                               />
                             </>
                           );
-                        }
-                        
-                        // If no processed attendees, fall back to raw extraction
-                        return (
-                          <>
-                            <DirectAttendeeExtractor 
-                              rawData={typeof event.rawData === 'string' ? event.rawData : null} 
-                              showMoreCount={10}
-                              isPreview={false}
-                            />
-                          </>
-                        );
-                      })()}
-                    </TabsContent>
-                    
-                    <TabsContent value="response" className="space-y-4">
-                      {/* Attendee Response Form */}
-                      {(() => {
-                        // Only show response form if the current user is an attendee or if the event has attendees
-                        if (user && processedAttendees.length > 0) {
-                          // Check if the current user is an attendee
-                          const userEmail = (user as any).email || user.username;
-                          const isAttendee = processedAttendees.some((attendee: any) => 
-                            (typeof attendee === 'string' && attendee === userEmail) ||
-                            (typeof attendee === 'object' && 
-                             attendee.email && 
-                             attendee.email.toLowerCase() === userEmail.toLowerCase())
-                          );
-                          
-                          // If user is not the organizer and is an attendee, show response form
-                          if (isAttendee && !isUsersOwnCalendar) {
-                            // Find organizer
-                            const organizer = processedAttendees.find((attendee: any) => 
-                              typeof attendee === 'object' && 
-                              attendee.role && 
-                              (attendee.role.toLowerCase() === 'chair' || 
-                               attendee.role.toLowerCase() === 'organizer')
+                        })()}
+                      </TabsContent>
+                      
+                      <TabsContent value="response" className="space-y-4">
+                        {/* Attendee Response Form */}
+                        {(() => {
+                          // Only show response form if the current user is an attendee or if the event has attendees
+                          if (user && processedAttendees.length > 0) {
+                            // Check if the current user is an attendee
+                            const userEmail = (user as any).email || user.username;
+                            const isAttendee = processedAttendees.some((attendee: any) => 
+                              (typeof attendee === 'string' && attendee === userEmail) ||
+                              (typeof attendee === 'object' && 
+                               attendee.email && 
+                               attendee.email.toLowerCase() === userEmail.toLowerCase())
                             );
                             
-                            return (
-                              <AttendeeResponseForm
-                                eventId={event.id}
-                                eventTitle={event.title}
-                                eventStart={startDate}
-                                eventEnd={endDate}
-                                organizer={organizer ? {
-                                  email: organizer.email,
-                                  name: organizer.name || organizer.email
-                                } : undefined}
-                                currentUserEmail={userEmail}
-                                onResponseSuccess={() => {
-                                  console.log('Response submitted successfully');
-                                  // We'll implement this in a future update
-                                }}
-                              />
-                            );
+                            // If user is not the organizer and is an attendee, show response form
+                            if (isAttendee && !isUsersOwnCalendar) {
+                              // Find organizer
+                              const organizer = processedAttendees.find((attendee: any) => 
+                                typeof attendee === 'object' && 
+                                attendee.role && 
+                                (attendee.role.toLowerCase() === 'chair' || 
+                                 attendee.role.toLowerCase() === 'organizer')
+                              );
+                              
+                              return (
+                                <AttendeeResponseForm
+                                  eventId={event.id}
+                                  eventTitle={event.title}
+                                  eventStart={startDate}
+                                  eventEnd={endDate}
+                                  organizer={organizer ? {
+                                    email: organizer.email,
+                                    name: organizer.name || organizer.email
+                                  } : undefined}
+                                  currentUserEmail={userEmail}
+                                  onResponseSuccess={() => {
+                                    console.log('Response submitted successfully');
+                                    // We'll implement this in a future update
+                                  }}
+                                />
+                              );
+                            }
                           }
-                        }
-                        
-                        return (
-                          <div className="p-4 bg-gray-100 rounded-md text-center">
-                            {isUsersOwnCalendar ? (
-                              <p className="text-sm text-gray-600">
-                                You are the organizer of this event.
-                              </p>
-                            ) : (
-                              <p className="text-sm text-gray-600">
-                                You are not listed as an attendee for this event.
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </TabsContent>
-                  </Tabs>
-                </div>
+                          
+                          return (
+                            <div className="p-4 bg-gray-100 rounded-md text-center">
+                              {isUsersOwnCalendar ? (
+                                <p className="text-sm text-gray-600">
+                                  You are the organizer of this event.
+                                </p>
+                              ) : (
+                                <p className="text-sm text-gray-600">
+                                  You are not listed as an attendee for this event.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -802,6 +804,62 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex space-x-2">
               {!isUserLoading && (
                 <>
+                  {/* Download Event as iCalendar file */}
+                  <Button 
+                    variant="outline" 
+                    className="border-blue-200 text-blue-600 hover:bg-blue-50 flex items-center gap-1 shadow-sm"
+                    onClick={() => {
+                      if (!event) return;
+                      
+                      // Create a Blob with the event data (either raw data or basic iCalendar format)
+                      let icsContent = '';
+                      
+                      if (event.rawData && typeof event.rawData === 'string') {
+                        // Use the raw iCalendar data if available
+                        icsContent = event.rawData;
+                      } else {
+                        // Create basic iCalendar format
+                        const startDate = new Date(event.startDate);
+                        const endDate = new Date(event.endDate);
+                        
+                        // Format dates as required by iCalendar format (UTC)
+                        const formatDate = (date: Date) => {
+                          return date.toISOString().replace(/[-:]/g, '').replace(/\.\d+/g, '');
+                        };
+                        
+                        icsContent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//XGenCal//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+SUMMARY:${event.title}
+DTSTART:${formatDate(startDate)}
+DTEND:${formatDate(endDate)}
+DESCRIPTION:${event.description || ''}
+LOCATION:${event.location || ''}
+UID:${event.uid || `event-${Date.now()}`}
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR`;
+                      }
+                      
+                      // Create blob and download link
+                      const blob = new Blob([icsContent], { type: 'text/calendar' });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = url;
+                      link.download = `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    <Clock className="h-4 w-4" />
+                    Download
+                  </Button>
+                  
                   {/* Show Cancel Event button for events with attendees or resources on the user's calendar, or for DK Pandey */}
                   {shouldShowCancelButton && (
                     <Button 
