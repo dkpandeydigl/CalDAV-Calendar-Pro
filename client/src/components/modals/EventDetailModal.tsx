@@ -712,12 +712,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                   email: organizer.email,
                                   name: organizer.name || organizer.email
                                 } : undefined}
-                                attendee={{
-                                  email: userEmail,
-                                  name: user.username
-                                }}
-                                onResponseUpdate={(status, comment, proposedTimes) => {
-                                  console.log('Response updated:', status, comment, proposedTimes);
+                                currentUserEmail={userEmail}
+                                onResponseSuccess={() => {
+                                  console.log('Response submitted successfully');
                                   // We'll implement this in a future update
                                 }}
                               />
