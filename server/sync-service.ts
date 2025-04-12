@@ -879,10 +879,34 @@ export class SyncService {
                 return;
               }
               
+              // Try multiple patterns to capture the email since it might be malformed
+              let email = '';
+              
+              // Try standard pattern first
               const emailMatch = line.match(/mailto:([^>\r\n\s]+)/);
-              const email = emailMatch ? emailMatch[1] : '';
+              if (emailMatch && emailMatch[1]) {
+                email = emailMatch[1];
+              }
+              
+              // If no match, try another common pattern (multiline format)
+              if (!email) {
+                const altMatch = line.match(/mailto:([^"'\s\r\n]+)/);
+                if (altMatch && altMatch[1]) {
+                  email = altMatch[1];
+                }
+              }
+              
+              // If no match, try to extract just anything that looks like an email
+              if (!email) {
+                const anyEmailMatch = line.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+                if (anyEmailMatch && anyEmailMatch[1]) {
+                  email = anyEmailMatch[1];
+                  console.log(`Found fallback email: ${email}`);
+                }
+              }
               
               if (!email) {
+                console.log(`Could not extract email from line: ${line.substring(0, 50)}...`);
                 return;
               }
               
@@ -902,6 +926,9 @@ export class SyncService {
                   }
                 }
               }
+              
+              // Log the extracted email for debugging
+              console.log(`Processing attendee with email: ${cleanedEmail} from line: ${line.substring(0, 50)}...`);
               
               const nameMatch = line.match(/CN=([^;:]+)/);
               const name = nameMatch ? nameMatch[1] : '';
@@ -1027,6 +1054,27 @@ export class SyncService {
       // Fix 3: Clean up RRULE properties - ensure they only contain valid recurrence parameters
       // and extract any attendee data that may have been incorrectly merged
       const extractedAttendees: string[] = [];
+      
+      // First check if there's a "chairs:" or other resource type followed by a mailto: in the RRULE
+      // This is a common pattern in corrupted ICS data
+      const resourcePattern = /RRULE:[^:]*:([^:;]+):mailto:([^;\r\n\s]+)/g;
+      let resourceMatch;
+      while ((resourceMatch = resourcePattern.exec(icsData)) !== null) {
+        const resourceType = resourceMatch[1];
+        const email = resourceMatch[2];
+        
+        console.log(`Found resource directly in RRULE: ${resourceType} with email ${email}`);
+        
+        // Add as a proper resource attendee
+        extractedAttendees.push(
+          `ATTENDEE;CN=${email.split('@')[0]};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=${resourceType}:mailto:${email}`
+        );
+        
+        // Add a log so we can see this happening
+        console.log(`SPECIAL CASE: Created resource line from RRULE data: ${extractedAttendees[extractedAttendees.length-1]}`);
+      }
+      
+      // Now clean up the RRULE properties
       icsData = icsData.replace(/RRULE:[^\r\n]+/g, (match) => {
         console.log(`Sanitizing RRULE: ${match}`);
         
@@ -1043,16 +1091,46 @@ export class SyncService {
               
               // Check if this is likely a resource based on other terms in the line
               const isResource = match.includes('RESOURCE') || 
-                               match.includes('CUTYPE=RESOURCE') || 
-                               match.includes('chairs') || 
-                               match.includes('room') || 
-                               match.includes('projector');
-                               
+                              match.includes('CUTYPE=RESOURCE') || 
+                              match.includes('chairs') || 
+                              match.includes('room') || 
+                              match.includes('projector');
+                              
+              // Extract the specific resource type if possible
+              let resourceName = 'chairs'; // Default
               if (isResource) {
-                // Create a resource attendee line
-                const resourceType = match.match(/([a-zA-Z]+):[^;:\r\n]*mailto:/);
-                const resourceName = resourceType ? resourceType[1] : 'chairs';
+                // Try several patterns to find the resource type
+                const typeMatches = [
+                  match.match(/([a-zA-Z]+):[^;:\r\n]*mailto:/),
+                  match.match(/X-RESOURCE-TYPE=([^;:\r\n]+)/),
+                  match.match(/RESOURCE-TYPE=([^;:\r\n]+)/)
+                ];
                 
+                for (const typeMatch of typeMatches) {
+                  if (typeMatch && typeMatch[1]) {
+                    resourceName = typeMatch[1];
+                    break;
+                  }
+                }
+                
+                // Also check if the resource type is appended to the email domain
+                if (email.match(/[^@\s]+@[^@\s.]+\.[a-z]+[A-Za-z]+/)) {
+                  const domainParts = email.split('@');
+                  if (domainParts.length === 2) {
+                    const domain = domainParts[1];
+                    // Find if there's text after the TLD
+                    const dotIndex = domain.indexOf('.');
+                    if (dotIndex > 0) {
+                      const baseDomain = domain.substring(0, dotIndex + 3); // +3 to include the dot and 2 char TLD
+                      if (domain.length > baseDomain.length) {
+                        resourceName = domain.substring(baseDomain.length);
+                        console.log(`Extracted resource type from email domain: ${resourceName}`);
+                      }
+                    }
+                  }
+                }
+                
+                // Now create the proper resource line
                 extractedAttendees.push(
                   `ATTENDEE;CN=${email.split('@')[0]};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=${resourceName}:mailto:${email}`
                 );
