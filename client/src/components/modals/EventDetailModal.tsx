@@ -739,7 +739,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                 />
                                 
                                 {/* Button to open dialog showing all attendees */}
-                                {attendeeCount > 3 && (
+                                {attendeeCount > 2 && (
                                   <button 
                                     onClick={() => {
                                       setSelectedStatus('all');

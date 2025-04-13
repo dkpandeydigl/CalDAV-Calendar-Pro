@@ -203,7 +203,7 @@ const AttendeeStatusDisplay: React.FC<AttendeeStatusDisplayProps> = ({
   // Only display a limited set of attendees if showAll is false
   const displayedAttendees = showAll 
     ? processedAttendees 
-    : processedAttendees.slice(0, 3);
+    : processedAttendees.slice(0, 2);
   
   // Main component render
   return (

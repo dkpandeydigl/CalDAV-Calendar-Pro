@@ -204,7 +204,7 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
   };
   
   const [showAllAttendees, setShowAllAttendees] = useState(false);
-  const displayCount = isPreview ? 1 : (showAllAttendees ? attendees.length : Math.min(4, attendees.length));
+  const displayCount = isPreview ? 1 : (showAllAttendees ? attendees.length : Math.min(2, attendees.length));
   
   return (
     <div>
@@ -252,8 +252,8 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
             </li>
           )}
           
-          {/* Show "View All" button if there are more than 4 attendees in detail mode */}
-          {!isPreview && attendees.length > 4 && !showAllAttendees && (
+          {/* Show "View All" button if there are more than 2 attendees in detail mode */}
+          {!isPreview && attendees.length > 2 && !showAllAttendees && (
             <li className="text-center mt-2">
               <button 
                 onClick={() => setShowAllAttendees(true)}
@@ -265,7 +265,7 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
           )}
           
           {/* Show "Show Less" button when viewing all attendees */}
-          {!isPreview && showAllAttendees && attendees.length > 4 && (
+          {!isPreview && showAllAttendees && attendees.length > 2 && (
             <li className="text-center mt-2">
               <button 
                 onClick={() => setShowAllAttendees(false)}
