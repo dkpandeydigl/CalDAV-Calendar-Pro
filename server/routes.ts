@@ -2236,6 +2236,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasAttendees = Array.isArray(attendeesArray) && attendeesArray.length > 0;
       }
       
+      // Send real-time update notification via WebSocket
+      if (req.user) {
+        try {
+          const { notifyEventChanged } = require('./websocket-handler');
+          
+          // Notify the user who made the change
+          notifyEventChanged(req.user.id, eventId, 'updated', {
+            title: updatedEvent.title,
+            calendarId: updatedEvent.calendarId,
+            calendarName: (await storage.getCalendar(updatedEvent.calendarId))?.name || 'Unknown',
+            isExternalChange: false
+          });
+          
+          console.log(`WebSocket notification sent for event update: ${updatedEvent.title} (ID: ${eventId})`);
+          
+          // Create notification in the database
+          const { createNotification } = await import('./notification-service');
+          await createNotification({
+            userId: req.user.id,
+            type: 'event_update',
+            title: 'Event Updated',
+            message: `"${updatedEvent.title}" was updated`,
+            priority: 'medium',
+            relatedEventId: updatedEvent.id,
+            relatedEventUid: updatedEvent.uid,
+            requiresAction: false,
+            isRead: false,
+            isDismissed: false,
+            actionTaken: false
+          });
+        } catch (wsError) {
+          console.error("Error sending WebSocket notification:", wsError);
+          // Continue without failing the request
+        }
+      }
+      
       // Ensure proper content type header is set
       res.setHeader('Content-Type', 'application/json');
       res.status(200).json({ 
