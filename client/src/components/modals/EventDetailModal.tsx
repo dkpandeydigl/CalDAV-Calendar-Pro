@@ -10,7 +10,7 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { MailCheck, AlertTriangle, User as UserIcon, UserRound, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle, Trash2, Calendar, History } from 'lucide-react';
+import { MailCheck, AlertTriangle, User as UserIcon, UserRound, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle, Trash2, Calendar, History, ChevronUp, ChevronDown } from 'lucide-react';
 import DirectResourceExtractor from './DirectResourceExtractor';
 import ResourceManager from '@/components/resources/ResourceManager';
 import DirectAttendeeExtractor from './DirectAttendeeExtractor';
