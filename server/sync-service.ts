@@ -343,7 +343,11 @@ export class SyncService {
   /**
    * Request a sync operation - alias for syncNow for backward compatibility
    */
-  async requestSync(userId: number, options: { forceRefresh?: boolean, calendarId?: number | null } = {}): Promise<boolean> {
+  async requestSync(userId: number, options: { 
+    forceRefresh?: boolean, 
+    calendarId?: number | null,
+    preserveLocalEvents?: boolean
+  } = {}): Promise<boolean> {
     return this.syncNow(userId, options);
   }
   

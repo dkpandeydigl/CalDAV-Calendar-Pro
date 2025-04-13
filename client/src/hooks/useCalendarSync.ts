@@ -585,21 +585,27 @@ export function useCalendarSync() {
       if (options.calendarId) {
         return syncCalendar(options.calendarId);
       } else {
-        // Just invalidate queries as a fallback with forced refresh
-        console.log('No WebSocket connection, using direct query invalidation fallback');
-        queryClient.invalidateQueries({ 
-          queryKey: ['/api/events'],
-          refetchType: 'all', // Change from 'active' to 'all' for complete refresh
-        });
+        // Use a more careful approach that preserves data in the cache
+        console.log('No WebSocket connection, using optimized cache update strategy');
         
-        // Add a slight delay then force refetch again
-        setTimeout(() => {
-          console.log('Performing delayed refetch to ensure UI is updated...');
-          queryClient.refetchQueries({ 
-            queryKey: ['/api/events'],
-            type: 'all'
-          });
-        }, 500);
+        // First, store the current events to preserve them
+        const currentEvents = queryClient.getQueryData(['/api/events']);
+        
+        // Then do a background refetch WITHOUT invalidating first
+        console.log('Performing background refetch while preserving current data...');
+        queryClient.refetchQueries({ 
+          queryKey: ['/api/events'],
+          type: 'all'
+        }).then(() => {
+          console.log('Background refetch complete, ensuring UI has latest data');
+          
+          // If refetch failed and we lost our events, restore them
+          const eventsAfterRefetch = queryClient.getQueryData(['/api/events']);
+          if (!eventsAfterRefetch && currentEvents) {
+            console.log('Restoring events that were lost during sync');
+            queryClient.setQueryData(['/api/events'], currentEvents);
+          }
+        });
         return Promise.resolve(false);
       }
     }
@@ -614,28 +620,35 @@ export function useCalendarSync() {
             socket.removeEventListener('message', handleSyncComplete);
             
             if (data.success) {
-              // Force refresh the UI
-              console.log('Sync complete, refreshing UI with new data');
-              queryClient.invalidateQueries({ 
+              // Use a preserving approach for UI updates
+              console.log('Sync complete, updating UI with new data while preserving current view');
+              
+              // First, preserve the current events
+              const currentEvents = queryClient.getQueryData(['/api/events']);
+              
+              // Perform a background refetch without invalidating first
+              console.log('Performing background refetch for new events data...');
+              queryClient.refetchQueries({ 
                 queryKey: ['/api/events'],
-                refetchType: 'all', // Change from 'active' to 'all' for complete refresh
+                type: 'all'
+              }).then(() => {
+                console.log('Background refetch completed after sync');
+                
+                // If for some reason we lost our events data, restore from backup
+                const eventsAfterRefetch = queryClient.getQueryData(['/api/events']);
+                if (!eventsAfterRefetch && currentEvents) {
+                  console.log('Restoring events that were lost during sync processing');
+                  queryClient.setQueryData(['/api/events'], currentEvents);
+                }
+                
+                // If we have a specific calendar, update that data too
+                if (options.calendarId) {
+                  queryClient.refetchQueries({ 
+                    queryKey: ['/api/calendars', options.calendarId, 'events'],
+                    type: 'all'
+                  });
+                }
               });
-              
-              if (options.calendarId) {
-                queryClient.invalidateQueries({ 
-                  queryKey: ['/api/calendars', options.calendarId, 'events'],
-                  refetchType: 'all', // Change from 'active' to 'all' for complete refresh
-                });
-              }
-              
-              // Add a slight delay then force refetch again to handle race conditions
-              setTimeout(() => {
-                console.log('Performing delayed refetch after sync to ensure UI is updated...');
-                queryClient.refetchQueries({ 
-                  queryKey: ['/api/events'],
-                  type: 'all'
-                });
-              }, 500);
               
               setLastSyncTime(new Date());
               resolve(true);
