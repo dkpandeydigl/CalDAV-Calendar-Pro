@@ -66,6 +66,33 @@ export class SyncService {
   private lastGlobalSync: Date | null = null;
 
   /**
+   * Clean up sync jobs for users who are no longer active
+   * This ensures we're not wasting resources on sync jobs for users without active sessions
+   * @param activeUserIds The list of user IDs with active sessions
+   */
+  private cleanupInactiveSyncJobs(activeUserIds: number[]) {
+    // Create a Set for faster lookups
+    const activeUserIdSet = new Set(activeUserIds);
+    
+    // Get all user IDs that have sync jobs
+    const jobUserIds = Array.from(this.jobs.keys());
+    
+    // Find users with jobs but no active sessions
+    const inactiveUserIds = jobUserIds.filter(userId => !activeUserIdSet.has(userId));
+    
+    if (inactiveUserIds.length > 0) {
+      console.log(`Found ${inactiveUserIds.length} inactive users with sync jobs to clean up`);
+      
+      // Stop sync jobs for all inactive users
+      for (const userId of inactiveUserIds) {
+        console.log(`Cleaning up sync job for inactive user ID ${userId}`);
+        this.stopSync(userId);
+        this.jobs.delete(userId);
+      }
+    }
+  }
+
+  /**
    * Initialize the sync service with both session-based and automatic background sync
    */
   async initialize() {
@@ -127,6 +154,9 @@ export class SyncService {
       }
       
       console.log(`Found ${activeUserIds.length} active user sessions for background sync`);
+      
+      // Clean up sync jobs for users who are no longer active
+      this.cleanupInactiveSyncJobs(activeUserIds);
       
       // Get server connections, but only for users with active sessions
       const connections = await storage.getAllServerConnections();
