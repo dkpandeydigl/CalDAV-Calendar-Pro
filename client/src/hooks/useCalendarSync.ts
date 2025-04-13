@@ -92,7 +92,8 @@ export function useCalendarSync() {
       // Create new WebSocket connection with authentication
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       // Don't append port number, use the same host that served the page
-      const wsUrl = `${protocol}//${window.location.host}/ws?userId=${user.id}`;
+      // Using /api/ws path to avoid conflicts with Vite's WebSocket
+      const wsUrl = `${protocol}//${window.location.host}/api/ws?userId=${user.id}`;
       console.log('🔌 Connecting to WebSocket server at:', wsUrl);
       
       try {

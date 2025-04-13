@@ -10,7 +10,7 @@ const userSockets = new Map<number, Set<WebSocket>>();
 export function initializeWebSocketServer(httpServer: Server) {
   const wss = new WebSocketServer({
     server: httpServer,
-    path: '/ws',
+    path: '/api/ws', // Change from '/ws' to '/api/ws' to avoid conflicts with Vite's WebSocket
   });
 
   console.log('WebSocket server initialized');
