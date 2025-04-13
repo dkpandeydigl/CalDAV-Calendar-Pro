@@ -944,16 +944,7 @@ END:VCALENDAR`;
               {isAuthError && (
                 <div className="text-sm text-muted-foreground py-2 flex items-center">
                   <Info className="text-amber-500 mr-1 h-4 w-4" />
-                  <Button 
-                    variant="link" 
-                    className="p-0 h-auto text-primary hover:text-primary/80 font-normal"
-                    onClick={() => {
-                      onClose();
-                      window.location.href = '/auth';
-                    }}
-                  >
-                    Log in to edit events
-                  </Button>
+                  <span>This event is part of a shared calendar</span>
                 </div>
               )}
             </div>
