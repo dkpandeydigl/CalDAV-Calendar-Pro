@@ -3301,8 +3301,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       const forceRefresh = req.body.forceRefresh === true;
       const calendarId = req.body.calendarId ? parseInt(req.body.calendarId) : null;
+      const preserveLocalEvents = req.body.preserveLocalEvents === true;
       
-      console.log(`Immediate sync requested for userId=${userId}, calendarId=${calendarId}, forceRefresh=${forceRefresh}`);
+      console.log(`Immediate sync requested for userId=${userId}, calendarId=${calendarId}, forceRefresh=${forceRefresh}, preserveLocalEvents=${preserveLocalEvents}`);
       
       // Check if user has a server connection configured
       const connection = await storage.getServerConnection(userId);
@@ -3340,7 +3341,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // This will trigger a sync right away with the specified options
-      const success = await syncService.syncNow(userId, { forceRefresh, calendarId });
+      const success = await syncService.syncNow(userId, { 
+        forceRefresh, 
+        calendarId,
+        preserveLocalEvents // Pass the preserveLocalEvents flag to the sync service
+      });
       
       // Ensure proper content type header is set
       res.setHeader('Content-Type', 'application/json');

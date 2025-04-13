@@ -355,7 +355,12 @@ export class SyncService {
    * @param options.calendarId - Optional calendar ID to sync just one calendar
    * @param options.isGlobalSync - Whether this sync is triggered by the global sync timer (not a user request)
    */
-  async syncNow(userId: number, options: { forceRefresh?: boolean, calendarId?: number | null, isGlobalSync?: boolean } = {}): Promise<boolean> {
+  async syncNow(userId: number, options: { 
+    forceRefresh?: boolean, 
+    calendarId?: number | null, 
+    isGlobalSync?: boolean,
+    preserveLocalEvents?: boolean 
+  } = {}): Promise<boolean> {
     let job = this.jobs.get(userId);
     
     // If no job exists, try to create one on-demand
@@ -384,8 +389,8 @@ export class SyncService {
       }
     }
     
-    const { forceRefresh = false, calendarId = null, isGlobalSync = false } = options;
-    console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId, isGlobalSync });
+    const { forceRefresh = false, calendarId = null, isGlobalSync = false, preserveLocalEvents = false } = options;
+    console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId, isGlobalSync, preserveLocalEvents });
     
     // If a sync is already in progress, don't start another one
     // Unless forceRefresh is true, in which case we'll proceed anyway
