@@ -31,142 +31,253 @@ export function useCalendarSync() {
   useEffect(() => {
     if (!user) return;
     
-    // Close any existing connection
-    if (socket) {
-      socket.close();
-    }
+    // Variables for reconnection
+    let ws: WebSocket | null = null;
+    let reconnectTimer: NodeJS.Timeout | null = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 10;
+    const baseReconnectDelay = 1000; // Start with 1 second delay
     
-    // Create new WebSocket connection
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
-    const ws = new WebSocket(wsUrl);
-    
-    ws.onopen = () => {
-      console.log('WebSocket connected for calendar sync');
-    };
-    
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log('WebSocket message received:', data);
+    // Function to create and set up a new WebSocket connection
+    const connectWebSocket = () => {
+      // Close any existing connection
+      if (socket) {
+        socket.close();
+      }
+      
+      // Create new WebSocket connection
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      ws = new WebSocket(wsUrl);
+      
+      ws.onopen = () => {
+        console.log('WebSocket connected for calendar sync');
+        // Reset reconnect attempts when successfully connected
+        reconnectAttempts = 0;
         
-        if (data.type === 'calendar_changed') {
-          console.log('Calendar changed notification received:', data);
+        // Store last successful connection time in localStorage
+        localStorage.setItem('lastWsConnectTime', new Date().toISOString());
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('WebSocket message received:', data);
           
-          // Show notification
-          const changeCount = 
-            (data.changes?.added || 0) + 
-            (data.changes?.modified || 0) + 
-            (data.changes?.deleted || 0);
-          
-          if (changeCount > 0) {
+          if (data.type === 'calendar_changed') {
+            console.log('Calendar changed notification received:', data);
+            
+            // Show notification
+            const changeCount = 
+              (data.changes?.added || 0) + 
+              (data.changes?.modified || 0) + 
+              (data.changes?.deleted || 0);
+            
+            if (changeCount > 0) {
+              toast({
+                title: 'Calendar Updated',
+                description: `${changeCount} change${changeCount !== 1 ? 's' : ''} detected`,
+              });
+              
+              // Invalidate queries to refresh UI
+              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              queryClient.invalidateQueries({ 
+                queryKey: ['/api/calendars', data.calendarId, 'events'] 
+              });
+              
+              // Update sync token if provided
+              if (data.syncToken) {
+                saveSyncToken(data.calendarId, data.syncToken);
+              }
+            }
+          } 
+          else if (data.type === 'event_changed') {
+            console.log('Event changed notification received:', data);
+            
+            // Generate a more specific and informative notification message
+            let title = 'Calendar Event';
+            let description = '';
+            
+            if (data.changeType === 'added') {
+              title = 'New Event Added';
+              description = data.data?.title ? 
+                `"${data.data.title}" was added to ${data.data.calendarName || 'calendar'}` : 
+                'A new event was added';
+            } else if (data.changeType === 'updated') {
+              title = 'Event Updated';
+              description = data.data?.title ? 
+                `"${data.data.title}" was updated ${data.data.isExternalChange ? 'in an external client' : ''}` : 
+                'An event was updated';
+            } else if (data.changeType === 'deleted') {
+              title = 'Event Removed';
+              description = data.data?.count > 1 ? 
+                `${data.data.count} events were removed from ${data.data.calendarName || 'calendar'}` :
+                'An event was removed';
+            }
+            
             toast({
-              title: 'Calendar Updated',
-              description: `${changeCount} change${changeCount !== 1 ? 's' : ''} detected`,
+              title,
+              description,
             });
             
-            // Invalidate queries to refresh UI
-            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-            queryClient.invalidateQueries({ 
-              queryKey: ['/api/calendars', data.calendarId, 'events'] 
-            });
-            
-            // Update sync token if provided
-            if (data.syncToken) {
-              saveSyncToken(data.calendarId, data.syncToken);
+            // For external changes, immediately force a refresh
+            if (data.data?.isExternalChange) {
+              console.log('External change detected, forcing immediate refresh');
+              
+              // Invalidate all calendar queries to ensure latest data
+              queryClient.invalidateQueries({ 
+                queryKey: ['/api/calendars'] 
+              });
+              
+              // Force refresh of events data
+              queryClient.invalidateQueries({ 
+                queryKey: ['/api/events'],
+                refetchType: 'active',
+              });
+            } else {
+              // Standard invalidation for normal changes
+              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              
+              // If we have the specific event ID, also invalidate that query
+              if (data.eventId) {
+                queryClient.invalidateQueries({ 
+                  queryKey: ['/api/events', data.eventId] 
+                });
+              }
             }
           }
-        } 
-        else if (data.type === 'event_changed') {
-          console.log('Event changed notification received:', data);
+          else if (data.type === 'new_notification') {
+            console.log('New notification received:', data);
+            
+            // The notification context will handle this
+            // We just make sure events are refreshed if it's event-related
+            if (data.notification && 
+                (data.notification.type === 'event_update' || 
+                 data.notification.type === 'event_invitation' ||
+                 data.notification.type === 'event_cancellation')) {
+              
+              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            }
+          }
+          // Handle pong response to keep connection alive
+          else if (data.type === 'pong') {
+            console.log('Received pong from server, connection active');
+          }
+        } catch (error) {
+          console.error('Error handling WebSocket message:', error);
+        }
+      };
+      
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+      
+      ws.onclose = (event) => {
+        console.log(`WebSocket connection closed with code ${event.code}`);
+        
+        // Attempt to reconnect unless this was a normal closure or unmounting
+        if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
+          reconnectAttempts++;
           
-          // Generate a more specific and informative notification message
-          let title = 'Calendar Event';
-          let description = '';
+          // Exponential backoff for reconnect timing
+          const delay = Math.min(
+            baseReconnectDelay * Math.pow(1.5, reconnectAttempts),
+            30000 // Maximum 30 seconds
+          );
           
-          if (data.changeType === 'added') {
-            title = 'New Event Added';
-            description = data.data?.title ? 
-              `"${data.data.title}" was added to ${data.data.calendarName || 'calendar'}` : 
-              'A new event was added';
-          } else if (data.changeType === 'updated') {
-            title = 'Event Updated';
-            description = data.data?.title ? 
-              `"${data.data.title}" was updated ${data.data.isExternalChange ? 'in an external client' : ''}` : 
-              'An event was updated';
-          } else if (data.changeType === 'deleted') {
-            title = 'Event Removed';
-            description = data.data?.count > 1 ? 
-              `${data.data.count} events were removed from ${data.data.calendarName || 'calendar'}` :
-              'An event was removed';
+          console.log(`Attempting to reconnect WebSocket in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+          
+          // Clear any existing timer
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
           }
           
-          toast({
-            title,
-            description,
-          });
+          // Set new timer
+          reconnectTimer = setTimeout(connectWebSocket, delay);
+        } else if (reconnectAttempts >= maxReconnectAttempts) {
+          console.log('Maximum WebSocket reconnection attempts reached');
           
-          // For external changes, immediately force a refresh
-          if (data.data?.isExternalChange) {
-            console.log('External change detected, forcing immediate refresh');
+          // When max attempts reached, we'll try again when user takes an action
+          // or when component re-mounts
+        }
+      };
+      
+      // Update the state
+      setSocket(ws);
+    };
+    
+    // Initialize connection
+    connectWebSocket();
+    
+    // Set up a keep-alive ping
+    const pingInterval = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 30000); // Send ping every 30 seconds
+    
+    // Check for visibilitychange to reconnect when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (!document.hidden && ws && ws.readyState !== WebSocket.OPEN) {
+        console.log('Tab became visible again, reconnecting WebSocket');
+        connectWebSocket();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Force synchronization when the tab becomes visible again to catch up on missed events
+    // during period when browser tab was not active
+    const handleSyncOnVisibility = () => {
+      if (!document.hidden) {
+        console.log('Tab visible - checking for external changes');
+        
+        // Check if we've been away for a significant time (more than 1 minute)
+        const lastConnectTime = localStorage.getItem('lastWsConnectTime');
+        if (lastConnectTime) {
+          const timeSinceLastConnect = Date.now() - new Date(lastConnectTime).getTime();
+          
+          if (timeSinceLastConnect > 60000) { // More than 1 minute
+            console.log(`Been away for ${Math.round(timeSinceLastConnect/1000)} seconds, fetching updates`);
             
-            // Invalidate all calendar queries to ensure latest data
-            queryClient.invalidateQueries({ 
-              queryKey: ['/api/calendars'] 
-            });
-            
-            // Force refresh of events data
-            queryClient.invalidateQueries({ 
-              queryKey: ['/api/events'],
-              refetchType: 'active',
-            });
-          } else {
-            // Standard invalidation for normal changes
-            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-            
-            // If we have the specific event ID, also invalidate that query
-            if (data.eventId) {
+            // Request an immediate sync via WebSocket if connection is open
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              console.log('Requesting immediate sync via WebSocket');
+              ws.send(JSON.stringify({
+                type: 'sync_request',
+                forceRefresh: true
+              }));
+            } else {
+              // Fallback to query invalidation if WebSocket is not available
+              console.log('WebSocket not available, using query invalidation');
               queryClient.invalidateQueries({ 
-                queryKey: ['/api/events', data.eventId] 
+                queryKey: ['/api/events'],
+                refetchType: 'active',
               });
             }
           }
         }
-        else if (data.type === 'new_notification') {
-          console.log('New notification received:', data);
-          
-          // The notification context will handle this
-          // We just make sure events are refreshed if it's event-related
-          if (data.notification && 
-              (data.notification.type === 'event_update' || 
-               data.notification.type === 'event_invitation' ||
-               data.notification.type === 'event_cancellation')) {
-            
-            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-          }
-        }
-      } catch (error) {
-        console.error('Error handling WebSocket message:', error);
       }
     };
     
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+    document.addEventListener('visibilitychange', handleSyncOnVisibility);
     
-    ws.onclose = () => {
-      console.log('WebSocket connection closed');
-    };
-    
-    setSocket(ws);
-    
-    // Clean up connection on unmount
+    // Clean up on unmount
     return () => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('visibilitychange', handleSyncOnVisibility);
+      
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+      
+      clearInterval(pingInterval);
+      
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        ws.close(1000, 'Component unmounting');
       }
     };
-  }, [user, queryClient, toast, saveSyncToken]);
+  }, [user, queryClient, toast, saveSyncToken, socket]);
 
   /**
    * Trigger an immediate sync for a specific calendar
@@ -318,11 +429,98 @@ export function useCalendarSync() {
     }
   }, [syncing, queryClient, toast]);
 
+  /**
+   * Request a real-time sync via WebSocket
+   * This bypasses the REST API and directly requests a sync from the server
+   * via the WebSocket connection for faster response
+   */
+  const requestRealTimeSync = useCallback((options: { forceRefresh?: boolean, calendarId?: number } = {}) => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not connected, cannot request real-time sync');
+      
+      // Fallback to REST API
+      if (options.calendarId) {
+        return syncCalendar(options.calendarId);
+      } else {
+        // Just invalidate queries as a fallback
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/events'],
+          refetchType: 'active',
+        });
+        return Promise.resolve(false);
+      }
+    }
+    
+    return new Promise<boolean>((resolve) => {
+      // Set up one-time listener for sync complete
+      const handleSyncComplete = (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'sync_complete') {
+            // Remove listener after receiving response
+            socket.removeEventListener('message', handleSyncComplete);
+            
+            if (data.success) {
+              // Force refresh the UI
+              queryClient.invalidateQueries({ 
+                queryKey: ['/api/events'],
+                refetchType: 'active',
+              });
+              
+              if (options.calendarId) {
+                queryClient.invalidateQueries({ 
+                  queryKey: ['/api/calendars', options.calendarId, 'events'],
+                  refetchType: 'active',
+                });
+              }
+              
+              setLastSyncTime(new Date());
+              resolve(true);
+            } else {
+              console.error('Real-time sync failed:', data.message);
+              toast({
+                title: 'Sync Failed',
+                description: data.message || 'Unknown error during sync',
+                variant: 'destructive'
+              });
+              resolve(false);
+            }
+          }
+        } catch (error) {
+          // Continue listening, this might be an unrelated message
+        }
+      };
+      
+      // Add temporary listener for sync complete response
+      socket.addEventListener('message', handleSyncComplete);
+      
+      // Send sync request
+      socket.send(JSON.stringify({
+        type: 'sync_request',
+        forceRefresh: options.forceRefresh || false,
+        calendarId: options.calendarId || null
+      }));
+      
+      // Set a timeout to prevent waiting forever
+      setTimeout(() => {
+        socket.removeEventListener('message', handleSyncComplete);
+        console.warn('Sync request timed out');
+        toast({
+          title: 'Sync Timeout',
+          description: 'The sync request timed out. Try again later.',
+          variant: 'destructive'
+        });
+        resolve(false);
+      }, 10000); // 10 second timeout
+    });
+  }, [socket, syncCalendar, queryClient, toast]);
+
   return {
     syncing,
     lastSyncTime,
     syncCalendar,
     syncAllCalendars,
-    pushLocalEvents
+    pushLocalEvents,
+    requestRealTimeSync
   };
 }

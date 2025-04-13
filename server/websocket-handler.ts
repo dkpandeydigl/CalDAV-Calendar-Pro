@@ -321,9 +321,50 @@ async function handleWebSocketMessage(userId: number, data: any, ws: WebSocket):
       break;
       
     case 'ping':
+      // Handle keep-alive ping messages from client
+      // Simply respond with a pong to maintain the connection
+      console.log(`Received ping from user ${userId}, sending pong`);
       sendToSocket(ws, { type: 'pong' });
       break;
       
+    case 'sync_request':
+      // Client is requesting an immediate sync
+      // This can happen after a tab becomes visible again
+      try {
+        console.log(`Received sync request from user ${userId}`);
+        
+        // Get the user's server connection
+        const connection = await storage.getServerConnection(userId);
+        if (connection) {
+          // Forward to sync service
+          const { syncService } = await import('./sync-service');
+          await syncService.syncNow(userId, { 
+            forceRefresh: data.forceRefresh || false,
+            calendarId: data.calendarId || null 
+          });
+          
+          sendToSocket(ws, { 
+            type: 'sync_complete',
+            success: true,
+            message: 'Sync completed successfully'
+          });
+        } else {
+          sendToSocket(ws, { 
+            type: 'sync_complete',
+            success: false,
+            message: 'No server connection found for user'
+          });
+        }
+      } catch (error) {
+        console.error('Error handling sync request:', error);
+        sendToSocket(ws, {
+          type: 'sync_complete',
+          success: false,
+          message: error instanceof Error ? error.message : 'Unknown error during sync'
+        });
+      }
+      break;
+    
     default:
       sendToSocket(ws, {
         type: 'error',
