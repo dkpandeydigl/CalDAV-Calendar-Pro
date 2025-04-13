@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import CalendarHeader from '@/components/calendar/CalendarHeader';
 import CalendarSidebar from '@/components/calendar/CalendarSidebar';
+import EnhancedCalendarSidebar from '@/components/calendar/EnhancedCalendarSidebar';
 import CalendarGrid from '@/components/calendar/CalendarGrid';
 import ImprovedEventFormModal from '@/components/modals/ImprovedEventFormModal';
 import EventDetailModal from '@/components/modals/EventDetailModal';
@@ -400,8 +401,8 @@ function CalendarContent() {
       />
       
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar - hidden on mobile by default */}
-        <CalendarSidebar 
+        {/* Enhanced Sidebar with better handling for large calendar lists */}
+        <EnhancedCalendarSidebar 
           visible={showSidebar} 
           onCreateEvent={handleCreateEvent}
           onOpenServerSettings={handleOpenServerSettings}
