@@ -1,10 +1,11 @@
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getQueryFn } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Event } from '@shared/schema';
 import { useCalendars } from './useCalendars';
 import { useSharedCalendars } from './useSharedCalendars';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 // Type declarations to help with TanStack Query types
 type QueryKey = unknown;
@@ -12,8 +13,30 @@ type EventFilter = (e: Event) => boolean;
 
 export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   const { toast } = useToast();
+  const localQueryClient = useQueryClient();
   const { calendars } = useCalendars();
   const { sharedCalendars } = useSharedCalendars();
+  
+  // Create a ref to store the current events data to prevent disappearing during sync
+  const eventsCache = useRef<Event[]>([]);
+  
+  // Enhanced cache preservation system
+  const preserveEventsCache = useCallback(() => {
+    const currentEvents = localQueryClient.getQueryData<Event[]>(['/api/events']);
+    if (currentEvents && currentEvents.length > 0) {
+      eventsCache.current = currentEvents;
+      console.log(`Preserved ${currentEvents.length} events in local cache`);
+    }
+  }, [localQueryClient]);
+  
+  // Restore events if they disappear
+  const restoreEventsIfNeeded = useCallback(() => {
+    const currentEvents = localQueryClient.getQueryData<Event[]>(['/api/events']);
+    if ((!currentEvents || currentEvents.length === 0) && eventsCache.current.length > 0) {
+      console.log(`Restoring ${eventsCache.current.length} events from local cache`);
+      localQueryClient.setQueryData(['/api/events'], eventsCache.current);
+    }
+  }, [localQueryClient]);
   
   // Get calendar IDs that are enabled (from regular calendars)
   const enabledUserCalendarIds = calendars
@@ -33,10 +56,47 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     queryKey: ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()],
     enabled: enabledCalendarIds.length > 0,
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty to handle user session expiry gracefully
+    onSuccess: (data) => {
+      // When we successfully get events, store them in our backup cache
+      if (data && data.length > 0) {
+        eventsCache.current = data;
+        console.log(`Stored ${data.length} events in backup cache`);
+      }
+    },
   });
   
+  // Setup effect to preserve and restore events during state transitions
+  useEffect(() => {
+    // Preserve events on mount
+    preserveEventsCache();
+    
+    // Set up an interval to check and restore events if they disappear
+    const checkInterval = setInterval(() => {
+      restoreEventsIfNeeded();
+    }, 500); // Check every 500ms
+    
+    // Clean up interval on unmount
+    return () => clearInterval(checkInterval);
+  }, [preserveEventsCache, restoreEventsIfNeeded]);
+  
+  // Add extra check when eventsQueries.data changes
+  useEffect(() => {
+    if (!eventsQueries.data || eventsQueries.data.length === 0) {
+      // Data went missing, try to restore from cache
+      restoreEventsIfNeeded();
+    } else {
+      // New data arrived, update our cache
+      preserveEventsCache();
+    }
+  }, [eventsQueries.data, preserveEventsCache, restoreEventsIfNeeded]);
+  
   // Filter events client-side to ensure we only show events from enabled calendars
-  const filteredEvents = (eventsQueries.data || []).filter(event => 
+  // If data is empty but our cache has events, use the cache
+  const eventsData = (eventsQueries.data && eventsQueries.data.length > 0) 
+    ? eventsQueries.data 
+    : (eventsCache.current && eventsCache.current.length > 0 ? eventsCache.current : []);
+    
+  const filteredEvents = eventsData.filter(event => 
     enabledCalendarIds.includes(event.calendarId)
   );
 
