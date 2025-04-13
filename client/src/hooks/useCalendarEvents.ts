@@ -22,19 +22,32 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   
   // Enhanced cache preservation system
   const preserveEventsCache = useCallback(() => {
-    const currentEvents = localQueryClient.getQueryData<Event[]>(['/api/events']);
-    if (currentEvents && currentEvents.length > 0) {
-      eventsCache.current = currentEvents;
-      console.log(`Preserved ${currentEvents.length} events in local cache`);
+    try {
+      const currentEvents = localQueryClient.getQueryData<Event[]>(['/api/events']);
+      if (currentEvents && currentEvents.length > 0) {
+        // Make a deep copy to avoid reference issues
+        eventsCache.current = JSON.parse(JSON.stringify(currentEvents));
+        console.log(`Preserved ${currentEvents.length} events in local cache`);
+      }
+    } catch (error) {
+      console.error("Error preserving events cache:", error);
+      // Don't update cache if there was an error
     }
   }, [localQueryClient]);
   
   // Restore events if they disappear
   const restoreEventsIfNeeded = useCallback(() => {
-    const currentEvents = localQueryClient.getQueryData<Event[]>(['/api/events']);
-    if ((!currentEvents || currentEvents.length === 0) && eventsCache.current.length > 0) {
-      console.log(`Restoring ${eventsCache.current.length} events from local cache`);
-      localQueryClient.setQueryData(['/api/events'], eventsCache.current);
+    try {
+      const currentEvents = localQueryClient.getQueryData<Event[]>(['/api/events']);
+      if ((!currentEvents || currentEvents.length === 0) && eventsCache.current && eventsCache.current.length > 0) {
+        console.log(`Restoring ${eventsCache.current.length} events from local cache`);
+        // Make a deep copy to avoid reference issues
+        const cacheSnapshot = JSON.parse(JSON.stringify(eventsCache.current));
+        localQueryClient.setQueryData(['/api/events'], cacheSnapshot);
+      }
+    } catch (error) {
+      console.error("Error restoring events from cache:", error);
+      // Prevent the error from bubbling up
     }
   }, [localQueryClient]);
   
@@ -56,13 +69,6 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     queryKey: ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()],
     enabled: enabledCalendarIds.length > 0,
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty to handle user session expiry gracefully
-    onSuccess: (data) => {
-      // When we successfully get events, store them in our backup cache
-      if (data && data.length > 0) {
-        eventsCache.current = data;
-        console.log(`Stored ${data.length} events in backup cache`);
-      }
-    },
   });
   
   // Setup effect to preserve and restore events during state transitions
@@ -81,7 +87,12 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   
   // Add extra check when eventsQueries.data changes
   useEffect(() => {
-    if (!eventsQueries.data || eventsQueries.data.length === 0) {
+    // Type guard function to check if data has events
+    const hasEvents = (data: Event[] | undefined): data is Event[] => {
+      return !!data && Array.isArray(data) && data.length > 0;
+    };
+    
+    if (!hasEvents(eventsQueries.data)) {
       // Data went missing, try to restore from cache
       restoreEventsIfNeeded();
     } else {
@@ -92,11 +103,18 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   
   // Filter events client-side to ensure we only show events from enabled calendars
   // If data is empty but our cache has events, use the cache
-  const eventsData = (eventsQueries.data && eventsQueries.data.length > 0) 
+  // Type guard function to check if data has events
+  const hasEvents = (data: Event[] | undefined): data is Event[] => {
+    return !!data && Array.isArray(data) && data.length > 0;
+  };
+  
+  const eventsData: Event[] = hasEvents(eventsQueries.data)
     ? eventsQueries.data 
-    : (eventsCache.current && eventsCache.current.length > 0 ? eventsCache.current : []);
+    : (eventsCache.current && Array.isArray(eventsCache.current) && eventsCache.current.length > 0 
+        ? eventsCache.current 
+        : []);
     
-  const filteredEvents = eventsData.filter(event => 
+  const filteredEvents = eventsData.filter((event: Event) => 
     enabledCalendarIds.includes(event.calendarId)
   );
 

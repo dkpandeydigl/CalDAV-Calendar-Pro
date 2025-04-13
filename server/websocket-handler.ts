@@ -444,9 +444,10 @@ function sendToSocket(ws: WebSocket, data: any): void {
 export function broadcastToUser(userId: number, data: any): void {
   const sockets = userSockets.get(userId);
   if (sockets) {
-    for (const socket of sockets) {
+    // Convert Set to Array for compatibility with all TS versions
+    Array.from(sockets).forEach(socket => {
       sendToSocket(socket, data);
-    }
+    });
   }
 }
 
