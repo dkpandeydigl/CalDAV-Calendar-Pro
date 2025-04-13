@@ -519,14 +519,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 {/* Description section - only show if there's a description */}
                 {event.description && (
                   <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
-                    <h3 className="font-medium mb-2 flex items-center justify-between">
-                      <span className="flex items-center">
-                        <Info className="text-gray-600 mr-2 h-4 w-4" />
-                        Description
-                      </span>
-                      <span className="text-xs text-gray-400 italic">Hover to see more</span>
+                    <h3 className="font-medium mb-2 flex items-center">
+                      <Info className="text-gray-600 mr-2 h-4 w-4" />
+                      Description
                     </h3>
-                    <div className="text-sm prose prose-sm max-w-none bg-white p-3 rounded border border-gray-100 overflow-hidden line-clamp-4 hover:overflow-auto hover:line-clamp-none focus:overflow-auto focus:line-clamp-none"
+                    <div className="text-sm prose prose-sm max-w-none bg-white p-3 rounded border border-gray-100 line-clamp-4 overflow-auto max-h-[150px]"
                       dangerouslySetInnerHTML={{ 
                         __html: (() => {
                           if (!event.description) return '';
