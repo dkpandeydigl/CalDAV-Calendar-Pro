@@ -41,20 +41,21 @@ export class DatabaseStorage implements IStorage {
    */
   async getActiveUserIds(): Promise<number[]> {
     try {
-      // Query the session table to find active sessions
-      const result = await neonDb.query<{ user_id: string | number }>(`
+      // Use the db object from drizzle-orm to query the session table
+      // This avoids using the deprecated neonDb.query method
+      const { rows } = await db.execute(/* sql */`
         SELECT sess->'passport'->'user' as user_id 
         FROM "session" 
         WHERE sess->'passport'->'user' IS NOT NULL 
         AND expire > NOW()
       `);
       
-      if (!result || !result.rows || result.rows.length === 0) {
+      if (!rows || rows.length === 0) {
         return [];
       }
       
       // Extract user IDs from session data and convert to numbers
-      const userIds = result.rows
+      const userIds = rows
         .map((row: { user_id: string | number }) => {
           // Extract the numeric user ID from the session data
           const userId = parseInt(row.user_id?.toString(), 10);
