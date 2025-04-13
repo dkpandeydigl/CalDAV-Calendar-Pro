@@ -76,7 +76,20 @@ export function useCalendarSync() {
         socket.close();
       }
       
-      // Create new WebSocket connection
+      // First check if user is authenticated properly
+      if (!user?.id) {
+        console.log('⚠️ Cannot establish WebSocket connection - no authenticated user');
+        
+        // Set a timer to check for authentication again in a few seconds
+        const authCheckTimer = setTimeout(() => {
+          console.log('🔄 Rechecking authentication status for WebSocket connection');
+          connectWebSocket();
+        }, 5000);
+        
+        return;
+      }
+
+      // Create new WebSocket connection with authentication
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws?userId=${user.id}`;
       console.log('🔌 Connecting to WebSocket server at:', wsUrl);
@@ -93,7 +106,19 @@ export function useCalendarSync() {
           // Store last successful connection time in localStorage
           localStorage.setItem('lastWsConnectTime', new Date().toISOString());
           
-          // Send initial ping to verify connection is working both ways
+          // Send authentication immediately on connection
+          try {
+            ws.send(JSON.stringify({ 
+              type: 'auth', 
+              userId: user.id, 
+              timestamp: new Date().toISOString() 
+            }));
+            console.log('🔑 Sent authentication data to WebSocket server');
+          } catch (authError) {
+            console.error('❌ Failed to send authentication data:', authError);
+          }
+          
+          // Also send initial ping to verify connection is working both ways
           ws.send(JSON.stringify({ type: 'ping', message: 'Initial connection test' }));
         };
       } catch (error) {

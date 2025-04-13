@@ -34,7 +34,8 @@ export function SyncSettings() {
   const { 
     syncAllCalendars, 
     requestRealTimeSync,
-    lastSyncTime 
+    lastSyncTime,
+    socket
   } = useCalendarSync();
   
   // Convert seconds to human-readable format
@@ -207,32 +208,73 @@ export function SyncSettings() {
     }
   };
   
+  // Get authentication context to access user info
+  const { user: authUser } = useAuth();
+  
   // Check for WebSocket connection
   const checkWebSocketConnection = useCallback(() => {
-    // Use the WebSocket readyState to determine if we're connected
-    const ws = new WebSocket((window.location.protocol === 'https:' ? 'wss:' : 'ws:') + 
-      `//${window.location.host}/ws`);
+    // First check if we already have a socket from the calendar sync hook
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      console.log('✅ Using existing WebSocket connection from useCalendarSync');
+      setWsConnected(true);
+      return;
+    }
+    
+    // Otherwise try to establish a test connection
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws?userId=${authUser?.id || ''}`;
+      console.log('🔄 Checking WebSocket connection to:', wsUrl);
       
-    const checkState = () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        setWsConnected(true);
-        ws.close(); // Close this test connection since we're just checking
-      } else {
+      const ws = new WebSocket(wsUrl);
+      
+      const checkState = () => {
+        if (ws.readyState === WebSocket.OPEN) {
+          console.log('✅ WebSocket connection test successful');
+          setWsConnected(true);
+          
+          // Send a test message to confirm authentication works
+          try {
+            ws.send(JSON.stringify({
+              type: 'ping',
+              message: 'Connection test from SyncSettings'
+            }));
+          } catch (e) {
+            console.error('❌ Error sending test message:', e);
+          }
+          
+          // Close this test connection after a short delay
+          setTimeout(() => ws.close(1000, 'Connection test complete'), 500);
+        } else {
+          console.log('❌ WebSocket not connected in checkState');
+          setWsConnected(false);
+        }
+      };
+      
+      ws.onopen = checkState;
+      
+      ws.onerror = (error) => {
+        console.error('❌ Error checking WebSocket connection:', error);
         setWsConnected(false);
-      }
-    };
-    
-    ws.onopen = checkState;
-    ws.onerror = () => setWsConnected(false);
-    
-    // Set a timeout in case connection takes too long
-    setTimeout(() => {
-      if (ws.readyState !== WebSocket.OPEN) {
-        setWsConnected(false);
-        ws.close();
-      }
-    }, 3000);
-  }, []);
+      };
+      
+      // Set a timeout in case connection takes too long
+      setTimeout(() => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.log('⚠️ WebSocket connection check timed out');
+          setWsConnected(false);
+          try {
+            ws.close(1000, 'Connection test timeout');
+          } catch (e) {
+            // Ignore errors on timeout close
+          }
+        }
+      }, 3000);
+    } catch (error) {
+      console.error('❌ Exception checking WebSocket connection:', error);
+      setWsConnected(false);
+    }
+  }, [authUser?.id, socket]);
   
   // Initial fetch
   useEffect(() => {

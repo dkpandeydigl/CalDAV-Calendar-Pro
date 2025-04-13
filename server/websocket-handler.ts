@@ -44,15 +44,45 @@ export function initializeWebSocketServer(httpServer: Server) {
         count: unreadCount
       });
       
+      // Send a welcome message immediately after connection
+      sendToSocket(ws, {
+        type: 'connection_established',
+        userId: userId,
+        timestamp: new Date().toISOString(),
+        message: 'Successfully connected to calendar notification service'
+      });
+      
       // Handle incoming messages
       ws.on('message', async (message) => {
         try {
           const data = JSON.parse(message.toString());
-          console.log(`Received WebSocket message from user ${userId}:`, data);
+          console.log(`📥 Received WebSocket message from user ${userId}:`, data);
           
-          await handleWebSocketMessage(userId, data, ws);
+          // Special handling for authentication messages
+          if (data.type === 'auth') {
+            console.log(`🔑 Received authentication message from client for user ${data.userId}`);
+            
+            // Verify if the userId matches what we already have
+            if (data.userId === userId) {
+              console.log(`✅ Authentication confirmed for user ${userId}`);
+              sendToSocket(ws, {
+                type: 'auth_success',
+                userId: userId,
+                timestamp: new Date().toISOString()
+              });
+            } else {
+              console.log(`❌ Authentication mismatch: expected ${userId}, got ${data.userId}`);
+              sendToSocket(ws, {
+                type: 'auth_error',
+                message: 'User ID mismatch in authentication'
+              });
+            }
+          } else {
+            // Regular message handling
+            await handleWebSocketMessage(userId, data, ws);
+          }
         } catch (error) {
-          console.error('Error handling WebSocket message:', error);
+          console.error('❌ Error handling WebSocket message:', error);
           sendToSocket(ws, {
             type: 'error',
             message: 'Invalid message format'
