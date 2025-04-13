@@ -242,10 +242,13 @@ export function useCalendarSync() {
         
         ws.onerror = (error) => {
           console.error('❌ WebSocket error:', error);
+          // Store wsUrl in a variable to avoid reference errors
+          const socketUrl = ws?.url || 'connection not initialized';
+          
           // Provide more details about the error
           console.log('WebSocket error details:', {
             readyState: ws ? ws.readyState : 'no socket',
-            url: wsUrl,
+            url: socketUrl,
             userId: user.id,
             timestamp: new Date().toISOString()
           });
@@ -414,27 +417,27 @@ export function useCalendarSync() {
       
       const syncToken = getSyncToken(calendarId);
       
-      const response = await apiRequest('/api/sync', {
-        method: 'POST',
-        body: JSON.stringify({
-          calendarId,
-          syncToken,
-          forceRefresh: true,
-          preserveLocalEvents: true // Add parameter to prevent event deletion during sync
-        })
+      const response = await apiRequest('POST', '/api/sync', {
+        calendarId,
+        syncToken,
+        forceRefresh: true,
+        preserveLocalEvents: true // Add parameter to prevent event deletion during sync
       });
       
-      if (response.syncToken) {
-        saveSyncToken(calendarId, response.syncToken);
+      // Cast response to expected type
+      const syncResponse = response as any;
+      
+      if (syncResponse.syncToken) {
+        saveSyncToken(calendarId, syncResponse.syncToken);
       }
       
       setLastSyncTime(new Date());
       
       // Show changes if any
       const changeCount = 
-        (response.changes?.added?.length || 0) + 
-        (response.changes?.modified?.length || 0) + 
-        (response.changes?.deleted?.length || 0);
+        (syncResponse.changes?.added?.length || 0) + 
+        (syncResponse.changes?.modified?.length || 0) + 
+        (syncResponse.changes?.deleted?.length || 0);
       
       if (changeCount > 0) {
         toast({
@@ -526,15 +529,16 @@ export function useCalendarSync() {
     try {
       setSyncing(true);
       
-      const response = await apiRequest('/api/sync/push-local', {
-        method: 'POST'
-      });
+      const response = await apiRequest('POST', '/api/sync/push-local', {});
+      
+      // Cast to expected type
+      const pushResponse = response as any;
       
       // Show result
-      if (response.pushed > 0) {
+      if (pushResponse.pushed > 0) {
         toast({
           title: 'Local Events Pushed',
-          description: `${response.pushed} event${response.pushed !== 1 ? 's' : ''} sent to server`,
+          description: `${pushResponse.pushed} event${pushResponse.pushed !== 1 ? 's' : ''} sent to server`,
         });
         
         // Refresh queries

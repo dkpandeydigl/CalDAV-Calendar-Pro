@@ -39,10 +39,10 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         // Update the main cache
         eventsCache.current = eventsCopy;
         
-        // Identify new events (those that have temp IDs or were recently added)
+        // Identify new events (those that have temp IDs or have other indicators of being new)
         const newEvents = currentEvents.filter(e => 
           typeof e.id === 'string' || // Temp ID is a string 
-          (e.createdAt && new Date(e.createdAt).getTime() > Date.now() - 30000) // Created in last 30 seconds
+          (e.updatedAt && new Date(e.updatedAt).getTime() > Date.now() - 30000) // Updated in last 30 seconds
         );
         
         if (newEvents.length > 0) {
