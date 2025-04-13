@@ -437,7 +437,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
           </DialogHeader>
           
           {/* Main content container */}
-          <div className="space-y-5">
+          <div className="space-y-3">
             {/* Top heading with title and calendar info */}
             <div>
               <div className="flex items-center justify-between">
@@ -448,7 +448,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 {/* Sync status indicator */}
                 {event.syncStatus && (
                   <div 
-                    className={`text-xs px-2 py-1 rounded-full ${
+                    className={`text-xs px-2 py-0.5 rounded-full ${
                       event.syncStatus === 'synced' 
                         ? 'bg-green-100 text-green-800' 
                         : event.syncStatus === 'syncing' 
@@ -471,9 +471,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   
               {/* Show calendar info if available */}
               {calendar && (
-                <div className="text-sm text-neutral-500 flex items-center">
+                <div className="text-sm text-neutral-500 flex items-center -mt-1">
                   <span 
-                    className="w-3 h-3 rounded-full mr-2" 
+                    className="w-3 h-3 rounded-full mr-1" 
                     style={{ backgroundColor: calendarColor || calendar.color }}
                   ></span>
                   {calendarName || calendar.name} {!calendarName && "Calendar"}
@@ -482,12 +482,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </div>
 
             {/* Two-column layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {/* Left column */}
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {/* Date and time card with improved visual design */}
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-sm">
-                  <div className="flex flex-col space-y-3">
+                <div className="bg-blue-50 p-2 rounded-lg border border-blue-100 shadow-sm">
+                  <div className="flex flex-col space-y-2">
                     <div className="flex items-center">
                       <Clock className="text-blue-600 mr-3 h-5 w-5 flex-shrink-0" />
                       <div>
@@ -518,12 +518,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                   
                 {/* Description section - only show if there's a description */}
                 {event.description && (
-                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
-                    <h3 className="font-medium mb-2 flex items-center">
-                      <Info className="text-gray-600 mr-2 h-4 w-4" />
+                  <div className="bg-gray-50 p-2 rounded-lg border border-gray-200 shadow-sm">
+                    <h3 className="font-medium mb-1 flex items-center text-sm">
+                      <Info className="text-gray-600 mr-1.5 h-4 w-4" />
                       Description
                     </h3>
-                    <div className="text-sm prose prose-sm max-w-none bg-white p-3 rounded border border-gray-100 line-clamp-4 overflow-auto max-h-[150px]"
+                    <div className="text-sm prose prose-sm max-w-none bg-white p-2 rounded border border-gray-100 line-clamp-4 overflow-auto max-h-[150px]"
                       dangerouslySetInnerHTML={{ 
                         __html: (() => {
                           if (!event.description) return '';
@@ -613,9 +613,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     const displayResources = extractedResources.slice(0, 2);
                     
                     return (
-                      <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 shadow-sm">
-                        <h3 className="font-medium mb-2 flex items-center text-amber-800">
-                          <Settings className="text-amber-600 mr-2 h-4 w-4" />
+                      <div className="bg-amber-50 p-2 rounded-lg border border-amber-100 shadow-sm">
+                        <h3 className="font-medium mb-1 flex items-center text-amber-800 text-sm">
+                          <Settings className="text-amber-600 mr-1.5 h-4 w-4" />
                           Resources ({resourceCount})
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -675,12 +675,12 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 
                 {/* Event Modification History - show when available */}
                 {event.lastModifiedByName && event.lastModifiedAt && (
-                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 shadow-sm">
-                    <h3 className="font-medium mb-2 flex items-center text-purple-800">
-                      <History className="text-purple-600 mr-2 h-4 w-4" />
+                  <div className="bg-purple-50 p-2 rounded-lg border border-purple-100 shadow-sm">
+                    <h3 className="font-medium mb-1 flex items-center text-purple-800 text-sm">
+                      <History className="text-purple-600 mr-1.5 h-4 w-4" />
                       Change History
                     </h3>
-                    <div className="text-sm text-purple-700 space-y-1">
+                    <div className="text-sm text-purple-700 space-y-0.5">
                       <div className="flex items-center">
                         <UserRound className="text-purple-500 mr-2 h-4 w-4" />
                         <span>
@@ -705,9 +705,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 
                 {/* Attendees and Response Section - Only shown when event has attendees */}
                 {hasAttendees && processedAttendees.length > 0 && (
-                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                  <div className="bg-gray-50 p-2 rounded-lg border border-gray-200 shadow-sm">
                     <Tabs defaultValue="status" className="w-full">
-                      <TabsList className="grid grid-cols-2 mb-4">
+                      <TabsList className="grid grid-cols-2 mb-2">
                         <TabsTrigger value="status">Attendee Status</TabsTrigger>
                         <TabsTrigger value="response">Your Response</TabsTrigger>
                       </TabsList>
