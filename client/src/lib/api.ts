@@ -130,3 +130,17 @@ export async function updateSharingPermission(
   
   return await response.json();
 }
+
+/**
+ * Update user's full name for display in email communications
+ */
+export async function updateUserFullName(fullName: string) {
+  const response = await apiRequest('PUT', '/api/user/fullname', { fullName });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.message || 'Failed to update full name');
+  }
+  
+  return await response.json();
+}

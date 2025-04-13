@@ -4,12 +4,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { formatMonthYear } from '@/lib/date-utils';
 import { useAuth } from '@/hooks/use-auth';
-import { ChevronLeft, ChevronRight, Menu, LogOut, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, LogOut, User, Settings } from 'lucide-react';
+import { ProfileSettingsModal } from '@/components/modals/ProfileSettingsModal';
 
 interface CalendarHeaderProps {
   onToggleSidebar: () => void;
@@ -33,6 +35,7 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
   } = useCalendarContext();
   
   const { user, logoutMutation } = useAuth();
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
   
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -71,7 +74,18 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleLogout} className="text-red-500 cursor-pointer">
+                <DropdownMenuItem 
+                  onClick={() => setIsProfileSettingsOpen(true)} 
+                  className="cursor-pointer"
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Profile Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={handleLogout} 
+                  className="text-red-500 cursor-pointer"
+                >
                   <LogOut className="h-4 w-4 mr-2" />
                   Logout
                 </DropdownMenuItem>
