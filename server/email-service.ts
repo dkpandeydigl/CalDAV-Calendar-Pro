@@ -74,7 +74,7 @@ export class EmailService {
             username: user.email,
             password: '',  // This will need to be set by the user
             fromEmail: user.email,
-            fromName: user.username || undefined
+            fromName: user.fullName || user.username || undefined
           });
           
           console.log(`Created default SMTP configuration for user ${userId}`);
