@@ -97,24 +97,30 @@ async function getUserIdFromRequest(req: any): Promise<number | null> {
       // We'll need to parse the session from the cookie and validate it
       // This logic would depend on your session implementation
       
-      // For now, we'll extract a token from the query parameter as a fallback
+      // Extract userId directly from the query parameter
       const url = new URL(req.url, `http://${req.headers.host}`);
-      const token = url.searchParams.get('token');
+      const queryUserId = url.searchParams.get('userId');
       
-      if (token) {
-        // Validate token and get user ID
-        // For demonstration, we'll use a simple parsing, in production use proper JWT validation
-        const [userId, timestamp] = token.split('.');
-        
-        if (userId && timestamp) {
-          const parsedUserId = parseInt(userId, 10);
+      if (queryUserId) {
+        try {
+          const parsedUserId = parseInt(queryUserId, 10);
+          
+          // Log attempt to connect with this userId
+          console.log(`WebSocket connection attempt with userId: ${parsedUserId}`);
           
           // Verify the user exists
           const user = await storage.getUser(parsedUserId);
           if (user) {
+            console.log(`Successfully validated user ID ${parsedUserId} for WebSocket connection`);
             return parsedUserId;
+          } else {
+            console.log(`User ID ${parsedUserId} not found in database`);
           }
+        } catch (error) {
+          console.error(`Error parsing user ID from query parameter: ${queryUserId}`, error);
         }
+      } else {
+        console.log('No userId query parameter found in WebSocket connection URL');
       }
     }
     

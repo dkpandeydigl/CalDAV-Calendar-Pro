@@ -10,6 +10,31 @@ import { useToast } from '@/hooks/use-toast';
  * This hook manages WebSocket connections for real-time updates
  * and provides functions for manual sync operations.
  */
+/**
+ * Get a human-readable reason for WebSocket close event codes
+ */
+function getCloseEventReason(code: number): string {
+  switch (code) {
+    case 1000: return 'Normal closure';
+    case 1001: return 'Going away';
+    case 1002: return 'Protocol error';
+    case 1003: return 'Unsupported data';
+    case 1004: return 'Reserved';
+    case 1005: return 'No status received';
+    case 1006: return 'Abnormal closure';
+    case 1007: return 'Invalid frame payload data';
+    case 1008: return 'Policy violation';
+    case 1009: return 'Message too big';
+    case 1010: return 'Mandatory extension';
+    case 1011: return 'Internal server error';
+    case 1012: return 'Service restart';
+    case 1013: return 'Try again later';
+    case 1014: return 'Bad gateway';
+    case 1015: return 'TLS handshake';
+    default: return `Unknown (${code})`;
+  }
+}
+
 export function useCalendarSync() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -54,10 +79,11 @@ export function useCalendarSync() {
       // Create new WebSocket connection
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws?userId=${user.id}`;
-      console.log('Connecting to WebSocket server at:', wsUrl);
+      console.log('🔌 Connecting to WebSocket server at:', wsUrl);
       
       try {
         ws = new WebSocket(wsUrl);
+        console.log('🔌 WebSocket constructor created, waiting for connection...');
         
         ws.onopen = () => {
           console.log('✅ WebSocket successfully connected for calendar sync');
@@ -71,7 +97,7 @@ export function useCalendarSync() {
           ws.send(JSON.stringify({ type: 'ping', message: 'Initial connection test' }));
         };
       } catch (error) {
-        console.error('Error creating WebSocket connection:', error);
+        console.error('❌ Error creating WebSocket connection:', error);
       }
       
       ws.onmessage = (event) => {
@@ -184,11 +210,18 @@ export function useCalendarSync() {
       };
       
       ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('❌ WebSocket error:', error);
+        // Provide more details about the error
+        console.log('WebSocket error details:', {
+          readyState: ws ? ws.readyState : 'no socket',
+          url: wsUrl,
+          userId: user.id,
+          timestamp: new Date().toISOString()
+        });
       };
       
       ws.onclose = (event) => {
-        console.log(`WebSocket connection closed with code ${event.code}`);
+        console.log(`⚠️ WebSocket connection closed with code ${event.code} - ${getCloseEventReason(event.code)}`);
         
         // Attempt to reconnect unless this was a normal closure or unmounting
         if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
