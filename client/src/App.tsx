@@ -5,15 +5,20 @@ import { queryClient } from "@/lib/queryClient";
 import NotFound from "@/pages/not-found";
 import Calendar from "@/pages/Calendar";
 import AuthPage from "@/pages/auth-page";
+import { NotificationsPage } from "@/pages/NotificationsPage";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AuthProvider } from "@/hooks/use-auth";
 import { CalendarProvider } from "@/contexts/CalendarContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 
 function Router() {
   return (
     <Switch>
       <Route path="/auth" component={AuthPage} />
       <Route path="/login" component={AuthPage} /> {/* Alias for /auth */}
+      <Route path="/notifications">
+        {() => <ProtectedRoute component={NotificationsPage} />}
+      </Route>
       <Route path="/">
         {() => <ProtectedRoute component={Calendar} />}
       </Route>
@@ -26,10 +31,12 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <CalendarProvider>
-          <Router />
-          <Toaster />
-        </CalendarProvider>
+        <NotificationProvider>
+          <CalendarProvider>
+            <Router />
+            <Toaster />
+          </CalendarProvider>
+        </NotificationProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
