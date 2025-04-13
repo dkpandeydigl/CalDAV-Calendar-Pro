@@ -2,6 +2,15 @@ import { pgTable, text, serial, integer, boolean, timestamp, json } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Import notification schema
+import { 
+  notifications, 
+  insertNotificationSchema, 
+  notificationTypeEnum, 
+  notificationPriorityEnum, 
+  notificationFilterSchema
+} from './notification-schema';
+
 // User schema
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -197,3 +206,13 @@ export const insertSmtpConfigSchema = createInsertSchema(smtpConfigurations).pic
 
 export type InsertSmtpConfig = z.infer<typeof insertSmtpConfigSchema>;
 export type SmtpConfig = typeof smtpConfigurations.$inferSelect;
+
+// Re-export notification schema
+export {
+  notifications,
+  insertNotificationSchema,
+  notificationTypeEnum,
+  notificationPriorityEnum,
+  notificationFilterSchema
+} from './notification-schema';
+export type { InsertNotification, Notification, NotificationFilter } from './notification-schema';

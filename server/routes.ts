@@ -8,7 +8,10 @@ import {
   insertServerConnectionSchema,
   insertCalendarSharingSchema,
   insertSmtpConfigSchema,
-  type Event
+  insertNotificationSchema,
+  notificationFilterSchema,
+  type Event,
+  type Notification
 } from "@shared/schema";
 import { WebSocketServer, WebSocket } from "ws";
 import { setupAuth } from "./auth";
@@ -20,6 +23,8 @@ import { registerImportRoutes } from "./import-routes";
 import fetch from "node-fetch";
 import { escapeICalString, formatICalDate, formatContentLine, formatRecurrenceRule, generateICalEvent } from "./ical-utils";
 import { syncService } from "./sync-service";
+import { notificationService } from "./notification-service";
+import { initializeWebSocketServer, broadcastToUser, sendNotification, createAndSendNotification } from "./websocket-handler";
 
 // Using directly imported syncService
 import type { SyncService as SyncServiceType } from "./sync-service";
