@@ -148,6 +148,7 @@ export function SimplifiedShareCalendarModal({ open, onClose, calendar }: ShareC
     if (!calendar) return;
     
     try {
+      console.log(`Updating sharing permission for share ID ${shareId} to ${newPermission}`);
       await updateSharingPermission(
         shareId,
         newPermission,

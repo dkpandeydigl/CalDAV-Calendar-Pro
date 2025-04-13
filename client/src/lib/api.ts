@@ -117,8 +117,8 @@ export async function updateSharingPermission(
   syncWithServer: boolean = false
 ) {
   const apiUrl = syncWithServer
-    ? `/api/calendars/shares/${shareId}?syncWithServer=true`
-    : `/api/calendars/shares/${shareId}`;
+    ? `/api/calendar-sharings/${shareId}?syncWithServer=true`
+    : `/api/calendar-sharings/${shareId}`;
     
   const response = await apiRequest('PATCH', apiUrl, {
     permissionLevel
