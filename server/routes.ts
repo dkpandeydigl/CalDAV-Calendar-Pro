@@ -103,6 +103,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Also update the user's SMTP configuration to use this full name as fromName
+      try {
+        // First get the existing SMTP config
+        const smtpConfig = await storage.getSmtpConfig(req.user!.id);
+        
+        if (smtpConfig) {
+          // Update the fromName in the SMTP config
+          await storage.updateSmtpConfig(smtpConfig.id, { fromName: fullName });
+          console.log(`Updated SMTP configuration for user ${req.user!.id} with new full name: ${fullName}`);
+        } else {
+          console.log(`No SMTP configuration found for user ${req.user!.id}, skipping SMTP update`);
+        }
+      } catch (smtpError) {
+        // Don't fail the entire operation if SMTP update fails, just log it
+        console.error(`Failed to update SMTP configuration for user ${req.user!.id}:`, smtpError);
+      }
+      
       res.json(updatedUser);
     } catch (err) {
       console.error("Error updating user's full name:", err);
