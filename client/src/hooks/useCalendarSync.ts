@@ -48,9 +48,10 @@ export function useCalendarSync() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('WebSocket message received:', data);
         
         if (data.type === 'calendar_changed') {
-          console.log('Calendar changed:', data);
+          console.log('Calendar changed notification received:', data);
           
           // Show notification
           const changeCount = 
@@ -74,6 +75,37 @@ export function useCalendarSync() {
             if (data.syncToken) {
               saveSyncToken(data.calendarId, data.syncToken);
             }
+          }
+        } 
+        else if (data.type === 'event_changed') {
+          console.log('Event changed notification received:', data);
+          
+          toast({
+            title: 'Event Updated',
+            description: `Event was ${data.changeType} in calendar`,
+          });
+          
+          // Invalidate queries to refresh UI
+          queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+          
+          // If we have the specific event ID, also invalidate that query
+          if (data.eventId) {
+            queryClient.invalidateQueries({ 
+              queryKey: ['/api/events', data.eventId] 
+            });
+          }
+        }
+        else if (data.type === 'new_notification') {
+          console.log('New notification received:', data);
+          
+          // The notification context will handle this
+          // We just make sure events are refreshed if it's event-related
+          if (data.notification && 
+              (data.notification.type === 'event_update' || 
+               data.notification.type === 'event_invitation' ||
+               data.notification.type === 'event_cancellation')) {
+            
+            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
           }
         }
       } catch (error) {

@@ -3334,35 +3334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Create HTTP server
-  // Add WebSocket server
-  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
-  
-  wss.on('connection', (ws) => {
-    console.log('WebSocket client connected');
-    
-    ws.on('message', (message) => {
-      try {
-        const data = JSON.parse(message.toString());
-        console.log('WebSocket message received:', data);
-        
-        // Echo back
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ echo: data }));
-        }
-      } catch (err) {
-        console.error('Error processing WebSocket message:', err);
-      }
-    });
-    
-    ws.on('close', () => {
-      console.log('WebSocket client disconnected');
-    });
-    
-    // Send a welcome message
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ message: 'Connected to server' }));
-    }
-  });
+  // Our WebSocket server is already initialized in an import higher up
   
   return httpServer;
 }
