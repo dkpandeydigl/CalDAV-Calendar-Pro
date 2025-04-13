@@ -463,7 +463,7 @@ function CalendarContent() {
           ) : (
             <>
               {viewType === 'year' && <YearView events={events} onEventClick={handleEventClick} />}
-              {viewType === 'month' && <CalendarGrid events={events} isLoading={isLoading} onEventClick={handleEventClick} onDayDoubleClick={handleCreateEvent} />}
+              {viewType === 'month' && <CalendarGrid events={events} isLoading={isLoading || isSyncing} onEventClick={handleEventClick} onDayDoubleClick={handleCreateEvent} />}
               {viewType === 'week' && <WeekView events={events} onEventClick={handleEventClick} />}
               {viewType === 'day' && <DayView events={events} onEventClick={handleEventClick} />}
             </>
