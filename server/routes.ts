@@ -3026,6 +3026,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Test SMTP settings
+  app.get("/api/test-smtp-config", isAuthenticated, async (req, res) => {
+    try {
+      // Get the user's SMTP configuration
+      const smtpConfig = await storage.getSmtpConfig(req.user!.id);
+      
+      if (!smtpConfig) {
+        return res.json({ 
+          success: false, 
+          message: "No SMTP configuration found for your account" 
+        });
+      }
+      
+      // Return the SMTP configuration (without the password)
+      return res.json({
+        success: true,
+        config: {
+          host: smtpConfig.host,
+          port: smtpConfig.port,
+          secure: smtpConfig.secure,
+          username: smtpConfig.username,
+          fromEmail: smtpConfig.fromEmail,
+          fromName: smtpConfig.fromName,
+          enabled: smtpConfig.enabled
+        }
+      });
+    } catch (error) {
+      console.error("Error getting SMTP configuration:", error);
+      return res.status(500).json({ 
+        success: false, 
+        message: "Failed to retrieve SMTP configuration" 
+      });
+    }
+  });
+  
   // Create HTTP server
   // Add WebSocket server
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
