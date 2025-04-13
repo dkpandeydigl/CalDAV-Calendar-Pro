@@ -170,6 +170,17 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   // Function to check duplicate calendar name (reuse from original)
   const checkDuplicateCalendarName = async (name: string, excludeId?: number): Promise<boolean> => {
     try {
+      // First check for duplicates in the local array (client-side validation)
+      const duplicateInLocal = calendars.some(cal => 
+        cal.name.toLowerCase() === name.toLowerCase() && 
+        (excludeId === undefined || cal.id !== excludeId)
+      );
+      
+      if (duplicateInLocal) {
+        return true;
+      }
+      
+      // Then check with server (in case there are calendars not loaded yet)
       const queryParams = new URLSearchParams({ name });
       if (excludeId !== undefined) {
         queryParams.append('excludeId', excludeId.toString());
