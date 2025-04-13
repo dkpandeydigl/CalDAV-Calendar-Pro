@@ -3094,7 +3094,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/sync", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
-      const { calendarId, syncToken, forceRefresh } = req.body;
+      const { calendarId, syncToken, forceRefresh, preserveLocalEvents } = req.body;
       
       // If a specific calendar ID is provided, only sync that calendar
       if (calendarId) {
@@ -3191,7 +3191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Trigger an immediate sync
-        const success = await syncService.requestSync(userId, { forceRefresh, calendarId });
+        const success = await syncService.requestSync(userId, { forceRefresh, calendarId, preserveLocalEvents });
         
         // Get calendar and event counts for a more informative response
         const userCalendars = await storage.getCalendars(userId);

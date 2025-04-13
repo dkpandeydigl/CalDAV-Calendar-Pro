@@ -395,7 +395,8 @@ async function handleWebSocketMessage(userId: number, data: any, ws: WebSocket):
           const { syncService } = await import('./sync-service');
           await syncService.syncNow(userId, { 
             forceRefresh: data.forceRefresh || false,
-            calendarId: data.calendarId || null 
+            calendarId: data.calendarId || null,
+            preserveLocalEvents: data.preserveLocalEvents || false // Pass through preserveLocalEvents parameter
           });
           
           sendToSocket(ws, { 
