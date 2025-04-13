@@ -11,6 +11,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { format } from 'date-fns';
 import { useCalendarSync } from '@/hooks/useCalendarSync';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/hooks/use-auth';
 
 interface SyncStatus {
   syncing: boolean;

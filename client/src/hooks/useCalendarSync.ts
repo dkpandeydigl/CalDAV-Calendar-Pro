@@ -594,6 +594,7 @@ export function useCalendarSync() {
     syncCalendar,
     syncAllCalendars,
     pushLocalEvents,
-    requestRealTimeSync
+    requestRealTimeSync,
+    socket // Expose the socket object for external connection status checks
   };
 }
