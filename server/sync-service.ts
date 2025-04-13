@@ -61,9 +61,12 @@ export class SyncService {
   private defaultSyncInterval = 300; // 5 minutes in seconds
   private syncInProgress: Set<number> = new Set();
   private isInitialized = false;
+  private globalSyncTimer: NodeJS.Timeout | null = null;
+  private globalSyncInterval = 300; // 5 minutes in seconds
+  private lastGlobalSync: Date | null = null;
 
   /**
-   * Initialize the sync service - doesn't start any background jobs automatically
+   * Initialize the sync service with both session-based and automatic background sync
    */
   async initialize() {
     if (this.isInitialized) {
@@ -72,14 +75,77 @@ export class SyncService {
     }
 
     try {
-      console.log('Initializing SyncService (session-based)...');
-      // We no longer initialize jobs for all users at startup
-      // Instead, jobs will be created when users log in
+      console.log('Initializing SyncService with automatic background sync...');
+      // We'll initialize both session-based syncing and a background global sync
+      
+      // Set up a background timer to periodically check for external changes
+      // This ensures changes made in external clients (like Thunderbird) are detected
+      // even if no specific user session requests a sync
+      this.setupGlobalSyncTimer();
       
       this.isInitialized = true;
-      console.log('SyncService initialized with session-based sync management');
+      console.log('SyncService initialized with background sync enabled');
     } catch (error) {
       console.error('Failed to initialize SyncService:', error);
+    }
+  }
+  
+  /**
+   * Set up a global timer to periodically sync all active calendars
+   * This ensures external changes are detected even without user activity
+   */
+  private setupGlobalSyncTimer() {
+    // Clear any existing timer
+    if (this.globalSyncTimer) {
+      clearInterval(this.globalSyncTimer);
+    }
+    
+    console.log(`Setting up global sync timer with interval ${this.globalSyncInterval} seconds`);
+    
+    // Set up the periodic global sync
+    this.globalSyncTimer = setInterval(async () => {
+      await this.runGlobalSync();
+    }, this.globalSyncInterval * 1000);
+  }
+  
+  /**
+   * Run a global sync operation for all active users
+   * This is triggered periodically to ensure external changes are detected
+   */
+  private async runGlobalSync() {
+    try {
+      console.log('Running global sync to check for external changes...');
+      this.lastGlobalSync = new Date();
+      
+      // Get all active server connections
+      const connections = await storage.getAllServerConnections();
+      
+      if (!connections || connections.length === 0) {
+        console.log('No active server connections found, skipping global sync');
+        return;
+      }
+      
+      console.log(`Found ${connections.length} server connections to check for updates`);
+      
+      // For each connection, perform a sync
+      for (const connection of connections) {
+        // Skip connections that are already being synced
+        if (this.syncInProgress.has(connection.userId)) {
+          console.log(`Sync already in progress for user ID ${connection.userId}, skipping`);
+          continue;
+        }
+        
+        // Run a sync for this user
+        console.log(`Global sync: checking updates for user ID ${connection.userId}`);
+        await this.syncNow(connection.userId, { 
+          isGlobalSync: true, 
+          forceRefresh: false 
+        });
+      }
+      
+      console.log('Global sync completed');
+    } catch (error) {
+      console.error('Error during global sync:', error);
     }
   }
 
