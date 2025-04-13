@@ -31,6 +31,13 @@ export function SyncSettings() {
   const [syncInProgress, setSyncInProgress] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   
+  // Initialize anti-flicker mode from localStorage or default to true
+  const [antiFlickerMode, setAntiFlickerMode] = useState(() => {
+    const savedPreference = localStorage.getItem('calendar-anti-flicker-mode');
+    // If we have a saved preference, use it. Otherwise default to true.
+    return savedPreference === null ? true : savedPreference === 'true';
+  });
+  
   // Get access to our new calendar sync hook
   const { 
     syncAllCalendars, 
@@ -353,6 +360,35 @@ export function SyncSettings() {
             {autoSync
               ? "Your calendars will be automatically synchronized with the server"
               : "Your calendars will only be synchronized when you manually trigger a sync"}
+          </p>
+        </div>
+        
+        <div className="space-y-2 pt-4 border-t border-border mt-4">
+          <div className="flex items-center justify-between pt-2">
+            <Label htmlFor="anti-flicker" className="text-base">
+              Anti-Flicker Mode
+            </Label>
+            <Switch
+              id="anti-flicker"
+              checked={antiFlickerMode}
+              onCheckedChange={(checked) => {
+                setAntiFlickerMode(checked);
+                // Store in localStorage to make the setting persistent
+                localStorage.setItem('calendar-anti-flicker-mode', checked ? 'true' : 'false');
+                toast({
+                  title: checked ? 'Anti-Flicker Enabled' : 'Anti-Flicker Disabled',
+                  description: checked 
+                    ? 'Events will be preserved during sync to prevent flickering' 
+                    : 'Standard sync mode enabled',
+                  variant: 'default',
+                });
+              }}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {antiFlickerMode
+              ? "Preserves events in the UI during sync operations to prevent flickering"
+              : "Standard sync mode - events may briefly disappear during updates"}
           </p>
         </div>
         

@@ -128,9 +128,26 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   // Combine all enabled calendar IDs
   const enabledCalendarIds = [...enabledUserCalendarIds, ...enabledSharedCalendarIds];
   
+  // Use our specialized shadow cache system
+  // This will maintain a separate store of events that persists through any query cache clearing
+  
+  // Setup shadow cache for events
+  const eventsQueryKey = ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()];
+  const {
+    getShadowCache,
+    updateShadowCache,
+    restoreFromShadowCache,
+    shadowCacheSize
+  } = useShadowCache<Event>(eventsQueryKey, {
+    debug: true, // Enable logging for debugging
+    minItems: lastEventCount.current || 0, // Always maintain at least as many events as we had before
+    mergeInsteadOfReplace: true,
+    preservationTime: 10000, // 10 seconds
+  });
+  
   // Load events for all calendars with date range filtering in a single API call
   const eventsQueries = useQuery<Event[]>({
-    queryKey: ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()],
+    queryKey: eventsQueryKey,
     enabled: enabledCalendarIds.length > 0,
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty to handle user session expiry gracefully
     // Critical: Use stale time to prevent immediate refetching
@@ -138,10 +155,29 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     // Don't trash data if query fails
     retry: 3,
     retryDelay: 500,
-    // Use placeholder data function to prevent flickering during load
-    placeholderData: (previousData) => previousData || eventsCache.current,
+    // Use our shadow cache as placeholder for guaranteed continuity
+    placeholderData: () => {
+      const shadowEvents = getShadowCache();
+      if (shadowEvents.length > 0) {
+        console.log(`🛡️ Using ${shadowEvents.length} events from shadow cache as placeholder`);
+        return shadowEvents;
+      }
+      return eventsCache.current || [];
+    },
     // In TanStack Query v5, use gcTime instead of keepPreviousData
     gcTime: 5 * 60 * 1000, // Keep data in cache for 5 minutes
+    // When new data arrives, update our shadow cache
+    onSuccess: (data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        console.log(`📸 Updating shadow cache with ${data.length} events from successful query`);
+        updateShadowCache(data);
+      }
+    },
+    // If query fails, restore from shadow cache
+    onError: () => {
+      console.log(`🚨 Query error, attempting to restore from shadow cache`);
+      restoreFromShadowCache();
+    }
   });
   
   // Setup effect to preserve and restore events during state transitions
