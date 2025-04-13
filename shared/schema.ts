@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   preferredTimezone: text("preferred_timezone").default("UTC"),
   email: text("email"),
+  fullName: text("full_name"),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -16,6 +17,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
   preferredTimezone: true,
   email: true,
+  fullName: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
