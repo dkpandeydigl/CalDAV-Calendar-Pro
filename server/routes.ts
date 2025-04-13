@@ -1378,18 +1378,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "Invalid calendar ID" });
         }
         
+        // Get events from the calendar
         const events = await storage.getEvents(calendarId);
+        
+        // Check if this is a shared calendar
+        const sharedCalendars = await storage.getSharedCalendars(userId);
+        const sharedCalendar = sharedCalendars.find(cal => cal.id === calendarId);
+        
+        if (sharedCalendar) {
+          // It's a shared calendar - add sharing metadata to each event
+          const enhancedEvents = events.map(event => {
+            // Add sharing information to the rawData property
+            const existingRawData = typeof event.rawData === 'string' 
+              ? JSON.parse(event.rawData || '{}') 
+              : (event.rawData || {});
+            
+            const updatedRawData = {
+              ...existingRawData,
+              isShared: true,
+              permissionLevel: sharedCalendar.permissionLevel || 'view',
+              ownerName: sharedCalendar.owner?.username || sharedCalendar.owner?.email,
+              calendarName: sharedCalendar.name,
+              calendarColor: sharedCalendar.color
+            };
+            
+            return {
+              ...event,
+              rawData: JSON.stringify(updatedRawData)
+            };
+          });
+          
+          return res.json(enhancedEvents);
+        }
+        
+        // It's a regular calendar, just return the events
         return res.json(events);
       }
       
       // If no specific calendar ID is provided, return all events from user's calendars
       const userCalendars = await storage.getCalendars(userId);
       const sharedCalendars = await storage.getSharedCalendars(userId);
+      
+      // Create a map of shared calendars for quick lookup with permission information
+      const sharedCalendarMap = new Map();
+      sharedCalendars.forEach(cal => {
+        sharedCalendarMap.set(cal.id, {
+          isShared: true,
+          permissionLevel: cal.permissionLevel || 'view',
+          ownerName: cal.owner?.username || cal.owner?.email
+        });
+      });
+      
+      // Get events from all calendars and enhance with sharing information
       const allCalendars = [...userCalendars, ...sharedCalendars];
       
       for (const calendar of allCalendars) {
         const calendarEvents = await storage.getEvents(calendar.id);
-        allEvents = [...allEvents, ...calendarEvents];
+        
+        // Add metadata about sharing status to each event
+        const enhancedEvents = calendarEvents.map(event => {
+          // If this is from a shared calendar, add sharing metadata
+          if (sharedCalendarMap.has(calendar.id)) {
+            const sharingInfo = sharedCalendarMap.get(calendar.id);
+            
+            // Add sharing information to the rawData property
+            const existingRawData = typeof event.rawData === 'string' 
+              ? JSON.parse(event.rawData || '{}') 
+              : (event.rawData || {});
+            
+            const updatedRawData = {
+              ...existingRawData,
+              isShared: true,
+              permissionLevel: sharingInfo.permissionLevel,
+              ownerName: sharingInfo.ownerName,
+              calendarName: calendar.name,
+              calendarColor: calendar.color
+            };
+            
+            return {
+              ...event,
+              rawData: JSON.stringify(updatedRawData)
+            };
+          }
+          
+          return event;
+        });
+        
+        allEvents = [...allEvents, ...enhancedEvents];
       }
       
       res.json(allEvents);
