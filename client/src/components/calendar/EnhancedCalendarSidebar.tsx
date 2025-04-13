@@ -70,7 +70,7 @@ import { Badge } from '@/components/ui/badge';
 
 interface EnhancedCalendarSidebarProps {
   visible: boolean;
-  onCreateEvent: () => void;
+  onCreateEvent: (initialDate?: Date) => void;
   onOpenServerSettings: () => void;
   onOpenSyncSettings?: () => void;
   onShareCalendar?: (calendar: Calendar | undefined) => void;
@@ -604,7 +604,11 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
           <div className="mb-6">
             <Button 
               className="w-full" 
-              onClick={onCreateEvent}
+              onClick={() => {
+                // Create an event with the current date
+                const now = new Date();
+                onCreateEvent && onCreateEvent(now);
+              }}
             >
               Create Event
             </Button>
