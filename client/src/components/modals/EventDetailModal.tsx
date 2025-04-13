@@ -107,6 +107,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [showAllResources, setShowAllResources] = useState(false); // For resource display limit (unused now - using dialog instead)
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null); // For attendee status dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false); // For attendee status dialog
+  const [showFullDescription, setShowFullDescription] = useState(false); // For description display limit
   // Section expansion has been removed in favor of always showing scrollable content
   
   // Add a timeout to prevent infinite loading state
@@ -523,8 +524,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <Info className="text-gray-600 mr-2 h-4 w-4" />
                       Description
                     </h3>
-                    <div 
-                      className="text-sm prose prose-sm max-w-none overflow-auto max-h-[150px] bg-white p-3 rounded border border-gray-100"
+                    <div className={`text-sm prose prose-sm max-w-none bg-white p-3 rounded border border-gray-100 ${showFullDescription ? 'overflow-auto max-h-[150px]' : 'overflow-hidden line-clamp-4'}`}
                       dangerouslySetInnerHTML={{ 
                         __html: (() => {
                           if (!event.description) return '';
@@ -597,6 +597,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         })()
                       }}
                     />
+                    
+                    {/* Show more/less button */}
+                    <button 
+                      onClick={() => setShowFullDescription(!showFullDescription)}
+                      className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
+                    >
+                      {showFullDescription ? 'Show less' : 'Show more'}
+                    </button>
                   </div>
                 )}
                 
