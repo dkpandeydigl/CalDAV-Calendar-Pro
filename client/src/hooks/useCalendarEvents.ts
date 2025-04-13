@@ -229,17 +229,51 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           // Update caches again before sync to ensure UI consistency
           updateAllEventCaches();
           
+          // Store the server event in a ref to ensure it persists through sync
+          const eventRef = serverEvent;
+
+          // Create a guard function that ensures the event stays in cache
+          const guardEventInCache = () => {
+            // Check if event is still in cache
+            const mainCache = queryClient.getQueryData<Event[]>(['/api/events']) || [];
+            const calendarCache = queryClient.getQueryData<Event[]>(['/api/calendars', eventRef.calendarId, 'events']) || [];
+            
+            // If event is missing from any cache, restore it
+            const isInMainCache = mainCache.some(e => e.id === eventRef.id || e.uid === eventRef.uid);
+            const isInCalendarCache = calendarCache.some(e => e.id === eventRef.id || e.uid === eventRef.uid);
+            
+            console.log(`Guarding event ${eventRef.title} (${eventRef.id}): Main cache: ${isInMainCache}, Calendar cache: ${isInCalendarCache}`);
+            
+            if (!isInMainCache) {
+              console.log(`Restoring event ${eventRef.title} to main cache`);
+              queryClient.setQueryData<Event[]>(['/api/events'], [...mainCache, eventRef]);
+            }
+            
+            if (!isInCalendarCache) {
+              console.log(`Restoring event ${eventRef.title} to calendar cache`);
+              queryClient.setQueryData<Event[]>(['/api/calendars', eventRef.calendarId, 'events'], [...calendarCache, eventRef]);
+            }
+          };
+          
+          // Set up a recurring guard that keeps the event in cache during sync
+          const guardIntervalId = setInterval(guardEventInCache, 100);
+          
           // Trigger an immediate sync with the CalDAV server
           console.log('Triggering immediate sync for newly created event');
           const syncResponse = await apiRequest('POST', '/api/sync/now', {
             forceRefresh: true,
-            calendarId: serverEvent.calendarId
+            calendarId: serverEvent.calendarId,
+            preserveLocalEvents: true // Add parameter to prevent event deletion during sync
           });
           
           const syncResult = await syncResponse.json();
           
           // Update caches again after sync to ensure event remains in UI
           updateAllEventCaches();
+          guardEventInCache();
+          
+          // Clear the guard interval after sync completes
+          clearInterval(guardIntervalId);
           
           // Check if sync was successful based on the response format
           if (syncResponse.ok && syncResult.synced === true) {
@@ -247,15 +281,20 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             
             // Update caches once more to prevent event from disappearing
             updateAllEventCaches();
+            guardEventInCache();
             
             // Also schedule a delayed cache refresh to handle any edge cases
             setTimeout(() => {
               updateAllEventCaches();
+              guardEventInCache();
               
               // After successful sync, do a final refresh of the events list after a short delay
               setTimeout(() => {
                 // Double ensure our event is still in the cache
                 updateAllEventCaches();
+                guardEventInCache();
+                
+                // Now we can safely invalidate queries
                 queryClient.invalidateQueries({ queryKey: ['/api/events'] });
                 queryClient.invalidateQueries({ 
                   queryKey: ['/api/calendars', serverEvent.calendarId, 'events'] 
