@@ -2,15 +2,16 @@ import nodemailer from 'nodemailer';
 import { SmtpConfig } from '@shared/schema';
 import { storage } from './database-storage';
 import { formatICalDate } from './ical-utils';
+import { generateEventAgendaPDF } from './pdf-generator';
 
-interface Attendee {
+export interface Attendee {
   email: string;
   name?: string;
   role?: string;
   status?: string;
 }
 
-interface Resource {
+export interface Resource {
   id: string;
   subType: string;       // Conference Room, Projector, etc.
   capacity?: number;     // Optional capacity (e.g., 10 people)
@@ -19,7 +20,7 @@ interface Resource {
   remarks?: string;      // Optional remarks or notes
 }
 
-interface EventInvitationData {
+export interface EventInvitationData {
   eventId: number;
   uid: string;
   title: string;
