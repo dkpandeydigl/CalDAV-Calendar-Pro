@@ -2712,6 +2712,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // MANUAL SYNC API
+  // Sync Status API endpoint - returns the current sync status
+  app.get("/api/sync/status", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Get the server connection for this user
+      const serverConnection = await storage.getServerConnection(userId);
+      if (!serverConnection) {
+        return res.status(404).json({ 
+          message: "No server connection found", 
+          syncing: false,
+          configured: false,
+          lastSync: null,
+          interval: 300,
+          inProgress: false,
+          autoSync: false
+        });
+      }
+      
+      // Get sync status from the sync service
+      const syncStatus = syncService.getSyncStatus(userId);
+      
+      // Return status information
+      return res.json({
+        syncing: syncStatus.syncing || false,
+        configured: syncStatus.configured || false,
+        lastSync: serverConnection.lastSync,
+        interval: serverConnection.syncInterval || 300,
+        inProgress: syncStatus.inProgress || false,
+        autoSync: serverConnection.autoSync || false
+      });
+    } catch (error) {
+      console.error("Error getting sync status:", error);
+      return res.status(500).json({ message: "Failed to get sync status" });
+    }
+  });
+  
+  // Toggle auto-sync
+  app.post("/api/sync/auto", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { enabled } = req.body;
+      
+      // Update server connection
+      const serverConnection = await storage.getServerConnection(userId);
+      if (!serverConnection) {
+        return res.status(404).json({ message: "No server connection found" });
+      }
+      
+      // Update the auto-sync setting
+      await storage.updateServerConnection(serverConnection.id, {
+        autoSync: enabled
+      });
+      
+      // Update the sync service
+      if (enabled) {
+        syncService.startSync(userId);
+      } else {
+        syncService.stopSync(userId);
+      }
+      
+      return res.json({ success: true, autoSync: enabled });
+    } catch (error) {
+      console.error("Error updating auto-sync:", error);
+      return res.status(500).json({ message: "Failed to update auto-sync setting" });
+    }
+  });
+  
+  // Update sync interval
+  app.post("/api/sync/interval", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { interval } = req.body;
+      
+      // Validate interval
+      if (typeof interval !== 'number' || interval < 60 || interval > 3600) {
+        return res.status(400).json({ 
+          message: "Invalid interval. Must be between 60 and 3600 seconds" 
+        });
+      }
+      
+      // Update server connection
+      const serverConnection = await storage.getServerConnection(userId);
+      if (!serverConnection) {
+        return res.status(404).json({ message: "No server connection found" });
+      }
+      
+      // Update the interval setting
+      await storage.updateServerConnection(serverConnection.id, {
+        syncInterval: interval
+      });
+      
+      // Update the sync service with the new interval
+      syncService.updateSyncInterval(userId, interval);
+      
+      return res.json({ success: true, interval });
+    } catch (error) {
+      console.error("Error updating sync interval:", error);
+      return res.status(500).json({ message: "Failed to update sync interval" });
+    }
+  });
+  
+  // The /api/sync/now endpoint is implemented later in the file
+  // See IMMEDIATE SYNC ENDPOINT section
+  
+  // Original Sync API endpoint (kept for backward compatibility)
   app.post("/api/sync", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
