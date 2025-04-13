@@ -103,7 +103,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const { toast } = useToast();
   
   // Filter shared calendars to only include those with edit permissions
-  const editableSharedCalendars = sharedCalendars.filter(cal => cal.permission === 'edit');
+  // Filter shared calendars with edit permissions
+  const editableSharedCalendars = sharedCalendars.filter(cal => cal.permissionLevel === 'edit');
+  
+  console.log('Shared calendars:', sharedCalendars);
+  console.log('Editable shared calendars:', editableSharedCalendars);
   
   // Form refs to handle focus
   const titleInputRef = useRef<HTMLInputElement>(null);
