@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -6,9 +6,11 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, RefreshCcw } from "lucide-react";
+import { Loader2, RefreshCcw, Wifi, WifiOff } from "lucide-react";
 import { apiRequest } from '@/lib/queryClient';
 import { format } from 'date-fns';
+import { useCalendarSync } from '@/hooks/useCalendarSync';
+import { Badge } from '@/components/ui/badge';
 
 interface SyncStatus {
   syncing: boolean;
@@ -26,6 +28,14 @@ export function SyncSettings() {
   const [autoSync, setAutoSync] = useState(false);
   const [interval, setInterval] = useState(300); // 5 minutes in seconds
   const [syncInProgress, setSyncInProgress] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+  
+  // Get access to our new calendar sync hook
+  const { 
+    syncAllCalendars, 
+    requestRealTimeSync,
+    lastSyncTime 
+  } = useCalendarSync();
   
   // Convert seconds to human-readable format
   const formatInterval = (seconds: number) => {
@@ -152,10 +162,26 @@ export function SyncSettings() {
     }
   };
   
-  // Trigger manual sync
+  // Trigger manual sync using WebSocket for real-time feedback
   const syncNow = async () => {
     try {
       setSyncInProgress(true);
+      
+      // First try to use WebSocket for real-time sync if available
+      if (wsConnected) {
+        const success = await requestRealTimeSync({ forceRefresh: true });
+        
+        if (success) {
+          toast({
+            title: 'Success',
+            description: 'Synchronization completed in real-time',
+          });
+          fetchStatus();
+          return;
+        }
+      }
+      
+      // Fall back to REST API if WebSocket is not connected
       const response = await apiRequest('POST', '/api/sync/now');
       
       if (response.ok) {
@@ -181,21 +207,51 @@ export function SyncSettings() {
     }
   };
   
+  // Check for WebSocket connection
+  const checkWebSocketConnection = useCallback(() => {
+    // Use the WebSocket readyState to determine if we're connected
+    const ws = new WebSocket((window.location.protocol === 'https:' ? 'wss:' : 'ws:') + 
+      `//${window.location.host}/ws`);
+      
+    const checkState = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        setWsConnected(true);
+        ws.close(); // Close this test connection since we're just checking
+      } else {
+        setWsConnected(false);
+      }
+    };
+    
+    ws.onopen = checkState;
+    ws.onerror = () => setWsConnected(false);
+    
+    // Set a timeout in case connection takes too long
+    setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        setWsConnected(false);
+        ws.close();
+      }
+    }, 3000);
+  }, []);
+  
   // Initial fetch
   useEffect(() => {
     fetchStatus();
+    checkWebSocketConnection();
     
     // Create a wrapper function to avoid binding issues
     const pollFn = () => fetchStatus();
     
     // Set up polling with the correct return type
     const pollInterval = window.setInterval(pollFn, 10000); // Check every 10 seconds
+    const wsCheckInterval = window.setInterval(checkWebSocketConnection, 30000); // Check WebSocket every 30 seconds
     
     // Clean up interval when component unmounts
     return () => {
       clearInterval(pollInterval);
+      clearInterval(wsCheckInterval);
     };
-  }, []);
+  }, [checkWebSocketConnection]);
   
   if (loading) {
     return (
@@ -220,7 +276,26 @@ export function SyncSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            {wsConnected ? (
+              <Wifi className="h-5 w-5 text-green-500" />
+            ) : (
+              <WifiOff className="h-5 w-5 text-red-500" />
+            )}
+            <span className="text-sm font-medium">
+              {wsConnected ? "Real-time sync available" : "Using standard sync"}
+            </span>
+          </div>
+          <Badge 
+            variant={wsConnected ? "outline" : "secondary"}
+            className={`${wsConnected ? "bg-green-50 hover:bg-green-100 text-green-700" : "bg-amber-50 hover:bg-amber-100 text-amber-700"}`}
+          >
+            {wsConnected ? "WebSocket Connected" : "WebSocket Disconnected"}
+          </Badge>
+        </div>
+      
+        <div className="space-y-2 pt-4">
           <div className="flex items-center justify-between">
             <Label htmlFor="auto-sync" className="text-base">
               Automatic Sync
