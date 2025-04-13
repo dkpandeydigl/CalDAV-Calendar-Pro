@@ -391,6 +391,16 @@ This notification was sent using CalDAV Calendar Application.`;
     attendee: Attendee,
     icsData: string
   ): Promise<nodemailer.SentMessageInfo> {
+    // Generate the meeting agenda PDF
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await generateEventAgendaPDF(data);
+      console.log(`Successfully generated PDF agenda for event ${data.uid}`);
+    } catch (error) {
+      console.error(`Failed to generate PDF agenda for event ${data.uid}:`, error);
+      // If PDF generation fails, continue with the invite but without the PDF attachment
+      pdfBuffer = Buffer.from(''); 
+    }
     if (!this.transporter || !this.config) {
       throw new Error('Email service not initialized');
     }
@@ -480,7 +490,11 @@ This notification was sent using CalDAV Calendar Application.`;
               </div>
             </div>
             
-            <p>The event details are attached in an iCalendar file that you can import into your calendar application.</p>
+            <p>This email includes two attachments:</p>
+            <ol>
+              <li>An iCalendar (.ics) file that you can import into your calendar application</li>
+              <li>A meeting agenda PDF with complete event details</li>
+            </ol>
           </div>
           <div class="footer">
             <p>This invitation was sent using CalDAV Calendar Application.</p>
@@ -501,13 +515,18 @@ This notification was sent using CalDAV Calendar Application.`;
         : attendee.email,
       subject: `Invitation: ${title}`,
       html: htmlContent,
-      text: `Hello ${attendeeName},\n\nYou have been invited to the following event:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n\nThe event details are attached in an iCalendar file that you can import into your calendar application.\n\nThis invitation was sent using CalDAV Calendar Application.`,
+      text: `Hello ${attendeeName},\n\nYou have been invited to the following event:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n\nThis email includes two attachments:\n1. An iCalendar (.ics) file that you can import into your calendar application\n2. A meeting agenda PDF with complete event details\n\nThis invitation was sent using CalDAV Calendar Application.`,
       attachments: [
         {
           filename: `invitation-${data.uid}.ics`,
           content: icsData,
           contentType: 'text/calendar; method=REQUEST'
-        }
+        },
+        ...(pdfBuffer.length > 0 ? [{
+          filename: `meeting-agenda-${data.uid}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        }] : [])
       ]
       // Removed the global headers that were causing the whole email to be treated as calendar data
     };
@@ -750,7 +769,11 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
               ` : ''}
             </div>
             
-            <p>The event details will be attached in an iCalendar file that recipients can import into their calendar application.</p>
+            <p>This email will include two attachments:</p>
+            <ol>
+              <li>An iCalendar (.ics) file that recipients can import into their calendar applications</li>
+              <li>A meeting agenda PDF with complete event details</li>
+            </ol>
           </div>
           
           <div class="footer">
