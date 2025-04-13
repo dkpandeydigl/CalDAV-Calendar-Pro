@@ -80,19 +80,56 @@ export function useCalendarSync() {
         else if (data.type === 'event_changed') {
           console.log('Event changed notification received:', data);
           
+          // Generate a more specific and informative notification message
+          let title = 'Calendar Event';
+          let description = '';
+          
+          if (data.changeType === 'added') {
+            title = 'New Event Added';
+            description = data.data?.title ? 
+              `"${data.data.title}" was added to ${data.data.calendarName || 'calendar'}` : 
+              'A new event was added';
+          } else if (data.changeType === 'updated') {
+            title = 'Event Updated';
+            description = data.data?.title ? 
+              `"${data.data.title}" was updated ${data.data.isExternalChange ? 'in an external client' : ''}` : 
+              'An event was updated';
+          } else if (data.changeType === 'deleted') {
+            title = 'Event Removed';
+            description = data.data?.count > 1 ? 
+              `${data.data.count} events were removed from ${data.data.calendarName || 'calendar'}` :
+              'An event was removed';
+          }
+          
           toast({
-            title: 'Event Updated',
-            description: `Event was ${data.changeType} in calendar`,
+            title,
+            description,
           });
           
-          // Invalidate queries to refresh UI
-          queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-          
-          // If we have the specific event ID, also invalidate that query
-          if (data.eventId) {
+          // For external changes, immediately force a refresh
+          if (data.data?.isExternalChange) {
+            console.log('External change detected, forcing immediate refresh');
+            
+            // Invalidate all calendar queries to ensure latest data
             queryClient.invalidateQueries({ 
-              queryKey: ['/api/events', data.eventId] 
+              queryKey: ['/api/calendars'] 
             });
+            
+            // Force refresh of events data
+            queryClient.invalidateQueries({ 
+              queryKey: ['/api/events'],
+              refetchType: 'active',
+            });
+          } else {
+            // Standard invalidation for normal changes
+            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            
+            // If we have the specific event ID, also invalidate that query
+            if (data.eventId) {
+              queryClient.invalidateQueries({ 
+                queryKey: ['/api/events', data.eventId] 
+              });
+            }
           }
         }
         else if (data.type === 'new_notification') {

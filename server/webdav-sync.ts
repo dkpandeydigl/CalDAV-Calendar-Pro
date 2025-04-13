@@ -242,7 +242,7 @@ export class WebDAVSyncService {
     }
   ): Promise<void> {
     try {
-      // 1. Send WebSocket notification
+      // 1. Send WebSocket notification for all calendar changes
       broadcastToUser(userId, {
         type: 'calendar_changed',
         calendarId,
@@ -264,6 +264,7 @@ export class WebDAVSyncService {
       
       // Notify about new events
       for (const event of changes.added) {
+        // Create notification in the database
         await notificationService.createNotification({
           userId,
           type: 'event_update',
@@ -277,10 +278,20 @@ export class WebDAVSyncService {
           isDismissed: false,
           actionTaken: false
         });
+        
+        // Send individual event change notification via WebSocket for UI updates
+        // This ensures external client changes are immediately reflected in the UI
+        const { notifyEventChanged } = require('./websocket-handler');
+        notifyEventChanged(userId, event.id, 'added', {
+          title: event.title,
+          calendarId: calendarId,
+          calendarName: calendar.name
+        });
       }
       
       // Notify about modified events (if significant changes)
       for (const event of changes.modified) {
+        // Create notification in the database
         await notificationService.createNotification({
           userId,
           type: 'event_update',
@@ -293,6 +304,26 @@ export class WebDAVSyncService {
           isRead: false,
           isDismissed: false,
           actionTaken: false
+        });
+        
+        // Send individual event change notification via WebSocket for UI updates
+        // This ensures external client changes are immediately reflected in the UI
+        const { notifyEventChanged } = require('./websocket-handler');
+        notifyEventChanged(userId, event.id, 'updated', {
+          title: event.title,
+          calendarId: calendarId,
+          calendarName: calendar.name,
+          isExternalChange: true
+        });
+      }
+      
+      // Also notify about deleted events
+      if (changes.deleted.length > 0) {
+        const { notifyEventChanged } = require('./websocket-handler');
+        notifyEventChanged(userId, 0, 'deleted', {
+          count: changes.deleted.length,
+          calendarId: calendarId,
+          calendarName: calendar.name
         });
       }
     } catch (error) {
