@@ -437,7 +437,8 @@ export function useCalendarSync() {
         body: JSON.stringify({
           calendarId,
           syncToken,
-          forceRefresh: true
+          forceRefresh: true,
+          preserveLocalEvents: true // Add parameter to prevent event deletion during sync
         })
       });
       
@@ -660,7 +661,8 @@ export function useCalendarSync() {
       socket.send(JSON.stringify({
         type: 'sync_request',
         forceRefresh: options.forceRefresh || false,
-        calendarId: options.calendarId || null
+        calendarId: options.calendarId || null,
+        preserveLocalEvents: true // Add parameter to prevent event deletion during sync
       }));
       
       // Set a timeout to prevent waiting forever

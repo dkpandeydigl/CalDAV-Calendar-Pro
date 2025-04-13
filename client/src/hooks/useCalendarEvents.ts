@@ -685,7 +685,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             console.log('Triggering immediate sync for updated event');
             const syncResponse = await apiRequest('POST', '/api/sync/now', {
               forceRefresh: true,
-              calendarId: serverEvent.calendarId
+              calendarId: serverEvent.calendarId,
+              preserveLocalEvents: true // Add parameter to prevent event deletion during sync
             });
             
             // Check if the response is JSON before parsing
@@ -1014,7 +1015,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             const syncResponse = await apiRequest('POST', '/api/sync/now', {
               forceRefresh: true,
               // If we have the calendar ID from the deleted event, use it for targeted sync
-              calendarId: context?.eventToDelete?.calendarId
+              calendarId: context?.eventToDelete?.calendarId,
+              preserveLocalEvents: true // Add parameter to prevent event deletion during sync
             });
             
             // Check if the response is JSON before parsing
