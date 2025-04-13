@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
-import { updateUserFullName } from '@/lib/api';
+import { updateUserFullName, apiRequest } from '@/lib/api';
 
 interface ProfileSettingsModalProps {
   isOpen: boolean;
@@ -18,6 +18,37 @@ export function ProfileSettingsModal({ isOpen, onClose, currentFullName }: Profi
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Update fullName state when currentFullName prop changes or when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      // Fetch fresh user data when modal opens
+      const fetchCurrentUser = async () => {
+        try {
+          const response = await apiRequest('GET', '/api/user');
+          
+          if (response.ok) {
+            const userData = await response.json();
+            if (userData && userData.fullName) {
+              console.log('Updated full name from server:', userData.fullName);
+              setFullName(userData.fullName);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching current user data:', error);
+        }
+      };
+      
+      fetchCurrentUser();
+    }
+  }, [isOpen]);
+  
+  // Also update when the prop changes (fallback)
+  useEffect(() => {
+    if (currentFullName) {
+      setFullName(currentFullName);
+    }
+  }, [currentFullName]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

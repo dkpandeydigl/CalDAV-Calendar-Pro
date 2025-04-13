@@ -12,6 +12,7 @@ import { formatMonthYear } from '@/lib/date-utils';
 import { useAuth } from '@/hooks/use-auth';
 import { ChevronLeft, ChevronRight, Menu, LogOut, User, Settings } from 'lucide-react';
 import { ProfileSettingsModal } from '@/components/modals/ProfileSettingsModal';
+import { queryClient } from '@/lib/queryClient';
 
 interface CalendarHeaderProps {
   onToggleSidebar: () => void;
@@ -36,6 +37,13 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
   
   const { user, logoutMutation } = useAuth();
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
+  
+  // Retrieve the latest user data when opening profile settings
+  const handleOpenProfileSettings = () => {
+    // Force refresh user data before opening the modal
+    queryClient.invalidateQueries({ queryKey: ['/api/user'] });
+    setIsProfileSettingsOpen(true);
+  };
   
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -85,7 +93,7 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem 
-                    onClick={() => setIsProfileSettingsOpen(true)} 
+                    onClick={handleOpenProfileSettings} 
                     className="cursor-pointer"
                   >
                     <Settings className="h-4 w-4 mr-2" />
