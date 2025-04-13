@@ -302,8 +302,9 @@ export class SyncService {
    * @param options - Optional configuration for the sync operation
    * @param options.forceRefresh - Whether to force a full refresh from the server
    * @param options.calendarId - Optional calendar ID to sync just one calendar
+   * @param options.isGlobalSync - Whether this sync is triggered by the global sync timer (not a user request)
    */
-  async syncNow(userId: number, options: { forceRefresh?: boolean, calendarId?: number | null } = {}): Promise<boolean> {
+  async syncNow(userId: number, options: { forceRefresh?: boolean, calendarId?: number | null, isGlobalSync?: boolean } = {}): Promise<boolean> {
     let job = this.jobs.get(userId);
     
     // If no job exists, try to create one on-demand

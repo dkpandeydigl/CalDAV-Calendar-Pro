@@ -779,6 +779,24 @@ export class DatabaseStorage implements IStorage {
     }
   }
   
+  /**
+   * Get all active server connections
+   * This is used for global background sync to check for external changes
+   */
+  async getAllServerConnections(): Promise<ServerConnection[]> {
+    try {
+      // Get all server connections
+      const result = await db.select()
+        .from(serverConnections);
+      
+      console.log(`Found ${result.length} server connections for background sync`);
+      return result;
+    } catch (error) {
+      console.error('Error getting all server connections:', error);
+      return [];
+    }
+  }
+  
   async createServerConnection(insertConnection: InsertServerConnection): Promise<ServerConnection> {
     const result = await db.insert(serverConnections)
       .values({
