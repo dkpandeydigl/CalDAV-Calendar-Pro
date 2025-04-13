@@ -143,17 +143,19 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   
   const { toast } = useToast();
   
-  // Filter calendars based on search query
-  const filteredOwnCalendars = calendars.filter(cal => 
-    cal.name.toLowerCase().includes(calendarSearchQuery.toLowerCase())
-  );
+  // Filter calendars based on search query and sort alphabetically by name
+  const filteredOwnCalendars = calendars
+    .filter(cal => cal.name.toLowerCase().includes(calendarSearchQuery.toLowerCase()))
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   
   // Group shared calendars by owner and filter based on search query
-  const filteredSharedCalendars = sharedCalendars.filter(cal => 
-    cal.name.toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase()) ||
-    (cal.owner?.email || '').toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase()) ||
-    (cal.owner?.username || '').toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase())
-  );
+  const filteredSharedCalendars = sharedCalendars
+    .filter(cal => 
+      cal.name.toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase()) ||
+      (cal.owner?.email || '').toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase()) ||
+      (cal.owner?.username || '').toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase())
+    )
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   
   // Group shared calendars by owner
   const groupedSharedCalendars = filteredSharedCalendars.reduce((acc, calendar) => {
@@ -839,7 +841,9 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                         className="w-full" 
                         defaultValue={Object.keys(groupedSharedCalendars).map(email => `item-${email}`)}
                       >
-                        {Object.entries(groupedSharedCalendars).map(([ownerEmail, ownerCalendars]) => (
+                        {Object.entries(groupedSharedCalendars)
+                          .sort(([emailA], [emailB]) => emailA.toLowerCase().localeCompare(emailB.toLowerCase()))
+                          .map(([ownerEmail, ownerCalendars]) => (
                           <AccordionItem 
                             key={ownerEmail} 
                             value={`item-${ownerEmail}`}
@@ -863,7 +867,9 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                             </AccordionTrigger>
                             <AccordionContent className="pt-0">
                               <div className="pl-2 space-y-1">
-                                {ownerCalendars.map(calendar => renderCalendarItem(calendar, true))}
+                                {ownerCalendars
+                                  .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+                                  .map(calendar => renderCalendarItem(calendar, true))}
                               </div>
                               <div className="mt-1 text-right">
                                 <Button
