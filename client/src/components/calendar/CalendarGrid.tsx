@@ -3,6 +3,7 @@ import { useCalendarContext } from '@/contexts/CalendarContext';
 import { getCalendarDays, getWeekdayHeaders } from '@/lib/date-utils';
 import CalendarDay from './CalendarDay';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Loader2 } from 'lucide-react';
 import type { Event } from '@shared/schema';
 
 interface CalendarGridProps {
@@ -791,7 +792,22 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
   }
 
   return (
-    <>
+    <div className="relative">
+      {/* Sync Overlay - Only visible during sync operations */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+          <div className="flex flex-col items-center gap-4 p-6 bg-white rounded-lg shadow-md border border-primary/20">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="text-center">
+              <h3 className="text-lg font-medium mb-1">Syncing Calendar</h3>
+              <p className="text-sm text-muted-foreground">
+                Please wait while we update your events...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Week Day Headers */}
       <div className="grid grid-cols-7 bg-neutral-100 border-b">
         {weekdayHeaders.map((day, index) => (
@@ -829,7 +845,7 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
           );
         })}
       </div>
-    </>
+    </div>
   );
 };
 
