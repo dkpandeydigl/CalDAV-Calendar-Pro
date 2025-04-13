@@ -92,42 +92,59 @@ export function initializeWebSocketServer(httpServer: Server) {
  */
 async function getUserIdFromRequest(req: any): Promise<number | null> {
   try {
-    // Extract from cookie session if available
-    if (req.headers.cookie && req.headers.cookie.includes('connect.sid')) {
-      // We'll need to parse the session from the cookie and validate it
-      // This logic would depend on your session implementation
-      
-      // Extract userId directly from the query parameter
-      const url = new URL(req.url, `http://${req.headers.host}`);
-      const queryUserId = url.searchParams.get('userId');
-      
-      if (queryUserId) {
-        try {
-          const parsedUserId = parseInt(queryUserId, 10);
-          
-          // Log attempt to connect with this userId
-          console.log(`WebSocket connection attempt with userId: ${parsedUserId}`);
-          
-          // Verify the user exists
-          const user = await storage.getUser(parsedUserId);
-          if (user) {
-            console.log(`Successfully validated user ID ${parsedUserId} for WebSocket connection`);
-            return parsedUserId;
-          } else {
-            console.log(`User ID ${parsedUserId} not found in database`);
-          }
-        } catch (error) {
-          console.error(`Error parsing user ID from query parameter: ${queryUserId}`, error);
+    // First, try to get userId directly from query parameters - this is the most reliable method
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const queryUserId = url.searchParams.get('userId');
+    
+    if (queryUserId) {
+      try {
+        const parsedUserId = parseInt(queryUserId, 10);
+        
+        // Log attempt to connect with this userId
+        console.log(`👤 WebSocket connection attempt with userId: ${parsedUserId}`);
+        
+        // Verify the user exists
+        const user = await storage.getUser(parsedUserId);
+        if (user) {
+          console.log(`✅ Successfully validated user ID ${parsedUserId} for WebSocket connection`);
+          return parsedUserId;
+        } else {
+          console.log(`❌ User ID ${parsedUserId} not found in database`);
         }
-      } else {
-        console.log('No userId query parameter found in WebSocket connection URL');
+      } catch (error) {
+        console.error(`❌ Error parsing user ID from query parameter: ${queryUserId}`, error);
+      }
+    } else {
+      console.log('❓ No userId query parameter found in WebSocket connection URL');
+    }
+    
+    // If we get here, try to extract from cookie session
+    if (req.headers.cookie && req.headers.cookie.includes('connect.sid')) {
+      // Attempt to parse session ID from cookie
+      try {
+        const cookies = req.headers.cookie.split(';')
+          .map((cookie: string) => cookie.trim())
+          .reduce((acc: any, cookie: string) => {
+            const [key, value] = cookie.split('=');
+            acc[key] = value;
+            return acc;
+          }, {});
+          
+        const sessionId = cookies['connect.sid'];
+        if (sessionId) {
+          console.log('Found session ID in cookies:', sessionId);
+          // This is where you would typically lookup the session in your session store
+          // For now, we'll just log it and continue with other authentication methods
+        }
+      } catch (err) {
+        console.error('Error parsing cookies:', err);
       }
     }
     
-    // If no session or query parameter, check authorization header
-    // This is for demonstration
+    // If no session or query parameter, check authorization header as last resort
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
+      console.log('Attempting to authenticate WebSocket with Bearer token');
       const token = authHeader.substring(7);
       const [userId, timestamp] = token.split('.');
       
@@ -137,14 +154,16 @@ async function getUserIdFromRequest(req: any): Promise<number | null> {
         // Verify the user exists
         const user = await storage.getUser(parsedUserId);
         if (user) {
+          console.log(`✅ Successfully validated user ID ${parsedUserId} from Bearer token`);
           return parsedUserId;
         }
       }
     }
     
+    console.log('❌ All authentication methods failed for WebSocket connection');
     return null;
   } catch (error) {
-    console.error('Error extracting user ID from request:', error);
+    console.error('❌ Error extracting user ID from request:', error);
     return null;
   }
 }
