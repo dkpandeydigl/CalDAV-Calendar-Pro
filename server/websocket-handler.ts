@@ -67,7 +67,14 @@ export function initializeWebSocketServer(httpServer: Server) {
         
         // Clean up empty sets
         if (userSockets.get(userId)?.size === 0) {
+          console.log(`No more active WebSocket connections for user ${userId}`);
           userSockets.delete(userId);
+          
+          // Note: We don't stop the sync service here because
+          // the global sync timer will continue checking for external changes
+          // even when no user is actively connected. This ensures that when the user
+          // reconnects, they will still see the latest data, including
+          // changes made from external clients like Thunderbird.
         }
       });
       

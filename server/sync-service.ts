@@ -333,8 +333,8 @@ export class SyncService {
       }
     }
     
-    const { forceRefresh = false, calendarId = null } = options;
-    console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId });
+    const { forceRefresh = false, calendarId = null, isGlobalSync = false } = options;
+    console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId, isGlobalSync });
     
     // If a sync is already in progress, don't start another one
     // Unless forceRefresh is true, in which case we'll proceed anyway
