@@ -1388,13 +1388,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (sharedCalendar) {
           // It's a shared calendar - add sharing metadata to each event
           const enhancedEvents = events.map(event => {
-            // Add sharing information to the rawData property
-            const existingRawData = typeof event.rawData === 'string' 
-              ? JSON.parse(event.rawData || '{}') 
-              : (event.rawData || {});
+            // Add sharing information safely
+            let existingRawData = {};
             
-            const updatedRawData = {
-              ...existingRawData,
+            // Safely parse the raw data if it's a string
+            if (typeof event.rawData === 'string') {
+              try {
+                // Check if it's iCalendar format (begins with BEGIN:VCAL)
+                if (event.rawData.trim().startsWith('BEGIN:VCAL')) {
+                  // It's an iCalendar string, not JSON, so create a new object
+                  existingRawData = {};
+                } else {
+                  // Try to parse as JSON
+                  existingRawData = JSON.parse(event.rawData || '{}');
+                }
+              } catch (e) {
+                console.log(`Could not parse rawData as JSON for event ${event.id}, using empty object`);
+                existingRawData = {};
+              }
+            } else if (event.rawData && typeof event.rawData === 'object') {
+              existingRawData = event.rawData;
+            }
+            
+            // Create a new metadata object with sharing information
+            const sharingMetadata = {
               isShared: true,
               permissionLevel: sharedCalendar.permissionLevel || 'view',
               ownerName: sharedCalendar.owner?.username || sharedCalendar.owner?.email,
@@ -1402,9 +1419,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               calendarColor: sharedCalendar.color
             };
             
+            // Return the event with sharing metadata
             return {
               ...event,
-              rawData: JSON.stringify(updatedRawData)
+              // Store sharing info separately to avoid modifying the original rawData
+              // which might contain iCalendar data
+              sharingMetadata: sharingMetadata
             };
           });
           
@@ -1442,12 +1462,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const sharingInfo = sharedCalendarMap.get(calendar.id);
             
             // Add sharing information to the rawData property
-            const existingRawData = typeof event.rawData === 'string' 
-              ? JSON.parse(event.rawData || '{}') 
-              : (event.rawData || {});
+            let existingRawData = {};
             
-            const updatedRawData = {
-              ...existingRawData,
+            // Safely parse the raw data if it's a string
+            if (typeof event.rawData === 'string') {
+              try {
+                // Check if it's iCalendar format (begins with BEGIN:VCAL)
+                if (event.rawData.trim().startsWith('BEGIN:VCAL')) {
+                  // It's an iCalendar string, not JSON, so create a new object
+                  existingRawData = {};
+                } else {
+                  // Try to parse as JSON
+                  existingRawData = JSON.parse(event.rawData || '{}');
+                }
+              } catch (e) {
+                console.log(`Could not parse rawData as JSON for event ${event.id}, using empty object`);
+                existingRawData = {};
+              }
+            } else if (event.rawData && typeof event.rawData === 'object') {
+              existingRawData = event.rawData;
+            }
+            
+            // Create a new metadata object with sharing information
+            const sharingMetadata = {
               isShared: true,
               permissionLevel: sharingInfo.permissionLevel,
               ownerName: sharingInfo.ownerName,
@@ -1455,9 +1492,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               calendarColor: calendar.color
             };
             
+            // Return the event with sharing metadata
             return {
               ...event,
-              rawData: JSON.stringify(updatedRawData)
+              // Store sharing info separately to avoid modifying the original rawData
+              // which might contain iCalendar data
+              sharingMetadata: sharingMetadata
             };
           }
           

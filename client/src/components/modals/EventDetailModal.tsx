@@ -215,22 +215,28 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // Get shared calendars from the cache using proper query key with user ID
   const sharedCalendars = queryClient.getQueryData<any[]>(['/api/shared-calendars', currentUserId]);
   
+  // Check for sharingMetadata in the event (newer implementation)
+  const hasSharingMetadata = !!(event as any).sharingMetadata;
+  const sharingMetadata = (event as any).sharingMetadata || {};
+  
   // Check if this is from a shared calendar with edit permissions
-  // We need to check both the old 'permission' field and the new 'permissionLevel' field
-  // for backward compatibility
+  // First check the new sharingMetadata property, then fall back to old methods
   const isFromSharedCalendarWithEditPermission = 
-    calendarMetadata?.isShared === true && 
-    event.calendarId && 
-    sharedCalendars?.some?.(
-      cal => cal.id === event.calendarId && 
-        (cal.permission === 'edit' || cal.permissionLevel === 'edit')
-    );
+    (hasSharingMetadata && sharingMetadata.permissionLevel === 'edit') || 
+    (calendarMetadata?.isShared === true && 
+     event.calendarId && 
+     sharedCalendars?.some?.(
+       cal => cal.id === event.calendarId && 
+         (cal.permission === 'edit' || cal.permissionLevel === 'edit')
+     ));
   
   console.log(`Event ${event.id} permission check:`, {
     isUsersOwnCalendar,
     canEdit,
     isOwner,
     isFromSharedCalendarWithEditPermission,
+    hasSharingMetadata,
+    sharingMetadata,
     calendarMetadata,
     sharedCalendars: sharedCalendars?.filter(cal => cal.id === event.calendarId),
   });
