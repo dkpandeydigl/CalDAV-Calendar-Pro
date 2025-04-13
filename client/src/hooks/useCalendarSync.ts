@@ -186,31 +186,39 @@ export function useCalendarSync() {
               description,
             });
             
-            // For external changes, immediately force a refresh
-            if (data.data?.isExternalChange) {
-              console.log('External change detected, forcing immediate refresh');
-              
-              // Invalidate all calendar queries to ensure latest data
+            // For all changes, we now force an immediate refresh
+            // Previously we only did this for external changes, but this caused some changes to be invisible
+            console.log(`Event change detected (${data.changeType}), forcing immediate refresh`);
+            
+            // Invalidate all calendar queries to ensure latest data
+            queryClient.invalidateQueries({ 
+              queryKey: ['/api/calendars'] 
+            });
+            
+            // Force refresh of events data with a complete refetch
+            console.log('Invalidating all events queries to refresh UI...');
+            queryClient.invalidateQueries({ 
+              queryKey: ['/api/events'],
+              refetchType: 'all', // Change from 'active' to 'all' to ensure a full refresh
+            });
+            
+            // If we have the specific event ID, also invalidate that query
+            if (data.eventId) {
+              console.log(`Invalidating specific event query: ${data.eventId}`);
               queryClient.invalidateQueries({ 
-                queryKey: ['/api/calendars'] 
+                queryKey: ['/api/events', data.eventId],
+                refetchType: 'all'
               });
-              
-              // Force refresh of events data
-              queryClient.invalidateQueries({ 
-                queryKey: ['/api/events'],
-                refetchType: 'active',
-              });
-            } else {
-              // Standard invalidation for normal changes
-              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-              
-              // If we have the specific event ID, also invalidate that query
-              if (data.eventId) {
-                queryClient.invalidateQueries({ 
-                  queryKey: ['/api/events', data.eventId] 
-                });
-              }
             }
+            
+            // Add a slight delay then force refetch again to handle race conditions
+            setTimeout(() => {
+              console.log('Performing delayed refetch of events to ensure UI is updated...');
+              queryClient.refetchQueries({ 
+                queryKey: ['/api/events'],
+                type: 'all'
+              });
+            }, 500);
           }
           else if (data.type === 'new_notification') {
             console.log('New notification received:', data);
@@ -222,7 +230,21 @@ export function useCalendarSync() {
                  data.notification.type === 'event_invitation' ||
                  data.notification.type === 'event_cancellation')) {
               
-              queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+              console.log('Event-related notification received, refreshing events');
+              // Force refresh of events data to ensure UI updates
+              queryClient.invalidateQueries({ 
+                queryKey: ['/api/events'],
+                refetchType: 'all'
+              });
+              
+              // Add a slight delay then force refetch again
+              setTimeout(() => {
+                console.log('Performing delayed refetch after notification to ensure UI is updated...');
+                queryClient.refetchQueries({ 
+                  queryKey: ['/api/events'],
+                  type: 'all'
+                });
+              }, 500);
             }
           }
           // Handle pong response to keep connection alive
@@ -322,11 +344,20 @@ export function useCalendarSync() {
               }));
             } else {
               // Fallback to query invalidation if WebSocket is not available
-              console.log('WebSocket not available, using query invalidation');
+              console.log('WebSocket not available, using query invalidation with forced refetch');
               queryClient.invalidateQueries({ 
                 queryKey: ['/api/events'],
-                refetchType: 'active',
+                refetchType: 'all', // Change from 'active' to 'all' for complete refresh
               });
+              
+              // Add a slight delay then force refetch again
+              setTimeout(() => {
+                console.log('Performing delayed refetch to ensure UI is updated...');
+                queryClient.refetchQueries({ 
+                  queryKey: ['/api/events'],
+                  type: 'all'
+                });
+              }, 500);
             }
           }
         }
@@ -515,11 +546,21 @@ export function useCalendarSync() {
       if (options.calendarId) {
         return syncCalendar(options.calendarId);
       } else {
-        // Just invalidate queries as a fallback
+        // Just invalidate queries as a fallback with forced refresh
+        console.log('No WebSocket connection, using direct query invalidation fallback');
         queryClient.invalidateQueries({ 
           queryKey: ['/api/events'],
-          refetchType: 'active',
+          refetchType: 'all', // Change from 'active' to 'all' for complete refresh
         });
+        
+        // Add a slight delay then force refetch again
+        setTimeout(() => {
+          console.log('Performing delayed refetch to ensure UI is updated...');
+          queryClient.refetchQueries({ 
+            queryKey: ['/api/events'],
+            type: 'all'
+          });
+        }, 500);
         return Promise.resolve(false);
       }
     }
@@ -535,17 +576,27 @@ export function useCalendarSync() {
             
             if (data.success) {
               // Force refresh the UI
+              console.log('Sync complete, refreshing UI with new data');
               queryClient.invalidateQueries({ 
                 queryKey: ['/api/events'],
-                refetchType: 'active',
+                refetchType: 'all', // Change from 'active' to 'all' for complete refresh
               });
               
               if (options.calendarId) {
                 queryClient.invalidateQueries({ 
                   queryKey: ['/api/calendars', options.calendarId, 'events'],
-                  refetchType: 'active',
+                  refetchType: 'all', // Change from 'active' to 'all' for complete refresh
                 });
               }
+              
+              // Add a slight delay then force refetch again to handle race conditions
+              setTimeout(() => {
+                console.log('Performing delayed refetch after sync to ensure UI is updated...');
+                queryClient.refetchQueries({ 
+                  queryKey: ['/api/events'],
+                  type: 'all'
+                });
+              }, 500);
               
               setLastSyncTime(new Date());
               resolve(true);
