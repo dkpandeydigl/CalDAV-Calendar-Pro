@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -9,18 +10,16 @@ import type { Event } from '@shared/schema';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  MailCheck, AlertTriangle, User as UserIcon, UserRound, 
-  VideoIcon, DoorClosed, Laptop, Wrench, Settings, 
-  MapPin, Info, Clock, MapPinned, AlertCircle, 
-  Trash2, Calendar, History 
-} from 'lucide-react';
+import { MailCheck, AlertTriangle, User as UserIcon, UserRound, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle, Trash2, Calendar, History } from 'lucide-react';
 import DirectResourceExtractor from './DirectResourceExtractor';
 import ResourceManager from '@/components/resources/ResourceManager';
 import DirectAttendeeExtractor from './DirectAttendeeExtractor';
 import AttendeeResponseForm from '../attendees/AttendeeResponseForm';
 import AttendeeStatusDisplay from '../attendees/AttendeeStatusDisplay';
 import AttendeeDialog from '../attendees/AttendeeDialog';
+
+// Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
+// since they come from dynamic sources. Instead we'll do runtime checks.
 
 /**
  * Helper function to sanitize and process description content for display
@@ -30,65 +29,43 @@ function sanitizeDescriptionForDisplay(description: string | any): string {
   if (!description) return '';
   
   // If it's not a string, try to convert it
-  const descStr = typeof description === 'string' 
-    ? description 
-    : (description.toString ? description.toString() : JSON.stringify(description));
-  
-  // Handle Thunderbird's special format
-  if (descStr.includes('"ALTREP"') || descStr.includes('"params"')) {
+  if (typeof description !== 'string') {
     try {
-      // Extract the actual content from Thunderbird format
-      const valMatch = descStr.match(/"val"\s*:\s*"([^"]+)"/);
-      if (valMatch && valMatch[1]) {
-        return valMatch[1].replace(/\\n/g, '<br>').replace(/\\/g, '');
-      }
-      
-      // Try ALTREP if val wasn't found
-      const altrepMatch = descStr.match(/"ALTREP"\s*:\s*"data:text\/html[^"]*,([^"]+)"/);
-      if (altrepMatch && altrepMatch[1]) {
-        try {
-          return decodeURIComponent(altrepMatch[1]);
-        } catch (e) {
-          return altrepMatch[1];
-        }
-      }
-      
-      // Fallback to cleaning up the text
-      return descStr
-        .replace(/["[\]{}]/g, '')
-        .replace(/params:|ALTREP:|val:/g, '')
-        .replace(/data:text\/html[^,]*,/g, '')
-        .trim();
-        
+      description = JSON.stringify(description);
     } catch (e) {
-      console.error('Error parsing Thunderbird format:', e);
+      description = String(description);
     }
   }
   
-  // If it already has HTML tags, return as is
-  if (descStr.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
-    return descStr;
+  // Check if this is an HTML description (has HTML tags)
+  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(description);
+  
+  if (hasHtmlTags) {
+    // It's already HTML content, return as is
+    return description;
   }
   
-  // Handle escaped HTML
-  if (descStr.includes('&lt;') && descStr.includes('&gt;')) {
-    const unescaped = descStr
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, '&');
-    
-    if (unescaped.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
-      return unescaped;
-    }
+  // Check if it has line breaks that should be converted to <br> tags
+  if (description.includes('\\n') || description.includes('\n')) {
+    // Convert escape sequences and line breaks to HTML
+    return description
+      .replace(/\\n/g, '<br>')
+      .replace(/\n/g, '<br>')
+      .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
   }
   
-  // Plain text with line breaks
-  return descStr
-    .replace(/\\n/g, '<br>')
-    .replace(/\n/g, '<br>');
+  // Plain text - escape HTML characters and preserve spaces
+  return description
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/  /g, '&nbsp;&nbsp;');
 }
 
+// Define a User interface that matches the schema with email
+// Based on shared/schema.ts where email is text("email") (optional)
 interface UserWithEmail {
   id: number;
   username: string;
@@ -104,247 +81,337 @@ interface EventDetailModalProps {
   onEdit: () => void;
 }
 
-const EventDetailModal: React.FC<EventDetailModalProps> = ({
-  open,
-  event,
+const EventDetailModal: React.FC<EventDetailModalProps> = ({ 
+  open, 
+  event, 
   onClose,
   onEdit
 }) => {
-  if (!event) return null;
+  // Hook calls - all must be at the top level
+  const { calendars } = useCalendars();
+  const { deleteEvent, cancelEvent } = useCalendarEvents();
+  const { getCalendarPermission } = useCalendarPermissions();
+  const { user, isLoading: isUserLoadingFromAuth } = useAuth();
+  const queryClient = useQueryClient();
   
-  // State for dialog opens
+  // State hooks - always place ALL hooks at the top level before any conditional logic
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [resourcesDialogOpen, setResourcesDialogOpen] = useState(false);
-  const [showAllAttendees, setShowAllAttendees] = useState(false);
-  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [showAllAttendees, setShowAllAttendees] = useState(false); // For attendee display limit
+  const [showAllResources, setShowAllResources] = useState(false); // For resource display limit (unused now - using dialog instead)
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null); // For attendee status dialog
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false); // For attendee status dialog
+  // Section expansion has been removed in favor of always showing scrollable content
   
-  // Resources array for dialog
-  const [resources, setResources] = useState<any[]>([]);
-  const [processedAttendees, setProcessedAttendees] = useState<any[]>([]);
-  
-  // Auth and permissions hooks
-  const { user, isAuthError, isLoading: isUserLoading } = useAuth();
-  const queryClient = useQueryClient();
-  const { data: calendar } = useCalendars(event.calendarId);
-  const { mutateAsync: deleteEvent } = useCalendarEvents.delete();
-  
-  // Get permission states
-  const { canEdit, isLoading: isPermissionsLoading } = useCalendarPermissions(event.calendarId);
-  
-  // Compute if this is the user's own calendar
-  const isUsersOwnCalendar = useMemo(() => {
-    if (!user || !calendar) return false;
-    return calendar.userId === user.id;
-  }, [user, calendar]);
-  
-  // Account for specific permissions in sharingMetadata
-  const sharingMetadata = useMemo(() => {
-    if (!event.sharingMetadata) return null;
+  // Add a timeout to prevent infinite loading state
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
     
+    if (isUserLoadingFromAuth) {
+      setIsUserLoading(true);
+      timeoutId = setTimeout(() => {
+        // Force loading to end after 2 seconds to prevent UI getting stuck
+        setIsUserLoading(false);
+        console.log("Auth loading timeout - forcing UI to proceed with available permissions");
+      }, 2000);
+    } else {
+      setIsUserLoading(isUserLoadingFromAuth);
+    }
+    
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isUserLoadingFromAuth]);
+  
+  // If event is null, show an error state
+  if (!event) {
+    return (
+      <Dialog open={open} onOpenChange={open => !open && onClose()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>Unable to load event details.</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={onClose}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  // Parse the event data
+  const calendarMetadata = event.rawData as any || {};
+  const calendarName = calendarMetadata?.calendarName;
+  const calendarColor = calendarMetadata?.calendarColor;
+  const calendar = calendars.find(cal => cal.id === event.calendarId);
+  
+  // Get permissions in a safe way
+  const permissions = event.calendarId ? getCalendarPermission(event.calendarId) : { canEdit: false, isOwner: false };
+  const canEdit = permissions.canEdit;
+  const isOwner = permissions.isOwner;
+  
+  // For events in user's own calendars, always allow edit
+  // First check direct match
+  let isUsersOwnCalendar = calendar ? calendar.userId === user?.id : false;
+  
+  // Special handling for DK Pandey (user ID 4) - consider all events in his calendar as his own
+  // This is specifically requested by the client to restore critical functionality
+  if (!isUsersOwnCalendar && calendar && user?.id === 4) {
+    // For DK Pandey, if it's his calendar, force isUsersOwnCalendar = true
+    if (
+      calendar.name.toLowerCase().includes('d k pandey') || 
+      calendar.name.toLowerCase().includes('pandey')
+    ) {
+      console.log('Calendar ownership granted to DK Pandey via special case');
+      isUsersOwnCalendar = true;
+    }
+  }
+  
+  // Second check: if the event has organizer information that matches the current user
+  if (!isUsersOwnCalendar && event.rawData && user) {
     try {
-      if (typeof event.sharingMetadata === 'string') {
-        return JSON.parse(event.sharingMetadata);
+      const rawData = typeof event.rawData === 'string' 
+        ? JSON.parse(event.rawData) 
+        : event.rawData;
+        
+      // Look for organizer info in the raw data
+      if (rawData && typeof rawData === 'object') {
+        const organizerEmail = rawData.organizer?.email || 
+                              rawData.ORGANIZER?.email ||
+                              rawData.organizer || 
+                              rawData.ORGANIZER;
+                              
+        // If we found organizer info, check if it matches the current user
+        if (organizerEmail && typeof organizerEmail === 'string') {
+          const emailLower = organizerEmail.toLowerCase();
+          const usernameLower = user.username.toLowerCase();
+          const userEmailLower = (user as any).email?.toLowerCase() || '';
+          
+          if (emailLower === usernameLower || emailLower === userEmailLower) {
+            console.log(`Calendar ownership detected via organizer email match: ${emailLower}`);
+            isUsersOwnCalendar = true;
+          }
+        }
       }
-      return event.sharingMetadata;
     } catch (e) {
-      console.error('Error parsing sharing metadata:', e);
-      return null;
+      console.warn('Error parsing event raw data for organizer info:', e);
     }
-  }, [event.sharingMetadata]);
+  }
   
-  // Determine whether the user has effective edit rights
-  const effectiveCanEdit = useMemo(() => {
-    // The user has edit rights if:
-    // 1. The resource has sharingMetadata that explicitly grants them edit permission, OR
-    // 2. The calendar belongs to the user, OR
-    // 3. The user has edit permission on the calendar
-    
-    if (sharingMetadata?.canEdit === true) {
-      return true;
-    }
-    
-    if (sharingMetadata?.canEdit === false) {
-      return false;
-    }
-    
-    return isUsersOwnCalendar || canEdit;
-  }, [sharingMetadata, isUsersOwnCalendar, canEdit]);
+  // Check if this event is from a shared calendar with edit permissions
+  // Use the currentUser ID for proper cache key
+  const currentUser = queryClient.getQueryData<any>(['/api/user']);
+  const currentUserId = currentUser?.id;
   
-  // Get calendar name and color (with fallbacks)
-  const calendarName = calendar?.name || '';
-  const calendarColor = calendar?.color || '#3b82f6';
+  // Get shared calendars from the cache using proper query key with user ID
+  const sharedCalendars = queryClient.getQueryData<any[]>(['/api/shared-calendars', currentUserId]);
   
-  // Special conditions for DK Pandey or other super admins
-  const isDkPandey = user && user.username.toLowerCase().includes('dk.pandey');
+  // Check for sharingMetadata in the event (newer implementation)
+  const hasSharingMetadata = !!(event as any).sharingMetadata;
+  const sharingMetadata = (event as any).sharingMetadata || {};
   
-  // Determine whether to show the Cancel Event button
-  const hasAttendees = !!event.attendees && Array.isArray(event.attendees) && event.attendees.length > 0;
-  const hasResources = useMemo(() => {
-    if (resources.length > 0) return true;
-    if (event.resources && Array.isArray(event.resources) && event.resources.length > 0) return true;
-    return false;
-  }, [event.resources, resources]);
+  // Check if this is from a shared calendar with edit permissions
+  // First check the new sharingMetadata property, then fall back to old methods
+  const isFromSharedCalendarWithEditPermission = 
+    (hasSharingMetadata && sharingMetadata.permissionLevel === 'edit') || 
+    (calendarMetadata?.isShared === true && 
+     event.calendarId && 
+     sharedCalendars?.some?.(
+       cal => cal.id === event.calendarId && 
+         (cal.permission === 'edit' || cal.permissionLevel === 'edit')
+     ));
   
-  const shouldShowCancelButton = (isUsersOwnCalendar || isDkPandey) && (hasAttendees || hasResources);
+  console.log(`Event ${event.id} permission check:`, {
+    isUsersOwnCalendar,
+    canEdit,
+    isOwner,
+    isFromSharedCalendarWithEditPermission,
+    hasSharingMetadata,
+    sharingMetadata,
+    calendarMetadata,
+    sharedCalendars: sharedCalendars?.filter(cal => cal.id === event.calendarId),
+  });
   
-  // Parse dates
+  // Determine if the user can edit this event based on all permission factors
+  const effectiveCanEdit = isUsersOwnCalendar || canEdit || isOwner || isFromSharedCalendarWithEditPermission;
+  
+  // Only show auth error if we don't have user info AND don't have calendar data
+  // If we have calendar data, assume server session is valid even if client-side auth state is missing
+  const isAuthError = !isUserLoading && !user && !calendar;
+  
+  // Parse dates safely
   let startDate: Date;
   let endDate: Date;
   
   try {
     startDate = new Date(event.startDate);
     endDate = new Date(event.endDate);
-  } catch (e) {
-    console.error('Error parsing event dates:', e);
+    
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.error(`Invalid event dates for "${event.title}"`);
+      startDate = new Date();
+      endDate = new Date();
+      endDate.setHours(endDate.getHours() + 1);
+    }
+  } catch (error) {
+    console.error(`Error parsing dates for event "${event.title}":`, error);
     startDate = new Date();
     endDate = new Date();
+    endDate.setHours(endDate.getHours() + 1);
   }
-  
-  useEffect(() => {
-    // Extract resources from raw data when component mounts
-    extractResourcesFromRawData();
-    
-    // Process attendees data
-    processAttendees();
-  }, [event]);
-  
+
+  // Function for resource extraction with improved deduplication
   const extractResourcesFromRawData = () => {
-    const extractedResources: any[] = [];
+    if (!event) return [];
     
-    // First check if the event already has resources in structured format
-    if (event.resources && Array.isArray(event.resources)) {
-      setResources(event.resources);
-      return event.resources;
-    }
-    
-    // Otherwise try to extract from raw data
-    if (event.rawData && typeof event.rawData === 'string') {
-      const rawData = event.rawData;
+    try {
+      // Create a Map to track resources by email for deduplication
+      const resourceMap = new Map();
       
-      // Check for resource data patterns in the iCalendar format
-      const resourceMatches = rawData.match(/RESOURCE[^:]*:([^\r\n]+)/g);
-      if (resourceMatches) {
-        resourceMatches.forEach(match => {
-          const resourceValue = match.split(':')[1];
+      // STEP 1: Try to get resources from the event.resources field first
+      if (event.resources) {
+        let parsedResources = [];
+        
+        if (typeof event.resources === 'string') {
           try {
-            // Try to parse as JSON first (some clients use JSON format)
-            const resourceData = JSON.parse(resourceValue);
-            extractedResources.push(resourceData);
-          } catch (e) {
-            // If not JSON, treat as simple string
-            extractedResources.push({
-              name: resourceValue,
-              email: resourceValue
-            });
-          }
-        });
-      }
-      
-      // Check for X-RESOURCE properties
-      const xResourceMatches = rawData.match(/X-RESOURCE[^:]*:([^\r\n]+)/g);
-      if (xResourceMatches) {
-        xResourceMatches.forEach(match => {
-          const resourceValue = match.split(':')[1];
-          try {
-            const resourceData = JSON.parse(resourceValue);
-            extractedResources.push(resourceData);
-          } catch (e) {
-            extractedResources.push({
-              name: resourceValue,
-              email: resourceValue
-            });
-          }
-        });
-      }
-    }
-    
-    setResources(extractedResources);
-    return extractedResources;
-  };
-  
-  const processAttendees = () => {
-    let processed: any[] = [];
-    
-    if (event.attendees && Array.isArray(event.attendees)) {
-      processed = event.attendees.map((attendee: any) => {
-        // If already in object format, return as is
-        if (typeof attendee === 'object' && attendee !== null) {
-          return attendee;
+            parsedResources = JSON.parse(event.resources);
+          } catch (e) { /* Silent fail */ }
+        } else if (Array.isArray(event.resources)) {
+          parsedResources = event.resources;
         }
         
-        // If string, convert to basic object format
-        if (typeof attendee === 'string') {
-          return {
-            email: attendee,
-            name: attendee.split('@')[0],
-            status: 'NEEDS-ACTION',
-            role: 'REQ-PARTICIPANT'
-          };
+        // Add resources to our map for deduplication
+        if (Array.isArray(parsedResources)) {
+          parsedResources.forEach((resource, index) => {
+            const email = resource.adminEmail || resource.email; 
+            if (email) {
+              resourceMap.set(email.toLowerCase(), {
+                id: resource.id || `resource-${index}-${Date.now()}`,
+                adminEmail: email,
+                adminName: resource.adminName || resource.name || 'Resource',
+                subType: resource.subType || resource.type || '',
+                capacity: resource.capacity || 1
+              });
+            }
+          });
         }
+      }
+      
+      // STEP 2: Now extract from VCALENDAR data if available (but don't overwrite existing entries)
+      if (event.rawData && typeof event.rawData === 'string') {
+        const rawDataStr = event.rawData;
         
-        return attendee;
-      }).filter(Boolean); // Remove any null/undefined values
+        // Use a simple regex to find any ATTENDEE lines containing CUTYPE=RESOURCE
+        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
+        const matches = Array.from(rawDataStr.matchAll(resourceRegex));
+        
+        if (matches && matches.length > 0) {
+          matches.forEach((match, index) => {
+            const fullLine = match[0]; // The complete ATTENDEE line 
+            const email = match[1]; // The captured email group
+            
+            // Skip if we already have this resource by email
+            if (email && !resourceMap.has(email.toLowerCase())) {
+              // Extract resource name from CN
+              const cnMatch = fullLine.match(/CN=([^;:]+)/);
+              const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
+              
+              // Extract resource type
+              const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
+              const resourceType = typeMatch ? typeMatch[1].trim() : '';
+              
+              resourceMap.set(email.toLowerCase(), {
+                id: `resource-${index}-${Date.now()}`,
+                adminEmail: email,
+                adminName: name,
+                subType: resourceType,
+                capacity: 1
+              });
+            }
+          });
+        }
+      }
+      
+      // Convert map back to array
+      return Array.from(resourceMap.values());
+    } catch (error) {
+      console.error('Error extracting resources:', error);
+      return [];
     }
-    
-    setProcessedAttendees(processed);
   };
+
+  // Check if this event has attendees or resources
+  const hasAttendees = Boolean(
+    event.attendees && 
+    (Array.isArray(event.attendees) ? event.attendees.length > 0 : true)
+  );
   
+  // Always use our enhanced extractResourcesFromRawData function to deduplicate resources
+  // from all possible sources
+  const resources = extractResourcesFromRawData();
+  
+  const hasResources = Array.isArray(resources) && resources.length > 0;
+  
+  // Special case for DK Pandey who needs to be able to cancel any event
+  const isDKPandey = user?.id === 4 && user?.username === 'dk.pandey@xgenplus.com';
+  
+  // Only show cancel button if:
+  // 1. The event has attendees or resources, AND
+  // 2. The user is the owner OR it's DK Pandey (who has special admin privileges)
+  const shouldShowCancelButton = (hasAttendees || hasResources) && (isUsersOwnCalendar || effectiveCanEdit || isDKPandey);
+  
+  // Process attendees from event data
+  const processedAttendees = event.attendees ? 
+    (Array.isArray(event.attendees) ? event.attendees : [event.attendees]) : 
+    [];
+
+  // Handle Delete Event action
   const handleDelete = async () => {
-    if (!event) return;
+    if (!event || !event.id || isDeleting) return;
     
     setIsDeleting(true);
     setDeleteError(null);
     
     try {
       await deleteEvent(event.id);
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
       setDeleteDialogOpen(false);
-      onClose();
-    } catch (error: any) {
+      onClose(); // Close the modal after successful deletion
+    } catch (error) {
       console.error('Error deleting event:', error);
-      setDeleteError(error.message || 'Failed to delete event');
+      setDeleteError('Failed to delete the event. Please try again.');
     } finally {
       setIsDeleting(false);
     }
   };
   
+  // Handle Cancel Event action (sends cancellation notices)
   const handleCancel = async () => {
-    if (!event) return;
+    if (!event || !event.id || isCancelling) return;
     
     setIsCancelling(true);
     setCancelError(null);
     
     try {
-      // Send the cancellation email and delete the event
-      const response = await fetch(`/api/events/${event.id}/cancel`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to cancel event');
-      }
-      
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      await cancelEvent(event.id);
       setCancelDialogOpen(false);
-      onClose();
-    } catch (error: any) {
+      onClose(); // Close the modal after successful cancellation
+    } catch (error) {
       console.error('Error cancelling event:', error);
-      setCancelError(error.message || 'Failed to cancel event');
+      setCancelError('Failed to cancel the event. Please try again.');
     } finally {
       setIsCancelling(false);
     }
   };
-  
+
   return (
     <>
       <Dialog open={open} onOpenChange={open => !open && onClose()}>
@@ -416,278 +483,363 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 )}
               </div>
 
-              {/* Responsive layout that works on all screen sizes */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Left column */}
-                <div className="space-y-4">
-                  {/* Date and time card with improved visual design */}
-                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-sm">
-                    <div className="flex flex-col space-y-3">
-                      <div className="flex items-center">
-                        <Clock className="text-blue-600 mr-3 h-5 w-5 flex-shrink-0" />
-                        <div>
-                          <div className="font-medium">
-                            {formatDayOfWeekDate(startDate)}
-                          </div>
-                          <div className="text-sm text-blue-700">
-                            {event.allDay 
-                              ? 'All Day' 
-                              : formatEventTimeRange(startDate, endDate)}
-                            {event.timezone && <span className="text-blue-600/70 text-xs ml-1">({event.timezone})</span>}
-                          </div>
+            {/* Responsive layout that works on all screen sizes */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Left column */}
+              <div className="space-y-4">
+                {/* Date and time card with improved visual design */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 shadow-sm">
+                  <div className="flex flex-col space-y-3">
+                    <div className="flex items-center">
+                      <Clock className="text-blue-600 mr-3 h-5 w-5 flex-shrink-0" />
+                      <div>
+                        <div className="font-medium">
+                          {formatDayOfWeekDate(startDate)}
+                        </div>
+                        <div className="text-sm text-blue-700">
+                          {event.allDay 
+                            ? 'All Day' 
+                            : formatEventTimeRange(startDate, endDate)}
+                          {event.timezone && <span className="text-blue-600/70 text-xs ml-1">({event.timezone})</span>}
                         </div>
                       </div>
-                        
-                      {/* Location section - only show if there's a location */}
-                      {event.location && (
-                        <div className="flex items-start pt-2 border-t border-blue-200">
-                          <MapPinned className="text-blue-600 mr-3 h-5 w-5 mt-0.5 flex-shrink-0" />
-                          <div>
-                            <div className="font-medium">Location</div>
-                            <div className="text-sm text-blue-700">{event.location}</div>
-                          </div>
+                    </div>
+                      
+                    {/* Location section - only show if there's a location */}
+                    {event.location && (
+                      <div className="flex items-start pt-2 border-t border-blue-200">
+                        <MapPinned className="text-blue-600 mr-3 h-5 w-5 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <div className="font-medium">Location</div>
+                          <div className="text-sm text-blue-700">{event.location}</div>
                         </div>
-                      )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                  
+                {/* Description section - only show if there's a description */}
+                {event.description && (
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                    <h3 className="font-medium mb-2 flex items-center">
+                      <Info className="text-gray-600 mr-2 h-4 w-4" />
+                      Description
+                    </h3>
+                    <div 
+                      className="text-sm prose prose-sm max-w-none overflow-auto max-h-[150px] bg-white p-3 rounded border border-gray-100"
+                      dangerouslySetInnerHTML={{ 
+                        __html: (() => {
+                          if (!event.description) return '';
+                          
+                          const description = String(event.description);
+                          
+                          // Case 1: Thunderbird special JSON-like format with ALTREP
+                          if (description.includes('"ALTREP"') || description.includes('"params"')) {
+                            try {
+                              // Extract the actual content
+                              // Format is typically: ["params":["ALTREP":"data:text/html..."],"val":"actual text"]
+                              
+                              // First try to find the "val" property
+                              const valMatch = description.match(/"val"\s*:\s*"([^"]+)"/);
+                              if (valMatch && valMatch[1]) {
+                                return valMatch[1]
+                                  .replace(/\\n/g, '<br>')
+                                  .replace(/\\/g, ''); // Remove any remaining backslashes
+                              }
+                              
+                              // Try to extract from ALTREP if val wasn't found
+                              const altrepMatch = description.match(/"ALTREP"\s*:\s*"data:text\/html[^"]*,([^"]+)"/);
+                              if (altrepMatch && altrepMatch[1]) {
+                                // It's URL encoded, so decode it
+                                try {
+                                  return decodeURIComponent(altrepMatch[1]);
+                                } catch (e) {
+                                  // If decoding fails, just return it as is
+                                  return altrepMatch[1];
+                                }
+                              }
+                              
+                              // Fallback - use whatever text is available
+                              const textContent = description
+                                .replace(/["[\]{}]/g, '') // Remove JSON-like symbols
+                                .replace(/params:|ALTREP:|val:/g, '') // Remove JSON keys
+                                .replace(/data:text\/html[^,]*,/g, '') // Remove MIME type info
+                                .trim();
+                                
+                              return textContent;
+                            } catch (e) {
+                              console.error('Error parsing Thunderbird special format:', e);
+                            }
+                          }
+                          
+                          // Case 2: It's already valid HTML with tags
+                          if (description.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
+                            return description;
+                          }
+                          
+                          // Case 3: It has escaped HTML tags (from Thunderbird)
+                          if (description.includes('&lt;') && description.includes('&gt;')) {
+                            // First unescape the HTML entities
+                            const unescaped = description
+                              .replace(/&lt;/g, '<')
+                              .replace(/&gt;/g, '>')
+                              .replace(/&quot;/g, '"')
+                              .replace(/&amp;/g, '&');
+                            
+                            // Check if it now has valid HTML
+                            if (unescaped.match(/<([a-z][a-z0-9]*)\b[^>]*>(.*?)<\/\1>/i)) {
+                              return unescaped;
+                            }
+                          }
+                          
+                          // Case 4: Plain text with escaped newlines
+                          return description
+                            .replace(/\\n/g, '<br>')
+                            .replace(/\n/g, '<br>');
+                        })()
+                      }}
+                    />
+                  </div>
+                )}
+                
+                {/* Event Modification History - show when available */}
+                {event.lastModifiedByName && event.lastModifiedAt && (
+                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 shadow-sm">
+                    <h3 className="font-medium mb-2 flex items-center text-purple-800">
+                      <History className="text-purple-600 mr-2 h-4 w-4" />
+                      Change History
+                    </h3>
+                    <div className="text-sm text-purple-700 space-y-1">
+                      <div className="flex items-center">
+                        <UserRound className="text-purple-500 mr-2 h-4 w-4" />
+                        <span>
+                          Last modified by: <span className="font-medium">{event.lastModifiedByName}</span>
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <Calendar className="text-purple-500 mr-2 h-4 w-4" />
+                        <span>
+                          Date: {new Date(event.lastModifiedAt).toLocaleDateString()} 
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <Clock className="text-purple-500 mr-2 h-4 w-4" />
+                        <span>
+                          Time: {new Date(event.lastModifiedAt).toLocaleTimeString()}
+                        </span>
+                      </div>
                     </div>
                   </div>
+                )}
+                
+                {/* Resources section with improved visual display */}
+                {(() => {
+                  const extractedResources = extractResourcesFromRawData();
+                  const resourceCount = extractedResources.length;
+                  console.log('Parsed resources:', extractedResources);
+                  
+                  // Display resources if we have any
+                  if (resourceCount > 0) {
+                    // Display only 2 resources by default, with dialog for viewing all
+                    const displayResources = extractedResources.slice(0, 2);
                     
-                  {/* Description section - only show if there's a description */}
-                  {event.description && (
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
-                      <h3 className="font-medium mb-2 flex items-center">
-                        <Info className="text-gray-600 mr-2 h-4 w-4" />
-                        Description
-                      </h3>
-                      <div 
-                        className="text-sm prose prose-sm max-w-none overflow-auto max-h-[150px] bg-white p-3 rounded border border-gray-100"
-                        dangerouslySetInnerHTML={{ 
-                          __html: sanitizeDescriptionForDisplay(event.description)
-                        }}
-                      />
-                    </div>
-                  )}
-                  
-                  {/* Event Modification History - show when available */}
-                  {event.lastModifiedByName && event.lastModifiedAt && (
-                    <div className="bg-purple-50 p-4 rounded-lg border border-purple-100 shadow-sm">
-                      <h3 className="font-medium mb-2 flex items-center text-purple-800">
-                        <History className="text-purple-600 mr-2 h-4 w-4" />
-                        Change History
-                      </h3>
-                      <div className="text-sm text-purple-700 space-y-1">
-                        <div className="flex items-center">
-                          <UserRound className="text-purple-500 mr-2 h-4 w-4" />
-                          <span>
-                            Last modified by: <span className="font-medium">{event.lastModifiedByName}</span>
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <Calendar className="text-purple-500 mr-2 h-4 w-4" />
-                          <span>
-                            Date: {new Date(event.lastModifiedAt).toLocaleDateString()} 
-                          </span>
-                        </div>
-                        <div className="flex items-center">
-                          <Clock className="text-purple-500 mr-2 h-4 w-4" />
-                          <span>
-                            Time: {new Date(event.lastModifiedAt).toLocaleTimeString()}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Resources section with improved visual display */}
-                  {resources.length > 0 && (
-                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 shadow-sm">
-                      <h3 className="font-medium mb-2 flex items-center text-amber-800">
-                        <Settings className="text-amber-600 mr-2 h-4 w-4" />
-                        Resources ({resources.length})
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
-                        {resources.slice(0, 2).map((resource: any, index: number) => {
-                          // Get resource name/email/type from various possible formats
-                          const name = resource.name || resource.adminName || 'Resource';
-                          const email = resource.email || resource.adminEmail || '';
-                          const type = resource.type || resource.subType || '';
-                          const capacity = resource.capacity || '';
-                          
-                          return (
-                            <div key={index} className="flex items-start bg-white p-3 rounded-md border border-amber-100">
-                              {type.toLowerCase().includes('proj') ? (
-                                <VideoIcon className="text-amber-500 mr-2 h-5 w-5 mt-0.5" />
-                              ) : type.toLowerCase().includes('room') ? (
-                                <DoorClosed className="text-blue-500 mr-2 h-5 w-5 mt-0.5" />
-                              ) : type.toLowerCase().includes('laptop') || type.toLowerCase().includes('computer') ? (
-                                <Laptop className="text-green-500 mr-2 h-5 w-5 mt-0.5" />
-                              ) : (
-                                <Wrench className="text-neutral-500 mr-2 h-5 w-5 mt-0.5" />
-                              )}
-                              <div>
-                                <div className="font-medium">{name}</div>
-                                <div className="text-xs text-amber-700">
-                                  {type || 'General Resource'}
-                                  {capacity && ` • Capacity: ${capacity}`}
-                                </div>
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  Admin: {email}
+                    return (
+                      <div className="bg-amber-50 p-4 rounded-lg border border-amber-100 shadow-sm">
+                        <h3 className="font-medium mb-2 flex items-center text-amber-800">
+                          <Settings className="text-amber-600 mr-2 h-4 w-4" />
+                          Resources ({resourceCount})
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {displayResources.map((resource: any, index: number) => {
+                            // Get resource name/email/type from various possible formats
+                            const name = resource.name || resource.adminName || 'Resource';
+                            const email = resource.email || resource.adminEmail || '';
+                            const type = resource.type || resource.subType || '';
+                            const capacity = resource.capacity || '';
+                            
+                            return (
+                              <div key={index} className="flex items-start bg-white p-3 rounded-md border border-amber-100">
+                                {type.toLowerCase().includes('proj') ? (
+                                  <VideoIcon className="text-amber-500 mr-2 h-5 w-5 mt-0.5" />
+                                ) : type.toLowerCase().includes('room') ? (
+                                  <DoorClosed className="text-blue-500 mr-2 h-5 w-5 mt-0.5" />
+                                ) : type.toLowerCase().includes('laptop') || type.toLowerCase().includes('computer') ? (
+                                  <Laptop className="text-green-500 mr-2 h-5 w-5 mt-0.5" />
+                                ) : (
+                                  <Wrench className="text-neutral-500 mr-2 h-5 w-5 mt-0.5" />
+                                )}
+                                <div>
+                                  <div className="font-medium">{name}</div>
+                                  <div className="text-xs text-amber-700">
+                                    {type || 'General Resource'}
+                                    {capacity && ` • Capacity: ${capacity}`}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    Admin: {email}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      
-                      {/* Show the View All Resources button if there are more than 2 resources */}
-                      {resources.length > 2 && (
-                        <button 
-                          onClick={() => setResourcesDialogOpen(true)}
-                          className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
-                        >
-                          Show all {resources.length} resources
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                
-                {/* Right column - Attendees */}
-                <div className="space-y-4">                  
-                  {/* Attendees and Response Section - Only shown when event has attendees */}
-                  {hasAttendees && processedAttendees.length > 0 && (
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
-                      <Tabs defaultValue="status" className="w-full">
-                        <TabsList className="grid w-full grid-cols-2 mb-4">
-                          <TabsTrigger value="status">Attendee Status</TabsTrigger>
-                          <TabsTrigger value="response">Your Response</TabsTrigger>
-                        </TabsList>
+                            );
+                          })}
+                        </div>
                         
-                        <TabsContent value="status" className="space-y-4">
-                          {/* Attendee Status Display */}
-                          {(() => {
-                            const attendeeCount = processedAttendees.length;
-                            
-                            // Get all attendees from processed attendees
-                            if (attendeeCount > 0) {
-                              // We'll handle limiting attendees in the AttendeeStatusDisplay component
+                        {/* Show the View All Resources button if there are more than 2 resources */}
+                        {resourceCount > 2 && (
+                          <button 
+                            onClick={() => setResourcesDialogOpen(true)}
+                            className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+                          >
+                            Show all {resourceCount} resources
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
+                  
+                  return null;
+                })()}
+              </div>
+              
+              {/* Right column - Attendees */}
+              <div className="space-y-4">
+                {/* We've removed DirectResourceExtractor here as it causes duplication with the main resources section */}
+                
+                {/* Attendees and Response Section - Only shown when event has attendees */}
+                {hasAttendees && processedAttendees.length > 0 && (
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-sm">
+                    <Tabs defaultValue="status" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2 mb-4">
+                        <TabsTrigger value="status">Attendee Status</TabsTrigger>
+                        <TabsTrigger value="response">Your Response</TabsTrigger>
+                      </TabsList>
+                      
+                      <TabsContent value="status" className="space-y-4">
+                        {/* Attendee Status Display */}
+                        {(() => {
+                          const attendeeCount = processedAttendees.length;
+                          
+                          // Get all attendees from processed attendees
+                          if (attendeeCount > 0) {
+                            // We'll handle limiting attendees in the AttendeeStatusDisplay component
+                              
+                            return (
+                              <>
+                                <AttendeeStatusDisplay 
+                                  attendees={processedAttendees} 
+                                  isOrganizer={isUsersOwnCalendar}
+                                  showAll={showAllAttendees}
+                                  onStatusClick={(status) => {
+                                    setSelectedStatus(status);
+                                    setStatusDialogOpen(true);
+                                  }}
+                                  onTimeProposalAccept={(attendeeEmail, start, end) => {
+                                    // This would update the event with the proposed time
+                                    console.log('Accepting time proposal from', attendeeEmail, start, end);
+                                    // We'd implement this in a future update
+                                  }}
+                                />
                                 
-                              return (
-                                <>
-                                  <AttendeeStatusDisplay 
-                                    attendees={processedAttendees} 
-                                    isOrganizer={isUsersOwnCalendar}
-                                    showAll={showAllAttendees}
-                                    onStatusClick={(status) => {
-                                      setSelectedStatus(status);
+                                {/* Button to open dialog showing all attendees */}
+                                {attendeeCount > 3 && (
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedStatus('all');
                                       setStatusDialogOpen(true);
                                     }}
-                                    onTimeProposalAccept={(attendeeEmail, start, end) => {
-                                      // This would update the event with the proposed time
-                                      console.log('Accepting time proposal from', attendeeEmail, start, end);
-                                      // We'd implement this in a future update
-                                    }}
-                                  />
-                                  
-                                  {/* Button to open dialog showing all attendees */}
-                                  {attendeeCount > 3 && (
-                                    <button 
-                                      onClick={() => {
-                                        setSelectedStatus('all');
-                                        setStatusDialogOpen(true);
-                                      }}
-                                      className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
-                                    >
-                                      Show all {attendeeCount} attendees
-                                    </button>
-                                  )}
-                                  
-                                  {/* All Attendees Dialog */}
-                                  <AttendeeDialog
-                                    open={statusDialogOpen}
-                                    onOpenChange={setStatusDialogOpen}
-                                    attendees={processedAttendees}
-                                    title={`All Attendees (${processedAttendees.length})`}
-                                    description="Complete list of all attendees for this event"
-                                    selectedStatus={selectedStatus || 'all'}
-                                  />
-                                </>
-                              );
-                            }
-                            
-                            // If no processed attendees, fall back to raw extraction
-                            return (
+                                    className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center justify-center w-full"
+                                  >
+                                    Show all {attendeeCount} attendees
+                                  </button>
+                                )}
+                                
+                                {/* All Attendees Dialog */}
+                                <AttendeeDialog
+                                  open={statusDialogOpen}
+                                  onOpenChange={setStatusDialogOpen}
+                                  attendees={processedAttendees}
+                                  title={`All Attendees (${processedAttendees.length})`}
+                                  description="Complete list of all attendees for this event"
+                                  selectedStatus={selectedStatus || 'all'}
+                                />
+                              </>
+                            );
+                          }
+                          
+                          // If no processed attendees, fall back to raw extraction
+                          return (
+                            <>
                               <DirectAttendeeExtractor 
                                 rawData={typeof event.rawData === 'string' ? event.rawData : null} 
                                 showMoreCount={10}
                                 isPreview={false}
                               />
+                            </>
+                          );
+                        })()}
+                      </TabsContent>
+                      
+                      <TabsContent value="response" className="space-y-4">
+                        {/* Attendee Response Form */}
+                        {(() => {
+                          // Only show response form if the current user is an attendee or if the event has attendees
+                          if (user && processedAttendees.length > 0) {
+                            // Check if the current user is an attendee
+                            const userEmail = (user as any).email || user.username;
+                            const isAttendee = processedAttendees.some((attendee: any) => 
+                              (typeof attendee === 'string' && attendee === userEmail) ||
+                              (typeof attendee === 'object' && 
+                               attendee.email && 
+                               attendee.email.toLowerCase() === userEmail.toLowerCase())
                             );
-                          })()}
-                        </TabsContent>
-                        
-                        <TabsContent value="response" className="space-y-4">
-                          {/* Attendee Response Form */}
-                          {(() => {
-                            // Only show response form if the current user is an attendee or if the event has attendees
-                            if (user && processedAttendees.length > 0) {
-                              // Check if the current user is an attendee
-                              const userEmail = (user as any).email || user.username;
-                              const isAttendee = processedAttendees.some((attendee: any) => 
-                                (typeof attendee === 'string' && attendee === userEmail) ||
-                                (typeof attendee === 'object' && 
-                                 attendee.email && 
-                                 attendee.email.toLowerCase() === userEmail.toLowerCase())
+                            
+                            // If user is not the organizer and is an attendee, show response form
+                            if (isAttendee && !isUsersOwnCalendar) {
+                              // Find organizer
+                              const organizer = processedAttendees.find((attendee: any) => 
+                                typeof attendee === 'object' && 
+                                attendee.role && 
+                                (attendee.role.toLowerCase() === 'chair' || 
+                                 attendee.role.toLowerCase() === 'organizer')
                               );
                               
-                              // If user is not the organizer and is an attendee, show response form
-                              if (isAttendee && !isUsersOwnCalendar) {
-                                // Find organizer
-                                const organizer = processedAttendees.find((attendee: any) => 
-                                  typeof attendee === 'object' && 
-                                  attendee.role && 
-                                  (attendee.role.toLowerCase() === 'chair' || 
-                                   attendee.role.toLowerCase() === 'organizer')
-                                );
-                                
-                                return (
-                                  <AttendeeResponseForm
-                                    eventId={event.id}
-                                    eventTitle={event.title}
-                                    eventStart={startDate}
-                                    eventEnd={endDate}
-                                    organizer={organizer ? {
-                                      email: organizer.email,
-                                      name: organizer.name || organizer.email
-                                    } : undefined}
-                                    currentUserEmail={userEmail}
-                                    onResponseSuccess={() => {
-                                      console.log('Response submitted successfully');
-                                      // We'll implement this in a future update
-                                    }}
-                                  />
-                                );
-                              }
+                              return (
+                                <AttendeeResponseForm
+                                  eventId={event.id}
+                                  eventTitle={event.title}
+                                  eventStart={startDate}
+                                  eventEnd={endDate}
+                                  organizer={organizer ? {
+                                    email: organizer.email,
+                                    name: organizer.name || organizer.email
+                                  } : undefined}
+                                  currentUserEmail={userEmail}
+                                  onResponseSuccess={() => {
+                                    console.log('Response submitted successfully');
+                                    // We'll implement this in a future update
+                                  }}
+                                />
+                              );
                             }
-                            
-                            return (
-                              <div className="p-4 bg-gray-100 rounded-md text-center">
-                                {isUsersOwnCalendar ? (
-                                  <p className="text-sm text-gray-600">
-                                    You are the organizer of this event.
-                                  </p>
-                                ) : (
-                                  <p className="text-sm text-gray-600">
-                                    You are not listed as an attendee for this event.
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </TabsContent>
-                      </Tabs>
-                    </div>
-                  )}
-                </div>
+                          }
+                          
+                          return (
+                            <div className="p-4 bg-gray-100 rounded-md text-center">
+                              {isUsersOwnCalendar ? (
+                                <p className="text-sm text-gray-600">
+                                  You are the organizer of this event.
+                                </p>
+                              ) : (
+                                <p className="text-sm text-gray-600">
+                                  You are not listed as an attendee for this event.
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -799,11 +951,10 @@ END:VCALENDAR`;
                   <span>This event is part of a shared calendar</span>
                 </div>
               )}
-              </div>
-              <Button onClick={onClose} className="w-full sm:w-auto mt-2 sm:mt-0">
-                Close
-              </Button>
             </div>
+            <Button onClick={onClose} className="w-full sm:w-auto mt-2 sm:mt-0">
+              Close
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
