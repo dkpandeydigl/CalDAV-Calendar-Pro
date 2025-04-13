@@ -1,0 +1,1069 @@
+import { FC, useState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
+  ScrollArea,
+  ScrollBar
+} from "@/components/ui/scroll-area";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { useCalendarContext } from '@/contexts/CalendarContext';
+import { useCalendars } from '@/hooks/useCalendars';
+import { Calendar } from '@shared/schema';
+import { 
+  CalendarIcon, 
+  Download, 
+  Edit, 
+  MoreVertical, 
+  Share2, 
+  Trash2, 
+  UploadCloud,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Filter,
+  X
+} from 'lucide-react';
+import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
+import { useQueryClient } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+
+import { queryClient } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
+
+interface EnhancedCalendarSidebarProps {
+  visible: boolean;
+  onCreateEvent: () => void;
+  onOpenServerSettings: () => void;
+  onOpenSyncSettings?: () => void;
+  onShareCalendar?: (calendar: Calendar | undefined) => void;
+  onMultiShareCalendars?: () => void;
+  onImportCalendar?: () => void;
+}
+
+const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({ 
+  visible, 
+  onCreateEvent, 
+  onOpenServerSettings, 
+  onOpenSyncSettings, 
+  onShareCalendar, 
+  onMultiShareCalendars, 
+  onImportCalendar 
+}) => {
+  // Same hooks and state from the original CalendarSidebar
+  const { calendars, createCalendar, updateCalendar, deleteCalendar } = useCalendars();
+  const { 
+    sharedCalendars, 
+    toggleCalendarVisibility, 
+    unshareCalendar,
+    isUnsharing, 
+    bulkUnshareCalendars, 
+    isBulkUnsharing,
+    updatePermission,
+    isUpdatingPermission,
+    isLoading: isLoadingSharedCalendars,
+    error: sharedCalendarsError
+  } = useSharedCalendars();
+  
+  // New state variables for enhanced UI
+  const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
+  const [sharedCalendarSearchQuery, setSharedCalendarSearchQuery] = useState('');
+  const [showOwnCalendars, setShowOwnCalendars] = useState(true);
+  const [showSharedCalendars, setShowSharedCalendars] = useState(true);
+  const [calendarViewMode, setCalendarViewMode] = useState<'list' | 'compact'>('list');
+  const [sharedCalendarViewMode, setSharedCalendarViewMode] = useState<'list' | 'compact'>('list');
+  
+  // Inherit other state variables from original implementation
+  const [showAddCalendar, setShowAddCalendar] = useState(false);
+  const [newCalendarName, setNewCalendarName] = useState('');
+  const [newCalendarColor, setNewCalendarColor] = useState('#0078d4');
+  const [calendarNameError, setCalendarNameError] = useState('');
+  const [isCheckingCalendarName, setIsCheckingCalendarName] = useState(false);
+  const [shouldCreateCalendar, setShouldCreateCalendar] = useState(false);
+  
+  // Calendar editing state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingCalendar, setEditingCalendar] = useState<Calendar | null>(null);
+  const [editCalendarName, setEditCalendarName] = useState('');
+  const [editCalendarColor, setEditCalendarColor] = useState('');
+  const [editCalendarNameError, setEditCalendarNameError] = useState('');
+  const [isCheckingEditName, setIsCheckingEditName] = useState(false);
+  const [shouldUpdateCalendar, setShouldUpdateCalendar] = useState(false);
+  
+  // Calendar deletion state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingCalendar, setDeletingCalendar] = useState<Calendar | null>(null);
+  
+  // Calendar unsharing state
+  const [isUnshareDialogOpen, setIsUnshareDialogOpen] = useState(false);
+  const [unsharingCalendar, setUnsharingCalendar] = useState<Calendar | null>(null);
+  const [unshareMessage, setUnshareMessage] = useState('');
+  
+  // Bulk unshare state
+  const [isBulkUnshareDialogOpen, setIsBulkUnshareDialogOpen] = useState(false);
+  const [bulkUnshareEmail, setBulkUnshareEmail] = useState('');
+  const [calendarsToUnshare, setCalendarsToUnshare] = useState<Calendar[]>([]);
+  
+  const { toast } = useToast();
+  
+  // Filter calendars based on search query
+  const filteredOwnCalendars = calendars.filter(cal => 
+    cal.name.toLowerCase().includes(calendarSearchQuery.toLowerCase())
+  );
+  
+  // Group shared calendars by owner and filter based on search query
+  const filteredSharedCalendars = sharedCalendars.filter(cal => 
+    cal.name.toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase()) ||
+    (cal.owner?.email || '').toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase()) ||
+    (cal.owner?.username || '').toLowerCase().includes(sharedCalendarSearchQuery.toLowerCase())
+  );
+  
+  // Group shared calendars by owner
+  const groupedSharedCalendars = filteredSharedCalendars.reduce((acc, calendar) => {
+    const ownerEmail = calendar.owner?.email || calendar.owner?.username || 'Unknown';
+    if (!acc[ownerEmail]) {
+      acc[ownerEmail] = [];
+    }
+    acc[ownerEmail].push(calendar);
+    return acc;
+  }, {} as Record<string, typeof filteredSharedCalendars>);
+  
+  // Function to check duplicate calendar name (reuse from original)
+  const checkDuplicateCalendarName = async (name: string, excludeId?: number): Promise<boolean> => {
+    try {
+      const queryParams = new URLSearchParams({ name });
+      if (excludeId !== undefined) {
+        queryParams.append('excludeId', excludeId.toString());
+      }
+      
+      const response = await apiRequest('GET', `/api/check-calendar-name?${queryParams.toString()}`);
+      const data = await response.json();
+      
+      if (data.exists) {
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error checking for duplicate calendar name:', error);
+      return false;
+    }
+  };
+  
+  // Function to toggle calendar visibility
+  const handleCalendarToggle = (id: number, checked: boolean, isShared: boolean = false) => {
+    if (isShared) {
+      toggleCalendarVisibility(id, checked);
+    } else {
+      updateCalendar({ id, data: { enabled: checked } });
+    }
+  };
+  
+  // Function to update permissions
+  const handleUpdatePermission = (calendarId: number, sharingId: number, newPermission: 'view' | 'edit') => {
+    updatePermission({ sharingId, permissionLevel: newPermission });
+  };
+  
+  // Calendar validation
+  const validateCalendarName = (name: string): boolean => {
+    if (!name.trim()) {
+      setCalendarNameError('Calendar name is required');
+      return false;
+    }
+    
+    if (name.length > 20) {
+      setCalendarNameError('Calendar name must be 20 characters or less');
+      return false;
+    }
+    
+    if (/\s{2,}/.test(name)) {
+      setCalendarNameError('Multiple consecutive spaces are not allowed');
+      return false;
+    }
+    
+    const regex = /^[A-Za-z0-9 _\-\.]+$/;
+    if (!regex.test(name)) {
+      setCalendarNameError('Only letters, digits, spaces, underscore, hyphen, and period are allowed');
+      return false;
+    }
+    
+    setCalendarNameError('');
+    return true;
+  };
+  
+  // Create calendar
+  const handleCreateCalendar = async () => {
+    if (!validateCalendarName(newCalendarName)) return;
+    
+    setIsCheckingCalendarName(true);
+    try {
+      const isDuplicate = await checkDuplicateCalendarName(newCalendarName.trim());
+      
+      if (isDuplicate) {
+        setCalendarNameError('A calendar with this name already exists. Please choose a different name.');
+        setIsCheckingCalendarName(false);
+        return;
+      }
+      
+      setShouldCreateCalendar(true);
+    } catch (error) {
+      console.error('Error checking for duplicate calendar name:', error);
+      toast({
+        title: "Calendar Name Check Failed",
+        description: "Failed to verify if calendar name is unique. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCheckingCalendarName(false);
+    }
+  };
+  
+  // Effect to create calendar after name check
+  useEffect(() => {
+    if (shouldCreateCalendar && !isCheckingCalendarName) {
+      setShouldCreateCalendar(false);
+      
+      createCalendar({
+        name: newCalendarName.trim(),
+        color: newCalendarColor,
+        enabled: true,
+        isLocal: true,
+        isPrimary: false,
+        url: null,
+        syncToken: null,
+        description: null
+      });
+      
+      setShowAddCalendar(false);
+      setNewCalendarName('');
+      setNewCalendarColor('#0078d4');
+    }
+  }, [shouldCreateCalendar, isCheckingCalendarName, newCalendarName, newCalendarColor, createCalendar]);
+  
+  // Open edit dialog
+  const handleOpenEditDialog = (calendar: Calendar) => {
+    setEditingCalendar(calendar);
+    setEditCalendarName(calendar.name);
+    setEditCalendarColor(calendar.color);
+    setEditCalendarNameError('');
+    setIsEditDialogOpen(true);
+  };
+  
+  // Update calendar
+  const handleUpdateCalendar = async () => {
+    if (!editingCalendar) return;
+    
+    // Validate calendar name
+    if (!validateCalendarName(editCalendarName)) return;
+    
+    // Skip duplicate name check if we're not changing the name
+    if (editingCalendar.name === editCalendarName.trim()) {
+      updateCalendar({
+        id: editingCalendar.id,
+        data: {
+          name: editCalendarName.trim(),
+          color: editCalendarColor
+        }
+      });
+      
+      setIsEditDialogOpen(false);
+      setEditingCalendar(null);
+      return;
+    }
+    
+    // First check for duplicate calendar name
+    setIsCheckingEditName(true);
+    try {
+      const isDuplicate = await checkDuplicateCalendarName(
+        editCalendarName.trim(), 
+        editingCalendar.id
+      );
+      
+      if (isDuplicate) {
+        setEditCalendarNameError('A calendar with this name already exists. Please choose a different name.');
+        setIsCheckingEditName(false);
+        return;
+      }
+      
+      setShouldUpdateCalendar(true);
+    } catch (error) {
+      console.error('Error checking for duplicate calendar name:', error);
+      toast({
+        title: "Calendar Name Check Failed",
+        description: "Failed to verify if calendar name is unique. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCheckingEditName(false);
+    }
+  };
+  
+  // Effect to update calendar after name check
+  useEffect(() => {
+    if (shouldUpdateCalendar && !isCheckingEditName && editingCalendar) {
+      setShouldUpdateCalendar(false);
+      
+      updateCalendar({
+        id: editingCalendar.id,
+        data: {
+          name: editCalendarName.trim(),
+          color: editCalendarColor
+        }
+      });
+      
+      setIsEditDialogOpen(false);
+      setEditingCalendar(null);
+    }
+  }, [shouldUpdateCalendar, isCheckingEditName, editingCalendar, editCalendarName, editCalendarColor, updateCalendar]);
+  
+  // Open delete dialog
+  const handleOpenDeleteDialog = (calendar: Calendar) => {
+    setDeletingCalendar(calendar);
+    setIsDeleteDialogOpen(true);
+  };
+  
+  // Delete calendar
+  const handleDeleteCalendar = async () => {
+    if (!deletingCalendar) {
+      console.error("Cannot delete calendar: deletingCalendar is null");
+      return;
+    }
+    
+    try {
+      await deleteCalendar(deletingCalendar.id);
+    } catch (error) {
+      console.error("Error in handleDeleteCalendar:", error);
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setDeletingCalendar(null);
+    }
+  };
+  
+  // Open unshare dialog for individual calendar
+  const handleOpenUnshareDialog = (calendar: Calendar, ownerEmail: string) => {
+    setUnsharingCalendar(calendar);
+    setUnshareMessage(`Stop sharing "${calendar.name}" from ${ownerEmail}?`);
+    setIsUnshareDialogOpen(true);
+  };
+  
+  // Handle unshare for individual calendar
+  const handleUnshareCalendar = () => {
+    if (!unsharingCalendar) return;
+    
+    toggleCalendarVisibility(unsharingCalendar.id, false); // Disable it first for visual feedback
+    unshareCalendar(unsharingCalendar.id);
+    
+    setIsUnshareDialogOpen(false);
+    setUnsharingCalendar(null);
+  };
+  
+  // Open bulk unshare dialog
+  const handleOpenBulkUnshareDialog = (ownerEmail: string, calendars: Calendar[]) => {
+    setBulkUnshareEmail(ownerEmail);
+    setCalendarsToUnshare(calendars);
+    setIsBulkUnshareDialogOpen(true);
+  };
+  
+  // Handle bulk unshare
+  const handleBulkUnshare = () => {
+    if (!calendarsToUnshare.length) return;
+    
+    calendarsToUnshare.forEach(cal => toggleCalendarVisibility(cal.id, false)); // Disable all first for visual feedback
+    bulkUnshareCalendars(calendarsToUnshare as SharedCalendar[]);
+    
+    setIsBulkUnshareDialogOpen(false);
+    setCalendarsToUnshare([]);
+    setBulkUnshareEmail('');
+  };
+  
+  // Render calendar items - compact view vs list view
+  const renderCalendarItem = (calendar: Calendar, isShared: boolean = false) => {
+    const CalendarIcon = 
+      <Checkbox 
+        id={`${isShared ? 'shared-' : ''}cal-${calendar.id}`} 
+        checked={calendar.enabled ?? true}
+        onCheckedChange={(checked) => handleCalendarToggle(calendar.id, checked as boolean, isShared)}
+        className="h-4 w-4"
+        style={{ backgroundColor: calendar.enabled ?? true ? calendar.color : undefined }}
+      />;
+    
+    if (calendarViewMode === 'compact' && !isShared) {
+      return (
+        <div 
+          key={`${isShared ? 'shared-' : ''}cal-${calendar.id}`}
+          className="flex items-center mb-1 p-1 rounded hover:bg-gray-50 group"
+          title={calendar.name}
+        >
+          {CalendarIcon}
+          <Label 
+            htmlFor={`${isShared ? 'shared-' : ''}cal-${calendar.id}`} 
+            className="ml-2 text-sm text-neutral-800 truncate max-w-[120px]"
+          >
+            {calendar.name}
+          </Label>
+          
+          {!calendar.isPrimary && !isShared && (
+            <div className="ml-auto opacity-0 group-hover:opacity-100 flex">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => handleOpenEditDialog(calendar)}
+              >
+                <Edit className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-red-600 hover:text-red-700"
+                onClick={() => handleOpenDeleteDialog(calendar)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    if (sharedCalendarViewMode === 'compact' && isShared) {
+      return (
+        <div 
+          key={`${isShared ? 'shared-' : ''}cal-${calendar.id}`}
+          className="flex items-center mb-1 p-1 rounded hover:bg-gray-50 group"
+          title={calendar.name}
+        >
+          {CalendarIcon}
+          <Label 
+            htmlFor={`${isShared ? 'shared-' : ''}cal-${calendar.id}`} 
+            className="ml-2 text-sm text-neutral-800 truncate max-w-[120px]"
+          >
+            {calendar.name}
+          </Label>
+          <span className="ml-1 text-xs text-muted-foreground">
+            {isShared && (calendar as SharedCalendar).permissionLevel === 'edit' ? 
+              <Badge variant="outline" className="text-[10px] py-0 h-4">Edit</Badge> : 
+              <Badge variant="outline" className="text-[10px] py-0 h-4">View</Badge>
+            }
+          </span>
+          
+          {isShared && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 ml-auto opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-700"
+              onClick={() => handleOpenUnshareDialog(calendar, (calendar as SharedCalendar).owner?.email || 'Unknown')}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      );
+    }
+    
+    // Default list view
+    return (
+      <div 
+        className="flex items-center justify-between mb-2" 
+        key={`${isShared ? 'shared-' : ''}cal-${calendar.id}`}
+      >
+        <div className="flex items-center flex-1">
+          {CalendarIcon}
+          <div className="ml-2 flex flex-col overflow-hidden">
+            <Label 
+              htmlFor={`${isShared ? 'shared-' : ''}cal-${calendar.id}`} 
+              className="text-sm text-neutral-800 truncate"
+            >
+              {calendar.name}
+            </Label>
+            {isShared && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                {(calendar as SharedCalendar).permissionLevel === 'edit' ? (
+                  <span className="text-emerald-600">Can edit</span>
+                ) : (
+                  <span className="text-amber-600">View only</span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Edit/Delete buttons for own calendars that aren't primary */}
+        {!calendar.isPrimary && !isShared && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-40 p-1" align="end">
+              <div className="flex flex-col">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="justify-start mb-1 text-sm"
+                  onClick={() => onShareCalendar && onShareCalendar(calendar)}
+                >
+                  <Share2 className="mr-2 h-3.5 w-3.5" />
+                  Share
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="justify-start mb-1 text-sm"
+                  onClick={() => handleOpenEditDialog(calendar)}
+                >
+                  <Edit className="mr-2 h-3.5 w-3.5" />
+                  Edit
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="justify-start text-red-600 hover:text-red-700 hover:bg-red-50 text-sm"
+                  onClick={() => handleOpenDeleteDialog(calendar)}
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+        
+        {/* Unshare button for shared calendars */}
+        {isShared && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-red-600 hover:text-red-700"
+            onClick={() => handleOpenUnshareDialog(calendar, (calendar as SharedCalendar).owner?.email || 'Unknown')}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    );
+  };
+  
+  return (
+    <>
+      <aside 
+        className={`w-64 bg-white shadow-md flex-shrink-0 transition-all duration-300 overflow-hidden ${visible ? 'block' : 'hidden lg:block'}`}
+      >
+        <div className="p-4 h-full flex flex-col">
+          <div className="mb-6">
+            <Button 
+              className="w-full" 
+              onClick={onCreateEvent}
+            >
+              Create Event
+            </Button>
+          </div>
+          
+          <ScrollArea className="flex-1 pr-2 -mr-2" type="always">
+            {/* Own Calendars Section */}
+            <Collapsible 
+              open={showOwnCalendars} 
+              onOpenChange={setShowOwnCalendars}
+              className="mb-4"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <CollapsibleTrigger className="flex items-center text-xs font-semibold text-neutral-500 uppercase tracking-wider hover:text-neutral-700 transition-colors">
+                  <h3>Calendars</h3>
+                  {showOwnCalendars ? (
+                    <ChevronUp className="ml-1 h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="ml-1 h-3 w-3" />
+                  )}
+                </CollapsibleTrigger>
+                
+                <div className="flex gap-1">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={() => window.dispatchEvent(new CustomEvent('export-calendar'))}
+                    title="Export Calendar"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={() => onImportCalendar && onImportCalendar()}
+                    title="Import Calendar"
+                  >
+                    <UploadCloud className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-6 w-6" 
+                    onClick={() => onMultiShareCalendars && onMultiShareCalendars()}
+                    title="Share Multiple Calendars"
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setCalendarViewMode(calendarViewMode === 'list' ? 'compact' : 'list')}
+                    title={calendarViewMode === 'list' ? 'Switch to compact view' : 'Switch to list view'}
+                  >
+                    {calendarViewMode === 'list' ? (
+                      <Filter className="h-3.5 w-3.5" />
+                    ) : (
+                      <div className="h-3.5 w-3.5 flex items-center justify-center">
+                        <div className="h-2 w-2 border border-current"></div>
+                      </div>
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
+              <CollapsibleContent>
+                {calendars.length > 5 && (
+                  <div className="mb-2 relative">
+                    <Input
+                      type="text"
+                      placeholder="Search calendars..."
+                      className="h-8 pl-8 text-sm"
+                      value={calendarSearchQuery}
+                      onChange={(e) => setCalendarSearchQuery(e.target.value)}
+                    />
+                    <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+                    {calendarSearchQuery && (
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="absolute right-1 top-1 h-6 w-6"
+                        onClick={() => setCalendarSearchQuery('')}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                )}
+                
+                <div className={`${filteredOwnCalendars.length > 10 ? 'max-h-[300px] overflow-y-auto pr-1' : ''}`}>
+                  {filteredOwnCalendars.map(calendar => renderCalendarItem(calendar))}
+                  
+                  {filteredOwnCalendars.length === 0 && calendarSearchQuery && (
+                    <div className="text-sm text-gray-500 italic py-2">
+                      No calendars match your search
+                    </div>
+                  )}
+                </div>
+                
+                {!showAddCalendar && (
+                  <Button 
+                    variant="link" 
+                    size="sm" 
+                    className="mt-2 text-primary hover:text-primary/80 p-0 h-auto font-normal"
+                    onClick={() => setShowAddCalendar(true)}
+                  >
+                    <CalendarIcon className="h-3 w-3 mr-1" />
+                    Add Calendar
+                  </Button>
+                )}
+                
+                {showAddCalendar && (
+                  <div className="mt-3 p-3 bg-gray-50 rounded-md">
+                    <h4 className="text-sm font-medium mb-2">New Calendar</h4>
+                    <div>
+                      <Label htmlFor="newCalendarName" className="text-xs">Name</Label>
+                      <Input
+                        id="newCalendarName"
+                        value={newCalendarName}
+                        onChange={(e) => setNewCalendarName(e.target.value)}
+                        placeholder="Calendar name"
+                        className="h-8 text-sm mt-1"
+                      />
+                      {calendarNameError && (
+                        <p className="text-xs text-red-500 mt-1">{calendarNameError}</p>
+                      )}
+                    </div>
+                    <div className="mt-2">
+                      <Label htmlFor="newCalendarColor" className="text-xs">Color</Label>
+                      <Input
+                        id="newCalendarColor"
+                        type="color"
+                        className="h-8 w-8 rounded cursor-pointer mt-1"
+                        value={newCalendarColor}
+                        onChange={(e) => setNewCalendarColor(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex mt-3">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="mr-2"
+                        disabled={!newCalendarName.trim() || isCheckingCalendarName}
+                        onClick={handleCreateCalendar}
+                      >
+                        {isCheckingCalendarName ? (
+                          <>
+                            <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                            Checking...
+                          </>
+                        ) : (
+                          'Create'
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setShowAddCalendar(false);
+                          setNewCalendarName('');
+                          setNewCalendarColor('#0078d4');
+                          setCalendarNameError('');
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+            
+            {/* Shared Calendars Section */}
+            {sharedCalendars.length > 0 && (
+              <Collapsible 
+                open={showSharedCalendars} 
+                onOpenChange={setShowSharedCalendars}
+                className="mb-4"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <CollapsibleTrigger className="flex items-center text-xs font-semibold text-neutral-500 uppercase tracking-wider hover:text-neutral-700 transition-colors">
+                    <h3>Shared Calendars</h3>
+                    {showSharedCalendars ? (
+                      <ChevronUp className="ml-1 h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="ml-1 h-3 w-3" />
+                    )}
+                  </CollapsibleTrigger>
+                  
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setSharedCalendarViewMode(sharedCalendarViewMode === 'list' ? 'compact' : 'list')}
+                    title={sharedCalendarViewMode === 'list' ? 'Switch to compact view' : 'Switch to list view'}
+                  >
+                    {sharedCalendarViewMode === 'list' ? (
+                      <Filter className="h-3.5 w-3.5" />
+                    ) : (
+                      <div className="h-3.5 w-3.5 flex items-center justify-center">
+                        <div className="h-2 w-2 border border-current"></div>
+                      </div>
+                    )}
+                  </Button>
+                </div>
+                
+                <CollapsibleContent>
+                  {sharedCalendars.length > 5 && (
+                    <div className="mb-2 relative">
+                      <Input
+                        type="text"
+                        placeholder="Search shared calendars..."
+                        className="h-8 pl-8 text-sm"
+                        value={sharedCalendarSearchQuery}
+                        onChange={(e) => setSharedCalendarSearchQuery(e.target.value)}
+                      />
+                      <Search className="absolute left-2 top-2 h-4 w-4 text-muted-foreground" />
+                      {sharedCalendarSearchQuery && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="absolute right-1 top-1 h-6 w-6"
+                          onClick={() => setSharedCalendarSearchQuery('')}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  
+                  {filteredSharedCalendars.length === 0 && sharedCalendarSearchQuery && (
+                    <div className="text-sm text-gray-500 italic py-2">
+                      No shared calendars match your search
+                    </div>
+                  )}
+                  
+                  <div className="space-y-3">
+                    {/* Group calendars by owner email */}
+                    {Object.entries(groupedSharedCalendars).length > 0 ? (
+                      <Accordion 
+                        type="multiple" 
+                        className="w-full" 
+                        defaultValue={Object.keys(groupedSharedCalendars).map(email => `item-${email}`)}
+                      >
+                        {Object.entries(groupedSharedCalendars).map(([ownerEmail, ownerCalendars]) => (
+                          <AccordionItem 
+                            key={ownerEmail} 
+                            value={`item-${ownerEmail}`}
+                            className="border-b-0 mb-1"
+                          >
+                            <AccordionTrigger className="py-1 hover:no-underline">
+                              <div className="flex justify-between items-center w-full">
+                                <span className="text-xs text-left truncate max-w-[160px]">
+                                  <span className="italic">Shared by:</span>{' '}
+                                  <span className="font-medium">{ownerEmail}</span>
+                                </span>
+                                
+                                {/* Badge with count */}
+                                <Badge 
+                                  variant="outline" 
+                                  className="ml-1 text-[10px] px-1 py-0 h-4 rounded-full"
+                                >
+                                  {ownerCalendars.length}
+                                </Badge>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="pt-0">
+                              <div className="pl-2 space-y-1">
+                                {ownerCalendars.map(calendar => renderCalendarItem(calendar, true))}
+                              </div>
+                              <div className="mt-1 text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 text-xs text-red-600 hover:text-red-700 p-0"
+                                  onClick={() => handleOpenBulkUnshareDialog(ownerEmail, ownerCalendars)}
+                                >
+                                  <Trash2 className="mr-1 h-3 w-3" />
+                                  Remove all
+                                </Button>
+                              </div>
+                            </AccordionContent>
+                          </AccordionItem>
+                        ))}
+                      </Accordion>
+                    ) : (
+                      <div className="text-sm text-gray-500 py-2">
+                        No shared calendars
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+          </ScrollArea>
+        </div>
+      </aside>
+      
+      {/* Dialogs - Edit, Delete, Unshare, Bulk Unshare */}
+      {/* Edit Calendar Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Calendar</DialogTitle>
+            <DialogDescription>
+              Update your calendar settings.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="editCalendarName">Name</Label>
+              <Input
+                id="editCalendarName"
+                value={editCalendarName}
+                onChange={(e) => setEditCalendarName(e.target.value)}
+              />
+              {editCalendarNameError && (
+                <p className="text-xs text-red-500 mt-1">{editCalendarNameError}</p>
+              )}
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="editCalendarColor">Color</Label>
+              <div className="flex items-center">
+                <Input
+                  id="editCalendarColor"
+                  type="color"
+                  className="h-10 w-10 rounded cursor-pointer"
+                  value={editCalendarColor}
+                  onChange={(e) => setEditCalendarColor(e.target.value)}
+                />
+                <div 
+                  className="ml-2 h-8 w-24 rounded" 
+                  style={{ backgroundColor: editCalendarColor }}
+                ></div>
+              </div>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isCheckingEditName}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateCalendar}
+              disabled={isCheckingEditName}
+            >
+              {isCheckingEditName ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Checking...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Delete Calendar Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Calendar</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this calendar and all its events. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          {deletingCalendar && (
+            <div className="py-2">
+              <p className="font-medium">{deletingCalendar.name}</p>
+            </div>
+          )}
+          
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCalendar}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Unshare Calendar Dialog */}
+      <AlertDialog open={isUnshareDialogOpen} onOpenChange={setIsUnshareDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Shared Calendar</AlertDialogTitle>
+            <AlertDialogDescription>
+              {unshareMessage}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleUnshareCalendar}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={isUnsharing}
+            >
+              {isUnsharing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                'Remove'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      {/* Bulk Unshare Dialog */}
+      <AlertDialog open={isBulkUnshareDialogOpen} onOpenChange={setIsBulkUnshareDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove All Calendars</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove all calendars shared by {bulkUnshareEmail}.
+              {calendarsToUnshare.length > 0 && ` (${calendarsToUnshare.length} calendar${calendarsToUnshare.length > 1 ? 's' : ''})`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <div className="py-2 max-h-[200px] overflow-y-auto">
+            <div className="space-y-1">
+              {calendarsToUnshare.map(cal => (
+                <div key={cal.id} className="flex items-center p-1 border-b">
+                  <div 
+                    className="h-3 w-3 rounded-full mr-2" 
+                    style={{ backgroundColor: cal.color }}
+                  ></div>
+                  <span className="text-sm">{cal.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkUnshare}
+              className="bg-red-600 hover:bg-red-700 text-white"
+              disabled={isBulkUnsharing}
+            >
+              {isBulkUnsharing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                'Remove All'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+};
+
+export default EnhancedCalendarSidebar;
