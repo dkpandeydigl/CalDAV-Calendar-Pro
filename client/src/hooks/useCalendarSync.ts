@@ -29,7 +29,12 @@ export function useCalendarSync() {
 
   // Set up WebSocket connection for real-time updates
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      console.log('No user authenticated, skipping WebSocket connection');
+      return;
+    }
+
+    console.log('Setting up WebSocket connection for calendar sync with user ID:', user.id);
     
     // Variables for reconnection
     let ws: WebSocket | null = null;
@@ -42,22 +47,32 @@ export function useCalendarSync() {
     const connectWebSocket = () => {
       // Close any existing connection
       if (socket) {
+        console.log('Closing existing WebSocket connection');
         socket.close();
       }
       
       // Create new WebSocket connection
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-      ws = new WebSocket(wsUrl);
+      const wsUrl = `${protocol}//${window.location.host}/ws?userId=${user.id}`;
+      console.log('Connecting to WebSocket server at:', wsUrl);
       
-      ws.onopen = () => {
-        console.log('WebSocket connected for calendar sync');
-        // Reset reconnect attempts when successfully connected
-        reconnectAttempts = 0;
+      try {
+        ws = new WebSocket(wsUrl);
         
-        // Store last successful connection time in localStorage
-        localStorage.setItem('lastWsConnectTime', new Date().toISOString());
-      };
+        ws.onopen = () => {
+          console.log('✅ WebSocket successfully connected for calendar sync');
+          // Reset reconnect attempts when successfully connected
+          reconnectAttempts = 0;
+          
+          // Store last successful connection time in localStorage
+          localStorage.setItem('lastWsConnectTime', new Date().toISOString());
+          
+          // Send initial ping to verify connection is working both ways
+          ws.send(JSON.stringify({ type: 'ping', message: 'Initial connection test' }));
+        };
+      } catch (error) {
+        console.error('Error creating WebSocket connection:', error);
+      }
       
       ws.onmessage = (event) => {
         try {
