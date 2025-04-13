@@ -319,8 +319,11 @@ function CalendarContent() {
   };
 
   const handleEventClick = (event: Event) => {
+    console.log('Event clicked:', event);
     setSelectedEvent(event);
+    console.log('Selected event set, opening detail modal');
     setEventDetailOpen(true);
+    console.log('Event detail modal should now be open');
   };
 
   const handleEditEvent = () => {
