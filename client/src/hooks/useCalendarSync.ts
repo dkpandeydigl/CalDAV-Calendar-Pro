@@ -303,10 +303,45 @@ export function useCalendarSync() {
       setSocket(ws);
     };
     
-    // Initialize connection
-    connectWebSocket();
+    // Set up polling as a fallback if WebSocket fails
+    const setupPolling = () => {
+      console.log('🔄 Setting up polling fallback for sync');
+      
+      // Poll every 30 seconds
+      const pollInterval = setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          console.log('📊 Polling for updates (WebSocket not available)');
+          
+          // Use query invalidation to refresh data
+          queryClient.invalidateQueries({ 
+            queryKey: ['/api/events'],
+            refetchType: 'all'
+          });
+          
+          // Add a slight delay then force refetch again
+          setTimeout(() => {
+            queryClient.refetchQueries({ 
+              queryKey: ['/api/events'],
+              type: 'all'
+            });
+          }, 500);
+        }
+      }, 30000); // Poll every 30 seconds
+      
+      return pollInterval;
+    };
     
-    // Set up a keep-alive ping
+    // Try WebSocket first, fall back to polling
+    try {
+      connectWebSocket();
+    } catch (error) {
+      console.error('Failed to establish WebSocket connection, using polling fallback:', error);
+    }
+    
+    // Set up polling fallback regardless of WebSocket status
+    const pollInterval = setupPolling();
+    
+    // Set up a keep-alive ping for WebSocket if connected
     const pingInterval = setInterval(() => {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'ping' }));
@@ -378,6 +413,7 @@ export function useCalendarSync() {
       }
       
       clearInterval(pingInterval);
+      clearInterval(pollInterval); // Clear polling interval on unmount
       
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close(1000, 'Component unmounting');
