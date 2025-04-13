@@ -571,27 +571,49 @@ export function useCalendarSync() {
       if (options.calendarId) {
         return syncCalendar(options.calendarId);
       } else {
-        // Use a more careful approach that preserves data in the cache
-        console.log('No WebSocket connection, using optimized cache update strategy');
+        // Use a much more careful approach that prevents flickering
+        console.log('No WebSocket connection, using anti-flicker sync strategy');
         
-        // First, store the current events to preserve them
-        const currentEvents = queryClient.getQueryData(['/api/events']);
+        // First, get a snapshot of current events to preserve
+        const currentEvents = queryClient.getQueryData<any[]>(['/api/events']) || [];
+        console.log(`Preserving ${currentEvents.length} events during sync`);
         
-        // Then do a background refetch WITHOUT invalidating first
-        console.log('Performing background refetch while preserving current data...');
+        // Create a guard function to keep events in cache during sync
+        const guardEvents = () => {
+          const eventsNow = queryClient.getQueryData<any[]>(['/api/events']);
+          
+          // Check if events disappeared or reduced significantly
+          if (!eventsNow || eventsNow.length < currentEvents.length - 1) {
+            console.log(`Detected events loss (${eventsNow?.length || 0} vs ${currentEvents.length}), restoring cache`);
+            queryClient.setQueryData(['/api/events'], [...currentEvents]);
+          }
+        };
+        
+        // Set up a guard interval to continuously monitor and restore events
+        const guardIntervalId = setInterval(guardEvents, 50);
+        
+        // Execute a background refetch without invalidating
+        console.log('Performing guarded background refetch...');
         queryClient.refetchQueries({ 
           queryKey: ['/api/events'],
           type: 'all'
         }).then(() => {
-          console.log('Background refetch complete, ensuring UI has latest data');
+          console.log('Background refetch complete');
+          // Run the guard one more time
+          guardEvents();
           
-          // If refetch failed and we lost our events, restore them
-          const eventsAfterRefetch = queryClient.getQueryData(['/api/events']);
-          if (!eventsAfterRefetch && currentEvents) {
-            console.log('Restoring events that were lost during sync');
-            queryClient.setQueryData(['/api/events'], currentEvents);
-          }
+          // Delay clearing to make sure UI is stable
+          setTimeout(() => {
+            clearInterval(guardIntervalId);
+            console.log('Anti-flicker guard released');
+          }, 500);
+        }).catch(error => {
+          console.error('Error during refetch:', error);
+          // Clear interval and restore data
+          clearInterval(guardIntervalId);
+          guardEvents();
         });
+        
         return Promise.resolve(false);
       }
     }
@@ -606,34 +628,61 @@ export function useCalendarSync() {
             socket.removeEventListener('message', handleSyncComplete);
             
             if (data.success) {
-              // Use a preserving approach for UI updates
-              console.log('Sync complete, updating UI with new data while preserving current view');
+              // Use a much more advanced anti-flicker strategy
+              console.log('🔄 Sync complete, updating UI with anti-flicker protection');
               
-              // First, preserve the current events
-              const currentEvents = queryClient.getQueryData(['/api/events']);
+              // First, take a snapshot of current events to preserve
+              const currentEvents = queryClient.getQueryData<any[]>(['/api/events']) || [];
+              console.log(`🔒 Preserving ${currentEvents.length} events during sync refresh`);
               
-              // Perform a background refetch without invalidating first
-              console.log('Performing background refetch for new events data...');
+              // Create a powerful guard function that ensures events stay in cache
+              const guardEvents = () => {
+                const eventsNow = queryClient.getQueryData<any[]>(['/api/events']);
+                
+                // Only restore if we lost events or they were significantly reduced
+                if (!eventsNow || eventsNow.length < currentEvents.length - 1) {
+                  console.log(`🚨 Detected events loss (${eventsNow?.length || 0} vs ${currentEvents.length}), restoring cache`);
+                  queryClient.setQueryData(['/api/events'], [...currentEvents]);
+                }
+              };
+              
+              // Set up a guard interval to continuously monitor and prevent flickering
+              const guardIntervalId = setInterval(guardEvents, 50); // Check every 50ms
+              
+              // Perform a background refetch WITHOUT invalidating first
+              console.log('🔄 Performing guarded background refetch for new events data...');
               queryClient.refetchQueries({ 
                 queryKey: ['/api/events'],
                 type: 'all'
               }).then(() => {
-                console.log('Background refetch completed after sync');
+                console.log('✅ Background refetch completed after sync');
                 
-                // If for some reason we lost our events data, restore from backup
-                const eventsAfterRefetch = queryClient.getQueryData(['/api/events']);
-                if (!eventsAfterRefetch && currentEvents) {
-                  console.log('Restoring events that were lost during sync processing');
-                  queryClient.setQueryData(['/api/events'], currentEvents);
-                }
+                // Run the guard one more time to be safe
+                guardEvents();
                 
                 // If we have a specific calendar, update that data too
                 if (options.calendarId) {
+                  // Take a calendar-specific snapshot
+                  const calendarEvents = queryClient.getQueryData<any[]>(['/api/calendars', options.calendarId, 'events']) || [];
+                  
                   queryClient.refetchQueries({ 
                     queryKey: ['/api/calendars', options.calendarId, 'events'],
                     type: 'all'
+                  }).then(() => {
+                    // Restore calendar-specific events if needed
+                    const calendarEventsAfterRefetch = queryClient.getQueryData<any[]>(['/api/calendars', options.calendarId, 'events']);
+                    if (!calendarEventsAfterRefetch || calendarEventsAfterRefetch.length < calendarEvents.length - 1) {
+                      console.log(`🔄 Restoring calendar-specific cache (${calendarEvents.length} events)`);
+                      queryClient.setQueryData(['/api/calendars', options.calendarId, 'events'], calendarEvents);
+                    }
                   });
                 }
+                
+                // Release the guard after a short delay to ensure UI stability
+                setTimeout(() => {
+                  clearInterval(guardIntervalId);
+                  console.log('🔓 Anti-flicker guard released after successful sync');
+                }, 500);
               });
               
               setLastSyncTime(new Date());

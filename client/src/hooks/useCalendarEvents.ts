@@ -39,10 +39,12 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         // Update the main cache
         eventsCache.current = eventsCopy;
         
-        // Identify new events (those that have temp IDs or have other indicators of being new)
+        // Identify new events (those that have temp IDs or were recently added)
+        // Simplified detection logic to avoid using updatedAt that might not be available
         const newEvents = currentEvents.filter(e => 
           typeof e.id === 'string' || // Temp ID is a string 
-          (e.updatedAt && new Date(e.updatedAt).getTime() > Date.now() - 30000) // Updated in last 30 seconds
+          (e.id && e.id < 0) || // Negative IDs are temporary
+          (e.lastModifiedAt && new Date(e.lastModifiedAt).getTime() > Date.now() - 30000) // Modified in last 30 seconds
         );
         
         if (newEvents.length > 0) {
@@ -131,6 +133,15 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     queryKey: ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()],
     enabled: enabledCalendarIds.length > 0,
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty to handle user session expiry gracefully
+    // Critical: Use stale time to prevent immediate refetching
+    staleTime: 1000, // Short stale time to reduce refetches during sync operations
+    // Don't trash data if query fails
+    retry: 3,
+    retryDelay: 500,
+    // Use placeholder data function to prevent flickering during load
+    placeholderData: (previousData) => previousData || eventsCache.current,
+    // In TanStack Query v5, use gcTime instead of keepPreviousData
+    gcTime: 5 * 60 * 1000, // Keep data in cache for 5 minutes
   });
   
   // Setup effect to preserve and restore events during state transitions
@@ -138,10 +149,11 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     // Preserve events on mount
     preserveEventsCache();
     
-    // Set up an interval to check and restore events if they disappear
+    // Set up a more aggressive interval to check and restore events if they disappear
+    // Run more frequently to catch any flickers immediately
     const checkInterval = setInterval(() => {
       restoreEventsIfNeeded();
-    }, 500); // Check every 500ms
+    }, 100); // Check every 100ms for faster response
     
     // Clean up interval on unmount
     return () => clearInterval(checkInterval);
