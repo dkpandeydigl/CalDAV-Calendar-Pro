@@ -461,6 +461,69 @@ export function setupAuth(app: Express) {
     }
   });
 
+  // Update user full name
+  app.put("/api/user/fullname", (req, res) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    
+    try {
+      const userId = req.user.id;
+      const { fullName } = req.body;
+      
+      if (!fullName || typeof fullName !== 'string') {
+        return res.status(400).json({ message: "Invalid full name" });
+      }
+      
+      // Validate full name (basic validation)
+      if (fullName.length > 100) {
+        return res.status(400).json({ message: "Full name string too long" });
+      }
+      
+      // Update the user's full name
+      storage.updateUser(userId, {
+        fullName
+      }).then(updatedUser => {
+        if (!updatedUser) {
+          return res.status(404).json({ message: "User not found" });
+        }
+        
+        // If the user has SMTP config, update that as well to match the new full name
+        storage.getSmtpConfig(userId).then(smtpConfig => {
+          if (smtpConfig) {
+            storage.updateSmtpConfig(smtpConfig.id, { 
+              fromName: fullName 
+            }).catch(error => {
+              console.error("Error updating SMTP config with new full name:", error);
+              // We'll continue even if this fails
+            });
+          }
+        }).catch(error => {
+          console.error("Error fetching SMTP config:", error);
+          // We'll continue even if this fails
+        });
+        
+        res.json({
+          success: true,
+          message: "Full name updated successfully",
+          fullName
+        });
+      }).catch(error => {
+        console.error("Error updating full name:", error);
+        res.status(500).json({ 
+          message: "Failed to update full name",
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    } catch (err) {
+      console.error("Error updating full name:", err);
+      res.status(500).json({ 
+        message: "Failed to update full name",
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+
   // Helper middleware for checking authentication
   const isAuthenticated = (req: any, res: any, next: any) => {
     if (req.isAuthenticated()) {
