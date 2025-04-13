@@ -524,7 +524,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <Info className="text-gray-600 mr-2 h-4 w-4" />
                       Description
                     </h3>
-                    <div className={`text-sm prose prose-sm max-w-none bg-white p-3 rounded border border-gray-100 ${showFullDescription ? 'overflow-auto max-h-[150px]' : 'overflow-hidden line-clamp-4'}`}
+                    <div className={`text-sm prose prose-sm max-w-none bg-white p-3 rounded border border-gray-100 ${showFullDescription ? '' : 'overflow-hidden line-clamp-4'}`}
                       dangerouslySetInnerHTML={{ 
                         __html: (() => {
                           if (!event.description) return '';
@@ -601,9 +601,19 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     {/* Show more/less button */}
                     <button 
                       onClick={() => setShowFullDescription(!showFullDescription)}
-                      className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center"
+                      className="mt-2 text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
                     >
-                      {showFullDescription ? 'Show less' : 'Show more'}
+                      {showFullDescription ? (
+                        <>
+                          <ChevronUp className="h-3 w-3" />
+                          Show less
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3 w-3" />
+                          Show more
+                        </>
+                      )}
                     </button>
                   </div>
                 )}
