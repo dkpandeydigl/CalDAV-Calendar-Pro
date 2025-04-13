@@ -111,13 +111,24 @@ export class SyncService {
   /**
    * Run a global sync operation for all active users
    * This is triggered periodically to ensure external changes are detected
+   * Only syncs for users with active sessions (Option A)
    */
   private async runGlobalSync() {
     try {
       console.log('Running global sync to check for external changes...');
       this.lastGlobalSync = new Date();
       
-      // Get all active server connections
+      // Get user IDs with active sessions - Option A implementation
+      const activeUserIds = await storage.getActiveUserIds();
+      
+      if (!activeUserIds || activeUserIds.length === 0) {
+        console.log('No active user sessions found, skipping global sync');
+        return;
+      }
+      
+      console.log(`Found ${activeUserIds.length} active user sessions for background sync`);
+      
+      // Get server connections, but only for users with active sessions
       const connections = await storage.getAllServerConnections();
       
       if (!connections || connections.length === 0) {
@@ -125,10 +136,15 @@ export class SyncService {
         return;
       }
       
-      console.log(`Found ${connections.length} server connections to check for updates`);
+      // Filter connections to only include users with active sessions
+      const activeConnections = connections.filter(conn => 
+        activeUserIds.includes(conn.userId)
+      );
       
-      // For each connection, perform a sync
-      for (const connection of connections) {
+      console.log(`Found ${connections.length} server connections, ${activeConnections.length} with active sessions`);
+      
+      // For each active connection, perform a sync
+      for (const connection of activeConnections) {
         // Skip connections that are already being synced
         if (this.syncInProgress.has(connection.userId)) {
           console.log(`Sync already in progress for user ID ${connection.userId}, skipping`);
@@ -136,7 +152,7 @@ export class SyncService {
         }
         
         // Run a sync for this user
-        console.log(`Global sync: checking updates for user ID ${connection.userId}`);
+        console.log(`Global sync: checking updates for active user ID ${connection.userId}`);
         await this.syncNow(connection.userId, { 
           isGlobalSync: true, 
           forceRefresh: false 

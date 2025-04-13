@@ -35,6 +35,41 @@ export class DatabaseStorage implements IStorage {
     });
   }
   
+  /**
+   * Get the user IDs of users with active sessions
+   * This is used by the sync service to determine which users need background sync
+   */
+  async getActiveUserIds(): Promise<number[]> {
+    try {
+      // Query the session table to find active sessions
+      const result = await neonDb.query<{ user_id: string | number }>(`
+        SELECT sess->'passport'->'user' as user_id 
+        FROM "session" 
+        WHERE sess->'passport'->'user' IS NOT NULL 
+        AND expire > NOW()
+      `);
+      
+      if (!result || !result.rows || result.rows.length === 0) {
+        return [];
+      }
+      
+      // Extract user IDs from session data and convert to numbers
+      const userIds = result.rows
+        .map((row: { user_id: string | number }) => {
+          // Extract the numeric user ID from the session data
+          const userId = parseInt(row.user_id?.toString(), 10);
+          return isNaN(userId) ? null : userId;
+        })
+        .filter((id): id is number => id !== null); // Type guard to filter out null values
+      
+      // Return unique user IDs
+      return [...new Set(userIds)];
+    } catch (error) {
+      console.error('Error retrieving active user IDs from sessions:', error);
+      return [];
+    }
+  }
+  
   async initializeDatabase(): Promise<void> {
     try {
       console.log("Checking if tables exist and creating if necessary...");
