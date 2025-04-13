@@ -80,6 +80,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   
   // USERS API
+  app.get("/api/user", (req, res) => {
+    if (req.isAuthenticated()) {
+      res.json(req.user);
+    } else {
+      res.status(401).json({ message: "Not authenticated" });
+    }
+  });
+  
+  app.put("/api/user/fullname", isAuthenticated, async (req, res) => {
+    try {
+      const { fullName } = req.body;
+      
+      if (!fullName || typeof fullName !== 'string') {
+        return res.status(400).json({ message: "Full name is required and must be a string" });
+      }
+      
+      // Update the user's full name
+      const updatedUser = await storage.updateUser(req.user!.id, { fullName });
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.json(updatedUser);
+    } catch (err) {
+      console.error("Error updating user's full name:", err);
+      res.status(500).json({ message: "Failed to update user's full name" });
+    }
+  });
+  
   app.get("/api/users", isAuthenticated, async (req, res) => {
     try {
       const users = await storage.getAllUsers();
