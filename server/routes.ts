@@ -54,6 +54,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create the HTTP server
   const httpServer = createServer(app);
   
+  // Initialize WebSocket server for real-time notifications
+  initializeWebSocketServer(httpServer);
+  
   // Register the export and import routes
   registerExportRoutes(app);
   registerImportRoutes(app);
@@ -3063,6 +3066,198 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false, 
         message: "Failed to retrieve SMTP configuration" 
       });
+    }
+  });
+
+  // NOTIFICATIONS API
+  
+  // Get notifications for the current user
+  app.get("/api/notifications", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { 
+        unreadOnly, 
+        requiresActionOnly, 
+        type, 
+        priority, 
+        relatedEventId, 
+        relatedEventUid,
+        limit,
+        offset
+      } = req.query;
+      
+      // Convert query parameters to the right types
+      const filter = {
+        userId,
+        unreadOnly: unreadOnly === 'true',
+        requiresActionOnly: requiresActionOnly === 'true',
+        type: type ? String(type) : undefined,
+        priority: priority ? String(priority) : undefined,
+        relatedEventId: relatedEventId ? parseInt(String(relatedEventId)) : undefined,
+        relatedEventUid: relatedEventUid ? String(relatedEventUid) : undefined,
+        limit: limit ? parseInt(String(limit)) : undefined,
+        offset: offset ? parseInt(String(offset)) : undefined
+      };
+      
+      // Parse the filter with Zod to validate
+      const validatedFilter = notificationFilterSchema.parse(filter);
+      
+      // Fetch notifications using the validated filter
+      const notifications = await notificationService.getNotifications(validatedFilter);
+      
+      res.json(notifications);
+    } catch (err) {
+      console.error("Error fetching notifications:", err);
+      return handleZodError(err, res);
+    }
+  });
+
+  // Get unread notification count
+  app.get("/api/notifications/count", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const count = await notificationService.getUnreadCount(userId);
+      res.json({ count });
+    } catch (err) {
+      console.error("Error getting notification count:", err);
+      res.status(500).json({ message: "Failed to get notification count" });
+    }
+  });
+
+  // Create a test notification (for development purposes)
+  app.post("/api/notifications/test", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const testNotification = {
+        userId,
+        type: 'system_message',
+        title: 'Test Notification',
+        message: 'This is a test notification',
+        priority: 'medium',
+        requiresAction: false,
+        isRead: false,
+        isDismissed: false,
+        actionTaken: false
+      };
+      
+      const notification = await notificationService.createNotification(testNotification);
+      
+      // Send the notification through WebSocket if available
+      await sendNotification(userId, notification);
+      
+      res.status(201).json(notification);
+    } catch (err) {
+      console.error("Error creating test notification:", err);
+      res.status(500).json({ message: "Failed to create test notification" });
+    }
+  });
+
+  // Mark a notification as read
+  app.patch("/api/notifications/:id/read", isAuthenticated, async (req, res) => {
+    try {
+      const notificationId = parseInt(req.params.id);
+      if (isNaN(notificationId)) {
+        return res.status(400).json({ message: "Invalid notification ID" });
+      }
+      
+      const success = await notificationService.markAsRead(notificationId);
+      
+      if (success) {
+        // Get the updated count of unread notifications
+        const unreadCount = await notificationService.getUnreadCount(req.user!.id);
+        
+        // Also update through WebSocket if available
+        broadcastToUser(req.user!.id, {
+          type: 'notification_count',
+          count: unreadCount
+        });
+        
+        res.json({ success, unreadCount });
+      } else {
+        res.status(404).json({ success: false, message: "Notification not found" });
+      }
+    } catch (err) {
+      console.error("Error marking notification as read:", err);
+      res.status(500).json({ message: "Failed to mark notification as read" });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/notifications/mark-all-read", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const success = await notificationService.markAllAsRead(userId);
+      
+      // Also update through WebSocket if available
+      broadcastToUser(userId, {
+        type: 'notification_count',
+        count: 0
+      });
+      
+      res.json({ success });
+    } catch (err) {
+      console.error("Error marking all notifications as read:", err);
+      res.status(500).json({ message: "Failed to mark all notifications as read" });
+    }
+  });
+
+  // Dismiss a notification
+  app.patch("/api/notifications/:id/dismiss", isAuthenticated, async (req, res) => {
+    try {
+      const notificationId = parseInt(req.params.id);
+      if (isNaN(notificationId)) {
+        return res.status(400).json({ message: "Invalid notification ID" });
+      }
+      
+      const success = await notificationService.dismissNotification(notificationId);
+      
+      if (success) {
+        // Get the updated count of unread notifications
+        const unreadCount = await notificationService.getUnreadCount(req.user!.id);
+        
+        // Also update through WebSocket if available
+        broadcastToUser(req.user!.id, {
+          type: 'notification_count',
+          count: unreadCount
+        });
+        
+        res.json({ success, unreadCount });
+      } else {
+        res.status(404).json({ success: false, message: "Notification not found" });
+      }
+    } catch (err) {
+      console.error("Error dismissing notification:", err);
+      res.status(500).json({ message: "Failed to dismiss notification" });
+    }
+  });
+
+  // Mark action taken on a notification
+  app.patch("/api/notifications/:id/action-taken", isAuthenticated, async (req, res) => {
+    try {
+      const notificationId = parseInt(req.params.id);
+      if (isNaN(notificationId)) {
+        return res.status(400).json({ message: "Invalid notification ID" });
+      }
+      
+      const success = await notificationService.markActionTaken(notificationId);
+      
+      if (success) {
+        // Get the updated count of unread notifications
+        const unreadCount = await notificationService.getUnreadCount(req.user!.id);
+        
+        // Also update through WebSocket if available
+        broadcastToUser(req.user!.id, {
+          type: 'notification_count',
+          count: unreadCount
+        });
+        
+        res.json({ success, unreadCount });
+      } else {
+        res.status(404).json({ success: false, message: "Notification not found" });
+      }
+    } catch (err) {
+      console.error("Error marking action taken:", err);
+      res.status(500).json({ message: "Failed to mark action taken" });
     }
   });
   
