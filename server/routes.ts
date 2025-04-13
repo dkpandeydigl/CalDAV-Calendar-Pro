@@ -1340,21 +1340,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const attendeeEmail = typeof attendee === 'string' ? attendee : (attendee.email || '');
             if (attendeeEmail) {
               try {
-                await notificationService.createEventCancellationNotification(
-                  req.user!.id, // userId (we'll send to the organizer too)
-                  event.id,
-                  event.uid,
-                  event.title,
-                  req.user!.id,
-                  user.fullName || user.username,
-                  user.email || user.username
-                );
-                
-                // Also try to find if the attendee is a registered user to notify them
-                const attendeeUser = await storage.getUserByUsername(attendeeEmail);
-                if (attendeeUser && attendeeUser.id !== req.user!.id) {
+                // Check if the notification table exists before trying to create notifications
+                try {
                   await notificationService.createEventCancellationNotification(
-                    attendeeUser.id,
+                    req.user!.id, // userId (we'll send to the organizer too)
                     event.id,
                     event.uid,
                     event.title,
@@ -1362,6 +1351,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     user.fullName || user.username,
                     user.email || user.username
                   );
+                  
+                  // Also try to find if the attendee is a registered user to notify them
+                  const attendeeUser = await storage.getUserByUsername(attendeeEmail);
+                  if (attendeeUser && attendeeUser.id !== req.user!.id) {
+                    await notificationService.createEventCancellationNotification(
+                      attendeeUser.id,
+                      event.id,
+                      event.uid,
+                      event.title,
+                      req.user!.id,
+                      user.fullName || user.username,
+                      user.email || user.username
+                    );
+                  }
+                } catch (notificationErr) {
+                  // If error is "relation 'notifications' does not exist", log it but continue
+                  if (notificationErr.message && notificationErr.message.includes("relation \"notifications\" does not exist")) {
+                    console.warn('Notifications table does not exist. Skipping notification creation.');
+                    console.warn('Run the migration script: scripts/create-notifications-table.ts to create the table.');
+                  } else {
+                    // Rethrow for other errors
+                    throw notificationErr;
+                  }
                 }
               } catch (notifyErr) {
                 console.error('Error creating cancellation notification:', notifyErr);
@@ -1372,15 +1384,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Send WebSocket notification about event cancellation
           try {
-            createAndSendNotification({
-              userId: req.user!.id,
-              type: 'event_cancellation',
-              title: 'Event Cancelled',
-              message: `You cancelled "${event.title}"`,
-              relatedEventId: event.id
-            });
-            
-            console.log('Sent WebSocket notification about event cancellation');
+            // Check if the WebSocket notification handler is properly initialized
+            if (typeof createAndSendNotification === 'function') {
+              try {
+                createAndSendNotification({
+                  userId: req.user!.id,
+                  type: 'event_cancellation',
+                  title: 'Event Cancelled',
+                  message: `You cancelled "${event.title}"`,
+                  relatedEventId: event.id
+                });
+                
+                console.log('Sent WebSocket notification about event cancellation');
+              } catch (notificationError) {
+                // Handle the case where the notification database table doesn't exist
+                if (notificationError.message && notificationError.message.includes("relation \"notifications\" does not exist")) {
+                  console.warn('WebSocket notification not sent - notifications table does not exist');
+                  console.warn('Run the migration script: scripts/create-notifications-table.ts to create the table');
+                } else {
+                  // Rethrow for other errors
+                  throw notificationError;
+                }
+              }
+            } else {
+              console.warn('WebSocket notification not sent - createAndSendNotification function not available');
+            }
           } catch (wsError) {
             console.error('Failed to send WebSocket notification:', wsError);
             // Continue even if WebSocket notification fails
