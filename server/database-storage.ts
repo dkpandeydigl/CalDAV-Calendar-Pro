@@ -437,8 +437,13 @@ export class DatabaseStorage implements IStorage {
   }
   
   // Calendar sharing methods
-  async getCalendarSharing(calendarId: number): Promise<CalendarSharing[]> {
+  async getCalendarSharing(calendarId: number | null): Promise<CalendarSharing[]> {
     try {
+      // If calendarId is null, return all sharing records
+      if (calendarId === null) {
+        return await this.getAllCalendarSharings();
+      }
+      
       const sharingRecords = await db.select()
         .from(calendarSharing)
         .where(eq(calendarSharing.calendarId, calendarId));

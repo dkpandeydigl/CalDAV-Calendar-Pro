@@ -2243,15 +2243,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/calendar-sharings/:id", isAuthenticated, async (req, res) => {
     try {
       const sharingId = parseInt(req.params.id);
+      console.log(`Updating calendar sharing permissions for sharing ID ${sharingId} by user ${req.user?.id}`);
+      console.log(`Request body:`, req.body);
       
       // Validate the permission level
       if (req.body.permissionLevel && !['view', 'edit'].includes(req.body.permissionLevel)) {
         return res.status(400).json({ message: "Invalid permission level. Must be 'view' or 'edit'." });
       }
       
-      // Get the current sharing record to check permissions
-      const sharingRecords = await storage.getCalendarSharing(null);
+      // Get all sharing records and find the one we want to update
+      const sharingRecords = await storage.getAllCalendarSharings();
+      console.log(`Got ${sharingRecords.length} total sharing records`);
+      
       const sharingRecord = sharingRecords.find(record => record.id === sharingId);
+      console.log(`Looking for sharing ID ${sharingId}, found:`, sharingRecord || "not found");
       
       if (!sharingRecord) {
         return res.status(404).json({ message: "Calendar sharing record not found" });
