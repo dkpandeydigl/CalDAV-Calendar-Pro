@@ -23,6 +23,8 @@ import { registerImportRoutes } from "./import-routes";
 import fetch from "node-fetch";
 import { escapeICalString, formatICalDate, formatContentLine, formatRecurrenceRule, generateICalEvent } from "./ical-utils";
 import { syncService } from "./sync-service";
+import { webdavSyncService } from "./webdav-sync";
+import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./notification-service";
 import { initializeWebSocketServer, broadcastToUser, sendNotification, createAndSendNotification } from "./websocket-handler";
 
@@ -2713,58 +2715,128 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/sync", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
+      const { calendarId, syncToken, forceRefresh } = req.body;
       
-      // Import syncService directly from the module, no need to access from global
-      
-      // Extract options
-      const forceRefresh = req.body.forceRefresh === true;
-      const calendarId = req.body.calendarId || null;
-      
-      // Request a sync
-      console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId });
-      
-      // If user doesn't have a sync job, set one up
-      const syncStatus = syncService.getSyncStatus(userId);
-      if (!syncStatus.configured) {
-        // Get server connection 
-        const connection = await storage.getServerConnection(userId);
+      // If a specific calendar ID is provided, only sync that calendar
+      if (calendarId) {
+        // Check if user has access to this calendar
+        const calendar = await storage.getCalendar(parseInt(calendarId));
+        const sharedCalendars = await storage.getSharedCalendars(userId);
         
-        if (!connection) {
-          return res.status(400).json({ message: "No server connection found for this user" });
+        // Determine if user has access to this calendar (either owns it or has it shared)
+        const hasAccess = 
+          calendar?.userId === userId || 
+          sharedCalendars.some(sc => sc.id === parseInt(calendarId));
+        
+        if (!calendar || !hasAccess) {
+          return res.status(403).json({ error: 'Access denied to this calendar' });
         }
         
-        // Try to set up sync job
-        const setupResult = await syncService.setupSyncForUser(userId, connection);
-        if (!setupResult) {
-          return res.status(500).json({ message: "Failed to set up sync job" });
+        // Create DAV client for the user
+        const serverConnection = await storage.getServerConnection(userId);
+        if (!serverConnection || !serverConnection.url || !serverConnection.username || !serverConnection.password) {
+          return res.status(400).json({ 
+            error: 'No server connection configured',
+            requiresConnection: true
+          });
         }
-      }
-      
-      // Trigger an immediate sync
-      const success = await syncService.requestSync(userId, { forceRefresh, calendarId });
-      
-      // Get calendar and event counts for a more informative response
-      const userCalendars = await storage.getCalendars(userId);
-      let totalEvents = 0;
-      
-      // Count total events across all calendars
-      for (const calendar of userCalendars) {
-        if (calendar && calendar.id) {
-          const events = await storage.getEvents(calendar.id);
-          totalEvents += events.length;
-        }
-      }
-      
-      res.setHeader('Content-Type', 'application/json');
-      if (success) {
-        res.json({ 
-          message: "Sync initiated",
-          calendarsCount: userCalendars.length,
-          eventsCount: totalEvents
+        
+        // Create a DAV client using import
+        const { DAVClient } = await import('tsdav');
+        const client = new DAVClient({
+          serverUrl: serverConnection.url,
+          credentials: {
+            username: serverConnection.username,
+            password: serverConnection.password
+          },
+          authMethod: 'Basic',
+          defaultAccountType: 'caldav'
         });
-      } else {
+        
+        // Import the WebDAV sync service
+        const { webdavSyncService } = require('./webdav-sync');
+        
+        // Get changes since the provided sync token or do a full sync
+        const changes = await webdavSyncService.getChangesSince(
+          parseInt(calendarId),
+          forceRefresh ? null : syncToken,  // If forcing refresh, ignore sync token
+          client
+        );
+        
+        // Notify about changes via WebSocket
+        if (changes.added.length > 0 || changes.modified.length > 0 || changes.deleted.length > 0) {
+          const { notifyCalendarChanged } = require('./websocket-handler');
+          
+          // Send real-time notification about the changes
+          notifyCalendarChanged(userId, parseInt(calendarId), 'updated', {
+            added: changes.added.length,
+            modified: changes.modified.length,
+            deleted: changes.deleted.length
+          });
+          
+          // Create notifications if significant changes
+          await webdavSyncService.notifyCalendarChanges(userId, parseInt(calendarId), changes);
+        }
+        
+        // Return the changes and new sync token
+        return res.json({
+          calendarId: parseInt(calendarId),
+          syncToken: changes.newSyncToken,
+          changes: {
+            added: changes.added.map((e: { id: number; title: string }) => ({ id: e.id, title: e.title })),
+            modified: changes.modified.map((e: { id: number; title: string }) => ({ id: e.id, title: e.title })),
+            deleted: changes.deleted
+          }
+        });
+      } 
+      // Otherwise, sync all calendars for the user (original behavior)
+      else {
+        // Request a sync
+        console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId });
+        
+        // If user doesn't have a sync job, set one up
+        const syncStatus = syncService.getSyncStatus(userId);
+        if (!syncStatus.configured) {
+          // Get server connection 
+          const connection = await storage.getServerConnection(userId);
+          
+          if (!connection) {
+            return res.status(400).json({ message: "No server connection found for this user" });
+          }
+          
+          // Try to set up sync job
+          const setupResult = await syncService.setupSyncForUser(userId, connection);
+          if (!setupResult) {
+            return res.status(500).json({ message: "Failed to set up sync job" });
+          }
+        }
+        
+        // Trigger an immediate sync
+        const success = await syncService.requestSync(userId, { forceRefresh, calendarId });
+        
+        // Get calendar and event counts for a more informative response
+        const userCalendars = await storage.getCalendars(userId);
+        let totalEvents = 0;
+        
+        // Count total events across all calendars
+        for (const calendar of userCalendars) {
+          if (calendar && calendar.id) {
+            const events = await storage.getEvents(calendar.id);
+            totalEvents += events.length;
+          }
+        }
+        
         res.setHeader('Content-Type', 'application/json');
-        res.status(500).json({ message: "Failed to initiate sync" });
+        if (success) {
+          res.json({ 
+            message: "Sync initiated",
+            calendarsCount: userCalendars.length,
+            eventsCount: totalEvents
+          });
+        } else {
+          res.setHeader('Content-Type', 'application/json');
+          res.status(500).json({ message: "Failed to initiate sync" });
+        }
       }
     } catch (err) {
       console.error("Error initiating sync:", err);
@@ -3130,10 +3202,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       const testNotification = {
         userId,
-        type: 'system_message',
+        type: 'system_message' as const,
         title: 'Test Notification',
         message: 'This is a test notification',
-        priority: 'medium',
+        priority: 'medium' as const,
         requiresAction: false,
         isRead: false,
         isDismissed: false,

@@ -381,3 +381,59 @@ export async function createAndSendNotification(notificationData: any): Promise<
     console.error('Error creating and sending notification:', error);
   }
 }
+
+/**
+ * Notify a user about calendar changes
+ * 
+ * @param userId - User ID to notify
+ * @param calendarId - Calendar ID that changed
+ * @param changeType - Type of change ('created', 'updated', 'deleted')
+ * @param data - Any relevant data about the change
+ */
+export function notifyCalendarChanged(
+  userId: number, 
+  calendarId: number, 
+  changeType: string, 
+  data: any = null
+): void {
+  try {
+    // Send the notification to the user
+    broadcastToUser(userId, {
+      type: 'calendar_changed',
+      calendarId,
+      changeType,
+      data,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error sending calendar change notification:', error);
+  }
+}
+
+/**
+ * Notify a user about changes to an event
+ * 
+ * @param userId - User ID to notify
+ * @param eventId - Event ID that changed
+ * @param changeType - Type of change ('created', 'updated', 'deleted')
+ * @param data - Any relevant data about the change
+ */
+export function notifyEventChanged(
+  userId: number, 
+  eventId: number, 
+  changeType: string, 
+  data: any = null
+): void {
+  try {
+    // Send the notification to the user
+    broadcastToUser(userId, {
+      type: 'event_changed',
+      eventId,
+      changeType,
+      data,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error sending event change notification:', error);
+  }
+}
