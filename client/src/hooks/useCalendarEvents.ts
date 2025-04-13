@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { Event } from '@shared/schema';
 import { useCalendars } from './useCalendars';
 import { useSharedCalendars } from './useSharedCalendars';
+import { useShadowCache } from './useShadowCache';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 // Type declarations to help with TanStack Query types
