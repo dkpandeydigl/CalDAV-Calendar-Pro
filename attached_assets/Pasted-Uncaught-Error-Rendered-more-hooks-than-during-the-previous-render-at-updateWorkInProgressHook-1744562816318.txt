@@ -1,0 +1,41 @@
+Uncaught Error: Rendered more hooks than during the previous render.
+    at updateWorkInProgressHook (chunk-RPCDYKBN.js?v=c537ed81:11678:21)
+    at updateReducer (chunk-RPCDYKBN.js?v=c537ed81:11727:22)
+    at updateState (chunk-RPCDYKBN.js?v=c537ed81:12021:18)
+    at Object.useState (chunk-RPCDYKBN.js?v=c537ed81:12753:24)
+    at Object.useState (chunk-QCHXOAYK.js?v=c537ed81:1066:29)
+    at useToast (use-toast.ts:172:35)
+    at useCalendars (useCalendars.ts:8:21)
+    at useCalendarPermissions (useCalendarPermissions.ts:12:25)
+    at EventDetailModal (EventDetailModal.tsx:108:5)
+    at renderWithHooks (chunk-RPCDYKBN.js?v=c537ed81:11548:26)Understand this error
+chunk-RPCDYKBN.js?v=c537ed81:14032 The above error occurred in the <EventDetailModal> component:
+
+    at EventDetailModal (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/components/modals/EventDetailModal.tsx:76:44)
+    at div
+    at CalendarContent (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/pages/Calendar.tsx:360:95)
+    at Calendar
+    at ProtectedRoute (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/lib/protected-route.tsx:22:14)
+    at Route (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=c537ed81:323:16)
+    at Switch (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=c537ed81:379:17)
+    at Router
+    at CalendarProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/contexts/CalendarContext.tsx:33:36)
+    at NotificationProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/contexts/NotificationContext.tsx:32:40)
+    at AuthProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/hooks/use-auth.tsx:26:32)
+    at QueryClientProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=c537ed81:2805:3)
+    at App
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+logCapturedError @ chunk-RPCDYKBN.js?v=c537ed81:14032Understand this error
+chunk-RPCDYKBN.js?v=c537ed81:9129 Uncaught Error: Rendered more hooks than during the previous render.
+    at updateWorkInProgressHook (chunk-RPCDYKBN.js?v=c537ed81:11678:21)
+    at updateReducer (chunk-RPCDYKBN.js?v=c537ed81:11727:22)
+    at updateState (chunk-RPCDYKBN.js?v=c537ed81:12021:18)
+    at Object.useState (chunk-RPCDYKBN.js?v=c537ed81:12753:24)
+    at Object.useState (chunk-QCHXOAYK.js?v=c537ed81:1066:29)
+    at useToast (use-toast.ts:172:35)
+    at useCalendars (useCalendars.ts:8:21)
+    at useCalendarPermissions (useCalendarPermissions.ts:12:25)
+    at EventDetailModal (EventDetailModal.tsx:108:5)
+    at renderWithHooks (chunk-RPCDYKBN.js?v=c537ed81:11548:26)

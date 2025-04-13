@@ -95,17 +95,17 @@ export default function EventDetailModal({ open, event, onClose, onEdit }: Event
   const [resourcesDialogOpen, setResourcesDialogOpen] = useState(false);
   const [attendeesDialogOpen, setAttendeesDialogOpen] = useState(false);
   
-  // If event is null, don't render
-  if (!event) return null;
-  
-  // Get calendar info
-  const calendar = calendars?.find(cal => cal.id === event.calendarId);
+  // Get calendar info - must call hooks before any conditional returns
+  const calendar = event && calendars?.find(cal => cal.id === event.calendarId);
   const calendarName = calendar?.name;
   const calendarColor = calendar?.color;
   
-  // Check permissions
+  // Check permissions - always call this hook even if event is null
   const { data: userPermissions, isLoading: isUserLoading, isError: isAuthError } = 
-    useCalendarPermissions(event.calendarId);
+    useCalendarPermissions(event?.calendarId || 0);
+    
+  // If event is null, don't render after hooks are called
+  if (!event) return null;
   
   const isUsersOwnCalendar = event.calendarId && user?.id ? 
     calendar?.userId === user.id : false;
