@@ -1226,6 +1226,215 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // EVENTS API
+  
+  // Cancel event endpoint
+  app.post('/api/cancel-event/:id', isAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: 'Invalid event ID' });
+      }
+      
+      console.log(`Received request to cancel event with ID ${eventId} from user ${req.user!.id}`);
+      
+      // Get the event to be canceled
+      const event = await storage.getEvent(eventId);
+      if (!event) {
+        return res.status(404).json({ message: 'Event not found' });
+      }
+      
+      // Get the calendar to check permissions
+      const calendar = await storage.getCalendar(event.calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: 'Calendar not found' });
+      }
+      
+      // Check if this user has permission to cancel the event
+      let hasPermission = false;
+      
+      // User owns the calendar
+      if (calendar.userId === req.user!.id) {
+        hasPermission = true;
+      } else {
+        // Check if the calendar is shared with the user with edit permissions
+        const sharedCalendars = await storage.getSharedCalendars(req.user!.id);
+        const sharedCalendar = sharedCalendars.find(cal => cal.id === calendar.id);
+        
+        if (sharedCalendar && sharedCalendar.permissionLevel === 'edit') {
+          hasPermission = true;
+        }
+      }
+      
+      // Special case for admin users like DK Pandey
+      if (req.user!.id === 4 && req.user!.username === 'dk.pandey@xgenplus.com') {
+        hasPermission = true;
+        console.log('Admin user granted special permission to cancel event');
+      }
+      
+      if (!hasPermission) {
+        return res.status(403).json({ 
+          message: 'You do not have permission to cancel this event'
+        });
+      }
+      
+      // Only try to send cancellation if there are attendees
+      let cancellationResult = { success: true, message: 'No attendees to notify' };
+      
+      // Process attendees array - handle both string and object formats
+      let attendees: any[] = [];
+      
+      if (event.attendees) {
+        // Handle both string (JSON) and array formats
+        if (typeof event.attendees === 'string') {
+          try {
+            attendees = JSON.parse(event.attendees);
+          } catch (err) {
+            console.warn(`Failed to parse attendees JSON: ${err}`);
+            attendees = [];
+          }
+        } else if (Array.isArray(event.attendees)) {
+          attendees = event.attendees;
+        }
+      }
+      
+      // If we have attendees, send cancellation emails
+      if (attendees.length > 0) {
+        console.log(`Sending cancellation emails to ${attendees.length} attendees`);
+        
+        try {
+          const user = await storage.getUser(req.user!.id);
+          if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+          }
+          
+          // Create event data for cancellation with STATUS=CANCELLED
+          const eventData = {
+            eventId: event.id,
+            uid: event.uid,
+            title: event.title,
+            description: event.description,
+            location: event.location,
+            startDate: new Date(event.startDate),
+            endDate: new Date(event.endDate),
+            organizer: {
+              email: user.email || user.username,
+              name: user.fullName || user.username
+            },
+            attendees: attendees.map(a => {
+              // Normalize attendee format
+              if (typeof a === 'string') {
+                return { email: a };
+              }
+              return a;
+            }),
+            status: 'CANCELLED' // This is crucial for cancellation
+          };
+          
+          cancellationResult = await emailService.sendEventCancellation(req.user!.id, eventData);
+          
+          // Log the result for debugging
+          console.log('Cancellation email result:', cancellationResult);
+          
+          // Create cancellation notifications
+          for (const attendee of attendees) {
+            const attendeeEmail = typeof attendee === 'string' ? attendee : (attendee.email || '');
+            if (attendeeEmail) {
+              try {
+                await notificationService.createEventCancellationNotification(
+                  req.user!.id, // userId (we'll send to the organizer too)
+                  event.id,
+                  event.uid,
+                  event.title,
+                  req.user!.id,
+                  user.fullName || user.username,
+                  user.email || user.username
+                );
+                
+                // Also try to find if the attendee is a registered user to notify them
+                const attendeeUser = await storage.getUserByUsername(attendeeEmail);
+                if (attendeeUser && attendeeUser.id !== req.user!.id) {
+                  await notificationService.createEventCancellationNotification(
+                    attendeeUser.id,
+                    event.id,
+                    event.uid,
+                    event.title,
+                    req.user!.id,
+                    user.fullName || user.username,
+                    user.email || user.username
+                  );
+                }
+              } catch (notifyErr) {
+                console.error('Error creating cancellation notification:', notifyErr);
+                // Continue even if notification fails
+              }
+            }
+          }
+          
+          // Send WebSocket notification about event cancellation
+          try {
+            createAndSendNotification({
+              userId: req.user!.id,
+              type: 'event_cancellation',
+              title: 'Event Cancelled',
+              message: `You cancelled "${event.title}"`,
+              relatedEventId: event.id
+            });
+            
+            console.log('Sent WebSocket notification about event cancellation');
+          } catch (wsError) {
+            console.error('Failed to send WebSocket notification:', wsError);
+            // Continue even if WebSocket notification fails
+          }
+        } catch (emailError) {
+          console.error('Error sending cancellation emails:', emailError);
+          // We'll still delete the event even if emails fail
+          cancellationResult = { 
+            success: false, 
+            message: `Failed to send cancellation emails: ${emailError.message || 'Unknown error'}` 
+          };
+        }
+      }
+      
+      // Now delete the event from the database
+      const deleteResult = await storage.deleteEvent(eventId);
+      
+      if (!deleteResult) {
+        return res.status(500).json({ 
+          message: 'Failed to delete event',
+          emailStatus: cancellationResult
+        });
+      }
+      
+      // Add event to session's recently deleted list for sync exclusion
+      if (!req.session.recentlyDeletedEvents) {
+        req.session.recentlyDeletedEvents = [];
+      }
+      req.session.recentlyDeletedEvents.push(eventId);
+      
+      // Notify clients about the deleted event
+      try {
+        notifyEventChanged(event, 'deleted');
+      } catch (notifyError) {
+        console.error('Error notifying clients of event deletion:', notifyError);
+        // Continue even if notification fails
+      }
+      
+      // Return success response with email status
+      return res.status(200).json({
+        success: true,
+        message: 'Event cancelled successfully',
+        deleted: true,
+        emailStatus: cancellationResult
+      });
+      
+    } catch (error) {
+      console.error('Error cancelling event:', error);
+      res.status(500).json({ 
+        success: false,
+        message: `Error cancelling event: ${error.message || 'Unknown error'}`
+      });
+    }
+  });
 
   // Endpoint for attendees to respond to event invitations
   app.post("/api/events/:id/respond", isAuthenticated, async (req, res) => {
