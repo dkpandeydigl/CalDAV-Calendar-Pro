@@ -77,6 +77,9 @@ export class SyncService {
     // Get all user IDs that have sync jobs
     const jobUserIds = Array.from(this.jobs.keys());
     
+    // Log the current state for debugging
+    console.log(`Session-based sync: Found ${activeUserIds.length} active users and ${jobUserIds.length} sync jobs`);
+    
     // Find users with jobs but no active sessions
     const inactiveUserIds = jobUserIds.filter(userId => !activeUserIdSet.has(userId));
     
@@ -89,6 +92,8 @@ export class SyncService {
         this.stopSync(userId);
         this.jobs.delete(userId);
       }
+    } else {
+      console.log(`Session-based sync: No inactive users found, all ${jobUserIds.length} sync jobs are for active users`);
     }
   }
 
