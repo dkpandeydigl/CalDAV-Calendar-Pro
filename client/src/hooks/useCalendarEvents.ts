@@ -17,16 +17,40 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   const { calendars } = useCalendars();
   const { sharedCalendars } = useSharedCalendars();
   
-  // Create a ref to store the current events data to prevent disappearing during sync
+  // Multi-level caching system to better handle event retention during sync operations
+  // Main cache for all events
   const eventsCache = useRef<Event[]>([]);
+  // Temporary cache for new events that might not have been synced yet
+  const newEventsCache = useRef<Event[]>([]);
+  // Last known event count to detect significant changes
+  const lastEventCount = useRef<number>(0);
   
-  // Enhanced cache preservation system
+  // Enhanced cache preservation system with specific handling for new events
   const preserveEventsCache = useCallback(() => {
     try {
       const currentEvents = localQueryClient.getQueryData<Event[]>(['/api/events']);
       if (currentEvents && currentEvents.length > 0) {
         // Make a deep copy to avoid reference issues
-        eventsCache.current = JSON.parse(JSON.stringify(currentEvents));
+        const eventsCopy = JSON.parse(JSON.stringify(currentEvents));
+        
+        // Preserve current event count for comparison
+        lastEventCount.current = currentEvents.length;
+        
+        // Update the main cache
+        eventsCache.current = eventsCopy;
+        
+        // Identify new events (those that have temp IDs or were recently added)
+        const newEvents = currentEvents.filter(e => 
+          typeof e.id === 'string' || // Temp ID is a string 
+          (e.createdAt && new Date(e.createdAt).getTime() > Date.now() - 30000) // Created in last 30 seconds
+        );
+        
+        if (newEvents.length > 0) {
+          // Add to new events cache
+          newEventsCache.current = [...newEventsCache.current, ...JSON.parse(JSON.stringify(newEvents))];
+          console.log(`Preserved ${newEvents.length} new events in dedicated cache`);
+        }
+        
         console.log(`Preserved ${currentEvents.length} events in local cache`);
       }
     } catch (error) {
@@ -35,15 +59,53 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     }
   }, [localQueryClient]);
   
-  // Restore events if they disappear
+  // Advanced restoration function that handles multiple cache scenarios
   const restoreEventsIfNeeded = useCallback(() => {
     try {
       const currentEvents = localQueryClient.getQueryData<Event[]>(['/api/events']);
-      if ((!currentEvents || currentEvents.length === 0) && eventsCache.current && eventsCache.current.length > 0) {
-        console.log(`Restoring ${eventsCache.current.length} events from local cache`);
-        // Make a deep copy to avoid reference issues
-        const cacheSnapshot = JSON.parse(JSON.stringify(eventsCache.current));
-        localQueryClient.setQueryData(['/api/events'], cacheSnapshot);
+      
+      // Scenario 1: Events disappeared completely
+      if (!currentEvents || currentEvents.length === 0) {
+        if (eventsCache.current && eventsCache.current.length > 0) {
+          console.log(`Restoring ${eventsCache.current.length} events from main cache (complete disappearance)`);
+          // Make a deep copy to avoid reference issues
+          const cacheSnapshot = JSON.parse(JSON.stringify(eventsCache.current));
+          localQueryClient.setQueryData(['/api/events'], cacheSnapshot);
+          return; // Restoration complete
+        }
+      } 
+      // Scenario 2: Significant event loss (more than just a new event being processed)
+      else if (currentEvents.length < lastEventCount.current - 1) {
+        console.log(`Detected significant event loss: ${currentEvents.length} vs ${lastEventCount.current} previously`);
+        if (eventsCache.current && eventsCache.current.length > lastEventCount.current - 1) {
+          console.log(`Restoring ${eventsCache.current.length} events from main cache (significant loss)`);
+          const cacheSnapshot = JSON.parse(JSON.stringify(eventsCache.current));
+          localQueryClient.setQueryData(['/api/events'], cacheSnapshot);
+          return; // Restoration complete
+        }
+      }
+      // Scenario 3: New events disappeared (common during sync)
+      else if (newEventsCache.current.length > 0) {
+        // Check if any of our new events are missing from current events
+        const missingNewEvents = newEventsCache.current.filter(cachedEvent => {
+          // Check by ID first (if it's a real ID)
+          if (typeof cachedEvent.id === 'number') {
+            return !currentEvents.some(e => e.id === cachedEvent.id);
+          }
+          // For temp IDs, check by uid
+          else if (cachedEvent.uid) {
+            return !currentEvents.some(e => e.uid === cachedEvent.uid);
+          }
+          // If no way to match, consider it missing
+          return true;
+        });
+        
+        if (missingNewEvents.length > 0) {
+          console.log(`Restoring ${missingNewEvents.length} missing new events from dedicated cache`);
+          // Add missing events to current events
+          const combinedEvents = [...currentEvents, ...missingNewEvents];
+          localQueryClient.setQueryData(['/api/events'], combinedEvents);
+        }
       }
     } catch (error) {
       console.error("Error restoring events from cache:", error);
