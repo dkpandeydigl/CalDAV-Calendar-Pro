@@ -1275,7 +1275,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         calendarId: parseInt(calendarId),
         busyStatus: isBusy ? 'busy' : 'free',
         attendees: attendeesJson,
-        resources: resources.length > 0 ? JSON.stringify(resources) : null,
+        resources: resources.length > 0 ? resources : null,
         recurrenceRule,
         syncStatus: 'local',
       };
