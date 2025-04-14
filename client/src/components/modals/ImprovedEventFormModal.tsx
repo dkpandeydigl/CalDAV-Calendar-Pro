@@ -150,30 +150,40 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       // Create a Map to track resources by email for deduplication
       const resourceMap = new Map();
       
-      // STEP 1: Try to get resources from the event.resources field first
+      // STEP 1: Try to get resources from the event.resources field first (highest priority)
       if (eventData.resources) {
         let parsedResources = [];
         
         if (typeof eventData.resources === 'string') {
           try {
             parsedResources = JSON.parse(eventData.resources);
-          } catch (e) { /* Silent fail */ }
+            console.log('Parsed resources from string JSON:', parsedResources);
+          } catch (e) { 
+            console.warn('Failed to parse resources JSON string:', e);
+          }
         } else if (Array.isArray(eventData.resources)) {
           parsedResources = eventData.resources;
+          console.log('Using existing resources array:', parsedResources);
         }
         
-        // Add resources to our map for deduplication
-        if (Array.isArray(parsedResources)) {
+        // Add resources to our map for deduplication, preserving ALL properties
+        if (Array.isArray(parsedResources) && parsedResources.length > 0) {
           parsedResources.forEach((resource, index) => {
             const email = resource.adminEmail || resource.email; 
             if (email) {
-              resourceMap.set(email.toLowerCase(), {
+              // Store the complete resource object with all properties intact
+              // Just ensure required fields are present
+              const resourceWithId = {
+                ...resource, // Keep all original properties
                 id: resource.id || `resource-${index}-${Date.now()}`,
                 name: resource.name || resource.adminName || 'Resource',
                 adminEmail: email,
                 subType: resource.subType || resource.type || '',
                 capacity: resource.capacity || 1
-              });
+              };
+              
+              resourceMap.set(email.toLowerCase(), resourceWithId);
+              console.log(`Added resource from event.resources: ${email}`, resourceWithId);
             }
           });
         }
@@ -188,11 +198,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         const matches = Array.from(rawDataStr.matchAll(resourceRegex));
         
         if (matches && matches.length > 0) {
+          console.log(`Found ${matches.length} resource matches in raw data`);
+          
           matches.forEach((match: RegExpMatchArray, index) => {
             const fullLine = match[0] || ''; // The complete ATTENDEE line 
             const email = match[1] || ''; // The captured email group
             
-            // Skip if we already have this resource by email
+            // Skip if we already have this resource by email - PRESERVE EXISTING DATA
             if (email && !resourceMap.has(email.toLowerCase())) {
               // Extract resource name from CN
               const cnMatch = fullLine.match(/CN=([^;:]+)/);
@@ -202,20 +214,25 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
               const resourceType = typeMatch ? typeMatch[1].trim() : '';
               
-              resourceMap.set(email.toLowerCase(), {
+              const newResource = {
                 id: `resource-${index}-${Date.now()}`,
                 name: name,
                 adminEmail: email,
-                subType: resourceType,
+                subType: resourceType || 'Projector', // Default to Projector if no type specified
                 capacity: 1
-              });
+              };
+              
+              resourceMap.set(email.toLowerCase(), newResource);
+              console.log(`Added resource from rawData: ${email}`, newResource);
             }
           });
         }
       }
       
       // Convert map back to array
-      return Array.from(resourceMap.values());
+      const result = Array.from(resourceMap.values());
+      console.log(`Extracted ${result.length} total resources:`, result);
+      return result;
     } catch (error) {
       console.error('Error extracting resources:', error);
       return [];

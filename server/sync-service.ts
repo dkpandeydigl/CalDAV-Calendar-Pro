@@ -599,10 +599,71 @@ export class SyncService {
                   // Update the existing event
                   console.log(`Updating existing event: ${caldavEvent.uid}`);
                   
-                  // Preserve existing resources if not provided in new data
-                  if (!eventData.resources && existingEvent.resources) {
-                    console.log(`Preserving existing resources for event ${existingEvent.id}`);
-                    eventData.resources = existingEvent.resources;
+                  // Enhanced resource preservation logic
+                  // Preserve existing resources in these cases:
+                  // 1. If new data has no resources but existing event does
+                  // 2. If new data has resources but they might be incomplete 
+                  //    (e.g., missing fields that were in the existing data)
+                  if (existingEvent.resources) {
+                    let shouldPreserveResources = false;
+                    
+                    // Case 1: No resources in new data
+                    if (!eventData.resources) {
+                      shouldPreserveResources = true;
+                      console.log(`New data has no resources - preserving existing resources for event ${existingEvent.id}`);
+                    } 
+                    // Case 2: Possibly incomplete resources in new data
+                    else {
+                      try {
+                        // Parse both sets of resources for comparison
+                        const existingResources = typeof existingEvent.resources === 'string' 
+                          ? JSON.parse(existingEvent.resources)
+                          : existingEvent.resources;
+                        
+                        const newResources = typeof eventData.resources === 'string'
+                          ? JSON.parse(eventData.resources)
+                          : eventData.resources;
+                          
+                        // Check if existing resources have more/better data
+                        if (Array.isArray(existingResources) && existingResources.length > 0 && 
+                            Array.isArray(newResources)) {
+                          
+                          // If we have multiple existing resources but fewer new ones, keep the old data
+                          if (existingResources.length > newResources.length) {
+                            shouldPreserveResources = true;
+                            console.log(`New data has fewer resources (${newResources.length}) than existing (${existingResources.length}) - preserving existing`);
+                          }
+                          
+                          // Check if new resources are missing key properties that existing ones have
+                          const existingHasDetailedProps = existingResources.some(r => 
+                            (r.capacity && r.capacity > 0) || 
+                            (r.subType && r.subType.length > 0) ||
+                            (r.name && r.name.length > 0)
+                          );
+                          
+                          const newHasDetailedProps = newResources.some(r => 
+                            (r.capacity && r.capacity > 0) || 
+                            (r.subType && r.subType.length > 0) ||
+                            (r.name && r.name.length > 0)
+                          );
+                          
+                          if (existingHasDetailedProps && !newHasDetailedProps) {
+                            shouldPreserveResources = true;
+                            console.log(`Existing resources have detailed properties missing in new data - preserving existing`);
+                          }
+                        }
+                      } catch (e) {
+                        // If we encounter an error parsing, preserve existing resources to be safe
+                        shouldPreserveResources = true;
+                        console.warn(`Error comparing resources, preserving existing as fallback:`, e);
+                      }
+                    }
+                    
+                    // Apply the preservation if needed
+                    if (shouldPreserveResources) {
+                      console.log(`Preserving existing resources for event ${existingEvent.id}`);
+                      eventData.resources = existingEvent.resources;
+                    }
                   }
                   
                   await storage.updateEvent(existingEvent.id, eventData as any);
@@ -780,10 +841,71 @@ export class SyncService {
                         eventData.recurrenceRule = existingEvent.recurrenceRule;
                       }
                       
-                      // Preserve existing resources if not provided in new data
-                      if (!eventData.resources && existingEvent.resources) {
-                        console.log(`Preserving existing resources for event ${existingEvent.id}`);
-                        eventData.resources = existingEvent.resources;
+                      // Enhanced resource preservation logic
+                      // Preserve existing resources in these cases:
+                      // 1. If new data has no resources but existing event does
+                      // 2. If new data has resources but they might be incomplete 
+                      //    (e.g., missing fields that were in the existing data)
+                      if (existingEvent.resources) {
+                        let shouldPreserveResources = false;
+                        
+                        // Case 1: No resources in new data
+                        if (!eventData.resources) {
+                          shouldPreserveResources = true;
+                          console.log(`New data has no resources - preserving existing resources for event ${existingEvent.id}`);
+                        } 
+                        // Case 2: Possibly incomplete resources in new data
+                        else {
+                          try {
+                            // Parse both sets of resources for comparison
+                            const existingResources = typeof existingEvent.resources === 'string' 
+                              ? JSON.parse(existingEvent.resources)
+                              : existingEvent.resources;
+                            
+                            const newResources = typeof eventData.resources === 'string'
+                              ? JSON.parse(eventData.resources)
+                              : eventData.resources;
+                              
+                            // Check if existing resources have more/better data
+                            if (Array.isArray(existingResources) && existingResources.length > 0 && 
+                                Array.isArray(newResources)) {
+                              
+                              // If we have multiple existing resources but fewer new ones, keep the old data
+                              if (existingResources.length > newResources.length) {
+                                shouldPreserveResources = true;
+                                console.log(`New data has fewer resources (${newResources.length}) than existing (${existingResources.length}) - preserving existing`);
+                              }
+                              
+                              // Check if new resources are missing key properties that existing ones have
+                              const existingHasDetailedProps = existingResources.some(r => 
+                                (r.capacity && r.capacity > 0) || 
+                                (r.subType && r.subType.length > 0) ||
+                                (r.name && r.name.length > 0)
+                              );
+                              
+                              const newHasDetailedProps = newResources.some(r => 
+                                (r.capacity && r.capacity > 0) || 
+                                (r.subType && r.subType.length > 0) ||
+                                (r.name && r.name.length > 0)
+                              );
+                              
+                              if (existingHasDetailedProps && !newHasDetailedProps) {
+                                shouldPreserveResources = true;
+                                console.log(`Existing resources have detailed properties missing in new data - preserving existing`);
+                              }
+                            }
+                          } catch (e) {
+                            // If we encounter an error parsing, preserve existing resources to be safe
+                            shouldPreserveResources = true;
+                            console.warn(`Error comparing resources, preserving existing as fallback:`, e);
+                          }
+                        }
+                        
+                        // Apply the preservation if needed
+                        if (shouldPreserveResources) {
+                          console.log(`Preserving existing resources for event ${existingEvent.id}`);
+                          eventData.resources = existingEvent.resources;
+                        }
                       }
                       
                       await storage.updateEvent(existingEvent.id, eventData as any);
