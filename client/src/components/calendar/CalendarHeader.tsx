@@ -10,9 +10,10 @@ import {
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { formatMonthYear } from '@/lib/date-utils';
 import { useAuth } from '@/hooks/use-auth';
-import { ChevronLeft, ChevronRight, Menu, LogOut, User, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, LogOut, User, Settings, Wifi } from 'lucide-react';
 import { ProfileSettingsModal } from '@/components/modals/ProfileSettingsModal';
 import { queryClient } from '@/lib/queryClient';
+import { useLocation } from 'wouter';
 
 interface CalendarHeaderProps {
   onToggleSidebar: () => void;
@@ -37,12 +38,18 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
   
   const { user, logoutMutation } = useAuth();
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
+  const [, setLocation] = useLocation();
   
   // Retrieve the latest user data when opening profile settings
   const handleOpenProfileSettings = () => {
     // Force refresh user data before opening the modal
     queryClient.invalidateQueries({ queryKey: ['/api/user'] });
     setIsProfileSettingsOpen(true);
+  };
+  
+  // Navigate to WebSocket test page
+  const navigateToWebSocketTest = () => {
+    setLocation('/websocket-test');
   };
   
   const handleLogout = () => {
@@ -98,6 +105,13 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
                   >
                     <Settings className="h-4 w-4 mr-2" />
                     Profile Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={navigateToWebSocketTest} 
+                    className="cursor-pointer"
+                  >
+                    <Wifi className="h-4 w-4 mr-2" />
+                    WebSocket Test
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem 
