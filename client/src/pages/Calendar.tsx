@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import CalendarHeader from '@/components/calendar/CalendarHeader';
 import CalendarSidebar from '@/components/calendar/CalendarSidebar';
 import EnhancedCalendarSidebar from '@/components/calendar/EnhancedCalendarSidebar';
@@ -284,7 +284,26 @@ function CalendarContent() {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  const { events, isLoading, refetch } = useCalendarEvents(viewStartDate, viewEndDate);
+  const [cacheVersion, setCacheVersion] = useState(0);
+  const { events: rawEvents, isLoading, refetch, deleteEvent } = useCalendarEvents(viewStartDate, viewEndDate);
+  
+  // Use useMemo to ensure filteredEvents only updates when rawEvents or cacheVersion changes
+  const events = useMemo(() => {
+    console.log(`Memoizing filtered events (cache version: ${cacheVersion})`);
+    
+    // Log current cache state for debugging
+    const queryCache = queryClient.getQueryData(['/api/events']);
+    console.log('Query cache state:', 
+      queryCache ? `${(queryCache as any[]).length} events` : 'empty', 
+      'Raw events:', rawEvents ? `${rawEvents.length} events` : 'empty'
+    );
+    
+    if (!rawEvents || rawEvents.length === 0) return [];
+    
+    // We're using a simple passthrough for now, but could add additional filtering if needed
+    // The key is that this creates a new array reference whenever rawEvents changes
+    return [...rawEvents];
+  }, [rawEvents, cacheVersion, queryClient]);
   
   // Server connection status is managed by the useServerConnection hook
   

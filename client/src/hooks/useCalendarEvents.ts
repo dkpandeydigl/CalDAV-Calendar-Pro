@@ -12,6 +12,20 @@ import { useDeletedEventsTracker } from './useDeletedEventsTracker';
 type QueryKey = unknown;
 type EventFilter = (e: Event) => boolean;
 
+// Add a cache version counter type
+interface CacheVersionData {
+  version: number;
+  lastUpdated: number;
+  source: string;
+}
+
+// Global reference to track cache versions across the application
+const globalCacheVersion: CacheVersionData = {
+  version: 0,
+  lastUpdated: Date.now(),
+  source: 'init'
+};
+
 export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   const { toast } = useToast();
   const localQueryClient = useQueryClient();
