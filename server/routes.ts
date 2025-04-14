@@ -2122,41 +2122,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Always update the session info to track deleted events
-      if (!req.session.recentlyDeletedEvents) {
-        req.session.recentlyDeletedEvents = [];
-      }
+      // Skip session tracking of deleted events - we're deleting them properly now
       
-      // Store the event ID in the legacy array format for backward compatibility
-      req.session.recentlyDeletedEvents.push(eventId);
-      
-      // Initialize deletedEventDetails if needed
-      if (!req.session.deletedEventDetails) {
-        req.session.deletedEventDetails = [];
-      }
-      
-      // Store detailed tracking information 
-      req.session.deletedEventDetails.push({
-        id: eventId,
-        uid: event.uid,
-        url: event.url,
-        timestamp: new Date().toISOString()
-      });
-      
-      // Save the session to ensure the changes persist
-      await new Promise<void>((resolve, reject) => {
-        req.session.save(err => {
-          if (err) {
-            console.error('Error saving session:', err);
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      });
-      
-      // Delete the event locally
+      // Delete the event locally first
+      console.log(`Deleting event ${eventId} from local database`);
       const success = await storage.deleteEvent(eventId);
+      
+      if (!success) {
+        console.error(`Failed to delete event ${eventId} from local database`);
+        response.success = false;
+        response.message = "Failed to delete event from local database";
+        return res.status(500).json(response);
+      }
+      
+      // If server deletion failed but local deletion succeeded,
+      // immediately force a sync with the special flag to ensure the event stays deleted
+      if (response.sync.attempted && !response.sync.succeeded) {
+        console.log(`Server deletion attempted but failed. Forcing sync with preserveLocalDeletes=true...`);
+        
+        // Force an immediate sync with the preserveLocalDeletes flag
+        syncService.syncNow(req.user!.id, {
+          forceRefresh: true,
+          preserveLocalDeletes: true, // This special flag will ensure deleted events stay deleted
+          calendarId: event.calendarId // Only sync the affected calendar
+        }).catch(syncErr => {
+          console.error("Error during forced sync after deletion:", syncErr);
+        });
+      }
       
       // Prepare the final response
       response.success = success;

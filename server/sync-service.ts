@@ -363,7 +363,8 @@ export class SyncService {
     forceRefresh?: boolean, 
     calendarId?: number | null, 
     isGlobalSync?: boolean,
-    preserveLocalEvents?: boolean 
+    preserveLocalEvents?: boolean,
+    preserveLocalDeletes?: boolean 
   } = {}): Promise<boolean> {
     let job = this.jobs.get(userId);
     
@@ -393,8 +394,8 @@ export class SyncService {
       }
     }
     
-    const { forceRefresh = false, calendarId = null, isGlobalSync = false, preserveLocalEvents = false } = options;
-    console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId, isGlobalSync, preserveLocalEvents });
+    const { forceRefresh = false, calendarId = null, isGlobalSync = false, preserveLocalEvents = false, preserveLocalDeletes = false } = options;
+    console.log(`Sync requested for user ID ${userId} with options:`, { forceRefresh, calendarId, isGlobalSync, preserveLocalEvents, preserveLocalDeletes });
     
     // If a sync is already in progress, don't start another one
     // Unless forceRefresh is true, in which case we'll proceed anyway
@@ -508,15 +509,15 @@ export class SyncService {
                 }
               }
               
-              // Check if this event is in the list of recently deleted events for this session
-              // This will prevent deleted events from reappearing after a sync
-              const isRecentlyDeleted = req.session && req.session.recentlyDeletedUIDs && 
-                Array.isArray(req.session.recentlyDeletedUIDs) && 
-                req.session.recentlyDeletedUIDs.includes(caldavEvent.uid);
-              
-              if (isRecentlyDeleted) {
-                console.log(`Skipping event with UID ${caldavEvent.uid} because it was recently deleted`);
-                continue; // Skip to next event
+              // Check if this event was recently deleted
+              // If preserveLocalDeletes flag is set, we need to check if this event exists locally
+              // If it doesn't exist locally, it might have been deleted and we should skip it
+              if (options.preserveLocalDeletes && caldavEvent.uid) {
+                const existingEvent = await storage.getEventByUID(caldavEvent.uid);
+                if (!existingEvent) {
+                  console.log(`Skipping event with UID ${caldavEvent.uid} because it doesn't exist locally and preserveLocalDeletes=true`);
+                  continue; // Skip to next event
+                }
               }
               
               // Check if we already have this event in our database
