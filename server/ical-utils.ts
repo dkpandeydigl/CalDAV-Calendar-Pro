@@ -276,6 +276,20 @@ export function generateICalEvent(event: any, options: {
     }
   }
   
+  // If the status is CANCELLED, check for recurrence information in rawData
+  if (options.status === 'CANCELLED' && !event.recurrenceRule && event.rawData) {
+    try {
+      // Try to extract recurrence rule from raw data
+      const rruleMatch = event.rawData.match(/RRULE:([^\r\n]+)/);
+      if (rruleMatch && rruleMatch[1]) {
+        console.log(`Extracted RRULE from raw ICS data for cancellation: ${rruleMatch[1]}`);
+        lines.push(formatContentLine('RRULE', rruleMatch[1]));
+      }
+    } catch (error) {
+      console.warn('Error extracting recurrence rule from raw data:', error);
+    }
+  }
+  
   // Process attendees and resources
   const attendeesAndResources = generateAttendeesAndResources(event);
   lines.push(...attendeesAndResources);
@@ -444,8 +458,15 @@ export function generateCancellationICalEvent(event: any, options: {
   // Increment the sequence number
   const updatedSequence = options.sequence + 1;
   
-  // Generate a cancellation iCalendar
-  return generateICalEvent(event, {
+  // Create a shallow copy of the event - we don't want to modify the original
+  const eventCopy = { ...event };
+  
+  // If the original event had a TRANSP property that wasn't TRANSPARENT,
+  // ensure we don't carry that over as it conflicts with CANCELLED status
+  eventCopy.transparency = 'TRANSPARENT';
+  
+  // Generate a cancellation iCalendar - make sure we use the original UID
+  return generateICalEvent(eventCopy, {
     organizer: options.organizer,
     sequence: updatedSequence,
     timestamp: options.timestamp,

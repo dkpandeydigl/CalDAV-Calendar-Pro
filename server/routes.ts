@@ -2016,6 +2016,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               timestamp: new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '')
             });
             
+            // Make sure we're retaining resources in the cancellation
+            console.log(`Cancelling event with UID: ${event.uid}, resources: ${event.resources || 'none'}`);
+            
             // Update the event on the server with the cancellation ICS
             // This is more RFC-compliant than deleting it
             try {
@@ -2288,11 +2291,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if ((deleteFrom === 'server' || deleteFrom === 'both') && 
               event.url && event.etag && davClient) {
             try {
-              // Delete the event on the CalDAV server
-              await davClient.deleteCalendarObject({
+              // Use the cancellation approach instead of direct deletion
+              // First, extract sequence if available
+              let currentSequence = 0;
+              if (event.rawData) {
+                try {
+                  const { extractSequenceFromICal } = await import('./ical-utils');
+                  currentSequence = extractSequenceFromICal(event.rawData);
+                } catch (seqError) {
+                  console.warn(`Failed to extract sequence from event ${event.id}:`, seqError);
+                }
+              }
+              
+              // Generate cancellation ICS
+              const { generateCancellationICalEvent } = await import('./ical-utils');
+              const cancelICS = generateCancellationICalEvent(event, {
+                organizer: connection.username,
+                sequence: currentSequence,
+                timestamp: new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '')
+              });
+              
+              // Send cancellation update
+              await davClient.updateCalendarObject({
                 calendarObject: {
                   url: event.url,
-                  etag: event.etag
+                  etag: event.etag,
+                  data: cancelICS
                 }
               });
               
