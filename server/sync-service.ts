@@ -516,6 +516,42 @@ export class SyncService {
                 const existingEvent = await storage.getEventByUID(caldavEvent.uid);
                 if (!existingEvent) {
                   console.log(`Skipping event with UID ${caldavEvent.uid} because it doesn't exist locally and preserveLocalDeletes=true`);
+                  
+                  // If this event is on the server but not locally, we should delete it from the server
+                  // to ensure local deletions are propagated to the server during sync operations
+                  if (caldavEvent.url && connection) {
+                    try {
+                      console.log(`Attempting to delete event ${caldavEvent.uid} from server during sync`);
+                      
+                      // Create a DAV client with headers
+                      const davClient = new DAVClient({
+                        serverUrl: connection.url,
+                        credentials: {
+                          username: connection.username,
+                          password: connection.password
+                        },
+                        authMethod: 'Basic',
+                        defaultAccountType: 'caldav'
+                      });
+                      
+                      // Login to the server
+                      await davClient.login();
+                      
+                      // Delete the event using the URL from the caldavEvent
+                      await davClient.deleteCalendarObject({
+                        calendarObject: {
+                          url: caldavEvent.url,
+                          etag: caldavEvent.etag || ''
+                        }
+                      });
+                      
+                      console.log(`Successfully deleted event ${caldavEvent.uid} from server during sync`);
+                    } catch (deleteError) {
+                      console.error(`Failed to delete event ${caldavEvent.uid} from server during sync:`, deleteError);
+                      // Continue anyway - we'll skip this event during this sync
+                    }
+                  }
+                  
                   continue; // Skip to next event
                 }
               }
