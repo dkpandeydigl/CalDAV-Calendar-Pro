@@ -106,6 +106,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
       if (r.id === currentResource.id) {
         return {
           ...r,
+          name: editNameRef.current?.value || undefined,
           subType: editSubTypeRef.current!.value,
           capacity: editCapacityRef.current?.value ? parseInt(editCapacityRef.current.value, 10) : undefined,
           adminEmail: editAdminEmailRef.current!.value,
@@ -127,6 +128,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
         if (r.id === currentResource.id) {
           return {
             ...r,
+            name: formData.get('name') as string || undefined,
             subType: formData.get('subType') as string,
             capacity: formData.get('capacity') ? parseInt(formData.get('capacity') as string, 10) : undefined,
             adminEmail: formData.get('adminEmail') as string,
@@ -142,6 +144,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
       // Add new resource (fallback method)
       const resource: Resource = {
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+        name: formData.get('name') as string || undefined,
         subType: formData.get('subType') as string,
         capacity: formData.get('capacity') ? parseInt(formData.get('capacity') as string, 10) : undefined,
         adminEmail: formData.get('adminEmail') as string,

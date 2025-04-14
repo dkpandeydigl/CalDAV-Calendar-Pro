@@ -185,7 +185,8 @@ export function parseResourcesFromEvent(event: any): Resource[] {
               return resourceAttendees.map((attendee, index) => {
                 const resource: Resource = {
                   id: attendee.id || `resource-${index}-${Date.now()}`,
-                  subType: (attendee.params.CN || attendee.params['X-RESOURCE-TYPE'] || 'Resource'),
+                  name: attendee.params.CN || undefined,
+                  subType: (attendee.params['X-RESOURCE-TYPE'] || attendee.params.CN || 'Resource'),
                   adminEmail: attendee.val?.replace('mailto:', '') || ''
                 };
                 

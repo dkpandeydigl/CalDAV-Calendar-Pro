@@ -237,73 +237,171 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Setup WebSocket connection for real-time notifications
   useEffect(() => {
     if (!isAuthenticated || !user) return;
-
-    // Close any existing connection
-    if (webSocket) {
-      webSocket.close();
-    }
-
-    // Determine the WebSocket protocol based on current HTTP protocol
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/ws`;
     
-    console.log('Connecting to WebSocket at:', wsUrl);
+    let ws: WebSocket | null = null;
+    let reconnectTimer: NodeJS.Timeout | null = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    const baseReconnectDelay = 2000; // Start with 2 seconds
     
-    // Create new WebSocket connection
-    const ws = new WebSocket(wsUrl);
-    
-    ws.onopen = () => {
-      console.log('WebSocket connected for notifications');
-      // Request initial notifications list
-      ws.send(JSON.stringify({ type: 'get_notifications' }));
-    };
-    
-    ws.onmessage = (event) => {
+    // Function to establish WebSocket connection with fallback path option
+    const connectWebSocket = (useFallbackPath = false) => {
       try {
-        const data = JSON.parse(event.data);
-        console.log('WebSocket message received:', data);
+        // Close any existing connection
+        if (webSocket) {
+          webSocket.close();
+        }
         
-        if (data.type === 'new_notification') {
-          // Add new notification to the list
-          setNotifications(prev => [data.notification, ...prev]);
-          setUnreadCount(data.unreadCount);
+        // Determine the WebSocket protocol based on current HTTP protocol
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        
+        // Determine WebSocket URL based on the path we want to use
+        let wsUrl = '';
+        if (useFallbackPath) {
+          // Fallback path - just '/ws' instead of '/api/ws'
+          wsUrl = `${protocol}//${window.location.host}/ws`;
+        } else {
+          // Primary path - '/api/ws'
+          wsUrl = `${protocol}//${window.location.host}/api/ws`;
+        }
+        
+        const connectionAttempt = reconnectAttempts + 1;
+        console.log(`🔄 NotificationContext: Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
+        
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+          console.log('✅ WebSocket connected for notifications');
+          reconnectAttempts = 0; // Reset reconnect attempts counter
           
-          // Show toast notification
-          toast({
-            title: data.notification.title,
-            description: data.notification.message,
+          // Request initial notifications list if the socket is ready
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ 
+              type: 'get_notifications',
+              userId: user.id
+            }));
+            console.log('Sent get_notifications request');
+            
+            // Also send authentication
+            ws.send(JSON.stringify({ 
+              type: 'auth', 
+              userId: user.id, 
+              timestamp: new Date().toISOString() 
+            }));
+          }
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('WebSocket message received:', data);
+            
+            if (data.type === 'new_notification') {
+              // Add new notification to the list
+              setNotifications(prev => [data.notification, ...prev]);
+              setUnreadCount(data.unreadCount);
+              
+              // Show toast notification
+              toast({
+                title: data.notification.title,
+                description: data.notification.message,
+              });
+            } 
+            else if (data.type === 'notifications') {
+              // Update notifications list
+              setNotifications(data.notifications);
+            }
+            else if (data.type === 'notification_count') {
+              // Update unread count
+              setUnreadCount(data.count);
+            }
+          } catch (err) {
+            console.error('Error processing WebSocket message:', err);
+          }
+        };
+        
+        ws.onerror = (error) => {
+          console.error('❌ WebSocket error:', error);
+          const socketUrl = ws?.url || 'connection not initialized';
+          const usingFallbackPath = socketUrl.includes('/ws') && !socketUrl.includes('/api/ws');
+          
+          // Provide more details about the error
+          console.log('WebSocket error details:', {
+            readyState: ws ? ws.readyState : 'no socket',
+            url: socketUrl,
+            userId: user.id,
+            usingFallbackPath,
+            timestamp: new Date().toISOString()
           });
-        } 
-        else if (data.type === 'notifications') {
-          // Update notifications list
-          setNotifications(data.notifications);
-        }
-        else if (data.type === 'notification_count') {
-          // Update unread count
-          setUnreadCount(data.count);
-        }
-      } catch (err) {
-        console.error('Error processing WebSocket message:', err);
+          
+          // If this is the initial connection attempt with the primary path
+          // and we're still below the max connection attempts, try the fallback path immediately
+          if (connectionAttempt === 1 && !usingFallbackPath) {
+            console.log('Primary WebSocket path failed, attempting fallback path immediately');
+            // Close this socket if it's still open
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.close(1000, 'Switching to fallback path');
+            }
+            // Try fallback path
+            setTimeout(() => connectWebSocket(true), 100);
+          }
+        };
+        
+        ws.onclose = (event) => {
+          console.log(`⚠️ WebSocket connection closed with code ${event.code}`);
+          const usingFallbackPath = ws?.url?.includes('/ws') && !ws?.url?.includes('/api/ws');
+          
+          // For initial connection failures, try the fallback path if we weren't already using it
+          if (connectionAttempt <= 2 && !usingFallbackPath && event.code !== 1000) {
+            console.log('Primary WebSocket connection failed, attempting fallback path');
+            setTimeout(() => connectWebSocket(true), 100);
+            return;
+          }
+          
+          // Attempt to reconnect unless this was a normal closure or unmounting
+          if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            
+            // Exponential backoff for reconnect timing
+            const delay = Math.min(
+              baseReconnectDelay * Math.pow(1.5, reconnectAttempts),
+              30000 // Maximum 30 seconds
+            );
+            
+            console.log(`Attempting to reconnect WebSocket in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+            
+            // Clear any existing timer
+            if (reconnectTimer) {
+              clearTimeout(reconnectTimer);
+            }
+            
+            // Set new timer - use the path that was most recently successful
+            reconnectTimer = setTimeout(() => connectWebSocket(usingFallbackPath), delay);
+          } else if (reconnectAttempts >= maxReconnectAttempts) {
+            console.log('Maximum WebSocket reconnection attempts reached for notifications');
+          }
+        };
+        
+        setWebSocket(ws);
+      } catch (error) {
+        console.error('❌ Error creating WebSocket connection:', error);
       }
     };
     
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
-    
-    ws.onclose = () => {
-      console.log('WebSocket connection closed');
-    };
-    
-    setWebSocket(ws);
+    // Initialize connection
+    connectWebSocket();
     
     // Clean up WebSocket connection when component unmounts
     return () => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        ws.close();
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        ws.close(1000, 'Component unmounting');
+      }
+      
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
       }
     };
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, toast, webSocket]);
 
   // Fetch notifications when user logs in
   useEffect(() => {
