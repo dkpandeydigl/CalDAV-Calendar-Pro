@@ -387,22 +387,35 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       const eventUid = event.uid;
       const calendarId = event.calendarId;
       
-      // Eagerly remove the event from the DOM by direct manipulation
-      // This is a drastic but effective approach for newly created events that won't remove properly
+      // Mark events for deletion with a safer visual approach
+      // Instead of removing DOM elements directly (which can cause race conditions with React), 
+      // we'll hide them with CSS and let React handle the actual removal
       try {
-        // Immediately try to remove this event element from the DOM
+        // Add a class to hide elements immediately
         const eventEls = document.querySelectorAll(`[data-event-id="${eventId}"]`);
         if (eventEls.length > 0) {
-          console.log(`👉 Eagerly removing ${eventEls.length} DOM elements for event ${eventId}`);
-          eventEls.forEach(el => el.remove());
+          console.log(`👉 Hiding ${eventEls.length} DOM elements for event ${eventId}`);
+          eventEls.forEach(el => {
+            // Use CSS to hide immediately
+            (el as HTMLElement).style.display = 'none';
+            (el as HTMLElement).style.opacity = '0';
+            (el as HTMLElement).style.pointerEvents = 'none';
+            el.setAttribute('data-deleted', 'true');
+          });
         }
         
         // Also try by UID if available
         if (eventUid) {
           const uidEls = document.querySelectorAll(`[data-event-uid="${eventUid}"]`);
           if (uidEls.length > 0) {
-            console.log(`👉 Eagerly removing ${uidEls.length} DOM elements for event UID ${eventUid}`);
-            uidEls.forEach(el => el.remove());
+            console.log(`👉 Hiding ${uidEls.length} DOM elements for event UID ${eventUid}`);
+            uidEls.forEach(el => {
+              // Use CSS to hide immediately
+              (el as HTMLElement).style.display = 'none';
+              (el as HTMLElement).style.opacity = '0';
+              (el as HTMLElement).style.pointerEvents = 'none';
+              el.setAttribute('data-deleted', 'true');
+            });
           }
         }
         

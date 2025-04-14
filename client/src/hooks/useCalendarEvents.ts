@@ -1284,16 +1284,28 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           // Try to immediately remove this event element from the DOM by data attributes
           const eventEls = document.querySelectorAll(`[data-event-id="${id}"]`);
           if (eventEls.length > 0) {
-            console.log(`👉 Eagerly removing ${eventEls.length} DOM elements for event ${id}`);
-            eventEls.forEach(el => el.remove());
+            console.log(`👉 Hiding ${eventEls.length} DOM elements for event ${id}`);
+            eventEls.forEach(el => {
+              // Use CSS to hide immediately instead of removing from DOM
+              (el as HTMLElement).style.display = 'none';
+              (el as HTMLElement).style.opacity = '0';
+              (el as HTMLElement).style.pointerEvents = 'none';
+              el.setAttribute('data-deleted', 'true');
+            });
           }
           
           // Also try by UID if available
           if (eventToDelete.uid) {
             const uidEls = document.querySelectorAll(`[data-event-uid="${eventToDelete.uid}"]`);
             if (uidEls.length > 0) {
-              console.log(`👉 Eagerly removing ${uidEls.length} DOM elements for event UID ${eventToDelete.uid}`);
-              uidEls.forEach(el => el.remove());
+              console.log(`👉 Hiding ${uidEls.length} DOM elements for event UID ${eventToDelete.uid}`);
+              uidEls.forEach(el => {
+                // Use CSS to hide immediately instead of removing from DOM
+                (el as HTMLElement).style.display = 'none';
+                (el as HTMLElement).style.opacity = '0';
+                (el as HTMLElement).style.pointerEvents = 'none';
+                el.setAttribute('data-deleted', 'true');
+              });
             }
           }
           
