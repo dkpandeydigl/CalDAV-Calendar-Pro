@@ -26,6 +26,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 export interface Resource {
   id: string;
   subType: string;       // Resource type (Conference Room, Projector, etc.)
+  type?: string;         // Alternative field for resource type for compatibility
   name?: string;         // Display name of the resource
   capacity?: number;     // Optional capacity (e.g., 10 people)
   adminEmail: string;    // Email of resource administrator
@@ -80,17 +81,22 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
       return; // Required fields missing
     }
     
+    // Get resource type value for dual field compatibility
+    const resourceType = subTypeRef.current.value;
+    
     // Add new resource
     const resource: Resource = {
       id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
       name: nameRef.current?.value || undefined, 
-      subType: subTypeRef.current.value,
+      subType: resourceType,
+      type: resourceType, // Add type field for dual compatibility
       capacity: capacityRef.current?.value ? parseInt(capacityRef.current.value, 10) : undefined,
       adminEmail: adminEmailRef.current.value,
       adminName: adminNameRef.current?.value || undefined,
       remarks: remarksRef.current?.value || undefined,
     };
     
+    console.log('Adding new resource with metadata:', resource);
     onResourcesChange([...resources, resource]);
     setIsAddDialogOpen(false);
   }
@@ -101,13 +107,18 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
       return; // Required fields missing or no current resource
     }
     
+    // Get the type value from subType field (for compatibility)
+    const resourceType = editSubTypeRef.current?.value || '';
+    
     // Edit existing resource
     const updatedResources = resources.map(r => {
       if (r.id === currentResource.id) {
         return {
-          ...r,
+          ...r, // Keep all existing properties
           name: editNameRef.current?.value || undefined,
-          subType: editSubTypeRef.current!.value,
+          // Update both type and subType fields for compatibility
+          subType: resourceType,
+          type: resourceType,
           capacity: editCapacityRef.current?.value ? parseInt(editCapacityRef.current.value, 10) : undefined,
           adminEmail: editAdminEmailRef.current!.value,
           adminName: editAdminNameRef.current?.value || undefined,
@@ -117,6 +128,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
       return r;
     });
     
+    console.log('Updated resource with metadata:', updatedResources.find(r => r.id === currentResource.id));
     onResourcesChange(updatedResources);
     setIsEditDialogOpen(false);
   }
