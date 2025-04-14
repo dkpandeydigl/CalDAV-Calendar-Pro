@@ -231,7 +231,7 @@ export function SyncSettings() {
     // Otherwise try to establish a test connection
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws?userId=${authUser?.id || ''}`;
+      const wsUrl = `${protocol}//${window.location.host}/api/ws?userId=${authUser?.id || ''}`;
       console.log('🔄 Checking WebSocket connection to:', wsUrl);
       
       const ws = new WebSocket(wsUrl);
