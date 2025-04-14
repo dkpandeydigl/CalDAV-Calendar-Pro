@@ -2127,8 +2127,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Skip session tracking of deleted events - we're deleting them properly now
       
-      // Delete the event locally first
-      console.log(`Deleting event ${eventId} from local database`);
+      // Delete the event locally FIRST to ensure it disappears from UI immediately
+      console.log(`Immediately deleting event ${eventId} from local database`);
       const success = await storage.deleteEvent(eventId);
       
       if (!success) {
@@ -2136,6 +2136,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         response.success = false;
         response.message = "Failed to delete event from local database";
         return res.status(500).json(response);
+      }
+      
+      // Send WebSocket notification about the deleted event to update UI in real-time
+      try {
+        const { notifyEventChanged } = require('./websocket-handler');
+        
+        // Notify the user who made the change
+        notifyEventChanged(req.user!.id, eventId, 'deleted', {
+          title: event.title || 'Unnamed event',
+          calendarId: event.calendarId,
+          calendarName: (await storage.getCalendar(event.calendarId))?.name || 'Unknown',
+          isExternalChange: false
+        });
+      } catch (wsError) {
+        console.error("Error sending WebSocket notification for event deletion:", wsError);
+        // Continue without failing - this is a non-critical error
       }
       
       // If server deletion failed but local deletion succeeded,
@@ -2366,11 +2382,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (success) {
               locallyDeleted.push(event.id);
               
-              // Track deleted events in session to avoid re-syncing them
-              if (!req.session.recentlyDeletedEvents) {
-                req.session.recentlyDeletedEvents = [];
+              // Send websocket notification for immediate UI update
+              try {
+                const { notifyEventChanged } = require('./websocket-handler');
+                notifyEventChanged(userId, event.id, 'deleted', {
+                  title: event.title || 'Unnamed event',
+                  calendarId: event.calendarId,
+                  calendarName: (await storage.getCalendar(event.calendarId))?.name || 'Unknown',
+                  isExternalChange: false
+                });
+              } catch (wsError) {
+                console.error("Error sending WebSocket notification for bulk deletion:", wsError);
+                // Continue without failing - this is a non-critical error
               }
-              req.session.recentlyDeletedEvents.push(event.id);
             } else {
               errors.push({
                 eventId: event.id,
@@ -2488,7 +2512,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           for (const event of eventsToDelete) {
             console.log(`Deleting untitled event ID: ${event.id}`);
-            await storage.deleteEvent(event.id);
+            const success = await storage.deleteEvent(event.id);
+            
+            if (success && req.user) {
+              // Send websocket notification for immediate UI update
+              try {
+                const { notifyEventChanged } = require('./websocket-handler');
+                notifyEventChanged(req.user.id, event.id, 'deleted', {
+                  title: event.title || 'Untitled event',
+                  calendarId: event.calendarId,
+                  calendarName: (await storage.getCalendar(event.calendarId))?.name || 'Unknown',
+                  isExternalChange: false
+                });
+              } catch (wsError) {
+                console.error("Error sending WebSocket notification for cleanup deletion:", wsError);
+                // Continue without failing - this is a non-critical error
+              }
+            }
           }
           
           // Also attempt to clean up the event from the server
