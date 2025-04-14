@@ -517,85 +517,135 @@ export function generateCancellationICalEvent(event: any, options: {
   // Increment the sequence number
   const updatedSequence = options.sequence + 1;
   
+  // Extract the original UID from raw data if available to ensure exact match
+  let originalUid = event.uid;
+  if (event.rawData && typeof event.rawData === 'string') {
+    const uidMatch = event.rawData.match(/UID:([^\r\n]+)/);
+    if (uidMatch && uidMatch[1]) {
+      console.log(`Using exact UID from raw data for cancellation: ${uidMatch[1]}`);
+      originalUid = uidMatch[1];
+      // Update the event object with the extracted UID to ensure it's used
+      event.uid = originalUid;
+    }
+  }
+  
   // Create a shallow copy of the event - we don't want to modify the original
-  const eventCopy = { ...event };
+  const eventCopy = { ...event, uid: originalUid };
   
   // Make sure we retain the resources array for cancellations
-  if (!eventCopy.resources && event.rawData && typeof event.rawData === 'string') {
-    // Try to extract resource attendees from the raw data
-    const resourceMatches = event.rawData.match(/ATTENDEE;CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/g);
-    if (resourceMatches && resourceMatches.length > 0) {
-      console.log(`Found ${resourceMatches.length} resource attendees in raw data`);
-      
-      // Parse each resource attendee into our format
-      const extractedResources = resourceMatches.map((resourceStr: string) => {
-        // Extract email
-        const emailMatch = resourceStr.match(/:mailto:([^\r\n]+)/);
-        const email = emailMatch ? emailMatch[1] : '';
-        
-        // Extract name/subType
-        const nameMatch = resourceStr.match(/CN=([^;:]+)/);
-        const subType = nameMatch ? nameMatch[1] : 'Resource';
-        
-        // Extract type from X-RESOURCE-TYPE or fallback to standard parameters
-        const typeMatches = [
-          resourceStr.match(/X-RESOURCE-TYPE=([^;:]+)/),
-          resourceStr.match(/RESOURCE-TYPE=([^;:]+)/),
-          resourceStr.match(/X-TYPE=([^;:]+)/)
-        ];
-        const typeMatch = typeMatches.find(match => match !== null);
-        const resourceType = typeMatch ? typeMatch[1] : 'Resource';
-        
-        // Extract capacity with multiple patterns
-        const capacityMatches = [
-          resourceStr.match(/X-RESOURCE-CAPACITY=(\d+)/),
-          resourceStr.match(/RESOURCE-CAPACITY=(\d+)/),
-          resourceStr.match(/X-CAPACITY=(\d+)/),
-          resourceStr.match(/CAPACITY=(\d+)/)
-        ];
-        const capacityMatch = capacityMatches.find(match => match !== null);
-        const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : undefined;
-        
-        // Extract admin name
-        const adminNameMatches = [
-          resourceStr.match(/X-ADMIN-NAME=([^;:]+)/),
-          resourceStr.match(/ADMIN-NAME=([^;:]+)/),
-          resourceStr.match(/X-ADMIN=([^;:]+)/)
-        ];
-        const adminNameMatch = adminNameMatches.find(match => match !== null);
-        const adminName = adminNameMatch ? adminNameMatch[1] : undefined;
-        
-        // Extract remarks with multiple patterns
-        const remarksMatches = [
-          resourceStr.match(/X-NOTES-REMARKS=([^;:]+)/),
-          resourceStr.match(/X-REMARKS=([^;:]+)/),
-          resourceStr.match(/REMARKS=([^;:]+)/),
-          resourceStr.match(/X-NOTES=([^;:]+)/),
-          resourceStr.match(/NOTES=([^;:]+)/)
-        ];
-        const remarksMatch = remarksMatches.find(match => match !== null);
-        const remarks = remarksMatch ? 
-          remarksMatch[1].replace(/\\n/g, '\n').replace(/\\;/g, ';').replace(/\\,/g, ',').replace(/\\\\/g, '\\') : 
-          undefined;
-        
-        return {
-          id: email,
-          name: subType,
-          adminEmail: email,
-          adminName: adminName || subType,
-          type: resourceType,
-          subType,
-          capacity,
-          remarks,
-          displayName: subType,
-          email: email
-        };
-      });
-      
-      if (extractedResources.length > 0) {
-        eventCopy.resources = extractedResources;
+  if (!eventCopy.resources || !Array.isArray(eventCopy.resources) || eventCopy.resources.length === 0) {
+    let extractedResources: any[] = [];
+    
+    // First try to parse resources if they're stored as a string
+    if (typeof eventCopy.resources === 'string') {
+      try {
+        const parsedResources = JSON.parse(eventCopy.resources);
+        if (Array.isArray(parsedResources) && parsedResources.length > 0) {
+          extractedResources = parsedResources;
+          console.log(`Parsed ${extractedResources.length} resources from string in event data`);
+        }
+      } catch (e) {
+        console.warn('Failed to parse resources string:', e);
       }
     }
+    
+    // If we still don't have resources, try to extract from raw data
+    if (extractedResources.length === 0 && event.rawData && typeof event.rawData === 'string') {
+      // Try to extract resource attendees from the raw data with multiple patterns
+      const resourcePatterns = [
+        /ATTENDEE;[^:]*CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/gi,
+        /ATTENDEE;[^:]*CN=([^;:]+)[^:]*CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/gi,
+        /ATTENDEE;[^:]*X-RESOURCE-TYPE=[^:]*:mailto:([^\r\n]+)/gi
+      ];
+      
+      for (const pattern of resourcePatterns) {
+        const matches = Array.from(event.rawData.matchAll(pattern));
+        if (matches && matches.length > 0) {
+          console.log(`Found ${matches.length} resource attendees in raw data using pattern: ${pattern}`);
+          
+          // Parse each resource attendee into our format
+          const resources = matches.map((match: RegExpMatchArray) => {
+            const resourceStr = match[0];
+            
+            // Extract email
+            const emailMatch = resourceStr.match(/:mailto:([^\r\n]+)/);
+            const email = emailMatch ? emailMatch[1] : '';
+            
+            // Extract name/subType
+            const nameMatch = resourceStr.match(/CN=([^;:]+)/);
+            const subType = nameMatch ? nameMatch[1] : 'Resource';
+            
+            // Extract type from X-RESOURCE-TYPE or fallback to standard parameters
+            const typeMatches = [
+              resourceStr.match(/X-RESOURCE-TYPE=([^;:]+)/),
+              resourceStr.match(/RESOURCE-TYPE=([^;:]+)/),
+              resourceStr.match(/X-TYPE=([^;:]+)/)
+            ];
+            const typeMatch = typeMatches.find(match => match !== null);
+            const resourceType = typeMatch ? typeMatch[1] : 'Resource';
+            
+            // Extract capacity with multiple patterns
+            const capacityMatches = [
+              resourceStr.match(/X-RESOURCE-CAPACITY=(\d+)/),
+              resourceStr.match(/RESOURCE-CAPACITY=(\d+)/),
+              resourceStr.match(/X-CAPACITY=(\d+)/),
+              resourceStr.match(/CAPACITY=(\d+)/)
+            ];
+            const capacityMatch = capacityMatches.find(match => match !== null);
+            const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : undefined;
+            
+            // Extract admin name
+            const adminNameMatches = [
+              resourceStr.match(/X-ADMIN-NAME=([^;:]+)/),
+              resourceStr.match(/ADMIN-NAME=([^;:]+)/),
+              resourceStr.match(/X-ADMIN=([^;:]+)/)
+            ];
+            const adminNameMatch = adminNameMatches.find(match => match !== null);
+            const adminName = adminNameMatch ? adminNameMatch[1] : undefined;
+            
+            // Extract remarks with multiple patterns
+            const remarksMatches = [
+              resourceStr.match(/X-NOTES-REMARKS=([^;:]+)/),
+              resourceStr.match(/X-REMARKS=([^;:]+)/),
+              resourceStr.match(/REMARKS=([^;:]+)/),
+              resourceStr.match(/X-NOTES=([^;:]+)/),
+              resourceStr.match(/NOTES=([^;:]+)/)
+            ];
+            const remarksMatch = remarksMatches.find(match => match !== null);
+            const remarks = remarksMatch ? 
+              remarksMatch[1].replace(/\\n/g, '\n').replace(/\\;/g, ';').replace(/\\,/g, ',').replace(/\\\\/g, '\\') : 
+              undefined;
+            
+            return {
+              id: email,
+              name: subType,
+              adminEmail: email,
+              adminName: adminName || subType,
+              type: resourceType,
+              subType,
+              capacity,
+              remarks,
+              displayName: subType,
+              email: email
+            };
+          });
+          
+          if (resources.length > 0) {
+            extractedResources = resources;
+            break; // Once we have resources, stop trying patterns
+          }
+        }
+      }
+      
+      if (extractedResources.length > 0) {
+        console.log(`Successfully extracted ${extractedResources.length} resources for cancellation`);
+        eventCopy.resources = extractedResources;
+      } else {
+        console.warn('No resources could be extracted from raw data');
+      }
+    }
+  } else {
+    console.log(`Using ${eventCopy.resources.length} resources already present in event data`);
   }
   
   // If the original event had a TRANSP property that wasn't TRANSPARENT,

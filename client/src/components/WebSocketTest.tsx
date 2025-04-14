@@ -157,10 +157,10 @@ export function WebSocketTest() {
         <CardTitle className="flex items-center justify-between">
           <span>WebSocket Connection</span>
           <Badge variant={
-            status === 'connected' ? 'success' : 
+            status === 'connected' ? 'outline' : 
             status === 'connecting' ? 'secondary' : 
             status === 'error' ? 'destructive' : 'outline'
-          }>
+          } className={status === 'connected' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' : ''}>
             {status === 'connected' ? 'Connected' : 
              status === 'connecting' ? 'Connecting...' : 
              status === 'error' ? 'Error' : 'Disconnected'}
