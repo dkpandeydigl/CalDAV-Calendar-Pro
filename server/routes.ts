@@ -1944,6 +1944,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Event not found" });
       }
       
+      // Prepare response object with more detailed status information
+      const response = {
+        success: false,
+        id: eventId,
+        message: '',
+        sync: {
+          attempted: false,
+          succeeded: false,
+          noConnection: true,
+          error: null
+        }
+      };
+      
       // If the event exists on the server, we should try to delete it there too
       if (event.url && event.etag) {
         try {
@@ -1952,7 +1965,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const connection = await storage.getServerConnection(userId);
           
           if (connection && connection.status === 'connected') {
-            // Create a DAV client
+            response.sync.noConnection = false;
+            response.sync.attempted = true;
+            
+            // Create a DAV client with additional headers
             const { DAVClient } = await import('tsdav');
             const davClient = new DAVClient({
               serverUrl: connection.url,
@@ -1961,47 +1977,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 password: connection.password
               },
               authMethod: 'Basic',
-              defaultAccountType: 'caldav'
+              defaultAccountType: 'caldav',
+              headers: {
+                'If-Match': event.etag // Add If-Match header with etag for safer deletion
+              }
             });
             
             // Login to the server
             await davClient.login();
             
-            // Try to delete the event on the server
-            await davClient.deleteCalendarObject({
+            // Try to delete the event on the server with proper error handling
+            const deleteResponse = await davClient.deleteCalendarObject({
               calendarObject: {
                 url: event.url,
                 etag: event.etag
               }
             });
             
-            console.log(`Successfully deleted event ${eventId} from CalDAV server`);
+            // Check if the deletion was successful
+            if (deleteResponse.status >= 200 && deleteResponse.status < 300) {
+              response.sync.succeeded = true;
+              console.log(`Successfully deleted event ${eventId} from CalDAV server`);
+            } else {
+              response.sync.error = `Server returned status ${deleteResponse.status}`;
+              console.error(`Failed to delete event ${eventId} from server: Status ${deleteResponse.status}`);
+            }
           } else {
             console.log(`User ${userId} does not have an active server connection, can't delete event on server`);
+            response.sync.noConnection = true;
           }
         } catch (error) {
           console.error(`Error deleting event ${eventId} from CalDAV server:`, error);
+          response.sync.error = error.message || 'Error communicating with CalDAV server';
           // Continue with local deletion even if server deletion fails
         }
       }
       
-      // Delete the event locally
-      const success = await storage.deleteEvent(eventId);
-      
-      // Track deleted events in session to avoid re-syncing them
+      // Always update the session info to track deleted events
       if (!req.session.recentlyDeletedEvents) {
         req.session.recentlyDeletedEvents = [];
       }
-      req.session.recentlyDeletedEvents.push(eventId);
       
+      // Store both ID and UID in the recently deleted events tracking
+      req.session.recentlyDeletedEvents.push({
+        id: eventId,
+        uid: event.uid,
+        url: event.url,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Save the session to ensure the changes persist
+      await new Promise<void>((resolve, reject) => {
+        req.session.save(err => {
+          if (err) {
+            console.error('Error saving session:', err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+      
+      // Delete the event locally
+      const success = await storage.deleteEvent(eventId);
+      
+      // Prepare the final response
+      response.success = success;
       if (success) {
-        return res.status(200).json({ message: "Event deleted successfully" });
+        response.message = "Event deleted successfully";
+        
+        // Force a calendar sync to make sure changes are propagated
+        syncService.syncUserCalendars(req.user!.id, {
+          forceFull: true,
+          ignoreRecentlyDeleted: true
+        });
+        
+        return res.status(200).json(response);
       } else {
-        return res.status(500).json({ message: "Failed to delete event" });
+        response.message = "Failed to delete event from local database";
+        return res.status(500).json(response);
       }
     } catch (err) {
       console.error("Error deleting event:", err);
-      res.status(500).json({ message: "Failed to delete event" });
+      res.status(500).json({ 
+        success: false, 
+        message: "Failed to delete event", 
+        error: err.message || 'Unknown error'
+      });
     }
   });
   
