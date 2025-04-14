@@ -70,9 +70,14 @@ export function useCalendarSync() {
     const maxReconnectAttempts = 10;
     const baseReconnectDelay = 1000; // 1 second initial delay
     
+    // Connection attempt tracker to try different paths
+    let connectionAttempt = 0;
+    const maxConnectionAttempts = 3;
+    
     // Function to establish WebSocket connection
-    const connectWebSocket = () => {
+    const connectWebSocket = (useFallbackPath = false) => {
       try {
+        connectionAttempt++;
         // Get hostname and port from current location
         const hostname = window.location.hostname;
         const port = window.location.port || 
@@ -81,13 +86,17 @@ export function useCalendarSync() {
         // Use secure protocol if page is loaded over HTTPS
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         
-        // For localhost, always use ws (not wss) to avoid SSL validation issues
-        const finalProtocol = hostname === 'localhost' ? 'ws:' : protocol;
+        // For localhost or Replit preview, always use ws (not wss) to avoid SSL validation issues
+        const isLocalDev = hostname === 'localhost' || hostname.includes('replit.dev');
+        const finalProtocol = isLocalDev ? 'ws:' : protocol;
         
-        // Construct the URL with explicit port to avoid 'undefined' in the URL
-        const wsUrl = `${finalProtocol}//${hostname}:${port}/api/ws?userId=${user.id}`;
+        // Use primary or fallback path based on parameter
+        const wsPath = useFallbackPath ? '/ws' : '/api/ws';
         
-        console.log('🔄 Connecting to WebSocket server at', wsUrl);
+        // Construct the URL with explicit port and user ID for authentication
+        const wsUrl = `${finalProtocol}//${hostname}:${port}${wsPath}?userId=${user.id}`;
+        
+        console.log(`🔄 Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
         ws = new WebSocket(wsUrl);
         
         ws.onopen = () => {
@@ -305,8 +314,25 @@ export function useCalendarSync() {
                   setTimeout(() => {
                     console.log(`Final cleanup pass for deleted event ID: ${data.eventId}`);
                     
-                    // Keep a reference to the remove function
-                    const finalRemoveFunction = removeDeletedEvent;
+                    // Create a local reference to the remove function defined earlier
+                    const finalRemoveFunction = (events: any[] | undefined): any[] => {
+                      if (!events) return [];
+                      return events.filter(event => {
+                        // Use the same logic as in the removeDeletedEvent function above
+                        if (event.id === data.eventId) {
+                          console.log(`🧹 Final cleanup - removing deleted event by ID: ${event.id} (${event.title || 'Untitled'})`);
+                          return false;
+                        }
+                        
+                        // Also remove by UID if available
+                        if (data.data?.uid && event.uid === data.data.uid) {
+                          console.log(`🧹 Final cleanup - removing deleted event by UID: ${event.uid}`);
+                          return false;
+                        }
+                        
+                        return true;
+                      });
+                    };
                     
                     // Get all event queries and clean them once more
                     const allEventsQueries = queryClient.getQueriesData<any[]>({ queryKey: ['/api/events'] });
@@ -372,18 +398,40 @@ export function useCalendarSync() {
           console.error('❌ WebSocket error:', error);
           // Store wsUrl in a variable to avoid reference errors
           const socketUrl = ws?.url || 'connection not initialized';
+          const usingFallbackPath = socketUrl.includes('/ws') && !socketUrl.includes('/api/ws');
           
           // Provide more details about the error
           console.log('WebSocket error details:', {
             readyState: ws ? ws.readyState : 'no socket',
             url: socketUrl,
             userId: user.id,
+            usingFallbackPath,
             timestamp: new Date().toISOString()
           });
+          
+          // If this is the initial connection attempt with the primary path
+          // and we're still below the max connection attempts, try the fallback path immediately
+          if (connectionAttempt === 1 && !usingFallbackPath) {
+            console.log('Primary WebSocket path failed, attempting fallback path immediately');
+            // Close this socket if it's still open
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.close(1000, 'Switching to fallback path');
+            }
+            // Try fallback path
+            setTimeout(() => connectWebSocket(true), 100);
+          }
         };
         
         ws.onclose = (event) => {
           console.log(`⚠️ WebSocket connection closed with code ${event.code} - ${getCloseEventReason(event.code)}`);
+          const usingFallbackPath = ws?.url?.includes('/ws') && !ws?.url?.includes('/api/ws');
+          
+          // For initial connection failures, try the fallback path if we weren't already using it
+          if (connectionAttempt <= 2 && !usingFallbackPath && event.code !== 1000) {
+            console.log('Primary WebSocket connection closed, attempting fallback path');
+            setTimeout(() => connectWebSocket(true), 100);
+            return;
+          }
           
           // Attempt to reconnect unless this was a normal closure or unmounting
           if (event.code !== 1000 && reconnectAttempts < maxReconnectAttempts) {
@@ -402,13 +450,19 @@ export function useCalendarSync() {
               clearTimeout(reconnectTimer);
             }
             
-            // Set new timer
-            reconnectTimer = setTimeout(connectWebSocket, delay);
+            // Set new timer - use the path that was most recently successful
+            reconnectTimer = setTimeout(() => connectWebSocket(usingFallbackPath), delay);
           } else if (reconnectAttempts >= maxReconnectAttempts) {
             console.log('Maximum WebSocket reconnection attempts reached');
             
-            // When max attempts reached, we'll try again when user takes an action
-            // or when component re-mounts
+            // When max attempts reached, show a silent toast that sync is offline
+            toast({
+              title: 'Real-time sync is offline',
+              description: 'Using manual sync mode. Will try to reconnect later.',
+              variant: 'destructive',
+            });
+            
+            // We'll try again when user takes an action or when component re-mounts
           }
         };
         
