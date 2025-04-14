@@ -690,14 +690,14 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 
                 {/* Resources section with improved visual display */}
                 {(() => {
-                  const extractedResources = extractResourcesFromRawData();
-                  const resourceCount = extractedResources.length;
-                  console.log('Parsed resources:', extractedResources);
+                  // Use the resources variable we extracted earlier instead of calling extractResourcesFromRawData() again
+                  const resourceCount = resources.length;
+                  console.log('Using cached resources:', resources);
                   
                   // Display resources if we have any
                   if (resourceCount > 0) {
                     // Display only 2 resources by default, with dialog for viewing all
-                    const displayResources = extractedResources.slice(0, 2);
+                    const displayResources = resources.slice(0, 2);
                     
                     return (
                       <div className="bg-amber-50 p-2 rounded-lg border border-amber-100 shadow-sm">
