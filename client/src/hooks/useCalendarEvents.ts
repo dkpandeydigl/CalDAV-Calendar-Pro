@@ -1944,6 +1944,28 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
       
+      // Connect to WebSocket if available to broadcast deletion
+      try {
+        // Try to get a WebSocket connection if available
+        const socket = (window as any).calendarSocket;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          console.log(`Broadcasting event deletion via WebSocket: ${id}`);
+          // Send deletion notification to all connected clients
+          socket.send(JSON.stringify({
+            type: 'event_deleted',
+            eventId: id,
+            uid: context?.eventToDelete?.uid || null,
+            timestamp: Date.now(),
+            calendarId: context?.eventToDelete?.calendarId || null,
+            title: context?.eventToDelete?.title || 'Untitled event'
+          }));
+        } else {
+          console.warn('WebSocket not available or not connected for real-time deletion sync');
+        }
+      } catch (wsError) {
+        console.warn('Could not broadcast deletion via WebSocket:', wsError);
+      }
+      
       // Double-check DOM elements are still hidden/removed
       try {
         // Re-apply CSS hiding to any matching elements that might have reappeared

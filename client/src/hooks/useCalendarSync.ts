@@ -104,9 +104,6 @@ export function useCalendarSync() {
           } else {
             // For all other environments, use the host and appropriate protocol
             wsUrl = `${finalProtocol}//${window.location.host}${wsPath}?userId=${user.id}`;
-            
-            // Make WebSocket connection globally available for other components
-            (window as any).calendarSocket = ws;
           }
           console.log(`Constructed WebSocket URL: ${wsUrl}`);
         } catch (urlError) {
