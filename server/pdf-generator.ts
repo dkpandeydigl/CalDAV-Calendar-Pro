@@ -182,18 +182,55 @@ export async function generateEventAgendaPDF(data: EventInvitationData): Promise
         
         // Create resources list
         data.resources.forEach((resource: Resource, index: number) => {
-          doc.font('Helvetica')
+          // Use name || subType as the main display name
+          const resourceName = resource.name || resource.subType;
+          
+          // Main resource entry with name and type
+          doc.font('Helvetica-Bold')
             .fontSize(10)
-            .text(`${index + 1}. ${resource.subType}${resource.capacity ? ` (Capacity: ${resource.capacity})` : ''}`, {
+            .text(`${index + 1}. ${resourceName}`, {
               bulletPoint: true,
-              bulletRadius: 2
+              bulletRadius: 2,
+              continued: true
             });
             
+          // Add type information if different from name
+          if (resource.subType && resourceName !== resource.subType) {
+            doc.font('Helvetica')
+              .text(` (Type: ${resource.subType})`, { continued: true });
+          }
+          
+          // Add capacity if available
+          if (resource.capacity !== undefined) {
+            doc.font('Helvetica')
+              .text(` - Capacity: ${resource.capacity}`);
+          } else {
+            doc.text(''); // End the line if no capacity
+          }
+          
+          // Add administrator name if available
+          if (resource.adminName) {
+            doc.font('Helvetica')
+              .fontSize(9)
+              .text(`   Administrator: ${resource.adminName}`, { indent: 10 });
+          }
+          
+          // Add admin email if available
+          if (resource.adminEmail) {
+            doc.font('Helvetica')
+              .fontSize(9)
+              .text(`   Contact: ${resource.adminEmail}`, { indent: 10 });
+          }
+            
+          // Add remarks if available
           if (resource.remarks) {
             doc.font('Helvetica-Oblique')
               .fontSize(9)
-              .text(`   Note: ${resource.remarks}`, { indent: 10 });
+              .text(`   Notes: ${resource.remarks}`, { indent: 10 });
           }
+          
+          // Add a small spacing after each resource
+          doc.moveDown(0.3);
         });
         
         doc.moveDown(1);

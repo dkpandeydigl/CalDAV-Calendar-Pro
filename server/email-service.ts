@@ -13,7 +13,8 @@ export interface Attendee {
 
 export interface Resource {
   id: string;
-  subType: string;       // Conference Room, Projector, etc.
+  name?: string;         // Display name of the resource
+  subType: string;       // Resource type (Conference Room, Projector, etc.)
   capacity?: number;     // Optional capacity (e.g., 10 people)
   adminEmail: string;    // Email of resource administrator
   adminName?: string;    // Name of resource administrator
@@ -1211,14 +1212,27 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     // Add resource attendees if they exist
     if (resources && Array.isArray(resources) && resources.length > 0) {
       resources.forEach(resource => {
-        let resourceStr = `ATTENDEE;CUTYPE=RESOURCE;CN=${resource.subType};ROLE=NON-PARTICIPANT;RSVP=FALSE`;
+        // Format: ATTENDEE;CN=res name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=res type;X-RESOURCE-CAPACITY=5;X-ADMIN-NAME=Dharmendra Pandey;X-NOTES-REMARKS=remarks:mailto:dk.pandey@xgenplus.com
         
-        // Add capacity if specified
-        if (resource.capacity !== undefined) {
-          resourceStr += `;X-CAPACITY=${resource.capacity}`;
+        // Start with CN (name) and basic resource properties
+        let resourceStr = `ATTENDEE;CN=${resource.name || resource.subType};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT`;
+        
+        // Add resource type as X-RESOURCE-TYPE
+        if (resource.subType) {
+          resourceStr += `;X-RESOURCE-TYPE=${resource.subType}`;
         }
         
-        // Add remarks if specified (properly escape for iCalendar format)
+        // Add capacity as X-RESOURCE-CAPACITY
+        if (resource.capacity !== undefined) {
+          resourceStr += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
+        }
+        
+        // Add admin name as X-ADMIN-NAME
+        if (resource.adminName) {
+          resourceStr += `;X-ADMIN-NAME=${resource.adminName}`;
+        }
+        
+        // Add remarks as X-NOTES-REMARKS (properly escape for iCalendar format)
         if (resource.remarks) {
           // Escape special characters according to iCalendar spec
           const escapedRemarks = resource.remarks
@@ -1227,7 +1241,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
             .replace(/,/g, '\\,')
             .replace(/\n/g, '\\n');
           
-          resourceStr += `;X-REMARKS="${escapedRemarks}"`;
+          resourceStr += `;X-NOTES-REMARKS=${escapedRemarks}`;
         }
         
         // Add the email as mailto
