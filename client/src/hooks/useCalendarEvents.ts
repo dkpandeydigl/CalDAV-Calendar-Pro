@@ -1279,6 +1279,39 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         // Track the deleted event to prevent it from reappearing during sync operations
         trackDeletedEvent(eventToDelete);
         
+        // Store deleted event info in session storage immediately for better cross-component awareness
+        try {
+          const deletedEventsKey = 'recently_deleted_events';
+          const sessionDeletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
+          
+          // Create a comprehensive deletion record with multiple signatures
+          const eventInfo = {
+            id: eventToDelete.id,
+            uid: eventToDelete.uid,
+            calendarId: eventToDelete.calendarId,
+            title: eventToDelete.title,
+            timestamp: new Date().toISOString(),
+            signature: eventToDelete.title && eventToDelete.startDate ? 
+              `${eventToDelete.title}_${new Date(eventToDelete.startDate).toISOString()}` : null,
+            crossCalendarSignature: eventToDelete.title && eventToDelete.startDate ?
+              `${eventToDelete.title}-${new Date(eventToDelete.startDate).getTime()}` : null
+          };
+          
+          // Add to recently deleted events
+          sessionDeletedEvents.push(eventInfo);
+          
+          // Keep last 20 deleted events
+          if (sessionDeletedEvents.length > 20) {
+            sessionDeletedEvents.shift();
+          }
+          
+          // Save back to session storage
+          sessionStorage.setItem(deletedEventsKey, JSON.stringify(sessionDeletedEvents));
+          console.log(`Added event ID ${eventToDelete.id} to session storage deletion tracking`);
+        } catch (e) {
+          console.error('Error saving deleted event to session storage:', e);
+        }
+        
         // Find all duplicate events with same properties but different IDs
         // This handles the case where the same event appears twice with different IDs
         // We'll use multiple detection strategies to find all possible duplicates
