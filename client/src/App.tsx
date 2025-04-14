@@ -7,6 +7,7 @@ import Calendar from "@/pages/Calendar";
 import AuthPage from "@/pages/auth-page";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import { WebSocketTestPage } from "@/pages/WebSocketTestPage";
+import { WebSocketDebugPage } from "@/pages/WebSocketDebugPage";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AuthProvider } from "@/hooks/use-auth";
 import { CalendarProvider } from "@/contexts/CalendarContext";
@@ -22,6 +23,9 @@ function Router() {
       </Route>
       <Route path="/websocket-test">
         {() => <ProtectedRoute component={WebSocketTestPage} />}
+      </Route>
+      <Route path="/websocket-debug">
+        {() => <ProtectedRoute component={WebSocketDebugPage} />}
       </Route>
       <Route path="/">
         {() => <ProtectedRoute component={Calendar} />}
