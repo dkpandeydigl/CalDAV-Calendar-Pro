@@ -19,6 +19,11 @@ interface CalDAVResource {
   name: string;
   adminEmail: string;
   type?: string;
+  subType?: string;
+  capacity?: number | null;
+  remarks?: string;
+  adminName?: string;
+  scheduleStatus?: string;
 }
 
 // Extend the DAVObject interface to include properties we need
