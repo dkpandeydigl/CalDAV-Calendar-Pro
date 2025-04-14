@@ -1657,6 +1657,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   // Get our deleted events tracker
   const { trackDeletedEvent, cleanAllEventCaches } = useDeletedEventsTracker();
   
+  // Simplified delete mutation that uses the CalDAV server as the source of truth
   const deleteEventMutation = useMutation<DeleteResponse, Error, number, DeleteMutationContext>({
     mutationFn: async (id: number) => {
       console.log(`Deleting event with ID ${id}`);
@@ -1711,12 +1712,18 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       
       // Store the current state for possible rollback
       const previousEvents = queryClient.getQueryData<Event[]>(['/api/events']);
+      const allQueryKeys = queryClient.getQueryCache().getAll().map(query => query.queryKey);
       
       // Find the event in the cache to get its details before deleting
       const eventToDelete = previousEvents?.find(e => e.id === id);
       
       if (eventToDelete) {
         console.log(`Found event to delete: ${eventToDelete.title || 'Untitled'} (ID: ${id})`);
+        
+        // Track this event as deleted
+        if (trackDeletedEvent) {
+          trackDeletedEvent(eventToDelete);
+        }
         
         // Simple optimistic update - just remove the event by ID
         queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => 
@@ -1974,22 +1981,11 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
       
-      // Make sure we run the specialized tracker for this deleted event
-      if (context?.eventToDelete) {
-        console.log(`Using specialized tracker to ensure permanent deletion of event ${id}`);
-        trackDeletedEvent(context.eventToDelete);
-        
-        // Run an immediate cleanup of all event caches to ensure deletion is applied
-        cleanAllEventCaches();
-      }
-      
-      // Connect to WebSocket if available to broadcast deletion
+      // Broadcast deletion via WebSocket if available
       try {
-        // Try to get a WebSocket connection if available
         const socket = (window as any).calendarSocket;
         if (socket && socket.readyState === WebSocket.OPEN) {
           console.log(`Broadcasting event deletion via WebSocket: ${id}`);
-          // Send deletion notification to all connected clients
           socket.send(JSON.stringify({
             type: 'event_deleted',
             eventId: id,
@@ -1998,44 +1994,50 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             calendarId: context?.eventToDelete?.calendarId || null,
             title: context?.eventToDelete?.title || 'Untitled event'
           }));
-        } else {
-          console.warn('WebSocket not available or not connected for real-time deletion sync');
-        }
-      } catch (wsError) {
-        console.warn('Could not broadcast deletion via WebSocket:', wsError);
-      }
-      
-      // Double-check DOM elements are still hidden/removed
-      try {
-        // Re-apply CSS hiding to any matching elements that might have reappeared
-        const elements = document.querySelectorAll(`[data-event-id="${id}"]`);
-        if (elements.length > 0) {
-          console.log(`Found ${elements.length} DOM elements for deleted event ${id} - applying permanent hiding`);
-          elements.forEach(el => {
-            (el as HTMLElement).style.display = 'none';
-            (el as HTMLElement).style.opacity = '0';
-            (el as HTMLElement).style.pointerEvents = 'none';
-            el.setAttribute('data-deleted', 'true');
-            el.setAttribute('data-permanent-delete', 'true');
-          });
-        }
-        
-        // Also check by UID if available
-        if (context?.eventToDelete?.uid) {
-          const uidElements = document.querySelectorAll(`[data-event-uid="${context.eventToDelete.uid}"]`);
-          if (uidElements.length > 0) {
-            console.log(`Found ${uidElements.length} DOM elements by UID for deleted event - applying permanent hiding`);
-            uidElements.forEach(el => {
-              (el as HTMLElement).style.display = 'none';
-              (el as HTMLElement).style.opacity = '0';
-              (el as HTMLElement).style.pointerEvents = 'none';
-              el.setAttribute('data-deleted', 'true');
-              el.setAttribute('data-permanent-delete', 'true');
-            });
-          }
         }
       } catch (error) {
-        console.error('Error applying permanent deletion styles:', error);
+        console.warn('WebSocket broadcast error:', error);
+      }
+      
+      // Show appropriate toast notification based on sync status
+      if (result.sync) {
+        if (result.sync.attempted && !result.sync.succeeded && result.sync.noConnection) {
+          toast({
+            title: "Event Deleted Locally",
+            description: "The event was deleted from your local calendar but couldn't be removed from the server because no connection is configured.",
+            variant: "default"
+          });
+        }
+        else if (result.sync.attempted && !result.sync.succeeded && result.sync.error) {
+          toast({
+            title: "Event Deleted Locally",
+            description: `Event deleted locally, server sync failed: ${result.sync.error}`,
+            variant: "default"
+          });
+        }
+        else if (result.sync.attempted && result.sync.succeeded) {
+          toast({
+            title: "Event Deleted",
+            description: "The event was successfully deleted from both your local calendar and the server.",
+            variant: "default"
+          });
+        }
+      } else {
+        toast({
+          title: "Event Deleted",
+          description: "The event has been deleted successfully.",
+          variant: "default"
+        });
+      }
+      
+      // Simple approach: Invalidate all queries to ensure fresh data from server
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
+      // Also invalidate calendar-specific query if we know which calendar
+      if (context?.eventToDelete?.calendarId) {
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/calendars', context.eventToDelete.calendarId, 'events']
+        });
       }
       
       // If we have the event that was deleted, add it to our tracking system to ensure it doesn't reappear
