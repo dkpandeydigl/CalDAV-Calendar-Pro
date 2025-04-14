@@ -491,6 +491,22 @@ This notification was sent using CalDAV Calendar Application.`;
               <div class="detail-row">
                 <span class="label">Organizer:</span> ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
               </div>
+              
+              ${data.resources && data.resources.length > 0 ? `
+              <div class="detail-row" style="margin-top: 15px;">
+                <span class="label" style="display: block; margin-bottom: 5px;">Resources:</span>
+                <div style="margin-left: 15px; padding: 10px; background-color: #f9f9f9; border-radius: 5px;">
+                  ${data.resources.map((resource, index) => `
+                    <div style="margin-bottom: ${index < data.resources.length - 1 ? '10px' : '0px'}; padding-bottom: ${index < data.resources.length - 1 ? '10px' : '0px'}; ${index < data.resources.length - 1 ? 'border-bottom: 1px solid #eee;' : ''}">
+                      <div><strong>${resource.name || resource.subType}</strong> ${(resource.name && resource.name !== resource.subType) ? `(${resource.subType})` : ''}</div>
+                      ${resource.capacity ? `<div>Capacity: ${resource.capacity}</div>` : ''}
+                      ${resource.adminName ? `<div>Administrator: ${resource.adminName}</div>` : ''}
+                      ${resource.remarks ? `<div>Notes: ${resource.remarks}</div>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+              ` : ''}
             </div>
             
             <p>This email includes two attachments:</p>
@@ -518,7 +534,7 @@ This notification was sent using CalDAV Calendar Application.`;
         : attendee.email,
       subject: `Invitation: ${title}`,
       html: htmlContent,
-      text: `Hello ${attendeeName},\n\nYou have been invited to the following event:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n\nThis email includes two attachments:\n1. An iCalendar (.ics) file that you can import into your calendar application\n2. A meeting agenda PDF with complete event details\n\nThis invitation was sent using CalDAV Calendar Application.`,
+      text: `Hello ${attendeeName},\n\nYou have been invited to the following event:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n${data.resources && data.resources.length > 0 ? `\nResources:\n${data.resources.map(resource => `- ${resource.name || resource.subType}${(resource.name && resource.subType && resource.name !== resource.subType) ? ` (${resource.subType})` : ''}\n  ${resource.capacity ? `Capacity: ${resource.capacity}\n  ` : ''}${resource.adminName ? `Administrator: ${resource.adminName}\n  ` : ''}${resource.remarks ? `Notes: ${resource.remarks}` : ''}`).join('\n\n')}\n` : ''}\n\nThis email includes two attachments:\n1. An iCalendar (.ics) file that you can import into your calendar application\n2. A meeting agenda PDF with complete event details\n\nThis invitation was sent using CalDAV Calendar Application.`,
       attachments: [
         {
           filename: `invitation-${data.uid}.ics`,
