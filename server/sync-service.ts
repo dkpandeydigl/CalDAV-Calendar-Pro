@@ -635,21 +635,70 @@ export class SyncService {
                           }
                           
                           // Check if new resources are missing key properties that existing ones have
+                          // Enhanced version that checks for ALL important resource metadata fields
                           const existingHasDetailedProps = existingResources.some(r => 
                             (r.capacity && r.capacity > 0) || 
                             (r.subType && r.subType.length > 0) ||
-                            (r.name && r.name.length > 0)
+                            (r.type && r.type.length > 0) || // Check for type (possible field name)
+                            (r.name && r.name.length > 0) ||
+                            (r.adminName && r.adminName.length > 0) ||  // Check for administrator name
+                            (r.remarks && r.remarks.length > 0)         // Check for notes/remarks
                           );
                           
                           const newHasDetailedProps = newResources.some(r => 
                             (r.capacity && r.capacity > 0) || 
                             (r.subType && r.subType.length > 0) ||
-                            (r.name && r.name.length > 0)
+                            (r.type && r.type.length > 0) || // Check for type (possible field name)
+                            (r.name && r.name.length > 0) ||
+                            (r.adminName && r.adminName.length > 0) ||  // Check for administrator name
+                            (r.remarks && r.remarks.length > 0)         // Check for notes/remarks
                           );
+                          
+                          // Also do a more detailed per-resource comparison
+                          let hasMoreDetailedExistingResources = false;
+                          
+                          // Try to match resources by email and compare their detailed properties
+                          for (const existingResource of existingResources) {
+                            // Skip resources without email
+                            if (!existingResource.adminEmail) continue;
+                            
+                            // Look for a matching resource in the new data
+                            const matchingNewResource = newResources.find(nr => 
+                              nr.adminEmail && nr.adminEmail.toLowerCase() === existingResource.adminEmail.toLowerCase()
+                            );
+                            
+                            if (matchingNewResource) {
+                              // Check if existing resource has more detailed data than the new one
+                              const existingHasAdminName = existingResource.adminName && existingResource.adminName.length > 0;
+                              const existingHasType = (existingResource.subType && existingResource.subType.length > 0) || 
+                                                     (existingResource.type && existingResource.type.length > 0);
+                              const existingHasCapacity = existingResource.capacity && existingResource.capacity > 0;
+                              const existingHasRemarks = existingResource.remarks && existingResource.remarks.length > 0;
+                              
+                              const newHasAdminName = matchingNewResource.adminName && matchingNewResource.adminName.length > 0;
+                              const newHasType = (matchingNewResource.subType && matchingNewResource.subType.length > 0) || 
+                                               (matchingNewResource.type && matchingNewResource.type.length > 0);
+                              const newHasCapacity = matchingNewResource.capacity && matchingNewResource.capacity > 0;
+                              const newHasRemarks = matchingNewResource.remarks && matchingNewResource.remarks.length > 0;
+                              
+                              // If the existing resource has data that's missing in the new one
+                              if ((existingHasAdminName && !newHasAdminName) || 
+                                  (existingHasType && !newHasType) ||
+                                  (existingHasCapacity && !newHasCapacity) ||
+                                  (existingHasRemarks && !newHasRemarks)) {
+                                console.log(`Resource ${existingResource.adminEmail} has more detailed data in existing event - preserving`);
+                                hasMoreDetailedExistingResources = true;
+                                break;
+                              }
+                            }
+                          }
                           
                           if (existingHasDetailedProps && !newHasDetailedProps) {
                             shouldPreserveResources = true;
                             console.log(`Existing resources have detailed properties missing in new data - preserving existing`);
+                          } else if (hasMoreDetailedExistingResources) {
+                            shouldPreserveResources = true;
+                            console.log(`Some resources have more detailed properties in existing data - preserving existing`);
                           }
                         }
                       } catch (e) {
@@ -1228,15 +1277,39 @@ export class SyncService {
               
               // Process as resource
               const name = attendee.params.CN || email.split('@')[0];
-              const resourceType = attendee.params['X-RESOURCE-TYPE'] || '';
+              
+              // Extract resource metadata with fallbacks for different field naming conventions
+              const resourceType = attendee.params['X-RESOURCE-TYPE'] || 
+                                 attendee.params['RESOURCE-TYPE'] || '';
+              
+              // Look for capacity in X-RESOURCE-CAPACITY or directly in the CN
+              let capacity = null;
+              if (attendee.params['X-RESOURCE-CAPACITY']) {
+                try {
+                  capacity = parseInt(attendee.params['X-RESOURCE-CAPACITY'], 10);
+                } catch (e) {
+                  console.warn(`Could not parse resource capacity: ${attendee.params['X-RESOURCE-CAPACITY']}`);
+                }
+              }
+              
+              // Extract remarks/notes and administrator name if available
+              const remarks = attendee.params['X-RESOURCE-REMARKS'] || 
+                             attendee.params['REMARKS'] || '';
+              
+              const adminName = attendee.params['X-RESOURCE-ADMIN'] || 
+                               attendee.params['ADMIN'] || '';
               
               resources.push({
                 name: name,
                 adminEmail: email,
-                type: resourceType
+                type: resourceType,
+                subType: resourceType, // Map to both fields to handle both conventions
+                capacity: capacity,
+                remarks: remarks,
+                adminName: adminName
               });
               
-              console.log(`Added node-ical resource: ${name} (${email}) of type ${resourceType}`);
+              console.log(`Added node-ical resource: ${name} (${email}) of type ${resourceType} with capacity ${capacity}, adminName ${adminName}`);
             } else {
               // Process as regular attendee
               const name = attendee.params?.CN;
@@ -1388,10 +1461,33 @@ export class SyncService {
                   }
                 }
                 
+                // Extract additional resource metadata from the line if available
+                const capacityMatch = line.match(/X-RESOURCE-CAPACITY=([^;:]+)/);
+                let capacity = null;
+                if (capacityMatch && capacityMatch[1]) {
+                  try {
+                    capacity = parseInt(capacityMatch[1], 10);
+                  } catch (e) {
+                    console.warn(`Could not parse resource capacity: ${capacityMatch[1]}`);
+                  }
+                }
+                
+                // Extract remarks/notes if available
+                const remarksMatch = line.match(/X-RESOURCE-REMARKS=([^;:]+)/);
+                const remarks = remarksMatch ? remarksMatch[1] : '';
+                
+                // Extract admin name if available
+                const adminNameMatch = line.match(/X-RESOURCE-ADMIN=([^;:]+)/);
+                const adminName = adminNameMatch ? adminNameMatch[1] : '';
+                
                 resources.push({
                   name: name || 'Unnamed Resource',
                   adminEmail: cleanedEmail, // Use the cleaned email
-                  type: resourceTypeValue
+                  type: resourceTypeValue,
+                  subType: resourceTypeValue, // Map to both fields to handle both conventions
+                  capacity: capacity,
+                  remarks: remarks,
+                  adminName: adminName
                 });
               } else {
                 // Process as regular attendee
@@ -2091,12 +2187,24 @@ export class SyncService {
                       resourcesArray.forEach(resource => {
                         if (resource && resource.adminEmail) {
                           // Format: ATTENDEE;CN=Resource Name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=type;SCHEDULE-STATUS=x.x:mailto:resource@example.com
-                          const cn = resource.adminName ? `;CN=${resource.adminName}` : '';
-                          const subType = resource.subType ? `;X-RESOURCE-TYPE=${resource.subType}` : '';
+                          // Use either adminName or name if available
+                          const resourceName = resource.adminName || resource.name || 'Unnamed Resource';
+                          const cn = resourceName ? `;CN=${resourceName}` : '';
+                          
+                          // Use either subType or type field (handle both naming conventions)
+                          const resourceType = resource.subType || resource.type || '';
+                          const subType = resourceType ? `;X-RESOURCE-TYPE=${resourceType}` : '';
+                          
+                          // Add capacity as a custom parameter if available
+                          const capacity = resource.capacity ? `;X-RESOURCE-CAPACITY=${resource.capacity}` : '';
+                          
+                          // Add remarks/notes as a custom parameter if available
+                          const remarks = resource.remarks ? `;X-RESOURCE-REMARKS=${resource.remarks}` : '';
+                          
                           const scheduleStatus = resource.scheduleStatus ? `;SCHEDULE-STATUS=${resource.scheduleStatus}` : '';
                           
-                          console.log(`Adding resource to event update: ${resource.adminName || 'Unnamed Resource'} (${resource.adminEmail})`);
-                          attendeesAndResourcesSection += `ATTENDEE${cn};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${subType}${scheduleStatus}:mailto:${resource.adminEmail}\r\n`;
+                          console.log(`Adding resource to event update: ${resourceName} (${resource.adminEmail})`);
+                          attendeesAndResourcesSection += `ATTENDEE${cn};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${subType}${capacity}${remarks}${scheduleStatus}:mailto:${resource.adminEmail}\r\n`;
                         }
                       });
                     }
