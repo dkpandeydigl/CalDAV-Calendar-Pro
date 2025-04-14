@@ -529,6 +529,9 @@ export function generateCancellationICalEvent(event: any, options: {
     }
   }
   
+  console.log(`Preparing cancellation for event: ${event.title} with UID: ${originalUid}`);
+  console.log(`Original event has ${event.resources ? event.resources.length : 0} resources and ${event.attendees ? event.attendees.length : 0} attendees`);
+  
   // Create a shallow copy of the event - we don't want to modify the original
   const eventCopy = { ...event, uid: originalUid };
   
