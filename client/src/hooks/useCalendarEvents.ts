@@ -660,78 +660,197 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   }
   
   const filteredEvents = deduplicatedEvents.filter((event: Event) => {
-    // First filter out recently deleted events by ID and UID
-    if (recentlyDeletedEventIds.current.has(event.id) || 
-        (event.uid && recentlyDeletedEventUids.current.has(event.uid))) {
-        
-    // Also check sessionStorage for deleted events to ensure cross-component consistency
+    // STEP 1: Quick lookup in localStorage map for maximum performance
     try {
-      const deletedEventsKey = 'recently_deleted_events';
-      const sessionDeletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
-      
-      if (sessionDeletedEvents.length > 0) {
-        // Check if this event is in the deleted list by ID or UID
-        const isInDeletedList = sessionDeletedEvents.some(
-          (deleted: any) => {
-            // Direct ID match
-            if (deleted.id === event.id) return true;
-            
-            // UID match if available
-            if (deleted.uid && event.uid && deleted.uid === event.uid) return true;
-            
-            // Title + start date signature match (for events without stable IDs)
-            if (deleted.signature && 
-                event.title && event.startDate && 
-                deleted.signature === `${event.title}_${new Date(event.startDate).toISOString()}`) {
-              return true;
+      const lookupMapJson = localStorage.getItem('deletion_lookup_map');
+      if (lookupMapJson) {
+        const lookupMap = JSON.parse(lookupMapJson);
+        
+        // Check by ID (fastest check)
+        if (lookupMap[`id:${event.id}`]) {
+          console.log(`Filtering out event with ID ${event.id} - found in permanent deletion map`);
+          return false;
+        }
+        
+        // Check by UID if available
+        if (event.uid && lookupMap[`uid:${event.uid}`]) {
+          console.log(`Filtering out event with UID ${event.uid} - found in permanent deletion map`);
+          return false;
+        }
+        
+        // Check by signature if we have necessary data
+        if (event.title && event.startDate) {
+          // First with calendarId for exact match
+          if (event.calendarId) {
+            const startTime = new Date(event.startDate).getTime();
+            const signature = `${event.calendarId}-${event.title}-${startTime}`;
+            if (lookupMap[`sig:${signature}`]) {
+              console.log(`Filtering out event - found in permanent deletion map by signature`);
+              return false;
             }
-            
+          }
+          
+          // Then try cross-calendar signature for shared events
+          const startTime = new Date(event.startDate).getTime();
+          const crossCalSignature = `${event.title}-${startTime}`;
+          if (lookupMap[`sig:${crossCalSignature}`]) {
+            console.log(`Filtering out event - found in permanent deletion map by cross-calendar signature`);
             return false;
           }
-        );
-        
-        if (isInDeletedList) {
-          console.log(`Filtering out recently deleted event from session storage: ${event.id} (${event.title || 'Untitled'})`);
-          return false;
         }
       }
     } catch (e) {
-      // Ignore any session storage errors - this is just an additional safety check
+      // Silent fail - we'll fall back to other checks
     }
-      console.log(`Filtering out deleted event from UI - ID: ${event.id}, UID: ${event.uid}`);
+    
+    // STEP 2: Check in-memory tracking (faster than storage checks)
+    // Check for deleted ID
+    if (recentlyDeletedEventIds.current.has(event.id)) {
+      console.log(`Filtering out event with ID ${event.id} - found in memory deletion tracker`);
       return false;
     }
     
-    // Filter by signatures (both standard and cross-calendar)
-    if (event.title && event.startDate && event.calendarId) {
+    // Check for deleted UID
+    if (event.uid && recentlyDeletedEventUids.current.has(event.uid)) {
+      console.log(`Filtering out event with UID ${event.uid} - found in memory deletion tracker`);
+      return false;
+    }
+    
+    // Check for deleted signature
+    if (event.calendarId && event.title && event.startDate) {
       const startTime = new Date(event.startDate).getTime();
       
-      // Check standard signature
+      // Check calendar-specific signature
       const signature = `${event.calendarId}-${event.title}-${startTime}`;
       if (recentlyDeletedEventSignatures.current.has(signature)) {
-        console.log(`Filtering out deleted event by signature: ${signature}`);
+        console.log(`Filtering out event - found in memory deletion tracker by signature`);
         return false;
       }
       
       // Check cross-calendar signature
-      const crossCalendarSignature = `${event.title}-${startTime}`;
-      if (recentlyDeletedEventSignatures.current.has(crossCalendarSignature)) {
-        console.log(`Filtering out deleted event by cross-calendar signature: ${crossCalendarSignature}`);
+      const crossCalSignature = `${event.title}-${startTime}`;
+      if (recentlyDeletedEventSignatures.current.has(crossCalSignature)) {
+        console.log(`Filtering out event - found in memory deletion tracker by cross-calendar signature`);
         return false;
-      }
-      
-      // Check if event is deleted based on end time (for all-day events)
-      if (event.endDate) {
-        const endTime = new Date(event.endDate).getTime();
-        const endSignature = `${event.calendarId}-${event.title}-${endTime}`;
-        if (recentlyDeletedEventSignatures.current.has(endSignature)) {
-          console.log(`Filtering out deleted event by end time signature: ${endSignature}`);
-          return false;
-        }
       }
     }
     
-    // Then filter by enabled calendar IDs
+    // STEP 3: Check sessionStorage for full deletion records
+    try {
+      const deletedDetailsJson = sessionStorage.getItem('deletedEventDetails') || '[]';
+      const deletedDetails = JSON.parse(deletedDetailsJson);
+      
+      if (deletedDetails.length > 0) {
+        // Check if event matches any deletion record
+        const isDeleted = deletedDetails.some((record: any) => {
+          // Check by ID
+          if (record.id === event.id) return true;
+          
+          // Check by UID
+          if (record.uid && event.uid && record.uid === event.uid) return true;
+          
+          // Check by signature
+          if (record.signatures && event.title && event.startDate) {
+            const startTime = new Date(event.startDate).getTime();
+            
+            // Check with calendarId if available
+            if (event.calendarId) {
+              const signature = `${event.calendarId}-${event.title}-${startTime}`;
+              if (record.signatures.main === signature) return true;
+            }
+            
+            // Check cross-calendar signature
+            const crossCalSignature = `${event.title}-${startTime}`;
+            if (record.signatures.crossCal === crossCalSignature) return true;
+            
+            // Check by time proximity with same title (within 1 second)
+            if (record.title === event.title && record.startDate) {
+              if (Math.abs(new Date(record.startDate).getTime() - startTime) < 1000) {
+                return true;
+              }
+            }
+          }
+          
+          return false;
+        });
+        
+        if (isDeleted) {
+          console.log(`Filtering out event ${event.id} - found in sessionStorage deletion records`);
+          return false;
+        }
+      }
+    } catch (e) {
+      // Silent fail - move to next check
+    }
+    
+    // STEP 4: Legacy check for older session storage format
+    try {
+      const deletedEventsKey = 'recently_deleted_events';
+      const sessionDeletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
+      
+      const isInDeletedList = sessionDeletedEvents.some(
+        (deleted: any) => {
+          // Direct ID match
+          if (deleted.id === event.id) return true;
+          
+          // UID match if available
+          if (deleted.uid && event.uid && deleted.uid === event.uid) return true;
+          
+          // Title + start date signature match
+          if (deleted.signature && 
+              event.title && event.startDate && 
+              deleted.signature === `${event.title}_${new Date(event.startDate).toISOString()}`) {
+            return true;
+          }
+          
+          return false;
+        }
+      );
+      
+      if (isInDeletedList) {
+        console.log(`Filtering out event ${event.id} - found in legacy session storage format`);
+        return false;
+      }
+    } catch (e) {
+      // Ignore any session storage errors
+    }
+    
+    // STEP 5: Final detailed comparison with localStorage permanent records
+    try {
+      const permanentDeletedJson = localStorage.getItem('permanent_deleted_events');
+      if (permanentDeletedJson) {
+        const permanentDeleted = JSON.parse(permanentDeletedJson);
+        
+        // Do a detailed object comparison for each deletion record
+        const isPermanentlyDeleted = permanentDeleted.some((record: any) => {
+          // Time window for fuzzy matching (within 2 minutes)
+          const TIME_WINDOW = 2 * 60 * 1000;
+          
+          // Match by signature if both have necessary properties
+          if (record.title && record.startDate && event.title && event.startDate) {
+            const recordStartTime = new Date(record.startDate).getTime();
+            const eventStartTime = new Date(event.startDate).getTime();
+            
+            // If titles match and start times are close, consider it a match
+            if (record.title === event.title && 
+                Math.abs(recordStartTime - eventStartTime) < TIME_WINDOW) {
+              return true;
+            }
+          }
+          
+          return false;
+        });
+        
+        if (isPermanentlyDeleted) {
+          console.log(`Filtering out event ${event.id} - found by detailed matching in permanent deletion records`);
+          return false;
+        }
+      }
+    } catch (e) {
+      // Silently continue if localStorage check fails
+    }
+    
+    // Standard filter - only keep events from enabled calendars
     return enabledCalendarIds.includes(event.calendarId);
   });
 
