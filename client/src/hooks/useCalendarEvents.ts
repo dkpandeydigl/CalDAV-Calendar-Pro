@@ -69,6 +69,24 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       }
     }
     
+    // Prepare event details for storage
+    const eventDetails = {
+      id: event.id,
+      uid: event.uid || null,
+      title: event.title || null,
+      startDate: event.startDate || null,
+      endDate: event.endDate || null,
+      calendarId: event.calendarId,
+      deleteTime: Date.now(),
+      permanent: true, // Mark as a permanent deletion
+      signatures: {
+        main: signature || null,
+        crossCal: crossCalendarSignature || null,
+        end: endSignature || null,
+        endCrossCal: endCrossCalSignature || null
+      }
+    };
+    
     // STORE IN SESSION STORAGE for persistence across refreshes
     try {
       // 1. Basic ID list for simple lookups
@@ -114,26 +132,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         }
       }
       
-      // 4. Store complete event details for comprehensive matching
+      // 4. Store complete event details for comprehensive matching in sessionStorage
       const deletedDetailsJson = sessionStorage.getItem('deletedEventDetails') || '[]';
       const deletedDetails = JSON.parse(deletedDetailsJson);
-      
-      // Prepare event details for storage
-      const eventDetails = {
-        id: event.id,
-        uid: event.uid || null,
-        title: event.title || null,
-        startDate: event.startDate || null,
-        endDate: event.endDate || null,
-        calendarId: event.calendarId,
-        deleteTime: Date.now(),
-        signatures: {
-          main: signature || null,
-          crossCal: crossCalendarSignature || null,
-          end: endSignature || null,
-          endCrossCal: endCrossCalSignature || null
-        }
-      };
       
       // Check if we already have this event by ID
       const existingIndex = deletedDetails.findIndex((e: any) => e.id === event.id);
@@ -145,9 +146,52 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         deletedDetails.push(eventDetails);
       }
       
-      // Save the updated details
+      // Save the updated details to sessionStorage
       sessionStorage.setItem('deletedEventDetails', JSON.stringify(deletedDetails));
       console.log(`Stored deleted event details in session storage:`, eventDetails);
+      
+      // 5. ALSO STORE IN LOCAL STORAGE for persistence across browser sessions
+      try {
+        // First, get existing permanent deletions
+        const permanentDeletedJson = localStorage.getItem('permanent_deleted_events') || '[]';
+        const permanentDeleted = JSON.parse(permanentDeletedJson);
+        
+        // Check if we already have this event
+        const existingPermanentIndex = permanentDeleted.findIndex((e: any) => 
+          e.id === event.id || (e.uid && event.uid && e.uid === event.uid)
+        );
+        
+        if (existingPermanentIndex >= 0) {
+          // Update existing entry
+          permanentDeleted[existingPermanentIndex] = eventDetails;
+        } else {
+          // Add new entry, but maintain a reasonable limit (keep last 100 deletions)
+          permanentDeleted.push(eventDetails);
+          if (permanentDeleted.length > 100) {
+            // Sort by deleteTime and keep most recent 100
+            permanentDeleted.sort((a: any, b: any) => b.deleteTime - a.deleteTime);
+            permanentDeleted.length = 100;
+          }
+        }
+        
+        // Save back to localStorage
+        localStorage.setItem('permanent_deleted_events', JSON.stringify(permanentDeleted));
+        console.log(`Stored deleted event in localStorage for permanent tracking`);
+        
+        // 6. Store a simplified deletion map for quicker lookups
+        const deletionLookupMap = JSON.parse(localStorage.getItem('deletion_lookup_map') || '{}');
+        
+        // Add all identifiers to the map
+        deletionLookupMap[`id:${event.id}`] = Date.now();
+        if (event.uid) deletionLookupMap[`uid:${event.uid}`] = Date.now();
+        if (signature) deletionLookupMap[`sig:${signature}`] = Date.now();
+        if (crossCalendarSignature) deletionLookupMap[`sig:${crossCalendarSignature}`] = Date.now();
+        
+        // Save the updated map
+        localStorage.setItem('deletion_lookup_map', JSON.stringify(deletionLookupMap));
+      } catch (localStorageError) {
+        console.error('Error storing deleted event in localStorage:', localStorageError);
+      }
       
       // 5. Apply CSS hiding to any matching DOM elements for this event
       try {
@@ -261,9 +305,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   
   // Filter function to remove deleted events from the cache before restoration
   const filterDeletedEventsFromCache = useCallback((events: Event[]): Event[] => {
-    // First, ensure we load deleted event data from session storage into memory
+    // First, ensure we load deleted event data from session storage and localStorage into memory
     try {
-      // Load basic IDs list
+      // Load basic IDs list from sessionStorage
       const deletedIdsJson = sessionStorage.getItem('deletedEventIds') || '[]';
       const deletedIds = JSON.parse(deletedIdsJson);
       if (deletedIds.length > 0) {
@@ -273,7 +317,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         });
       }
       
-      // Load UIDs list
+      // Load UIDs list from sessionStorage
       const deletedUidsJson = sessionStorage.getItem('deletedEventUids') || '[]';
       const deletedUids = JSON.parse(deletedUidsJson);
       if (deletedUids.length > 0) {
@@ -283,7 +327,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         });
       }
       
-      // Load signatures list
+      // Load signatures list from sessionStorage
       const deletedSignaturesJson = sessionStorage.getItem('deletedEventSignatures') || '[]';
       const deletedSignatures = JSON.parse(deletedSignaturesJson);
       if (deletedSignatures.length > 0) {
@@ -293,12 +337,50 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         });
       }
       
-      // Load detailed deletion info
+      // Load detailed deletion info from sessionStorage
       const deletedDetailsJson = sessionStorage.getItem('deletedEventDetails') || '[]';
       const deletedDetails = JSON.parse(deletedDetailsJson);
       console.log(`Loaded ${deletedDetails.length} detailed deletion records from session storage`);
+      
+      // Load permanent deletion data from localStorage (persists across browser sessions)
+      try {
+        // Get the quick lookup map first, which is more efficient
+        const deletionLookupMapJson = localStorage.getItem('deletion_lookup_map') || '{}';
+        const deletionLookupMap = JSON.parse(deletionLookupMapJson);
+        
+        if (Object.keys(deletionLookupMap).length > 0) {
+          console.log(`Loading ${Object.keys(deletionLookupMap).length} deletion lookup entries from localStorage`);
+        }
+        
+        // Also load the full permanent deletion records for detailed matching
+        const permanentDeletedJson = localStorage.getItem('permanent_deleted_events') || '[]';
+        const permanentDeleted = JSON.parse(permanentDeletedJson);
+        
+        if (permanentDeleted.length > 0) {
+          console.log(`Loading ${permanentDeleted.length} permanent deletion records from localStorage`);
+          
+          // Add all permanent deletions to our in-memory tracking
+          permanentDeleted.forEach((detail: any) => {
+            // Add ID
+            if (detail.id) recentlyDeletedEventIds.current.add(detail.id);
+            
+            // Add UID
+            if (detail.uid) recentlyDeletedEventUids.current.add(detail.uid);
+            
+            // Add signatures if available
+            if (detail.signatures) {
+              if (detail.signatures.main) recentlyDeletedEventSignatures.current.add(detail.signatures.main);
+              if (detail.signatures.crossCal) recentlyDeletedEventSignatures.current.add(detail.signatures.crossCal);
+              if (detail.signatures.end) recentlyDeletedEventSignatures.current.add(detail.signatures.end);
+              if (detail.signatures.endCrossCal) recentlyDeletedEventSignatures.current.add(detail.signatures.endCrossCal);
+            }
+          });
+        }
+      } catch (localStorageError) {
+        console.error('Error loading permanent deleted events from localStorage:', localStorageError);
+      }
     } catch (error) {
-      console.error('Error loading deleted events from session storage:', error);
+      console.error('Error loading deleted events from storage:', error);
     }
     
     return events.filter(event => {
@@ -1912,10 +1994,84 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         );
       }
       
-      // Force an immediate invalidation of all event queries to refresh data
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      }, 100);
+      // IMPORTANT: Instead of invalidating queries (which could bring back deleted events),
+      // we'll use a more controlled approach to prevent re-fetching deleted events.
+      
+      // 1. Mark this as a deletion in a special flag in localStorage
+      try {
+        const deletionFlag = {
+          eventId: id,
+          timestamp: Date.now(),
+          type: 'permanent_deletion'
+        };
+        localStorage.setItem('last_event_deletion', JSON.stringify(deletionFlag));
+      } catch (e) {
+        console.error('Could not store deletion flag:', e);
+      }
+      
+      // 2. Prevent immediate query invalidation which might restore the deleted event
+      // Instead, we'll force a controlled update with our filters already applied
+      const controlledRefresh = () => {
+        // Get current data first
+        const currentEvents = queryClient.getQueryData<Event[]>(['/api/events']) || [];
+        
+        // Create a filter function that excludes the deleted event and its duplicates
+        const filterDeleted = (events: Event[]) => {
+          return events.filter(e => {
+            // Filter by ID
+            if (e.id === id) return false;
+            
+            // Filter by UID if available from context
+            if (context?.eventToDelete?.uid && e.uid === context.eventToDelete.uid) return false;
+            
+            // Filter by signature if we have enough data
+            if (context?.eventToDelete?.title && context.eventToDelete.startDate) {
+              const eventToDelete = context.eventToDelete;
+              const startTime = new Date(eventToDelete.startDate).getTime();
+              const signature = `${eventToDelete.calendarId}-${eventToDelete.title}-${startTime}`;
+              const crossCalSignature = `${eventToDelete.title}-${startTime}`;
+              
+              if (e.title && e.startDate) {
+                const eStartTime = new Date(e.startDate).getTime();
+                const eSignature = `${e.calendarId}-${e.title}-${eStartTime}`;
+                const eCrossCalSignature = `${e.title}-${eStartTime}`;
+                
+                if (eSignature === signature || eCrossCalSignature === crossCalSignature) {
+                  return false;
+                }
+              }
+            }
+            
+            return true;
+          });
+        };
+        
+        // Apply our filter to the current data
+        const filteredEvents = filterDeleted(currentEvents);
+        
+        // Update the cache with our filtered version instead of refetching
+        queryClient.setQueryData(['/api/events'], filteredEvents);
+        
+        // Update any filtered queries with the same approach
+        if (context?.allQueryKeys) {
+          context.allQueryKeys.forEach((key: QueryKey) => {
+            if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
+              const keyEvents = queryClient.getQueryData<Event[]>(key) || [];
+              queryClient.setQueryData(key, filterDeleted(keyEvents));
+            }
+          });
+        }
+        
+        // Also update the specific calendar's events if necessary
+        if (context?.eventToDelete?.calendarId) {
+          const calendarId = context.eventToDelete.calendarId;
+          const calendarEvents = queryClient.getQueryData<Event[]>(['/api/calendars', calendarId, 'events']) || [];
+          queryClient.setQueryData(['/api/calendars', calendarId, 'events'], filterDeleted(calendarEvents));
+        }
+      };
+      
+      // Run our controlled refresh after a short delay
+      setTimeout(controlledRefresh, 50);
       
       // Show customized toast based on sync status
       if (result.sync) {
