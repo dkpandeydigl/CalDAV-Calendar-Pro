@@ -505,11 +505,40 @@ async function handleWebSocketMessage(userId: number, data: any, ws: WebSocket):
 }
 
 /**
- * Send message to a WebSocket
+ * Send message to a WebSocket with enhanced error handling and state checking
+ * 
+ * @param ws WebSocket connection to send to
+ * @param data Data to send to the client
+ * @returns boolean Whether the message was sent successfully
  */
-function sendToSocket(ws: WebSocket, data: any): void {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(data));
+function sendToSocket(ws: WebSocket, data: any): boolean {
+  try {
+    // Check if the socket is open and ready
+    if (ws.readyState === WebSocket.OPEN) {
+      // Convert data to JSON string
+      const message = JSON.stringify(data);
+      
+      // Send the message
+      ws.send(message);
+      
+      // Log successful send for important messages
+      if (data.type && ['connection_established', 'sync_complete', 'auth_success', 'error'].includes(data.type)) {
+        console.log(`WebSocket message sent (${data.type}): ${message.substring(0, 200)}${message.length > 200 ? '...' : ''}`);
+      }
+      
+      return true;
+    } else {
+      // Log if we tried to send to a closed or connecting socket
+      const stateText = ws.readyState === WebSocket.CONNECTING ? 'CONNECTING' :
+                         ws.readyState === WebSocket.CLOSING ? 'CLOSING' :
+                         ws.readyState === WebSocket.CLOSED ? 'CLOSED' : 'UNKNOWN';
+                         
+      console.warn(`⚠️ Attempted to send message type ${data.type} to a socket in ${stateText} state`);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Error sending WebSocket message:', error);
+    return false;
   }
 }
 
@@ -522,15 +551,32 @@ function sendToSocket(ws: WebSocket, data: any): void {
  */
 export function broadcastToUser(userId: number, data: any, excludeSocket?: WebSocket): void {
   const sockets = userSockets.get(userId);
-  if (sockets) {
-    // Convert Set to Array for compatibility with all TS versions
-    Array.from(sockets).forEach(socket => {
-      // Skip the excluded socket if specified
-      if (excludeSocket && socket === excludeSocket) {
-        return;
-      }
-      sendToSocket(socket, data);
-    });
+  if (!sockets || sockets.size === 0) {
+    if (data.type && ['notification_count', 'new_notification', 'event_changed', 'calendar_changed'].includes(data.type)) {
+      console.log(`⚠️ Attempting to broadcast ${data.type} to user ${userId} with no active connections`);
+    }
+    return;
+  }
+  
+  let sentCount = 0;
+  const socketCount = sockets.size;
+  
+  // Convert Set to Array for compatibility with all TS versions
+  Array.from(sockets).forEach(socket => {
+    // Skip the excluded socket if specified
+    if (excludeSocket && socket === excludeSocket) {
+      return;
+    }
+    
+    // Send message and count successes
+    if (sendToSocket(socket, data)) {
+      sentCount++;
+    }
+  });
+  
+  // Log broadcast summary for important message types
+  if (data.type && ['notification_count', 'new_notification', 'event_changed', 'calendar_changed'].includes(data.type)) {
+    console.log(`📢 Broadcast ${data.type} to user ${userId}: ${sentCount}/${socketCount} connections`);
   }
 }
 

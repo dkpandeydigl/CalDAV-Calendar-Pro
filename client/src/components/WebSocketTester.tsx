@@ -116,13 +116,31 @@ export function WebSocketTester() {
       ws.onerror = (error) => {
         console.error(`❌ WebSocket error for ${useFallbackPath ? 'fallback' : 'primary'} path:`, error);
         
+        // Display detailed error information
+        let errorDetails = "Unknown error";
+        
+        // Try to extract more detailed error information when available
+        if (error && (error as any).message) {
+          errorDetails = (error as any).message;
+        } else if (error instanceof Event && (error.target as any)?.url) {
+          errorDetails = `Failed to connect to ${(error.target as any).url}`;
+        }
+        
         if (useFallbackPath) {
           setFallbackWorking(false);
         } else {
           setPrimaryWorking(false);
         }
         
-        setErrorMessage(`Failed to connect to ${useFallbackPath ? 'fallback' : 'primary'} WebSocket path`);
+        // For connection issues in Replit, suggest special URL format
+        const host = window.location.host;
+        if (host.includes('replit') || host.includes('replit.dev')) {
+          setErrorMessage(`Failed to connect to ${useFallbackPath ? 'fallback' : 'primary'} path. Error: ${errorDetails}. 
+                          Try using relative WebSocket URL format on Replit.`);
+        } else {
+          setErrorMessage(`Failed to connect to ${useFallbackPath ? 'fallback' : 'primary'} WebSocket path. Error: ${errorDetails}`);
+        }
+        
         setConnectionStatus('error');
       };
       
