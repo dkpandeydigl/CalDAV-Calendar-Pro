@@ -24,6 +24,14 @@ interface CalDAVResource {
   remarks?: string;
   adminName?: string;
   scheduleStatus?: string;
+  // Additional fields for compatibility with different resource formats
+  id?: string;
+  email?: string;
+  displayName?: string;
+  // Fields for integrating with different CalDAV clients
+  role?: string;
+  partstat?: string;
+  status?: string;
 }
 
 // Extend the DAVObject interface to include properties we need
