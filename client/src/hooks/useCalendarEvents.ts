@@ -1519,6 +1519,39 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
       
+      // Double-check DOM elements are still hidden/removed
+      try {
+        // Re-apply CSS hiding to any matching elements that might have reappeared
+        const elements = document.querySelectorAll(`[data-event-id="${id}"]`);
+        if (elements.length > 0) {
+          console.log(`Found ${elements.length} DOM elements for deleted event ${id} - applying permanent hiding`);
+          elements.forEach(el => {
+            (el as HTMLElement).style.display = 'none';
+            (el as HTMLElement).style.opacity = '0';
+            (el as HTMLElement).style.pointerEvents = 'none';
+            el.setAttribute('data-deleted', 'true');
+            el.setAttribute('data-permanent-delete', 'true');
+          });
+        }
+        
+        // Also check by UID if available
+        if (context?.eventToDelete?.uid) {
+          const uidElements = document.querySelectorAll(`[data-event-uid="${context.eventToDelete.uid}"]`);
+          if (uidElements.length > 0) {
+            console.log(`Found ${uidElements.length} DOM elements by UID for deleted event - applying permanent hiding`);
+            uidElements.forEach(el => {
+              (el as HTMLElement).style.display = 'none';
+              (el as HTMLElement).style.opacity = '0';
+              (el as HTMLElement).style.pointerEvents = 'none';
+              el.setAttribute('data-deleted', 'true');
+              el.setAttribute('data-permanent-delete', 'true');
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error applying permanent deletion styles:', error);
+      }
+      
       // If we have the event that was deleted, add it to our tracking system to ensure it doesn't reappear
       if (context?.eventToDelete) {
         console.log(`Adding deleted event to tracking system:`, context.eventToDelete);
