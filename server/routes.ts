@@ -2022,23 +2022,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Login to the server
             await davClient.login();
             
-            // Perform direct deletion
+            // Perform direct deletion using fetch directly instead of davClient for more reliability
             console.log(`Deleting event with UID: ${event.uid} from server`);
             
             try {
-              const deleteResponse = await davClient.deleteCalendarObject({
-                calendarObject: {
-                  url: event.url,
-                  etag: event.etag
-                }
-              });
+              // Get the calendar URL without the specific event
+              const calendarUrl = event.url.substring(0, event.url.lastIndexOf('/') + 1);
+              const eventFilename = event.url.substring(event.url.lastIndexOf('/') + 1);
               
-              if (deleteResponse.status >= 200 && deleteResponse.status < 300) {
+              console.log(`Performing direct HTTP DELETE to ${event.url}`);
+              console.log(`Calendar base URL: ${calendarUrl}, Event filename: ${eventFilename}`);
+
+              // Create auth header
+              const authHeader = 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
+              
+              // Use a fetch request with proper headers
+              const fetchOptions = {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': authHeader,
+                  'If-Match': event.etag || '*',
+                  'Content-Type': 'text/calendar; charset=utf-8'
+                }
+              };
+              
+              console.log(`Deleting from CalDAV server with If-Match: ${event.etag || '*'}`);
+              
+              const fetchResponse = await fetch(event.url, fetchOptions);
+              
+              console.log(`Delete response status: ${fetchResponse.status}`);
+              
+              // 2xx status codes indicate success
+              if (fetchResponse.status >= 200 && fetchResponse.status < 300) {
                 response.sync.succeeded = true;
                 console.log(`Successfully deleted event ${eventId} from CalDAV server`);
               } else {
-                response.sync.error = `Server returned status ${deleteResponse.status} for deletion`;
-                console.error(`Failed to delete event ${eventId} from server: Status ${deleteResponse.status}`);
+                const responseText = await fetchResponse.text();
+                response.sync.error = `Server returned status ${fetchResponse.status} for deletion`;
+                console.error(`Failed to delete event ${eventId} from server: Status ${fetchResponse.status}, Response: ${responseText}`);
+                
+                // Try the davClient method as fallback
+                try {
+                  console.log(`Trying davClient method as fallback...`);
+                  const deleteResponse = await davClient.deleteCalendarObject({
+                    calendarObject: {
+                      url: event.url,
+                      etag: event.etag
+                    }
+                  });
+                  
+                  if (deleteResponse && deleteResponse.status >= 200 && deleteResponse.status < 300) {
+                    response.sync.succeeded = true;
+                    console.log(`Successfully deleted event ${eventId} from CalDAV server using davClient fallback`);
+                  } else {
+                    console.error(`davClient fallback also failed with status:`, deleteResponse);
+                  }
+                } catch (davClientError) {
+                  console.error(`davClient fallback also failed:`, davClientError);
+                }
               }
             } catch (deleteError) {
               console.error(`Error deleting event ${eventId} from CalDAV server:`, deleteError);
@@ -2259,16 +2300,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if ((deleteFrom === 'server' || deleteFrom === 'both') && 
               event.url && event.etag && davClient) {
             try {
-              // Perform direct deletion instead of cancellation
+              // Perform direct deletion using fetch directly instead of davClient for more reliability
               console.log(`Directly deleting event ${event.id} with UID: ${event.uid} from server`);
               
-              // Use direct deletion to properly remove the event instead of cancelling it
-              await davClient.deleteCalendarObject({
-                calendarObject: {
-                  url: event.url,
-                  etag: event.etag
+              // Create auth header
+              const authHeader = 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
+              
+              // Use a fetch request with proper headers
+              const fetchOptions = {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': authHeader,
+                  'If-Match': event.etag || '*',
+                  'Content-Type': 'text/calendar; charset=utf-8'
                 }
-              });
+              };
+              
+              console.log(`Bulk delete: Deleting from CalDAV server with If-Match: ${event.etag || '*'}`);
+              
+              // Use fetch for more direct control over the request
+              const fetchResponse = await fetch(event.url, fetchOptions);
+              
+              if (fetchResponse.status >= 200 && fetchResponse.status < 300) {
+                console.log(`Successfully deleted event ${event.id} from CalDAV server (status: ${fetchResponse.status})`);
+              } else {
+                // Fall back to davClient if fetch fails
+                console.log(`Fetch delete failed with status ${fetchResponse.status}, trying davClient fallback...`);
+                await davClient.deleteCalendarObject({
+                  calendarObject: {
+                    url: event.url,
+                    etag: event.etag
+                  }
+                });
+              }
               
               serverDeleted.push(event.id);
               console.log(`Successfully deleted event ${event.id} from CalDAV server`);
