@@ -1914,25 +1914,36 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           return true;
         };
         
-        // 1. Update the main events cache immediately
+        // 1. Update the main events cache immediately with a new array instance
         queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
-          return oldEvents.filter(shouldKeepEvent);
+          // Always create a new array to ensure React detects changes
+          const filteredEvents = [...oldEvents.filter(shouldKeepEvent)];
+          console.log(`Main cache update: Removed event(s), old length: ${oldEvents.length}, new length: ${filteredEvents.length}`);
+          return filteredEvents;
         });
         
-        // 2. Update any date-filtered event caches
+        // 2. Update any date-filtered event caches with new array instances
         allQueryKeys.forEach((key: QueryKey) => {
           if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
             queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
-              return oldEvents.filter(shouldKeepEvent);
+              // Always create a new array to ensure React detects changes
+              const filteredEvents = [...oldEvents.filter(shouldKeepEvent)];
+              console.log(`Cache update for key ${JSON.stringify(key)}: Removed event(s), old length: ${oldEvents.length}, new length: ${filteredEvents.length}`);
+              return filteredEvents;
             });
           }
         });
         
-        // 3. Also update the calendar-specific cache if it exists
+        // 3. Also update the calendar-specific cache if it exists with a new array instance
         const calendarId = eventToDelete.calendarId;
         if (calendarId) {
           queryClient.setQueryData<Event[]>(['/api/calendars', calendarId, 'events'], 
-            (oldEvents = []) => oldEvents.filter(shouldKeepEvent)
+            (oldEvents = []) => {
+              // Always create a new array to ensure React detects changes
+              const filteredEvents = [...oldEvents.filter(shouldKeepEvent)];
+              console.log(`Calendar-specific cache update (ID: ${calendarId}): Removed event(s), old length: ${oldEvents.length}, new length: ${filteredEvents.length}`);
+              return filteredEvents;
+            }
           );
         }
         
