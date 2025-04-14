@@ -6,6 +6,7 @@ import type { Event } from '@shared/schema';
 import { useCalendars } from './useCalendars';
 import { useSharedCalendars } from './useSharedCalendars';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useDeletedEventsTracker } from './useDeletedEventsTracker';
 
 // Type declarations to help with TanStack Query types
 type QueryKey = unknown;
