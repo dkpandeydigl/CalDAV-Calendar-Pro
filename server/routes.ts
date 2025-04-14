@@ -1460,20 +1460,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Add event to session's recently deleted list for sync exclusion
-      // We need to track both the ID and the UID to ensure we don't recreate deleted events
+      // Add event to session's recently deleted list for tracking
       if (!req.session.recentlyDeletedEvents) {
         req.session.recentlyDeletedEvents = [];
       }
+      
       // Push the event ID to the list of deleted events
       req.session.recentlyDeletedEvents.push(eventId);
       
-      // Also track deleted UIDs to prevent resync of events with same UID but different ID
-      if (!req.session.recentlyDeletedUIDs) {
-        req.session.recentlyDeletedUIDs = [];
+      // Ensure proper synchronization to respect deletion
+      if (req.user) {
+        syncService.syncNow(req.user.id, {
+          forceRefresh: true,
+          preserveLocalDeletes: true // Ensure the sync respects local deletions
+        }).catch(err => {
+          console.error('Error during sync after event deletion:', err);
+        });
       }
-      // Push the event UID to the list of deleted UIDs
-      req.session.recentlyDeletedUIDs.push(event.uid);
       
       // Notify clients about the deleted event
       try {
@@ -2158,7 +2161,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Force a calendar sync to make sure changes are propagated
         syncService.syncNow(req.user!.id, {
           forceRefresh: true,
-          preserveLocalEvents: false
+          preserveLocalEvents: false,
+          preserveLocalDeletes: true // Ensure the sync respects local deletions
         });
         
         return res.status(200).json(response);
@@ -2385,6 +2389,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Force a sync that respects local deletions if we've deleted events locally
+      if (locallyDeleted.length > 0 && req.user) {
+        syncService.syncNow(req.user.id, {
+          forceRefresh: true,
+          preserveLocalDeletes: true // Ensure the sync respects local deletions
+        }).catch(err => {
+          console.error('Error during sync after bulk deletion:', err);
+        });
+      }
+
       // Return a summary of what was deleted
       res.json({
         success: true,
@@ -2479,7 +2493,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           // Also attempt to clean up the event from the server
           if (req.user) {
-            syncService.syncNow(req.user.id).catch(err => {
+            syncService.syncNow(req.user.id, {
+              forceRefresh: true,
+              preserveLocalDeletes: true // Ensure the sync respects local deletions
+            }).catch(err => {
               console.error('Error during sync after cleanup:', err);
             });
           }
