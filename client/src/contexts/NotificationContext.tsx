@@ -254,15 +254,30 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         
         // Determine the WebSocket protocol based on current HTTP protocol
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const currentHost = window.location.host;
+        const wsPath = useFallbackPath ? '/ws' : '/api/ws';
         
-        // Determine WebSocket URL based on the path we want to use
-        let wsUrl = '';
-        if (useFallbackPath) {
-          // Fallback path - just '/ws' instead of '/api/ws'
-          wsUrl = `${protocol}//${window.location.host}/ws`;
-        } else {
-          // Primary path - '/api/ws'
-          wsUrl = `${protocol}//${window.location.host}/api/ws`;
+        // Determine WebSocket URL based on the environment and path
+        let wsUrl;
+        
+        // Add userId parameter for authentication
+        const userIdParam = user?.id ? `?userId=${user.id}` : '';
+        
+        // For Replit deployment - use path-only format to avoid CORS issues
+        if (currentHost.includes('replit') || currentHost.includes('replit.dev')) {
+          wsUrl = `${wsPath}${userIdParam}`;
+          console.log(`Creating relative WebSocket URL for Replit: ${wsUrl}`);
+        } 
+        // For localhost (avoid protocol & port issues)
+        else if (window.location.hostname === 'localhost') {
+          const port = window.location.port || '5000';
+          wsUrl = `ws://localhost:${port}${wsPath}${userIdParam}`;
+          console.log(`Creating explicit localhost WebSocket URL: ${wsUrl}`);
+        } 
+        // Standard case for other deployments
+        else {
+          wsUrl = `${protocol}//${currentHost}${wsPath}${userIdParam}`;
+          console.log(`Creating standard WebSocket URL: ${wsUrl}`);
         }
         
         const connectionAttempt = reconnectAttempts + 1;
