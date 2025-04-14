@@ -1,161 +1,219 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/use-auth';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from '@/components/ui/badge';
+import { Loader2, Wifi, WifiOff, Zap } from 'lucide-react';
+import { useAuth } from '@/hooks/use-auth';
 
 /**
- * Simple WebSocket test component following the JavaScript WebSocket development guidelines
+ * WebSocket testing component following JavaScript WebSocket development guidelines
  */
 export function WebSocketTest() {
-  const { user } = useAuth();
-  const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [status, setStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [status, setStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [messages, setMessages] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [reconnectCount, setReconnectCount] = useState(0);
+  const socketRef = useRef<WebSocket | null>(null);
+  const { user } = useAuth();
 
-  // Connect to the WebSocket server
+  const addMessage = (message: string) => {
+    setMessages(prev => [message, ...prev].slice(0, 50)); // Keep last 50 messages
+  };
+
   const connect = () => {
     try {
-      // Close existing socket if any
-      if (socket && socket.readyState !== WebSocket.CLOSED) {
-        socket.close();
+      // Close existing connection if any
+      if (socketRef.current && socketRef.current.readyState !== WebSocket.CLOSED) {
+        socketRef.current.close();
       }
 
-      // Using the correct protocol and path for the Replit environment
-      // The key fix for Replit is using a relative path for WebSocket
-      const isReplitEnvironment = window.location.host.includes('replit') || 
-                                  window.location.host.includes('.repl.co');
-      
-      let wsUrl;
-      if (isReplitEnvironment) {
-        // For Replit, use relative path which works better in this environment
-        wsUrl = `/ws?userId=${user?.id || ''}`;
-      } else {
-        // For non-Replit environments (localhost, etc.)
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        wsUrl = `${protocol}//${window.location.host}/ws`;
-      }
-      
-      console.log(`Connecting to WebSocket at: ${wsUrl} (Replit environment: ${isReplitEnvironment})`);
       setStatus('connecting');
-      setError(null);
+      addMessage('Connecting to WebSocket server...');
 
-      const newSocket = new WebSocket(wsUrl);
-      setSocket(newSocket);
+      // Construct WebSocket URL according to guidelines
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      
+      // Use different construction based on environment
+      let wsUrl;
+      
+      // For Replit environment
+      if (host.includes('replit') || host.includes('replit.dev')) {
+        // For Replit, use relative path format
+        wsUrl = `/ws?userId=${user?.id || ''}`;
+        addMessage(`Using Replit-compatible relative URL: ${wsUrl}`);
+      } else {
+        // Standard format for other environments
+        wsUrl = `${protocol}//${host}/ws?userId=${user?.id || ''}`;
+        addMessage(`Using standard WebSocket URL: ${wsUrl}`);
+      }
+      
+      addMessage(`Connecting to: ${wsUrl}`);
+      const ws = new WebSocket(wsUrl);
+      socketRef.current = ws;
 
-      newSocket.onopen = () => {
-        console.log('WebSocket connected');
+      ws.onopen = () => {
         setStatus('connected');
-        setMessages(prev => ['Connected successfully', ...prev]);
+        addMessage('✅ Connection established!');
+        // Send a test message
+        ws.send(JSON.stringify({ 
+          type: 'ping', 
+          message: 'Hello from WebSocketTest',
+          timestamp: new Date().toISOString()
+        }));
+      };
 
-        // Send auth message if user is available
-        if (user?.id) {
-          const authMessage = JSON.stringify({
-            type: 'auth',
-            userId: user.id,
-            timestamp: new Date().toISOString()
-          });
-          newSocket.send(authMessage);
-          setMessages(prev => [`Sent: ${authMessage}`, ...prev]);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          addMessage(`📩 Received: ${JSON.stringify(data)}`);
+        } catch (e) {
+          addMessage(`📩 Received: ${event.data}`);
         }
       };
 
-      newSocket.onmessage = (event) => {
-        console.log('WebSocket message received:', event.data);
-        setMessages(prev => [`Received: ${event.data}`, ...prev]);
+      ws.onerror = (error) => {
+        setStatus('error');
+        addMessage(`❌ Connection error: ${error.type}`);
+        console.error('WebSocket error:', error);
       };
 
-      newSocket.onerror = (event) => {
-        console.error('WebSocket error:', event);
-        setError('Connection error occurred');
+      ws.onclose = (event) => {
         setStatus('disconnected');
+        addMessage(`Connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
+        
+        // Auto-reconnect if not closed cleanly
+        if (event.code !== 1000 && event.code !== 1001) {
+          setReconnectCount(prev => prev + 1);
+          const delay = Math.min(1000 * Math.pow(1.5, Math.min(reconnectCount, 10)), 30000);
+          addMessage(`Reconnecting in ${Math.round(delay/1000)} seconds... (Attempt ${reconnectCount + 1})`);
+          
+          setTimeout(() => {
+            if (document.visibilityState !== 'hidden') {
+              connect();
+            }
+          }, delay);
+        }
       };
-
-      newSocket.onclose = (event) => {
-        console.log(`WebSocket closed: ${event.code} - ${event.reason}`);
-        setStatus('disconnected');
-        setMessages(prev => [`Connection closed: ${event.code}`, ...prev]);
-      };
-    } catch (err) {
-      console.error('Failed to connect to WebSocket:', err);
-      setError(`Connection failed: ${err instanceof Error ? err.message : String(err)}`);
-      setStatus('disconnected');
+    } catch (error) {
+      setStatus('error');
+      addMessage(`❌ Exception: ${error instanceof Error ? error.message : String(error)}`);
+      console.error('WebSocket connection exception:', error);
     }
   };
 
-  // Send a ping message
+  const disconnect = () => {
+    if (socketRef.current) {
+      socketRef.current.close(1000, 'User disconnected');
+      addMessage('Manually disconnected');
+    }
+  };
+
   const sendPing = () => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      const pingMessage = JSON.stringify({
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      const pingMessage = {
         type: 'ping',
         timestamp: new Date().toISOString(),
         userId: user?.id
-      });
-      socket.send(pingMessage);
-      setMessages(prev => [`Sent: ${pingMessage}`, ...prev]);
+      };
+      
+      try {
+        socketRef.current.send(JSON.stringify(pingMessage));
+        addMessage(`📤 Sent ping message`);
+      } catch (error) {
+        addMessage(`❌ Error sending ping: ${error instanceof Error ? error.message : String(error)}`);
+      }
     } else {
-      setError('Cannot send message - not connected');
+      addMessage('❌ Cannot send ping: Not connected');
     }
   };
 
-  // Disconnect the socket
-  const disconnect = () => {
-    if (socket) {
-      socket.close();
-      setStatus('disconnected');
-      setMessages(prev => ['Manually disconnected', ...prev]);
-    }
-  };
+  // Handle page visibility changes to reconnect when tab becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && 
+          (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN)) {
+        connect();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.close(1000, 'Component unmounted');
+      }
+    };
+  }, []);
 
   return (
-    <Card className="w-full max-w-md mx-auto">
+    <Card className="w-full mb-8">
       <CardHeader>
-        <CardTitle>WebSocket Test</CardTitle>
+        <CardTitle className="flex items-center justify-between">
+          <span>WebSocket Connection</span>
+          <Badge variant={
+            status === 'connected' ? 'success' : 
+            status === 'connecting' ? 'secondary' : 
+            status === 'error' ? 'destructive' : 'outline'
+          }>
+            {status === 'connected' ? 'Connected' : 
+             status === 'connecting' ? 'Connecting...' : 
+             status === 'error' ? 'Error' : 'Disconnected'}
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          Test WebSocket connection following RFC and development guidelines
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <span>Status:</span>
-          <Badge
-            variant={
-              status === 'connected' 
-                ? 'default' 
-                : status === 'connecting' 
-                  ? 'outline' 
-                  : 'secondary'
-            }
-            className={status === 'connected' ? 'bg-green-500 hover:bg-green-600' : ''}
-          >
-            {status}
-          </Badge>
+        <div className="flex items-center gap-2">
+          {status === 'connected' ? (
+            <Wifi className="h-5 w-5 text-green-500" />
+          ) : status === 'connecting' ? (
+            <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+          ) : status === 'error' ? (
+            <WifiOff className="h-5 w-5 text-red-500" />
+          ) : (
+            <WifiOff className="h-5 w-5 text-gray-400" />
+          )}
+          <span>WebSocket Status: {status}</span>
         </div>
 
-        {error && (
-          <div className="bg-red-50 p-2 rounded border border-red-200 text-red-800 text-sm">
-            {error}
-          </div>
-        )}
-
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap gap-2">
           <Button 
             onClick={connect} 
+            variant="outline" 
+            size="sm"
             disabled={status === 'connecting' || status === 'connected'}
           >
-            Connect
+            {status === 'connecting' ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Connecting...</>
+            ) : (
+              <><Wifi className="mr-2 h-4 w-4" /> Connect</>
+            )}
           </Button>
-          <Button 
-            onClick={sendPing} 
-            disabled={status !== 'connected'}
-            variant="outline"
-          >
-            Send Ping
-          </Button>
+          
           <Button 
             onClick={disconnect} 
+            variant="destructive" 
+            size="sm"
             disabled={status !== 'connected'}
-            variant="outline"
           >
-            Disconnect
+            <WifiOff className="mr-2 h-4 w-4" /> Disconnect
+          </Button>
+          
+          <Button 
+            onClick={sendPing} 
+            variant="secondary" 
+            size="sm"
+            disabled={status !== 'connected'}
+          >
+            <Zap className="mr-2 h-4 w-4" /> Send Ping
           </Button>
         </div>
 

@@ -1025,7 +1025,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         : attendee.email,
       subject: `Cancelled: ${title}`,
       html: htmlContent,
-      text: `CANCELLED EVENT\n\nHello ${attendeeName},\n\nThe following event has been CANCELLED:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n\nYour calendar will be updated automatically if you previously accepted this invitation.\n\nThis cancellation notice was sent using CalDAV Calendar Application.`,
+      text: `CANCELLED EVENT\n\nHello ${attendeeName},\n\nThe following event has been CANCELLED:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n${resources && resources.length > 0 ? `\nResources:\n${resources.map(resource => `- ${resource.name || resource.subType}${(resource.name && resource.name !== resource.subType) ? ` (${resource.subType})` : ''}${resource.capacity ? `\n  Capacity: ${resource.capacity}` : ''}${resource.adminName ? `\n  Administrator: ${resource.adminName}` : ''}${resource.remarks ? `\n  Notes: ${resource.remarks}` : ''}`).join('\n\n')}\n` : ''}\nYour calendar will be updated automatically if you previously accepted this invitation.\n\nThis cancellation notice was sent using CalDAV Calendar Application.`,
       attachments: [
         {
           filename: `cancellation-${data.uid}.ics`,
