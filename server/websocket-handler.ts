@@ -6,115 +6,160 @@ import { storage } from './database-storage';
 // Map to store WebSocket connections by user ID
 const userSockets = new Map<number, Set<WebSocket>>();
 
-// Initialize WebSocket server
+/**
+ * Initialize WebSocket server
+ */
 export function initializeWebSocketServer(httpServer: Server) {
+  // Create WebSocket server with more flexible configuration
   const wss = new WebSocketServer({
     server: httpServer,
-    path: '/api/ws', // Change from '/ws' to '/api/ws' to avoid conflicts with Vite's WebSocket
-  });
-
-  console.log('WebSocket server initialized');
-
-  wss.on('connection', async (ws, req) => {
-    console.log('New WebSocket connection');
-    
-    // Try to get user ID from session cookie in request
-    // We'll extract from cookie or request parameter
-    try {
-      const userId = await getUserIdFromRequest(req);
-      
-      if (!userId) {
-        console.log('WebSocket connection rejected: No user ID found');
-        ws.close(1008, 'User not authenticated');
-        return;
-      }
-      
-      console.log(`WebSocket connected for user ${userId}`);
-      
-      // Store the connection in the map
-      if (!userSockets.has(userId)) {
-        userSockets.set(userId, new Set());
-      }
-      userSockets.get(userId)?.add(ws);
-      
-      // Send initial unread notification count
-      const unreadCount = await notificationService.getUnreadCount(userId);
-      sendToSocket(ws, {
-        type: 'notification_count',
-        count: unreadCount
-      });
-      
-      // Send a welcome message immediately after connection
-      sendToSocket(ws, {
-        type: 'connection_established',
-        userId: userId,
-        timestamp: new Date().toISOString(),
-        message: 'Successfully connected to calendar notification service'
-      });
-      
-      // Handle incoming messages
-      ws.on('message', async (message) => {
-        try {
-          const data = JSON.parse(message.toString());
-          console.log(`📥 Received WebSocket message from user ${userId}:`, data);
-          
-          // Special handling for authentication messages
-          if (data.type === 'auth') {
-            console.log(`🔑 Received authentication message from client for user ${data.userId}`);
-            
-            // Verify if the userId matches what we already have
-            if (data.userId === userId) {
-              console.log(`✅ Authentication confirmed for user ${userId}`);
-              sendToSocket(ws, {
-                type: 'auth_success',
-                userId: userId,
-                timestamp: new Date().toISOString()
-              });
-            } else {
-              console.log(`❌ Authentication mismatch: expected ${userId}, got ${data.userId}`);
-              sendToSocket(ws, {
-                type: 'auth_error',
-                message: 'User ID mismatch in authentication'
-              });
-            }
-          } else {
-            // Regular message handling
-            await handleWebSocketMessage(userId, data, ws);
-          }
-        } catch (error) {
-          console.error('❌ Error handling WebSocket message:', error);
-          sendToSocket(ws, {
-            type: 'error',
-            message: 'Invalid message format'
-          });
-        }
-      });
-      
-      // Handle disconnect
-      ws.on('close', () => {
-        console.log(`WebSocket disconnected for user ${userId}`);
-        userSockets.get(userId)?.delete(ws);
-        
-        // Clean up empty sets
-        if (userSockets.get(userId)?.size === 0) {
-          console.log(`No more active WebSocket connections for user ${userId}`);
-          userSockets.delete(userId);
-          
-          // Note: We don't stop the sync service here because
-          // the global sync timer will continue checking for external changes
-          // even when no user is actively connected. This ensures that when the user
-          // reconnects, they will still see the latest data, including
-          // changes made from external clients like Thunderbird.
-        }
-      });
-      
-    } catch (error) {
-      console.error('Error handling WebSocket connection:', error);
-      ws.close(1011, 'Server error');
+    path: '/api/ws', // Main path for WebSocket connections
+    // Increase client timeout settings
+    clientTracking: true,
+    // Add extra WebSocket options to handle various client scenarios
+    perMessageDeflate: {
+      zlibDeflateOptions: {
+        chunkSize: 1024,
+        memLevel: 7,
+        level: 3
+      },
+      zlibInflateOptions: {
+        chunkSize: 10 * 1024
+      },
+      // Don't use shared compression state for improved reliability
+      serverNoContextTakeover: true, 
+      clientNoContextTakeover: true,
+      // Threshold below which messages should not be compressed
+      threshold: 1024
     }
   });
   
+  // Create a secondary WebSocket server on the root path for clients that can't use the full path
+  // This helps with certain environments where path-based routing fails
+  const fallbackWss = new WebSocketServer({
+    server: httpServer,
+    path: '/ws', // Fallback path for WebSocket connections
+    clientTracking: true
+  });
+
+  console.log('🌐 WebSocket servers initialized on paths: /api/ws (primary) and /ws (fallback)');
+
+  // Handle connections on the fallback server the same way as the main server
+  fallbackWss.on('connection', (ws, req) => {
+    console.log('📡 WebSocket connection on fallback path /ws');
+    // Forward to the same handler used by the main WebSocket server
+    handleWebSocketConnection(ws, req);
+  });
+
+  // Use the same handler for the main WebSocket server
+  wss.on('connection', (ws, req) => {
+    console.log('📡 WebSocket connection on primary path /api/ws');
+    handleWebSocketConnection(ws, req);
+  });
+  
   return wss;
+}
+
+/**
+ * Reusable WebSocket connection handler for both primary and fallback sockets
+ */
+async function handleWebSocketConnection(ws: WebSocket, req: any) {
+  console.log('New WebSocket connection');
+  
+  // Try to get user ID from session cookie in request
+  // We'll extract from cookie or request parameter
+  try {
+    const userId = await getUserIdFromRequest(req);
+    
+    if (!userId) {
+      console.log('WebSocket connection rejected: No user ID found');
+      ws.close(1008, 'User not authenticated');
+      return;
+    }
+    
+    console.log(`WebSocket connected for user ${userId}`);
+    
+    // Store the connection in the map
+    if (!userSockets.has(userId)) {
+      userSockets.set(userId, new Set());
+    }
+    userSockets.get(userId)?.add(ws);
+    
+    // Send initial unread notification count
+    const unreadCount = await notificationService.getUnreadCount(userId);
+    sendToSocket(ws, {
+      type: 'notification_count',
+      count: unreadCount
+    });
+    
+    // Send a welcome message immediately after connection
+    sendToSocket(ws, {
+      type: 'connection_established',
+      userId: userId,
+      timestamp: new Date().toISOString(),
+      message: 'Successfully connected to calendar notification service'
+    });
+    
+    // Handle incoming messages
+    ws.on('message', async (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+        console.log(`📥 Received WebSocket message from user ${userId}:`, data);
+        
+        // Special handling for authentication messages
+        if (data.type === 'auth') {
+          console.log(`🔑 Received authentication message from client for user ${data.userId}`);
+          
+          // Verify if the userId matches what we already have
+          if (data.userId === userId) {
+            console.log(`✅ Authentication confirmed for user ${userId}`);
+            sendToSocket(ws, {
+              type: 'auth_success',
+              userId: userId,
+              timestamp: new Date().toISOString()
+            });
+          } else {
+            console.log(`❌ Authentication mismatch: expected ${userId}, got ${data.userId}`);
+            sendToSocket(ws, {
+              type: 'auth_error',
+              message: 'User ID mismatch in authentication'
+            });
+          }
+        } else {
+          // Regular message handling
+          await handleWebSocketMessage(userId, data, ws);
+        }
+      } catch (error) {
+        console.error('❌ Error handling WebSocket message:', error);
+        sendToSocket(ws, {
+          type: 'error',
+          message: 'Invalid message format'
+        });
+      }
+    });
+    
+    // Handle disconnect
+    ws.on('close', () => {
+      console.log(`WebSocket disconnected for user ${userId}`);
+      userSockets.get(userId)?.delete(ws);
+      
+      // Clean up empty sets
+      if (userSockets.get(userId)?.size === 0) {
+        console.log(`No more active WebSocket connections for user ${userId}`);
+        userSockets.delete(userId);
+        
+        // Note: We don't stop the sync service here because
+        // the global sync timer will continue checking for external changes
+        // even when no user is actively connected. This ensures that when the user
+        // reconnects, they will still see the latest data, including
+        // changes made from external clients like Thunderbird.
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error handling WebSocket connection:', error);
+    ws.close(1011, 'Server error');
+  }
 }
 
 /**

@@ -73,9 +73,19 @@ export function useCalendarSync() {
     // Function to establish WebSocket connection
     const connectWebSocket = () => {
       try {
+        // Get hostname and port from current location
+        const hostname = window.location.hostname;
+        const port = window.location.port || 
+                    (window.location.protocol === 'https:' ? '443' : '80');
+        
         // Use secure protocol if page is loaded over HTTPS
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/api/ws?userId=${user.id}`;
+        
+        // For localhost, always use ws (not wss) to avoid SSL validation issues
+        const finalProtocol = hostname === 'localhost' ? 'ws:' : protocol;
+        
+        // Construct the URL with explicit port to avoid 'undefined' in the URL
+        const wsUrl = `${finalProtocol}//${hostname}:${port}/api/ws?userId=${user.id}`;
         
         console.log('🔄 Connecting to WebSocket server at', wsUrl);
         ws = new WebSocket(wsUrl);
@@ -295,11 +305,14 @@ export function useCalendarSync() {
                   setTimeout(() => {
                     console.log(`Final cleanup pass for deleted event ID: ${data.eventId}`);
                     
+                    // Keep a reference to the remove function
+                    const finalRemoveFunction = removeDeletedEvent;
+                    
                     // Get all event queries and clean them once more
                     const allEventsQueries = queryClient.getQueriesData<any[]>({ queryKey: ['/api/events'] });
                     for (const [queryKey, events] of allEventsQueries) {
                       if (Array.isArray(events)) {
-                        queryClient.setQueryData(queryKey, removeDeletedEvent(events));
+                        queryClient.setQueryData(queryKey, finalRemoveFunction(events));
                       }
                     }
                     
@@ -311,7 +324,7 @@ export function useCalendarSync() {
                       
                       for (const [queryKey, events] of calendarEventsQueries) {
                         if (Array.isArray(events)) {
-                          queryClient.setQueryData(queryKey, removeDeletedEvent(events));
+                          queryClient.setQueryData(queryKey, finalRemoveFunction(events));
                         }
                       }
                     }
