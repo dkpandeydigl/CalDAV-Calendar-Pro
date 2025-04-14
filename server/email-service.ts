@@ -898,7 +898,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       throw new Error('Email service not initialized');
     }
 
-    const { startDate, endDate, title, description, location } = data;
+    const { startDate, endDate, title, description, location, resources } = data;
     
     // Format the date for display in email
     const dateFormat = new Intl.DateTimeFormat('en-US', {
@@ -986,6 +986,22 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
               <div class="detail-row">
                 <span class="label">Organizer:</span> ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
               </div>
+              
+              ${resources && resources.length > 0 ? `
+              <div class="detail-row" style="margin-top: 15px;">
+                <span class="label" style="display: block; margin-bottom: 5px;">Resources:</span>
+                <div style="margin-left: 15px; padding: 10px; background-color: #f9f9f9; border-radius: 5px;">
+                  ${resources.map((resource, index) => `
+                    <div style="margin-bottom: ${index < resources.length - 1 ? '10px' : '0px'}; padding-bottom: ${index < resources.length - 1 ? '10px' : '0px'}; ${index < resources.length - 1 ? 'border-bottom: 1px solid #eee;' : ''}">
+                      <div><strong>${resource.name || resource.subType}</strong> ${(resource.name && resource.name !== resource.subType) ? `(${resource.subType})` : ''}</div>
+                      ${resource.capacity ? `<div>Capacity: ${resource.capacity}</div>` : ''}
+                      ${resource.adminName ? `<div>Administrator: ${resource.adminName}</div>` : ''}
+                      ${resource.remarks ? `<div>Notes: ${resource.remarks}</div>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+              ` : ''}
             </div>
             
             <p>Your calendar will be updated automatically if you previously accepted this invitation.</p>
