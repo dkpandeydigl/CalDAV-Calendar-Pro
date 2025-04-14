@@ -138,6 +138,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     getShadowCache,
     updateShadowCache,
     restoreFromShadowCache,
+    trackDeletedItem,
     shadowCacheSize
   } = useShadowCache<Event>(eventsQueryKey, {
     debug: true, // Enable logging for debugging
@@ -1106,6 +1107,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
       
+      // Track the deleted item in the shadow cache to prevent it from reappearing
+      trackDeletedItem(id);
+      
       // Force a strong update of all event-related caches
       // 1. Immediately remove from main events cache
       queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
@@ -1131,6 +1135,13 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             return oldEvents.filter((e: Event) => e.id !== id);
           }
         );
+      }
+      
+      // Also track the event by UID if available, for extra reliability
+      if (context?.eventToDelete?.uid) {
+        // Some events might be referenced by UID in other places
+        console.log(`Also tracking deleted event by UID: ${context.eventToDelete.uid}`);
+        trackDeletedItem(context.eventToDelete.uid);
       }
       
       // Show customized toast based on sync status
@@ -1367,6 +1378,15 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     },
     onSuccess: (data, eventId, context) => {
       if (data.success) {
+        // Track the deleted item in the shadow cache to prevent it from reappearing
+        trackDeletedItem(eventId);
+        
+        // Also track the event by UID if available, for extra reliability
+        if (context?.event?.uid) {
+          console.log(`Also tracking cancelled event by UID: ${context.event.uid}`);
+          trackDeletedItem(context.event.uid);
+        }
+        
         // Update the cache to remove the canceled event
         queryClient.setQueryData<Event[]>(
           ['/api/events'],
@@ -1440,6 +1460,26 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       return await res.json();
     },
     onSuccess: (data) => {
+      console.log("Bulk delete completed successfully:", data);
+      
+      // If the response contains the deleted events, track each one in our shadow cache
+      if (data.deletedEvents && Array.isArray(data.deletedEvents)) {
+        console.log(`Tracking ${data.deletedEvents.length} bulk deleted events in shadow cache`);
+        
+        data.deletedEvents.forEach(event => {
+          // Track by ID
+          if (event.id) {
+            trackDeletedItem(event.id);
+          }
+          // Also track by UID for better reliability
+          if (event.uid) {
+            trackDeletedItem(event.uid);
+          }
+        });
+      } else if (data.stats?.deleted) {
+        console.log(`Bulk deleted ${data.stats.deleted} events, but IDs not available to track individually`);
+      }
+      
       // Invalidate queries to reflect the changes
       queryClient.invalidateQueries({ queryKey: ['/api/events'] });
       
