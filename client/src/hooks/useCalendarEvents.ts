@@ -1704,23 +1704,24 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     },
     // This happens BEFORE the server request, giving immediate UI feedback
     onMutate: async (id) => {
-      console.log(`Starting optimistic delete for event ${id}`);
+      console.log(`Starting simplified deletion for event ${id}`);
       
       // Prevent any background refetches from overwriting our UI update
-      await queryClient.cancelQueries();
+      await queryClient.cancelQueries({ queryKey: ['/api/events'] });
       
       // Store the current state for possible rollback
       const previousEvents = queryClient.getQueryData<Event[]>(['/api/events']);
-      const allQueryKeys = queryClient.getQueryCache().getAll().map(query => query.queryKey);
       
-      // Find the event in the cache to get its calendar ID before deleting
+      // Find the event in the cache to get its details before deleting
       const eventToDelete = previousEvents?.find(e => e.id === id);
       
       if (eventToDelete) {
-        console.log(`Optimistically removing event ${id} from UI`);
+        console.log(`Found event to delete: ${eventToDelete.title || 'Untitled'} (ID: ${id})`);
         
-        // Track the deleted event to prevent it from reappearing during sync operations
-        trackDeletedEvent(eventToDelete);
+        // Simple optimistic update - just remove the event by ID
+        queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => 
+          oldEvents.filter(e => e.id !== id)
+        );
         
         // AGGRESSIVE APPROACH: Direct DOM manipulation to remove event elements
         try {
