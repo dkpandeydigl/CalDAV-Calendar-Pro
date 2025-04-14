@@ -1287,6 +1287,7 @@ export class SyncService {
                 ? name.split(" - Admin:")[1].trim() 
                 : '');
             
+            // Enhanced resource object with more complete metadata
             resources.push({
               name: name,
               adminEmail: email,
@@ -1294,7 +1295,11 @@ export class SyncService {
               subType: resourceTypeValue, // Map to both fields for compatibility
               capacity: capacityValue,
               remarks: remarksValue,
-              adminName: adminNameValue
+              adminName: adminNameValue,
+              // Add additional fields that might be needed for complete resource representation
+              id: `resource-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+              email: email, // Include email as alternate field for compatibility
+              displayName: name // Include displayName for compatibility
             });
             
             console.log(`Added resource: ${name} (${email}) of type ${resourceTypeValue} with capacity ${capacityValue}, adminName ${adminNameValue}`);
@@ -1419,6 +1424,7 @@ export class SyncService {
                 }
               }
               
+              // Create enhanced resource with complete metadata
               resources.push({
                 name: name,
                 adminEmail: email,
@@ -1426,7 +1432,11 @@ export class SyncService {
                 subType: resourceType, // Map to both fields to handle both conventions
                 capacity: capacity,
                 remarks: remarks,
-                adminName: adminName
+                adminName: adminName,
+                // Add additional fields for compatibility with different resource naming conventions
+                id: `resource-${Date.now()}-${Math.random().toString(36).substring(2, 10)}`,
+                email: email, // Include email as alternate field
+                displayName: name // Include displayName as alternate field
               });
               
               console.log(`Added node-ical resource: ${name} (${email}) of type ${resourceType} with capacity ${capacity}, adminName ${adminName}`);
@@ -1639,6 +1649,7 @@ export class SyncService {
                 const adminNameMatch = adminNameMatches.find(match => match !== null);
                 const adminName = adminNameMatch ? adminNameMatch[1] : '';
                 
+                // Enhanced resource with additional fields for compatibility
                 resources.push({
                   name: name || 'Unnamed Resource',
                   adminEmail: cleanedEmail, // Use the cleaned email
@@ -1646,7 +1657,11 @@ export class SyncService {
                   subType: resourceTypeValue, // Map to both fields to handle both conventions
                   capacity: capacity,
                   remarks: remarks,
-                  adminName: adminName
+                  adminName: adminName,
+                  // Add additional fields for compatibility
+                  id: `resource-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+                  email: cleanedEmail, // Include email as alternate field
+                  displayName: name || 'Unnamed Resource' // Include displayName for compatibility
                 });
               } else {
                 // Process as regular attendee

@@ -22,11 +22,22 @@ export function WebSocketTest() {
         socket.close();
       }
 
-      // Using the correct protocol based on the current connection
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      // Using the correct protocol and path for the Replit environment
+      // The key fix for Replit is using a relative path for WebSocket
+      const isReplitEnvironment = window.location.host.includes('replit') || 
+                                  window.location.host.includes('.repl.co');
       
-      console.log(`Connecting to WebSocket at: ${wsUrl}`);
+      let wsUrl;
+      if (isReplitEnvironment) {
+        // For Replit, use relative path which works better in this environment
+        wsUrl = `/ws?userId=${user?.id || ''}`;
+      } else {
+        // For non-Replit environments (localhost, etc.)
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        wsUrl = `${protocol}//${window.location.host}/ws`;
+      }
+      
+      console.log(`Connecting to WebSocket at: ${wsUrl} (Replit environment: ${isReplitEnvironment})`);
       setStatus('connecting');
       setError(null);
 
