@@ -424,7 +424,13 @@ async function handleWebSocketMessage(userId: number, data: any, ws: WebSocket):
       // Handle keep-alive ping messages from client
       // Simply respond with a pong to maintain the connection
       console.log(`Received ping from user ${userId}, sending pong`);
-      sendToSocket(ws, { type: 'pong' });
+      // Include the original timestamp if provided
+      const responseData = { 
+        type: 'pong',
+        timestamp: new Date().toISOString(),
+        echo: data.timestamp // Echo back the client's timestamp if provided
+      };
+      sendToSocket(ws, responseData);
       break;
       
     case 'event_deleted':
