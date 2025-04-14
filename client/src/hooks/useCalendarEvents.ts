@@ -1314,8 +1314,14 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             const signature = `${eventToDelete.title}-${new Date(eventToDelete.startDate).getTime()}`;
             const signatureEls = document.querySelectorAll(`[data-event-signature="${signature}"]`);
             if (signatureEls.length > 0) {
-              console.log(`👉 Eagerly removing ${signatureEls.length} DOM elements with event signature ${signature}`);
-              signatureEls.forEach(el => el.remove());
+              console.log(`👉 Hiding ${signatureEls.length} DOM elements with event signature ${signature}`);
+              signatureEls.forEach(el => {
+                // Use CSS to hide immediately instead of removing from DOM
+                (el as HTMLElement).style.display = 'none';
+                (el as HTMLElement).style.opacity = '0';
+                (el as HTMLElement).style.pointerEvents = 'none';
+                el.setAttribute('data-deleted', 'true');
+              });
             }
           }
         } catch (domError) {

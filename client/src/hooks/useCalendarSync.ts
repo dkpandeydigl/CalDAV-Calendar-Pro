@@ -93,8 +93,24 @@ export function useCalendarSync() {
         // Use primary or fallback path based on parameter
         const wsPath = useFallbackPath ? '/ws' : '/api/ws';
         
-        // Construct the URL with explicit port and user ID for authentication
-        const wsUrl = `${finalProtocol}//${hostname}:${port}${wsPath}?userId=${user.id}`;
+        // Construct the WebSocket URL using the current page's location
+        // We use window.location.host which includes both hostname and port if specified
+        // This ensures compatibility across various deployment environments
+        let wsUrl;
+        try {
+          // Handle localhost specially to avoid WebSocket construction errors
+          if (hostname === 'localhost') {
+            wsUrl = `ws://localhost:${port}${wsPath}?userId=${user.id}`;
+          } else {
+            // For all other environments, use the host and appropriate protocol
+            wsUrl = `${finalProtocol}//${window.location.host}${wsPath}?userId=${user.id}`;
+          }
+          console.log(`Constructed WebSocket URL: ${wsUrl}`);
+        } catch (urlError) {
+          // Fallback to a simpler URL construction if there's an error
+          console.error('Error constructing WebSocket URL:', urlError);
+          wsUrl = `//${window.location.host}${wsPath}?userId=${user.id}`;
+        }
         
         console.log(`🔄 Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
         ws = new WebSocket(wsUrl);
