@@ -1461,10 +1461,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Add event to session's recently deleted list for sync exclusion
+      // We need to track both the ID and the UID to ensure we don't recreate deleted events
       if (!req.session.recentlyDeletedEvents) {
         req.session.recentlyDeletedEvents = [];
       }
+      // Push the event ID to the list of deleted events
       req.session.recentlyDeletedEvents.push(eventId);
+      
+      // Also track deleted UIDs to prevent resync of events with same UID but different ID
+      if (!req.session.recentlyDeletedUIDs) {
+        req.session.recentlyDeletedUIDs = [];
+      }
+      // Push the event UID to the list of deleted UIDs
+      req.session.recentlyDeletedUIDs.push(event.uid);
       
       // Notify clients about the deleted event
       try {

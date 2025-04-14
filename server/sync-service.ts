@@ -508,6 +508,17 @@ export class SyncService {
                 }
               }
               
+              // Check if this event is in the list of recently deleted events for this session
+              // This will prevent deleted events from reappearing after a sync
+              const isRecentlyDeleted = req.session && req.session.recentlyDeletedUIDs && 
+                Array.isArray(req.session.recentlyDeletedUIDs) && 
+                req.session.recentlyDeletedUIDs.includes(caldavEvent.uid);
+              
+              if (isRecentlyDeleted) {
+                console.log(`Skipping event with UID ${caldavEvent.uid} because it was recently deleted`);
+                continue; // Skip to next event
+              }
+              
               // Check if we already have this event in our database
               const existingEvent = await storage.getEventByUID(caldavEvent.uid);
               
