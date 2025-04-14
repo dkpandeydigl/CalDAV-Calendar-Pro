@@ -243,10 +243,37 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   // and sets the resources directly using our enhanced extraction function
   useEffect(() => {
     if (event && open) {
+      console.log('[RESOURCE DEBUG] Event opened for editing:', event);
+      console.log('[RESOURCE DEBUG] Raw data in event:', event.rawData);
+      
+      // Deep inspect the object for resources anywhere in the structure
+      if (event.rawData) {
+        console.log('[RESOURCE DEBUG] Raw data type:', typeof event.rawData);
+        try {
+          if (typeof event.rawData === 'string') {
+            const resourceMatches = (event.rawData as string).match(/CUTYPE=RESOURCE/g);
+            console.log('[RESOURCE DEBUG] CUTYPE=RESOURCE matches in rawData:', resourceMatches);
+          }
+          
+          // Check if resources exist in event directly
+          console.log('[RESOURCE DEBUG] Resources property exists in event?', 'resources' in event);
+          if ('resources' in event) {
+            console.log('[RESOURCE DEBUG] Resources in event:', event.resources);
+            console.log('[RESOURCE DEBUG] Resources type:', typeof event.resources);
+          }
+        } catch (e) {
+          console.error('[RESOURCE DEBUG] Error inspecting rawData:', e);
+        }
+      }
+      
       const extractedResources = extractResourcesFromRawData(event);
-      console.log('Extracted deduplicated resources:', extractedResources);
+      console.log('[RESOURCE DEBUG] Extracted deduplicated resources:', extractedResources);
+      
       if (extractedResources.length > 0) {
+        console.log('[RESOURCE DEBUG] Setting resources state with extracted data');
         setResources(extractedResources);
+      } else {
+        console.warn('[RESOURCE DEBUG] No resources extracted from event data');
       }
     }
   }, [event, open]);
