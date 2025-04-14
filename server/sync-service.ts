@@ -1225,37 +1225,67 @@ export class SyncService {
             const typeMatch = 
               fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/) || 
               fullLine.match(/RESOURCE-TYPE=([^;:]+)/) ||
-              fullLine.match(/X-TYPE=([^;:]+)/);
-            const resourceTypeValue = typeMatch ? typeMatch[1].trim() : '';
+              fullLine.match(/X-TYPE=([^;:]+)/) ||
+              fullLine.match(/TYPE=([^;:]+)/);
+            
+            // If no specific type parameter, try to infer from role/resource description
+            const roleMatch = fullLine.match(/ROLE=([^;:]+)/);
+            const descriptionMatch = fullLine.match(/DESCRIPTION=([^;:]+)/);
+            
+            // Get the resource type with fallback options
+            const resourceTypeValue = typeMatch 
+              ? typeMatch[1].trim() 
+              : (roleMatch 
+                ? roleMatch[1].trim() 
+                : (descriptionMatch 
+                  ? descriptionMatch[1].trim() 
+                  : 'Resource'));
 
-            // Extract capacity if available
+            // Extract capacity if available - expanded pattern matching
             let capacityValue = null;
             const capacityMatch = 
               fullLine.match(/X-RESOURCE-CAPACITY=([^;:]+)/) ||
-              fullLine.match(/CAPACITY=([^;:]+)/);
+              fullLine.match(/CAPACITY=([^;:]+)/) ||
+              fullLine.match(/X-CAPACITY=([^;:]+)/) ||
+              fullLine.match(/X-ROOM-CAPACITY=([^;:]+)/);
+              
             if (capacityMatch && capacityMatch[1]) {
               try {
                 capacityValue = parseInt(capacityMatch[1].trim(), 10);
+                if (isNaN(capacityValue)) capacityValue = null;
               } catch (e) {
                 console.warn(`Could not parse resource capacity: ${capacityMatch[1]}`);
               }
             }
             
-            // Extract remarks/notes if available
+            // Extract remarks/notes if available - expanded pattern matching
             const remarksMatch = 
               fullLine.match(/X-RESOURCE-REMARKS=([^;:]+)/) ||
               fullLine.match(/REMARKS=([^;:]+)/) ||
               fullLine.match(/X-REMARKS=([^;:]+)/) ||
-              fullLine.match(/NOTES=([^;:]+)/);
+              fullLine.match(/NOTES=([^;:]+)/) ||
+              fullLine.match(/NOTE=([^;:]+)/) ||
+              fullLine.match(/X-NOTES=([^;:]+)/) ||
+              fullLine.match(/DESCRIPTION=([^;:]+)/);
+              
             const remarksValue = remarksMatch ? remarksMatch[1].trim() : '';
             
-            // Extract administrator name if available
+            // Extract administrator name if available - expanded pattern matching
             const adminNameMatch = 
               fullLine.match(/X-RESOURCE-ADMIN=([^;:]+)/) ||
               fullLine.match(/ADMIN=([^;:]+)/) ||
               fullLine.match(/X-ADMIN=([^;:]+)/) ||
-              fullLine.match(/X-ADMINISTRATOR=([^;:]+)/);
-            const adminNameValue = adminNameMatch ? adminNameMatch[1].trim() : '';
+              fullLine.match(/X-ADMINISTRATOR=([^;:]+)/) ||
+              fullLine.match(/ADMINISTRATOR=([^;:]+)/) ||
+              fullLine.match(/MANAGER=([^;:]+)/) ||
+              fullLine.match(/X-MANAGER=([^;:]+)/);
+              
+            // If no admin name is found, try using part of the name or CN as the admin name
+            const adminNameValue = adminNameMatch 
+              ? adminNameMatch[1].trim() 
+              : (name.includes(" - Admin:") 
+                ? name.split(" - Admin:")[1].trim() 
+                : '');
             
             resources.push({
               name: name,
