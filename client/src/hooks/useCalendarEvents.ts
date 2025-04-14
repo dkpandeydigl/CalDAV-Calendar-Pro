@@ -5,7 +5,6 @@ import { useToast } from '@/hooks/use-toast';
 import type { Event } from '@shared/schema';
 import { useCalendars } from './useCalendars';
 import { useSharedCalendars } from './useSharedCalendars';
-import { useShadowCache } from './useShadowCache';
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 // Type declarations to help with TanStack Query types
@@ -129,23 +128,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   // Combine all enabled calendar IDs
   const enabledCalendarIds = [...enabledUserCalendarIds, ...enabledSharedCalendarIds];
   
-  // Use our specialized shadow cache system
-  // This will maintain a separate store of events that persists through any query cache clearing
-  
-  // Setup shadow cache for events
+  // Setup events query key with filtering parameters
   const eventsQueryKey = ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()];
-  const {
-    getShadowCache,
-    updateShadowCache,
-    restoreFromShadowCache,
-    trackDeletedItem,
-    shadowCacheSize
-  } = useShadowCache<Event>(eventsQueryKey, {
-    debug: true, // Enable logging for debugging
-    minItems: lastEventCount.current || 0, // Always maintain at least as many events as we had before
-    mergeInsteadOfReplace: true,
-    preservationTime: 10000, // 10 seconds
-  });
   
   // Load events for all calendars with date range filtering in a single API call
   const eventsQueries = useQuery<Event[]>({
@@ -157,28 +141,23 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     // Don't trash data if query fails
     retry: 3,
     retryDelay: 500,
-    // Use our shadow cache as placeholder for guaranteed continuity
+    // Use eventsCache as placeholder for guaranteed continuity
     placeholderData: () => {
-      const shadowEvents = getShadowCache();
-      if (shadowEvents.length > 0) {
-        console.log(`🛡️ Using ${shadowEvents.length} events from shadow cache as placeholder`);
-        return shadowEvents;
-      }
       return eventsCache.current || [];
     },
     // In TanStack Query v5, use gcTime instead of keepPreviousData
     gcTime: 5 * 60 * 1000, // Keep data in cache for 5 minutes
-    // When new data arrives, update our shadow cache
+    // When new data arrives, update our cache
     onSuccess: (data) => {
       if (Array.isArray(data) && data.length > 0) {
-        console.log(`📸 Updating shadow cache with ${data.length} events from successful query`);
-        updateShadowCache(data);
+        console.log(`📸 Updating events cache with ${data.length} events from successful query`);
+        // Update our local cache reference
+        eventsCache.current = [...data];
       }
     },
-    // If query fails, restore from shadow cache
-    onError: () => {
-      console.log(`🚨 Query error, attempting to restore from shadow cache`);
-      restoreFromShadowCache();
+    // If query fails, log error (local cache will be used automatically)
+    onError: (error) => {
+      console.log(`🚨 Query error, using local cache instead:`, error);
     }
   });
   
@@ -1107,9 +1086,6 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
       
-      // Track the deleted item in the shadow cache to prevent it from reappearing
-      trackDeletedItem(id);
-      
       // Force a strong update of all event-related caches
       // 1. Immediately remove from main events cache
       queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
@@ -1135,13 +1111,6 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             return oldEvents.filter((e: Event) => e.id !== id);
           }
         );
-      }
-      
-      // Also track the event by UID if available, for extra reliability
-      if (context?.eventToDelete?.uid) {
-        // Some events might be referenced by UID in other places
-        console.log(`Also tracking deleted event by UID: ${context.eventToDelete.uid}`);
-        trackDeletedItem(context.eventToDelete.uid);
       }
       
       // Show customized toast based on sync status
@@ -1378,15 +1347,6 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     },
     onSuccess: (data, eventId, context) => {
       if (data.success) {
-        // Track the deleted item in the shadow cache to prevent it from reappearing
-        trackDeletedItem(eventId);
-        
-        // Also track the event by UID if available, for extra reliability
-        if (context?.event?.uid) {
-          console.log(`Also tracking cancelled event by UID: ${context.event.uid}`);
-          trackDeletedItem(context.event.uid);
-        }
-        
         // Update the cache to remove the canceled event
         queryClient.setQueryData<Event[]>(
           ['/api/events'],
@@ -1461,24 +1421,6 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     },
     onSuccess: (data) => {
       console.log("Bulk delete completed successfully:", data);
-      
-      // If the response contains the deleted events, track each one in our shadow cache
-      if (data.deletedEvents && Array.isArray(data.deletedEvents)) {
-        console.log(`Tracking ${data.deletedEvents.length} bulk deleted events in shadow cache`);
-        
-        data.deletedEvents.forEach(event => {
-          // Track by ID
-          if (event.id) {
-            trackDeletedItem(event.id);
-          }
-          // Also track by UID for better reliability
-          if (event.uid) {
-            trackDeletedItem(event.uid);
-          }
-        });
-      } else if (data.stats?.deleted) {
-        console.log(`Bulk deleted ${data.stats.deleted} events, but IDs not available to track individually`);
-      }
       
       // Invalidate queries to reflect the changes
       queryClient.invalidateQueries({ queryKey: ['/api/events'] });
