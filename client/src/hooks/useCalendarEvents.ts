@@ -2497,31 +2497,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onError: (error: Error, id: number, context: DeleteMutationContext | undefined) => {
       console.error(`Error deleting event with ID ${id}:`, error);
       
-      // Revert the UI to the previous state
+      // Simplified error handling: just restore the previous state
       if (context?.previousEvents) {
         queryClient.setQueryData<Event[]>(['/api/events'], context.previousEvents);
-        
-        // Also revert any filtered query caches
-        if (context.allQueryKeys) {
-          context.allQueryKeys.forEach((key: QueryKey) => {
-            if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
-              queryClient.setQueryData(key, context.previousEvents);
-            }
-          });
-        }
-        
-        // Revert the calendar-specific cache
-        if (context.eventToDelete) {
-          const calendarEvents = context.previousEvents?.filter(
-            (e: Event) => e.calendarId === context.eventToDelete?.calendarId
-          );
-          if (calendarEvents) {
-            queryClient.setQueryData(
-              ['/api/calendars', context.eventToDelete.calendarId, 'events'],
-              calendarEvents
-            );
-          }
-        }
       }
       
       // Show error toast
@@ -2531,11 +2509,18 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         variant: "destructive"
       });
       
-      // Force immediate refetch to ensure consistency
+      // Force a complete refresh to ensure consistency with server
       queryClient.invalidateQueries({ 
         queryKey: ['/api/events'],
         refetchType: 'all'
       });
+      
+      // Also refresh calendar-specific data if we know which calendar
+      if (context?.eventToDelete?.calendarId) {
+        queryClient.invalidateQueries({
+          queryKey: ['/api/calendars', context.eventToDelete.calendarId, 'events']
+        });
+      }
     }
   });
 
@@ -2577,53 +2562,75 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         throw error;
       }
     },
-    onMutate: (eventId) => {
-      // Similar optimization as delete - keep track of the previous state
+    onMutate: async (eventId) => {
+      // Prevent any background refetches during optimistic update
+      await queryClient.cancelQueries({ queryKey: ['/api/events'] });
+      
+      // Keep track of the previous state for potential rollback
       const previousEvents = queryClient.getQueryData<Event[]>(['/api/events']);
       const event = previousEvents?.find(e => e.id === eventId);
       
-      // Get all potentially affected query keys
-      const allQueryKeys = queryClient.getQueryCache().getAll().map(q => q.queryKey);
+      if (event && previousEvents) {
+        // Simple optimistic update - mark the event as cancelled in UI
+        queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => 
+          oldEvents.map(e => e.id === eventId ? { ...e, status: 'CANCELLED' } : e)
+        );
+        
+        // Also update calendar-specific data if applicable
+        if (event.calendarId) {
+          queryClient.setQueryData<Event[]>(
+            ['/api/calendars', event.calendarId, 'events'],
+            (oldEvents = []) => oldEvents.map(e => e.id === eventId ? { ...e, status: 'CANCELLED' } : e)
+          );
+        }
+      }
       
-      return { previousEvents, event, allQueryKeys };
+      return { previousEvents, event };
     },
     onSuccess: (data, eventId, context) => {
       if (data.success) {
-        // Update the cache to remove the canceled event
-        queryClient.setQueryData<Event[]>(
-          ['/api/events'],
-          (oldEvents = []) => oldEvents.filter(e => e.id !== eventId)
-        );
-        
-        // If we have the event, update calendar-specific cache
-        if (context?.event?.calendarId) {
-          queryClient.setQueryData<Event[]>(
-            ['/api/calendars', context.event.calendarId, 'events'],
-            (oldEvents = []) => oldEvents.filter(e => e.id !== eventId)
-          );
-        }
-        
-        // Invalidate queries to ensure data is fresh
+        // Simplified approach - just invalidate all relevant queries
         queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+        
+        // Also invalidate calendar-specific query if we know which calendar
+        if (context?.event?.calendarId) {
+          queryClient.invalidateQueries({ 
+            queryKey: ['/api/calendars', context.event.calendarId, 'events']
+          });
+        }
         
         toast({
           title: "Event Canceled",
           description: "The event has been canceled and attendees have been notified.",
+          variant: "default"
         });
       } else {
         toast({
-          variant: "destructive",
           title: "Error Canceling Event",
-          description: data.message || "Failed to cancel the event. Please try again."
+          description: data.message || "Failed to cancel the event. Please try again.",
+          variant: "destructive"
         });
       }
     },
-    onError: (error) => {
+    onError: (error, eventId, context) => {
       console.error("Error in cancelEvent:", error);
+      
+      // Restore previous state if available
+      if (context?.previousEvents) {
+        queryClient.setQueryData<Event[]>(['/api/events'], context.previousEvents);
+      }
+      
+      // Also restore calendar-specific data if we have the calendar info
+      if (context?.event?.calendarId) {
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/calendars', context.event.calendarId, 'events']
+        });
+      }
+      
       toast({
-        variant: "destructive",
         title: "Error Canceling Event",
-        description: error.message || "Failed to cancel the event. Please try again."
+        description: error.message || "Failed to cancel the event. Please try again.",
+        variant: "destructive"
       });
     }
   });
