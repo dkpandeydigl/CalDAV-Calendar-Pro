@@ -37,6 +37,8 @@ export interface EventInvitationData {
   icsData?: string; // Optional pre-generated ICS data
   status?: string; // Optional status for events (e.g. 'CANCELLED')
   recurrenceRule?: string | object; // Recurrence rule as string or object
+  rawData?: string; // Original raw iCalendar data
+  sequence?: number; // Sequence number for versioning events (RFC 5545)
 }
 
 export class EmailService {
@@ -1005,9 +1007,44 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
   }
 
   public generateICSData(data: EventInvitationData): string {
-    const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status } = data;
+    const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status, rawData, sequence } = data;
     
-    // Format dates for iCalendar
+    // For cancellations, use our RFC-compliant cancellation generator
+    if (status === 'CANCELLED') {
+      try {
+        // Use our proper cancellation function from ical-utils
+        const { generateCancellationICalEvent } = require('./ical-utils');
+        
+        // Prepare the event object for the cancellation function
+        const eventData = {
+          uid: uid || `event-${Date.now()}@caldav-app`,
+          title,
+          description,
+          location,
+          startDate,
+          endDate,
+          attendees,
+          resources,
+          rawData,
+          recurrenceRule: data.recurrenceRule
+        };
+        
+        // Current timestamp formatted for iCalendar
+        const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+        
+        // Generate proper cancellation ICS
+        return generateCancellationICalEvent(eventData, {
+          organizer: organizer?.email || 'unknown@example.com',
+          sequence: sequence || 0,
+          timestamp
+        });
+      } catch (error) {
+        console.error('Error generating cancellation ICS, falling back to basic format:', error);
+        // Fall back to basic format if something goes wrong
+      }
+    }
+    
+    // Format dates for iCalendar (for non-cancellations or fallback)
     const startDateStr = formatICalDate(startDate);
     const endDateStr = formatICalDate(endDate);
     const now = formatICalDate(new Date());
@@ -1035,6 +1072,10 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     if (status === 'CANCELLED') {
       icsContent.push('STATUS:CANCELLED');
       icsContent.push('TRANSP:TRANSPARENT');
+      
+      // Add SEQUENCE field for cancellations
+      const seqNum = sequence || 0;
+      icsContent.push(`SEQUENCE:${seqNum + 1}`);
     }
     
     // Add optional fields if they exist
