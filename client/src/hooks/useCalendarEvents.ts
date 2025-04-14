@@ -133,6 +133,59 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     }
   }, [localQueryClient]);
   
+  // Filter function to remove deleted events from the cache before restoration
+  const filterDeletedEventsFromCache = useCallback((events: Event[]): Event[] => {
+    return events.filter(event => {
+      // Filter out by ID
+      if (recentlyDeletedEventIds.current.has(event.id)) {
+        console.log(`Filtering deleted event from cache restoration - ID: ${event.id}`);
+        return false;
+      }
+      
+      // Filter out by UID
+      if (event.uid && recentlyDeletedEventUids.current.has(event.uid)) {
+        console.log(`Filtering deleted event from cache restoration - UID: ${event.uid}`);
+        return false;
+      }
+      
+      // Filter out by signature (calendarId + title + start date)
+      if (event.calendarId && event.title && event.startDate) {
+        const signature = `${event.calendarId}-${event.title}-${new Date(event.startDate).getTime()}`;
+        if (recentlyDeletedEventSignatures.current.has(signature)) {
+          console.log(`Filtering deleted event from cache restoration - Signature: ${signature}`);
+          return false;
+        }
+      }
+      
+      // Also check session storage for recently deleted events
+      try {
+        const deletedEventsKey = 'recently_deleted_events';
+        const sessionDeletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
+        
+        const isInDeletedList = sessionDeletedEvents.some(
+          (deleted: any) => {
+            if (deleted.id === event.id) return true;
+            if (deleted.uid && event.uid && deleted.uid === event.uid) return true;
+            if (deleted.signature && event.title && event.startDate && 
+                deleted.signature === `${event.title}_${new Date(event.startDate).toISOString()}`) {
+              return true;
+            }
+            return false;
+          }
+        );
+        
+        if (isInDeletedList) {
+          console.log(`Filtering deleted event from cache restoration - Found in session storage: ${event.id}`);
+          return false;
+        }
+      } catch (e) {
+        // Ignore session storage errors
+      }
+      
+      return true; // Not deleted, keep this event
+    });
+  }, []);
+
   // Advanced restoration function that handles multiple cache scenarios
   const restoreEventsIfNeeded = useCallback(() => {
     try {
@@ -141,9 +194,12 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       // Scenario 1: Events disappeared completely
       if (!currentEvents || currentEvents.length === 0) {
         if (eventsCache.current && eventsCache.current.length > 0) {
-          console.log(`Restoring ${eventsCache.current.length} events from main cache (complete disappearance)`);
+          // CRITICAL FIX: Filter out deleted events from cache before restoration
+          const filteredCache = filterDeletedEventsFromCache([...eventsCache.current]);
+          
+          console.log(`Restoring ${filteredCache.length} events from main cache (complete disappearance)`);
           // Make a deep copy to avoid reference issues
-          const cacheSnapshot = JSON.parse(JSON.stringify(eventsCache.current));
+          const cacheSnapshot = JSON.parse(JSON.stringify(filteredCache));
           localQueryClient.setQueryData(['/api/events'], cacheSnapshot);
           return; // Restoration complete
         }
@@ -152,8 +208,11 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       else if (currentEvents.length < lastEventCount.current - 1) {
         console.log(`Detected significant event loss: ${currentEvents.length} vs ${lastEventCount.current} previously`);
         if (eventsCache.current && eventsCache.current.length > lastEventCount.current - 1) {
-          console.log(`Restoring ${eventsCache.current.length} events from main cache (significant loss)`);
-          const cacheSnapshot = JSON.parse(JSON.stringify(eventsCache.current));
+          // CRITICAL FIX: Filter out deleted events from cache before restoration
+          const filteredCache = filterDeletedEventsFromCache([...eventsCache.current]);
+          
+          console.log(`Restoring ${filteredCache.length} events from main cache (significant loss)`);
+          const cacheSnapshot = JSON.parse(JSON.stringify(filteredCache));
           localQueryClient.setQueryData(['/api/events'], cacheSnapshot);
           return; // Restoration complete
         }
