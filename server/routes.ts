@@ -1967,7 +1967,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       };
       
-      // If the event exists on the server, we should try to delete it there too
+      // If the event exists on the server, we should send a cancellation instead of direct deletion
       if (event.url && event.etag) {
         try {
           // Get the user's server connection
@@ -1987,30 +1987,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 password: connection.password
               },
               authMethod: 'Basic',
-              defaultAccountType: 'caldav',
-              headers: {
-                'If-Match': event.etag // Add If-Match header with etag for safer deletion
-              }
+              defaultAccountType: 'caldav'
             });
             
             // Login to the server
             await davClient.login();
             
-            // Try to delete the event on the server with proper error handling
-            const deleteResponse = await davClient.deleteCalendarObject({
-              calendarObject: {
-                url: event.url,
-                etag: event.etag
+            // First, get the raw ICS data to extract the sequence number
+            let currentSequence = 0;
+            try {
+              // Check if we have rawData in the event
+              if (event.rawData) {
+                // Extract sequence from the event's raw data
+                const { extractSequenceFromICal } = await import('./ical-utils');
+                currentSequence = extractSequenceFromICal(event.rawData);
+                console.log(`Found SEQUENCE in raw ICS data: ${currentSequence}`);
               }
+            } catch (seqError) {
+              console.warn(`Failed to extract sequence number from event data:`, seqError);
+              // We'll use 0 as default
+            }
+            
+            // Generate a proper cancellation ICS with incremented sequence number
+            const { generateCancellationICalEvent } = await import('./ical-utils');
+            const cancelICS = generateCancellationICalEvent(event, {
+              organizer: connection.username,
+              sequence: currentSequence,
+              timestamp: new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '')
             });
             
-            // Check if the deletion was successful
-            if (deleteResponse.status >= 200 && deleteResponse.status < 300) {
-              response.sync.succeeded = true;
-              console.log(`Successfully deleted event ${eventId} from CalDAV server`);
-            } else {
-              response.sync.error = `Server returned status ${deleteResponse.status}`;
-              console.error(`Failed to delete event ${eventId} from server: Status ${deleteResponse.status}`);
+            // Update the event on the server with the cancellation ICS
+            // This is more RFC-compliant than deleting it
+            try {
+              const updateResponse = await davClient.updateCalendarObject({
+                calendarObject: {
+                  url: event.url,
+                  etag: event.etag,
+                  data: cancelICS
+                }
+              });
+              
+              if (updateResponse.status >= 200 && updateResponse.status < 300) {
+                response.sync.succeeded = true;
+                console.log(`Successfully cancelled event ${eventId} on CalDAV server`);
+              } else {
+                response.sync.error = `Server returned status ${updateResponse.status} for cancel operation`;
+                console.error(`Failed to cancel event ${eventId} on server: Status ${updateResponse.status}`);
+                
+                // Fall back to direct deletion if cancellation fails
+                try {
+                  console.log(`Attempting direct deletion as fallback...`);
+                  const deleteResponse = await davClient.deleteCalendarObject({
+                    calendarObject: {
+                      url: event.url,
+                      etag: event.etag
+                    }
+                  });
+                  
+                  if (deleteResponse.status >= 200 && deleteResponse.status < 300) {
+                    response.sync.succeeded = true;
+                    console.log(`Successfully deleted event ${eventId} from CalDAV server (fallback method)`);
+                  } else {
+                    response.sync.error = `Server returned status ${deleteResponse.status} for deletion`;
+                    console.error(`Failed to delete event ${eventId} from server: Status ${deleteResponse.status}`);
+                  }
+                } catch (deleteError) {
+                  console.error(`Error in fallback deletion of event ${eventId}:`, deleteError);
+                  response.sync.error = `Failed both cancellation and deletion: ${deleteError.message}`;
+                }
+              }
+            } catch (updateError) {
+              console.error(`Error cancelling event ${eventId} on CalDAV server:`, updateError);
+              response.sync.error = `Error cancelling event: ${updateError.message}`;
+              
+              // Fall back to direct deletion if cancellation fails
+              try {
+                console.log(`Attempting direct deletion as fallback...`);
+                const deleteResponse = await davClient.deleteCalendarObject({
+                  calendarObject: {
+                    url: event.url,
+                    etag: event.etag
+                  }
+                });
+                
+                if (deleteResponse.status >= 200 && deleteResponse.status < 300) {
+                  response.sync.succeeded = true;
+                  console.log(`Successfully deleted event ${eventId} from CalDAV server (fallback method)`);
+                } else {
+                  response.sync.error = `Server returned status ${deleteResponse.status} for deletion`;
+                  console.error(`Failed to delete event ${eventId} from server: Status ${deleteResponse.status}`);
+                }
+              } catch (deleteError) {
+                console.error(`Error in fallback deletion of event ${eventId}:`, deleteError);
+                response.sync.error = `Failed both cancellation and deletion: ${deleteError.message}`;
+              }
             }
           } else {
             console.log(`User ${userId} does not have an active server connection, can't delete event on server`);

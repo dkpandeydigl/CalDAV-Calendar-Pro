@@ -217,13 +217,21 @@ export function generateICalEvent(event: any, options: {
   organizer: string;
   sequence: number;
   timestamp: string;
+  method?: string;
+  status?: string;
 }): string {
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
-    'BEGIN:VEVENT'
+    'PRODID:-//CalDAV Client//NONSGML v1.0//EN'
   ];
+  
+  // Add METHOD if provided (e.g., CANCEL, REQUEST)
+  if (options.method) {
+    lines.push(`METHOD:${options.method}`);
+  }
+  
+  lines.push('BEGIN:VEVENT');
   
   // Add required properties
   lines.push(formatContentLine('UID', event.uid));
@@ -254,6 +262,11 @@ export function generateICalEvent(event: any, options: {
   lines.push(formatContentLine('CREATED', options.timestamp));
   lines.push(formatContentLine('LAST-MODIFIED', options.timestamp));
   lines.push(formatContentLine('SEQUENCE', String(options.sequence)));
+  
+  // Add STATUS if provided (e.g., CANCELLED)
+  if (options.status) {
+    lines.push(formatContentLine('STATUS', options.status));
+  }
   
   // Recurrence rule if present
   if (event.recurrenceRule) {
@@ -414,4 +427,29 @@ export function extractSequenceFromICal(icalData: string): number {
     console.error('Error extracting SEQUENCE from iCalendar data:', error);
     return 0; // Safe default
   }
+}
+
+/**
+ * Generate a cancellation iCalendar for an event
+ * This follows RFC 5546 for properly canceling events
+ * @param event The event data to cancel
+ * @param options Additional options for the cancellation
+ * @returns Properly formatted iCalendar cancellation data
+ */
+export function generateCancellationICalEvent(event: any, options: {
+  organizer: string;
+  sequence: number;
+  timestamp: string;
+}): string {
+  // Increment the sequence number
+  const updatedSequence = options.sequence + 1;
+  
+  // Generate a cancellation iCalendar
+  return generateICalEvent(event, {
+    organizer: options.organizer,
+    sequence: updatedSequence,
+    timestamp: options.timestamp,
+    method: 'CANCEL',
+    status: 'CANCELLED'
+  });
 }
