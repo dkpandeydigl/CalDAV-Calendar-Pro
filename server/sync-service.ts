@@ -1319,26 +1319,75 @@ export class SyncService {
               // Process as resource
               const name = attendee.params.CN || email.split('@')[0];
               
-              // Extract resource metadata with fallbacks for different field naming conventions
-              const resourceType = attendee.params['X-RESOURCE-TYPE'] || 
-                                 attendee.params['RESOURCE-TYPE'] || '';
+              // Check multiple parameter naming conventions for resource type
+              const resourceType = 
+                attendee.params['X-RESOURCE-TYPE'] || 
+                attendee.params['RESOURCE-TYPE'] || 
+                attendee.params['X-TYPE'] ||
+                attendee.params['TYPE'] || '';
               
-              // Look for capacity in X-RESOURCE-CAPACITY or directly in the CN
+              // Look for capacity with multiple naming conventions
               let capacity = null;
-              if (attendee.params['X-RESOURCE-CAPACITY']) {
-                try {
-                  capacity = parseInt(attendee.params['X-RESOURCE-CAPACITY'], 10);
-                } catch (e) {
-                  console.warn(`Could not parse resource capacity: ${attendee.params['X-RESOURCE-CAPACITY']}`);
+              const capacityParams = [
+                'X-RESOURCE-CAPACITY', 
+                'RESOURCE-CAPACITY',
+                'X-CAPACITY',
+                'CAPACITY'
+              ];
+              
+              // Try each possible capacity parameter name
+              for (const param of capacityParams) {
+                if (attendee.params[param]) {
+                  try {
+                    capacity = parseInt(attendee.params[param], 10);
+                    break; // Found valid capacity, no need to check other parameters
+                  } catch (e) {
+                    console.warn(`Could not parse resource capacity from ${param}: ${attendee.params[param]}`);
+                  }
                 }
               }
               
-              // Extract remarks/notes and administrator name if available
-              const remarks = attendee.params['X-RESOURCE-REMARKS'] || 
-                             attendee.params['REMARKS'] || '';
+              // Extract remarks/notes with multiple naming conventions
+              const remarksParams = [
+                'X-RESOURCE-REMARKS',
+                'RESOURCE-REMARKS',
+                'X-REMARKS',
+                'REMARKS',
+                'X-NOTES',
+                'NOTES',
+                'X-DESCRIPTION',
+                'DESCRIPTION'
+              ];
               
-              const adminName = attendee.params['X-RESOURCE-ADMIN'] || 
-                               attendee.params['ADMIN'] || '';
+              let remarks = '';
+              // Try each possible remarks parameter name
+              for (const param of remarksParams) {
+                if (attendee.params[param]) {
+                  remarks = attendee.params[param];
+                  break; // Found remarks, no need to check other parameters
+                }
+              }
+              
+              // Extract administrator name with multiple naming conventions
+              const adminNameParams = [
+                'X-RESOURCE-ADMIN',
+                'RESOURCE-ADMIN',
+                'X-ADMIN',
+                'ADMIN',
+                'X-ADMINISTRATOR',
+                'ADMINISTRATOR',
+                'X-OWNER',
+                'OWNER'
+              ];
+              
+              let adminName = '';
+              // Try each possible admin name parameter
+              for (const param of adminNameParams) {
+                if (attendee.params[param]) {
+                  adminName = attendee.params[param];
+                  break; // Found admin name, no need to check other parameters
+                }
+              }
               
               resources.push({
                 name: name,
@@ -1485,11 +1534,18 @@ export class SyncService {
               const scheduleStatus = scheduleStatusMatch ? scheduleStatusMatch[1] : undefined;
               
               if (line.includes('CUTYPE=RESOURCE')) {
-                // Process as resource
-                const resourceType = line.match(/X-RESOURCE-TYPE=([^;:]+)/) || 
-                                    line.match(/RESOURCE-TYPE=([^;:]+)/);
+                // Process as resource - check multiple naming conventions
+                const typeMatches = [
+                  line.match(/X-RESOURCE-TYPE=([^;:]+)/),
+                  line.match(/RESOURCE-TYPE=([^;:]+)/),
+                  line.match(/X-TYPE=([^;:]+)/),
+                  line.match(/TYPE=([^;:]+)/)
+                ];
                 
-                // Extract resource type from malformed emails if needed
+                // Find the first matching type
+                const resourceType = typeMatches.find(match => match !== null);
+                
+                // Extract resource type from matching pattern or set undefined
                 let resourceTypeValue = resourceType ? resourceType[1] : undefined;
                 
                 // Try to extract resource type from email if it looks malformed
@@ -1502,8 +1558,16 @@ export class SyncService {
                   }
                 }
                 
-                // Extract additional resource metadata from the line if available
-                const capacityMatch = line.match(/X-RESOURCE-CAPACITY=([^;:]+)/);
+                // Extract capacity with multiple naming conventions
+                const capacityMatches = [
+                  line.match(/X-RESOURCE-CAPACITY=([^;:]+)/),
+                  line.match(/RESOURCE-CAPACITY=([^;:]+)/),
+                  line.match(/X-CAPACITY=([^;:]+)/),
+                  line.match(/CAPACITY=([^;:]+)/)
+                ];
+                
+                // Find first matching capacity
+                const capacityMatch = capacityMatches.find(match => match !== null);
                 let capacity = null;
                 if (capacityMatch && capacityMatch[1]) {
                   try {
@@ -1513,12 +1577,36 @@ export class SyncService {
                   }
                 }
                 
-                // Extract remarks/notes if available
-                const remarksMatch = line.match(/X-RESOURCE-REMARKS=([^;:]+)/);
+                // Extract remarks/notes with multiple naming conventions
+                const remarksMatches = [
+                  line.match(/X-RESOURCE-REMARKS=([^;:]+)/),
+                  line.match(/RESOURCE-REMARKS=([^;:]+)/),
+                  line.match(/X-REMARKS=([^;:]+)/),
+                  line.match(/REMARKS=([^;:]+)/),
+                  line.match(/X-NOTES=([^;:]+)/),
+                  line.match(/NOTES=([^;:]+)/),
+                  line.match(/X-DESCRIPTION=([^;:]+)/),
+                  line.match(/DESCRIPTION=([^;:]+)/)
+                ];
+                
+                // Find first matching remarks
+                const remarksMatch = remarksMatches.find(match => match !== null);
                 const remarks = remarksMatch ? remarksMatch[1] : '';
                 
-                // Extract admin name if available
-                const adminNameMatch = line.match(/X-RESOURCE-ADMIN=([^;:]+)/);
+                // Extract admin name with multiple naming conventions
+                const adminNameMatches = [
+                  line.match(/X-RESOURCE-ADMIN=([^;:]+)/),
+                  line.match(/RESOURCE-ADMIN=([^;:]+)/),
+                  line.match(/X-ADMIN=([^;:]+)/),
+                  line.match(/ADMIN=([^;:]+)/),
+                  line.match(/X-ADMINISTRATOR=([^;:]+)/),
+                  line.match(/ADMINISTRATOR=([^;:]+)/),
+                  line.match(/X-OWNER=([^;:]+)/),
+                  line.match(/OWNER=([^;:]+)/)
+                ];
+                
+                // Find first matching admin name
+                const adminNameMatch = adminNameMatches.find(match => match !== null);
                 const adminName = adminNameMatch ? adminNameMatch[1] : '';
                 
                 resources.push({
