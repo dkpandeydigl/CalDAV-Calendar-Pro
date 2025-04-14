@@ -1649,6 +1649,10 @@ export class SyncService {
                 
                 // Extract admin name with multiple naming conventions
                 const adminNameMatches = [
+                  line.match(/X-ADMIN-NAME=([^;:]+)/),
+                  line.match(/ADMIN-NAME=([^;:]+)/),
+                  line.match(/X-RESOURCE-ADMIN-NAME=([^;:]+)/),
+                  line.match(/RESOURCE-ADMIN-NAME=([^;:]+)/),
                   line.match(/X-RESOURCE-ADMIN=([^;:]+)/),
                   line.match(/RESOURCE-ADMIN=([^;:]+)/),
                   line.match(/X-ADMIN=([^;:]+)/),
