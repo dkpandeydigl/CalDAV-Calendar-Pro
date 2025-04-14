@@ -427,6 +427,36 @@ async function handleWebSocketMessage(userId: number, data: any, ws: WebSocket):
       sendToSocket(ws, { type: 'pong' });
       break;
       
+    case 'event_deleted':
+      // Handle event deletion notifications from client
+      // This enables real-time syncing of deleted events across multiple tabs/devices
+      try {
+        console.log(`📢 Received event deletion notification from user ${userId}:`, data);
+        
+        if (data.eventId) {
+          // Broadcast deletion to all other clients of this user
+          broadcastToUser(userId, {
+            type: 'event_changed', 
+            changeType: 'deleted',
+            eventId: data.eventId,
+            uid: data.uid || null,
+            timestamp: new Date().toISOString(),
+            data: {
+              calendarId: data.calendarId,
+              title: data.title || 'Untitled event',
+              uid: data.uid || null
+            }
+          }, ws); // Exclude the sender from receiving their own broadcast
+          
+          console.log(`🗑️ Event deletion broadcasted to all connected clients for user ${userId}`);
+        } else {
+          console.warn('Event deletion notification missing event ID');
+        }
+      } catch (error) {
+        console.error('Error handling event deletion notification:', error);
+      }
+      break;
+      
     case 'sync_request':
       // Client is requesting an immediate sync
       // This can happen after a tab becomes visible again
@@ -485,12 +515,20 @@ function sendToSocket(ws: WebSocket, data: any): void {
 
 /**
  * Broadcast message to all sockets for a user
+ * 
+ * @param userId User ID to broadcast to
+ * @param data Data to broadcast
+ * @param excludeSocket Optional socket to exclude from broadcast (useful for not echoing back to sender)
  */
-export function broadcastToUser(userId: number, data: any): void {
+export function broadcastToUser(userId: number, data: any, excludeSocket?: WebSocket): void {
   const sockets = userSockets.get(userId);
   if (sockets) {
     // Convert Set to Array for compatibility with all TS versions
     Array.from(sockets).forEach(socket => {
+      // Skip the excluded socket if specified
+      if (excludeSocket && socket === excludeSocket) {
+        return;
+      }
       sendToSocket(socket, data);
     });
   }
