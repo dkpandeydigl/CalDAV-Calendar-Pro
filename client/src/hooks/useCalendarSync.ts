@@ -163,7 +163,36 @@ export function useCalendarSync() {
                 title = 'Event Removed';
                 description = data.data?.count > 1 ? 
                   `${data.data.count} events were removed from ${data.data.calendarName || 'calendar'}` :
-                  'An event was removed';
+                  data.data?.title ? 
+                    `"${data.data.title}" was removed from ${data.data.calendarName || 'calendar'}` :
+                    'An event was removed';
+                
+                // For deleted events, we need to cleanup any local references to prevent 
+                // stuck "syncing" indicators in the UI
+                if (data.eventId) {
+                  console.log(`⚠️ Event deleted, cleaning up event ID: ${data.eventId} from all caches`);
+                  
+                  // Clean up all queries that might have the deleted event cached
+                  const removeDeletedEvent = (events: any[] | undefined): any[] => {
+                    if (!events) return [];
+                    return events.filter(event => {
+                      // Remove the specific event and any with matching UID
+                      if (event.id === data.eventId) {
+                        console.log(`🗑️ Removing deleted event from cache: ${event.id} (${event.title || 'Untitled'})`);
+                        return false;
+                      }
+                      return true;
+                    });
+                  };
+                  
+                  // Update all event caches immediately to remove this event
+                  const allEventsQueries = queryClient.getQueriesData<any[]>({ queryKey: ['/api/events'] });
+                  for (const [queryKey, events] of allEventsQueries) {
+                    if (Array.isArray(events)) {
+                      queryClient.setQueryData(queryKey, removeDeletedEvent(events));
+                    }
+                  }
+                }
               }
               
               toast({
