@@ -374,7 +374,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     (Array.isArray(event.attendees) ? event.attendees : [event.attendees]) : 
     [];
 
-  // Handle Delete Event action
+  // Handle Delete Event action with enhanced client-side removal
   const handleDelete = async () => {
     if (!event || !event.id || isDeleting) return;
     
@@ -382,9 +382,83 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     setDeleteError(null);
     
     try {
-      await deleteEvent(event.id);
+      // Store the event ID and data before we delete it
+      const eventId = event.id;
+      const eventUid = event.uid;
+      const calendarId = event.calendarId;
+      
+      // Eagerly remove the event from the DOM by direct manipulation
+      // This is a drastic but effective approach for newly created events that won't remove properly
+      try {
+        // Immediately try to remove this event element from the DOM
+        const eventEls = document.querySelectorAll(`[data-event-id="${eventId}"]`);
+        if (eventEls.length > 0) {
+          console.log(`👉 Eagerly removing ${eventEls.length} DOM elements for event ${eventId}`);
+          eventEls.forEach(el => el.remove());
+        }
+        
+        // Also try by UID if available
+        if (eventUid) {
+          const uidEls = document.querySelectorAll(`[data-event-uid="${eventUid}"]`);
+          if (uidEls.length > 0) {
+            console.log(`👉 Eagerly removing ${uidEls.length} DOM elements for event UID ${eventUid}`);
+            uidEls.forEach(el => el.remove());
+          }
+        }
+        
+        // For safety, directly modify the query cache to remove this event
+        // This is a more aggressive approach than the normal cache invalidation
+        queryClient.setQueryData(['/api/events'], (oldData: any) => {
+          if (!oldData || !Array.isArray(oldData)) return oldData;
+          return oldData.filter((e: any) => e.id !== eventId && (!eventUid || e.uid !== eventUid));
+        });
+        
+        // Also update calendar-specific cache
+        if (calendarId) {
+          queryClient.setQueryData(['/api/calendars', calendarId, 'events'], (oldData: any) => {
+            if (!oldData || !Array.isArray(oldData)) return oldData;
+            return oldData.filter((e: any) => e.id !== eventId && (!eventUid || e.uid !== eventUid));
+          });
+        }
+        
+        // Store deletion info in sessionStorage to ensure cross-component awareness
+        try {
+          const deletedEventsKey = 'recently_deleted_events';
+          const sessionDeletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
+          
+          sessionDeletedEvents.push({
+            id: eventId,
+            uid: eventUid,
+            title: event.title,
+            calendarId: calendarId,
+            timestamp: new Date().toISOString()
+          });
+          
+          // Limit history to last 20 events
+          while (sessionDeletedEvents.length > 20) {
+            sessionDeletedEvents.shift();
+          }
+          
+          sessionStorage.setItem(deletedEventsKey, JSON.stringify(sessionDeletedEvents));
+          console.log(`Added event ID ${eventId} to session storage deletion tracking`);
+        } catch (e) {
+          console.error('Failed to update session storage deletion tracking:', e);
+        }
+      } catch (domError) {
+        console.error('Error eagerly removing event from DOM:', domError);
+      }
+      
+      // Now perform the actual deletion on the server
+      await deleteEvent(eventId);
+      
+      // Close dialogs even if the server deletion failed
       setDeleteDialogOpen(false);
-      onClose(); // Close the modal after successful deletion
+      onClose(); // Close the modal after deletion
+      
+      // Final safety: Force a full UI refresh
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      }, 100);
     } catch (error) {
       console.error('Error deleting event:', error);
       setDeleteError('Failed to delete the event. Please try again.');
