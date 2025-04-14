@@ -230,10 +230,30 @@ export function SyncSettings() {
     
     // Otherwise try to establish a test connection
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/ws?userId=${authUser?.id || ''}`;
-      console.log('🔄 Checking WebSocket connection to:', wsUrl);
+      // Get the current host
+      const currentHost = window.location.host;
+      let wsUrl;
       
+      // For Replit deployment
+      if (currentHost.includes('replit') || currentHost.includes('replit.dev')) {
+        // Use just the path for Replit
+        wsUrl = `/api/ws?userId=${authUser?.id || ''}`;
+        console.log('🔄 Using relative WebSocket URL for Replit:', wsUrl);
+      } 
+      // For localhost (avoid protocol & port issues)
+      else if (window.location.hostname === 'localhost') {
+        const port = window.location.port || '5000';
+        wsUrl = `ws://localhost:${port}/api/ws?userId=${authUser?.id || ''}`;
+        console.log('🔄 Using explicit localhost WebSocket URL:', wsUrl);
+      } 
+      // Standard case for other deployments
+      else {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${protocol}//${currentHost}/api/ws?userId=${authUser?.id || ''}`;
+        console.log('🔄 Using standard WebSocket URL:', wsUrl);
+      }
+      
+      console.log('🔄 Checking WebSocket connection to:', wsUrl);
       const ws = new WebSocket(wsUrl);
       
       const checkState = () => {

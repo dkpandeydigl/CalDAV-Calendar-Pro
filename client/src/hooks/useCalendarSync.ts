@@ -98,18 +98,34 @@ export function useCalendarSync() {
         // This ensures compatibility across various deployment environments
         let wsUrl;
         try {
-          // Handle localhost specially to avoid WebSocket construction errors
-          if (hostname === 'localhost') {
-            wsUrl = `ws://localhost:${port}${wsPath}?userId=${user.id}`;
-          } else {
-            // For all other environments, use the host and appropriate protocol
-            wsUrl = `${finalProtocol}//${window.location.host}${wsPath}?userId=${user.id}`;
+          // Get the current host (includes hostname and port)
+          const currentHost = window.location.host;
+          
+          // For Replit deployment
+          if (currentHost.includes('replit') || currentHost.includes('replit.dev')) {
+            // Use the relative path with implicit host for Replit
+            wsUrl = `${wsPath}?userId=${user.id}`;
+            console.log(`Using relative WebSocket URL for Replit: ${wsUrl}`);
           }
-          console.log(`Constructed WebSocket URL: ${wsUrl}`);
+          // Handle localhost with explicit port to avoid undefined port issues
+          else if (hostname === 'localhost') {
+            // Ensure port has a default value
+            const safePort = port || '5000';
+            wsUrl = `ws://localhost:${safePort}${wsPath}?userId=${user.id}`;
+            console.log(`Using explicit localhost URL: ${wsUrl}`);
+          } 
+          // For all other environments
+          else {
+            // Use the host and appropriate protocol
+            wsUrl = `${finalProtocol}//${currentHost}${wsPath}?userId=${user.id}`;
+            console.log(`Using standard WebSocket URL: ${wsUrl}`);
+          }
         } catch (urlError) {
-          // Fallback to a simpler URL construction if there's an error
+          // Fallback to a safe relative path if there's an error
           console.error('Error constructing WebSocket URL:', urlError);
-          wsUrl = `//${window.location.host}${wsPath}?userId=${user.id}`;
+          // Simple relative path as ultimate fallback
+          wsUrl = `${wsPath}?userId=${user.id}`;
+          console.log(`Using fallback relative WebSocket URL: ${wsUrl}`);
         }
         
         console.log(`🔄 Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
