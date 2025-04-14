@@ -1221,17 +1221,53 @@ export class SyncService {
             const cnMatch = fullLine.match(/CN=([^;:]+)/);
             const name = cnMatch ? cnMatch[1].trim() : `Resource`;
             
-            // Extract resource type
-            const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
-            const resourceTypeValue = typeMatch ? typeMatch[1].trim() : 'chairs';
+            // Extract resource type with various possible parameter names
+            const typeMatch = 
+              fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/) || 
+              fullLine.match(/RESOURCE-TYPE=([^;:]+)/) ||
+              fullLine.match(/X-TYPE=([^;:]+)/);
+            const resourceTypeValue = typeMatch ? typeMatch[1].trim() : '';
+
+            // Extract capacity if available
+            let capacityValue = null;
+            const capacityMatch = 
+              fullLine.match(/X-RESOURCE-CAPACITY=([^;:]+)/) ||
+              fullLine.match(/CAPACITY=([^;:]+)/);
+            if (capacityMatch && capacityMatch[1]) {
+              try {
+                capacityValue = parseInt(capacityMatch[1].trim(), 10);
+              } catch (e) {
+                console.warn(`Could not parse resource capacity: ${capacityMatch[1]}`);
+              }
+            }
+            
+            // Extract remarks/notes if available
+            const remarksMatch = 
+              fullLine.match(/X-RESOURCE-REMARKS=([^;:]+)/) ||
+              fullLine.match(/REMARKS=([^;:]+)/) ||
+              fullLine.match(/X-REMARKS=([^;:]+)/) ||
+              fullLine.match(/NOTES=([^;:]+)/);
+            const remarksValue = remarksMatch ? remarksMatch[1].trim() : '';
+            
+            // Extract administrator name if available
+            const adminNameMatch = 
+              fullLine.match(/X-RESOURCE-ADMIN=([^;:]+)/) ||
+              fullLine.match(/ADMIN=([^;:]+)/) ||
+              fullLine.match(/X-ADMIN=([^;:]+)/) ||
+              fullLine.match(/X-ADMINISTRATOR=([^;:]+)/);
+            const adminNameValue = adminNameMatch ? adminNameMatch[1].trim() : '';
             
             resources.push({
               name: name,
               adminEmail: email,
-              type: resourceTypeValue
+              type: resourceTypeValue,
+              subType: resourceTypeValue, // Map to both fields for compatibility
+              capacity: capacityValue,
+              remarks: remarksValue,
+              adminName: adminNameValue
             });
             
-            console.log(`Added resource: ${name} (${email}) of type ${resourceTypeValue}`);
+            console.log(`Added resource: ${name} (${email}) of type ${resourceTypeValue} with capacity ${capacityValue}, adminName ${adminNameValue}`);
           }
         }
         
