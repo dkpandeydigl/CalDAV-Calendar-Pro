@@ -35,37 +35,160 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   const trackDeletedEvent = useCallback((event: Event) => {
     console.log(`Tracking deleted event for filtering - ID: ${event.id}, UID: ${event.uid}`);
     
-    // Store basic identifiers
+    // Store basic identifiers in memory
     recentlyDeletedEventIds.current.add(event.id);
     if (event.uid) {
       recentlyDeletedEventUids.current.add(event.uid);
     }
     
     // Create multiple signature formats to improve catching duplicates
+    let signature = '';
+    let crossCalendarSignature = '';
+    let endSignature = '';
+    let endCrossCalSignature = '';
+    
     if (event.title && event.startDate && event.calendarId) {
       // Create standard signature: calendarId-title-startTime
       const startTime = new Date(event.startDate).getTime();
-      const signature = `${event.calendarId}-${event.title}-${startTime}`;
+      signature = `${event.calendarId}-${event.title}-${startTime}`;
       recentlyDeletedEventSignatures.current.add(signature);
       console.log(`Created deletion signature: ${signature}`);
       
       // Add an additional format without calendarId to catch cross-calendar duplicates
-      const crossCalendarSignature = `${event.title}-${startTime}`;
+      crossCalendarSignature = `${event.title}-${startTime}`;
       recentlyDeletedEventSignatures.current.add(crossCalendarSignature);
       console.log(`Created cross-calendar deletion signature: ${crossCalendarSignature}`);
       
       // Also track end time for all-day events that might have different start/end
       if (event.endDate) {
         const endTime = new Date(event.endDate).getTime();
-        const endSignature = `${event.calendarId}-${event.title}-${endTime}`;
+        endSignature = `${event.calendarId}-${event.title}-${endTime}`;
+        endCrossCalSignature = `${event.title}-${endTime}`;
         recentlyDeletedEventSignatures.current.add(endSignature);
+        recentlyDeletedEventSignatures.current.add(endCrossCalSignature);
       }
+    }
+    
+    // STORE IN SESSION STORAGE for persistence across refreshes
+    try {
+      // 1. Basic ID list for simple lookups
+      const deletedIdsJson = sessionStorage.getItem('deletedEventIds') || '[]';
+      const deletedIds = JSON.parse(deletedIdsJson);
+      if (!deletedIds.includes(event.id)) {
+        deletedIds.push(event.id);
+        sessionStorage.setItem('deletedEventIds', JSON.stringify(deletedIds));
+      }
+      
+      // 2. UIDs list for matching recurring events and sync ops
+      if (event.uid) {
+        const deletedUidsJson = sessionStorage.getItem('deletedEventUids') || '[]';
+        const deletedUids = JSON.parse(deletedUidsJson);
+        if (!deletedUids.includes(event.uid)) {
+          deletedUids.push(event.uid);
+          sessionStorage.setItem('deletedEventUids', JSON.stringify(deletedUids));
+        }
+      }
+      
+      // 3. Store signatures for better cross-calendar matching
+      if (signature) {
+        const deletedSignaturesJson = sessionStorage.getItem('deletedEventSignatures') || '[]';
+        const deletedSignatures = JSON.parse(deletedSignaturesJson);
+        
+        // Add all our signatures
+        const newSignatures = [signature, crossCalendarSignature];
+        if (endSignature) {
+          newSignatures.push(endSignature, endCrossCalSignature);
+        }
+        
+        // Add any new signatures that don't already exist
+        let updated = false;
+        newSignatures.forEach(sig => {
+          if (!deletedSignatures.includes(sig)) {
+            deletedSignatures.push(sig);
+            updated = true;
+          }
+        });
+        
+        if (updated) {
+          sessionStorage.setItem('deletedEventSignatures', JSON.stringify(deletedSignatures));
+        }
+      }
+      
+      // 4. Store complete event details for comprehensive matching
+      const deletedDetailsJson = sessionStorage.getItem('deletedEventDetails') || '[]';
+      const deletedDetails = JSON.parse(deletedDetailsJson);
+      
+      // Prepare event details for storage
+      const eventDetails = {
+        id: event.id,
+        uid: event.uid || null,
+        title: event.title || null,
+        startDate: event.startDate || null,
+        endDate: event.endDate || null,
+        calendarId: event.calendarId,
+        deleteTime: Date.now(),
+        signatures: {
+          main: signature || null,
+          crossCal: crossCalendarSignature || null,
+          end: endSignature || null,
+          endCrossCal: endCrossCalSignature || null
+        }
+      };
+      
+      // Check if we already have this event by ID
+      const existingIndex = deletedDetails.findIndex((e: any) => e.id === event.id);
+      if (existingIndex >= 0) {
+        // Update existing entry
+        deletedDetails[existingIndex] = eventDetails;
+      } else {
+        // Add new entry
+        deletedDetails.push(eventDetails);
+      }
+      
+      // Save the updated details
+      sessionStorage.setItem('deletedEventDetails', JSON.stringify(deletedDetails));
+      console.log(`Stored deleted event details in session storage:`, eventDetails);
+      
+      // 5. Apply CSS hiding to any matching DOM elements for this event
+      try {
+        // Hide elements by ID
+        const elements = document.querySelectorAll(`[data-event-id="${event.id}"]`);
+        if (elements.length > 0) {
+          console.log(`Found ${elements.length} DOM elements for deleted event ${event.id} - applying permanent hiding`);
+          elements.forEach(el => {
+            (el as HTMLElement).style.display = 'none';
+            (el as HTMLElement).style.opacity = '0';
+            (el as HTMLElement).style.pointerEvents = 'none';
+            el.setAttribute('data-deleted', 'true');
+            el.setAttribute('data-permanent-delete', 'true');
+          });
+        }
+        
+        // Hide elements by UID if available
+        if (event.uid) {
+          const uidElements = document.querySelectorAll(`[data-event-uid="${event.uid}"]`);
+          if (uidElements.length > 0) {
+            console.log(`Found ${uidElements.length} DOM elements by UID for deleted event - applying permanent hiding`);
+            uidElements.forEach(el => {
+              (el as HTMLElement).style.display = 'none';
+              (el as HTMLElement).style.opacity = '0';
+              (el as HTMLElement).style.pointerEvents = 'none';
+              el.setAttribute('data-deleted', 'true');
+              el.setAttribute('data-permanent-delete', 'true');
+            });
+          }
+        }
+      } catch (domErr) {
+        console.error('Error applying CSS hiding to deleted event elements:', domErr);
+      }
+    } catch (storageErr) {
+      console.error('Error storing deleted event in session storage:', storageErr);
     }
     
     // Immediately invalidate queries to ensure deleted event disappears
     queryClient.invalidateQueries({ queryKey: ['/api/events'] });
     
-    // Clean up expired entries after 60 minutes (increased to ensure deletions persist longer)
+    // Clean up expired entries after 24 hours (extended from 60 minutes)
     // This is longer than normal sync intervals to ensure events don't reappear
     setTimeout(() => {
       recentlyDeletedEventIds.current.delete(event.id);
@@ -93,8 +216,11 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         }
       }
       
-      console.log(`Removed event ID ${event.id} from deleted events tracking`);
-    }, 60 * 60 * 1000); // 60 minutes (increased from 30)
+      console.log(`Removed event ID ${event.id} from in-memory deleted events tracking`);
+      
+      // NOTE: We intentionally DON'T remove from session storage until page reload
+      // This helps maintain deletion state across sync operations
+    }, 24 * 60 * 60 * 1000); // 24 hours (increased from 60 minutes)
   }, [queryClient]);
   
   // Enhanced cache preservation system with specific handling for new events
@@ -135,6 +261,46 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   
   // Filter function to remove deleted events from the cache before restoration
   const filterDeletedEventsFromCache = useCallback((events: Event[]): Event[] => {
+    // First, ensure we load deleted event data from session storage into memory
+    try {
+      // Load basic IDs list
+      const deletedIdsJson = sessionStorage.getItem('deletedEventIds') || '[]';
+      const deletedIds = JSON.parse(deletedIdsJson);
+      if (deletedIds.length > 0) {
+        console.log(`Loading ${deletedIds.length} deleted event IDs from session storage`);
+        deletedIds.forEach((id: number) => {
+          recentlyDeletedEventIds.current.add(id);
+        });
+      }
+      
+      // Load UIDs list
+      const deletedUidsJson = sessionStorage.getItem('deletedEventUids') || '[]';
+      const deletedUids = JSON.parse(deletedUidsJson);
+      if (deletedUids.length > 0) {
+        console.log(`Loading ${deletedUids.length} deleted event UIDs from session storage`);
+        deletedUids.forEach((uid: string) => {
+          recentlyDeletedEventUids.current.add(uid);
+        });
+      }
+      
+      // Load signatures list
+      const deletedSignaturesJson = sessionStorage.getItem('deletedEventSignatures') || '[]';
+      const deletedSignatures = JSON.parse(deletedSignaturesJson);
+      if (deletedSignatures.length > 0) {
+        console.log(`Loading ${deletedSignatures.length} deleted event signatures from session storage`);
+        deletedSignatures.forEach((signature: string) => {
+          recentlyDeletedEventSignatures.current.add(signature);
+        });
+      }
+      
+      // Load detailed deletion info
+      const deletedDetailsJson = sessionStorage.getItem('deletedEventDetails') || '[]';
+      const deletedDetails = JSON.parse(deletedDetailsJson);
+      console.log(`Loaded ${deletedDetails.length} detailed deletion records from session storage`);
+    } catch (error) {
+      console.error('Error loading deleted events from session storage:', error);
+    }
+    
     return events.filter(event => {
       // Filter out by ID
       if (recentlyDeletedEventIds.current.has(event.id)) {
@@ -150,14 +316,22 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       
       // Filter out by signature (calendarId + title + start date)
       if (event.calendarId && event.title && event.startDate) {
-        const signature = `${event.calendarId}-${event.title}-${new Date(event.startDate).getTime()}`;
+        const startTime = new Date(event.startDate).getTime();
+        const signature = `${event.calendarId}-${event.title}-${startTime}`;
         if (recentlyDeletedEventSignatures.current.has(signature)) {
           console.log(`Filtering deleted event from cache restoration - Signature: ${signature}`);
           return false;
         }
+        
+        // Also check cross-calendar signature
+        const crossCalendarSignature = `${event.title}-${startTime}`;
+        if (recentlyDeletedEventSignatures.current.has(crossCalendarSignature)) {
+          console.log(`Filtering deleted event from cache restoration - Cross-Calendar Signature: ${crossCalendarSignature}`);
+          return false;
+        }
       }
       
-      // Also check session storage for recently deleted events
+      // Legacy check for older session storage format
       try {
         const deletedEventsKey = 'recently_deleted_events';
         const sessionDeletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
@@ -175,11 +349,61 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         );
         
         if (isInDeletedList) {
-          console.log(`Filtering deleted event from cache restoration - Found in session storage: ${event.id}`);
+          console.log(`Filtering deleted event from cache restoration - Found in legacy session storage: ${event.id}`);
           return false;
         }
       } catch (e) {
         // Ignore session storage errors
+      }
+      
+      // Advanced check with detailed deletion records
+      try {
+        const deletedDetailsJson = sessionStorage.getItem('deletedEventDetails') || '[]';
+        const deletedDetails = JSON.parse(deletedDetailsJson);
+        
+        if (deletedDetails.length > 0) {
+          // Check for ID match
+          if (deletedDetails.some((d: any) => d.id === event.id)) {
+            console.log(`Filtering deleted event from cache restoration - Found in detailed storage by ID: ${event.id}`);
+            return false;
+          }
+          
+          // Check for UID match if available
+          if (event.uid && deletedDetails.some((d: any) => d.uid === event.uid)) {
+            console.log(`Filtering deleted event from cache restoration - Found in detailed storage by UID: ${event.uid}`);
+            return false;
+          }
+          
+          // Check for signature matches
+          if (event.title && event.startDate && event.calendarId) {
+            const startTime = new Date(event.startDate).getTime();
+            const eventSignature = `${event.calendarId}-${event.title}-${startTime}`;
+            const eventCrossCalSignature = `${event.title}-${startTime}`;
+            
+            // Check all detailed records for matching signatures
+            const matchesSignature = deletedDetails.some((d: any) => {
+              // Check main signature
+              if (d.signatures?.main === eventSignature) return true;
+              if (d.signatures?.crossCal === eventCrossCalSignature) return true;
+              
+              // Also check basic matching if title and start time match
+              if (d.title === event.title && 
+                  d.startDate && 
+                  Math.abs(new Date(d.startDate).getTime() - startTime) < 1000) {
+                return true;
+              }
+              
+              return false;
+            });
+            
+            if (matchesSignature) {
+              console.log(`Filtering deleted event from cache restoration - Found in detailed storage by signature match`);
+              return false;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error checking detailed deletion records:', error);
       }
       
       return true; // Not deleted, keep this event
