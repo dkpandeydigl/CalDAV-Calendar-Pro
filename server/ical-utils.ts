@@ -364,10 +364,35 @@ function generateAttendeesAndResources(event: any): string[] {
         resourcesArray.forEach(resource => {
           if (resource && resource.adminEmail) {
             const params: Record<string, string> = {};
-            if (resource.adminName) params.CN = resource.adminName;
+            // Use resource name for CN parameter if available, fallback to adminName
+            if (resource.name) {
+              params.CN = resource.name;
+            } else if (resource.adminName) {
+              params.CN = resource.adminName;
+            }
+            
             params.CUTYPE = 'RESOURCE';
             params.ROLE = 'NON-PARTICIPANT';
-            if (resource.subType) params['X-RESOURCE-TYPE'] = resource.subType;
+            
+            // Add X-RESOURCE-TYPE
+            if (resource.type || resource.subType) {
+              params['X-RESOURCE-TYPE'] = resource.type || resource.subType;
+            }
+            
+            // Add X-RESOURCE-CAPACITY if available
+            if (resource.capacity !== undefined && resource.capacity !== null) {
+              params['X-RESOURCE-CAPACITY'] = String(resource.capacity);
+            }
+            
+            // Add X-ADMIN-NAME if available
+            if (resource.adminName) {
+              params['X-ADMIN-NAME'] = resource.adminName;
+            }
+            
+            // Add X-NOTES-REMARKS if available
+            if (resource.remarks) {
+              params['X-NOTES-REMARKS'] = resource.remarks;
+            }
             
             lines.push(formatContentLine('ATTENDEE', `mailto:${resource.adminEmail}`, params));
           }
@@ -512,21 +537,58 @@ export function generateCancellationICalEvent(event: any, options: {
         const nameMatch = resourceStr.match(/CN=([^;:]+)/);
         const subType = nameMatch ? nameMatch[1] : 'Resource';
         
-        // Extract capacity if available
-        const capacityMatch = resourceStr.match(/X-CAPACITY=(\d+)/);
+        // Extract type from X-RESOURCE-TYPE or fallback to standard parameters
+        const typeMatches = [
+          resourceStr.match(/X-RESOURCE-TYPE=([^;:]+)/),
+          resourceStr.match(/RESOURCE-TYPE=([^;:]+)/),
+          resourceStr.match(/X-TYPE=([^;:]+)/)
+        ];
+        const typeMatch = typeMatches.find(match => match !== null);
+        const resourceType = typeMatch ? typeMatch[1] : 'Resource';
+        
+        // Extract capacity with multiple patterns
+        const capacityMatches = [
+          resourceStr.match(/X-RESOURCE-CAPACITY=(\d+)/),
+          resourceStr.match(/RESOURCE-CAPACITY=(\d+)/),
+          resourceStr.match(/X-CAPACITY=(\d+)/),
+          resourceStr.match(/CAPACITY=(\d+)/)
+        ];
+        const capacityMatch = capacityMatches.find(match => match !== null);
         const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : undefined;
         
-        // Extract remarks if available
-        const remarksMatch = resourceStr.match(/X-REMARKS="([^"]+)"/);
-        const remarks = remarksMatch ? remarksMatch[1].replace(/\\n/g, '\n').replace(/\\;/g, ';').replace(/\\,/g, ',').replace(/\\\\/g, '\\') : undefined;
+        // Extract admin name
+        const adminNameMatches = [
+          resourceStr.match(/X-ADMIN-NAME=([^;:]+)/),
+          resourceStr.match(/ADMIN-NAME=([^;:]+)/),
+          resourceStr.match(/X-ADMIN=([^;:]+)/)
+        ];
+        const adminNameMatch = adminNameMatches.find(match => match !== null);
+        const adminName = adminNameMatch ? adminNameMatch[1] : undefined;
+        
+        // Extract remarks with multiple patterns
+        const remarksMatches = [
+          resourceStr.match(/X-NOTES-REMARKS=([^;:]+)/),
+          resourceStr.match(/X-REMARKS=([^;:]+)/),
+          resourceStr.match(/REMARKS=([^;:]+)/),
+          resourceStr.match(/X-NOTES=([^;:]+)/),
+          resourceStr.match(/NOTES=([^;:]+)/)
+        ];
+        const remarksMatch = remarksMatches.find(match => match !== null);
+        const remarks = remarksMatch ? 
+          remarksMatch[1].replace(/\\n/g, '\n').replace(/\\;/g, ';').replace(/\\,/g, ',').replace(/\\\\/g, '\\') : 
+          undefined;
         
         return {
           id: email,
+          name: subType,
           adminEmail: email,
-          adminName: subType,
+          adminName: adminName || subType,
+          type: resourceType,
           subType,
           capacity,
-          remarks
+          remarks,
+          displayName: subType,
+          email: email
         };
       });
       
