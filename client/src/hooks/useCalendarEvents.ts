@@ -1187,32 +1187,109 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         
         // Find all duplicate events with same properties but different IDs
         // This handles the case where the same event appears twice with different IDs
-        const duplicateEvents = previousEvents?.filter(event => 
+        // We'll use multiple detection strategies to find all possible duplicates
+        
+        // Strategy 1: Find duplicates based on exact match of key properties
+        const exactDuplicates = previousEvents?.filter(event => 
           event.id !== eventToDelete.id && // Not the same ID
           event.title === eventToDelete.title && // Same title
           event.calendarId === eventToDelete.calendarId && // Same calendar
           new Date(event.startDate).getTime() === new Date(eventToDelete.startDate).getTime() // Same start time
+        ) || [];
+        
+        // Strategy 2: Find duplicates based on UID (which should be unique across calendars)
+        const uidDuplicates = eventToDelete.uid ? 
+          (previousEvents?.filter(event => 
+            event.id !== eventToDelete.id && // Not the same ID
+            event.uid === eventToDelete.uid // Same UID
+          ) || []) : [];
+        
+        // Strategy 3: Find duplicates based on title and start time only (cross-calendar)
+        const crossCalendarDuplicates = previousEvents?.filter(event => 
+          event.id !== eventToDelete.id && // Not the same ID
+          event.title === eventToDelete.title && // Same title
+          event.calendarId !== eventToDelete.calendarId && // Different calendar
+          new Date(event.startDate).getTime() === new Date(eventToDelete.startDate).getTime() // Same start time
+        ) || [];
+        
+        // Strategy 4: Find duplicates with similar attributes but potentially different formatting
+        const similarDuplicates = previousEvents?.filter(event => {
+          // Skip if already identified as duplicate by other strategies
+          if (event.id === eventToDelete.id) return false;
+          if (exactDuplicates.some(e => e.id === event.id)) return false;
+          if (uidDuplicates.some(e => e.id === event.id)) return false;
+          if (crossCalendarDuplicates.some(e => e.id === event.id)) return false;
+          
+          // Check for similar titles (ignoring case and extra spaces)
+          const titleMatch = event.title && eventToDelete.title && 
+            event.title.trim().toLowerCase() === eventToDelete.title.trim().toLowerCase();
+          
+          // Check for similar start times (within 1 minute)
+          const startDate1 = new Date(event.startDate).getTime();
+          const startDate2 = new Date(eventToDelete.startDate).getTime();
+          const timeMatch = Math.abs(startDate1 - startDate2) < 60000; // Within 1 minute
+          
+          return titleMatch && timeMatch;
+        }) || [];
+        
+        // Combine all duplicate detection strategies
+        const allDuplicates = [
+          ...exactDuplicates,
+          ...uidDuplicates,
+          ...crossCalendarDuplicates,
+          ...similarDuplicates
+        ];
+        
+        // Remove duplicates from our combined array (in case an event was caught by multiple strategies)
+        const uniqueDuplicates = allDuplicates.filter((event, index, self) =>
+          index === self.findIndex((e) => e.id === event.id)
         );
         
         // Track all duplicates for deletion as well
-        if (duplicateEvents && duplicateEvents.length > 0) {
-          console.log(`Found ${duplicateEvents.length} duplicate events to remove as well`);
-          duplicateEvents.forEach(dupEvent => {
+        if (uniqueDuplicates.length > 0) {
+          console.log(`Found ${uniqueDuplicates.length} duplicate events to remove as well`);
+          uniqueDuplicates.forEach(dupEvent => {
             console.log(`Tracking duplicate event with ID ${dupEvent.id} for deletion`);
             trackDeletedEvent(dupEvent);
           });
         }
         
-        // Create a filter function to remove main event and duplicates
+        // Create a comprehensive filter function to remove main event and all duplicates
         const shouldKeepEvent = (e: Event) => {
-          // Keep if it's not the main deleted event by ID
+          // Filter by ID (exact match)
           if (e.id === id) return false;
           
-          // Also filter out duplicates by checking signature
+          // Filter by UID if available (cross-calendar duplicates)
+          if (eventToDelete.uid && e.uid === eventToDelete.uid) return false;
+          
+          // Check if this is one of the duplicates we found through our detection strategies
+          if (uniqueDuplicates.some(dupEvent => dupEvent.id === e.id)) return false;
+          
+          // Check for exact signature match (same calendar, title, start time)
           if (e.title === eventToDelete.title && 
               e.calendarId === eventToDelete.calendarId &&
               new Date(e.startDate).getTime() === new Date(eventToDelete.startDate).getTime()) {
             return false;
+          }
+          
+          // Check for cross-calendar signature match (same title, start time, different calendar)
+          if (e.title === eventToDelete.title && 
+              e.calendarId !== eventToDelete.calendarId &&
+              new Date(e.startDate).getTime() === new Date(eventToDelete.startDate).getTime()) {
+            return false;
+          }
+          
+          // Check for similar but not exact matches (case insensitive title, time within 1 minute)
+          if (e.title && eventToDelete.title && 
+              e.title.trim().toLowerCase() === eventToDelete.title.trim().toLowerCase()) {
+            
+            const eStartTime = new Date(e.startDate).getTime();
+            const deleteStartTime = new Date(eventToDelete.startDate).getTime();
+            
+            // If start times are within 1 minute, consider it a duplicate
+            if (Math.abs(eStartTime - deleteStartTime) < 60000) {
+              return false;
+            }
           }
           
           return true;
@@ -1236,8 +1313,26 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         const calendarId = eventToDelete.calendarId;
         if (calendarId) {
           queryClient.setQueryData<Event[]>(['/api/calendars', calendarId, 'events'], 
-            (oldEvents = []) => oldEvents.filter(e => e.id !== id)
+            (oldEvents = []) => oldEvents.filter(shouldKeepEvent)
           );
+        }
+        
+        // 4. Check for and update any cross-calendar caches that might contain the event
+        // This helps with events that appear in multiple calendars
+        if (uniqueDuplicates.length > 0) {
+          // Get unique calendar IDs from the duplicates
+          const otherCalendarIds = uniqueDuplicates
+            .map(e => e.calendarId)
+            .filter(cId => cId !== calendarId) // Exclude the main calendar
+            .filter((cId, index, self) => self.indexOf(cId) === index); // Make unique
+            
+          // Update each of these calendar caches
+          otherCalendarIds.forEach(otherCalendarId => {
+            console.log(`Updating cache for related calendar ${otherCalendarId}`);
+            queryClient.setQueryData<Event[]>(['/api/calendars', otherCalendarId, 'events'], 
+              (oldEvents = []) => oldEvents ? oldEvents.filter(shouldKeepEvent) : []
+            );
+          });
         }
       }
       
@@ -1248,32 +1343,146 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
       
+      // If we have the event that was deleted, add it to our tracking system to ensure it doesn't reappear
+      if (context?.eventToDelete) {
+        console.log(`Adding deleted event to tracking system:`, context.eventToDelete);
+        trackDeletedEvent(context.eventToDelete);
+      }
+      
       // Force a strong update of all event-related caches
-      // 1. Immediately remove from main events cache
+      // 1. Immediately remove from main events cache with improved filtering
       queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
-        return oldEvents.filter((e: Event) => e.id !== id);
+        if (!oldEvents) return [];
+        
+        // Filter by ID first
+        const afterIdFilter = oldEvents.filter((e: Event) => e.id !== id);
+        
+        // If we have the detailed event object, also filter by UID and signature for improved duplicate detection
+        if (context?.eventToDelete) {
+          const eventToDelete = context.eventToDelete;
+          
+          // Filter by UID if available
+          const afterUidFilter = eventToDelete.uid 
+            ? afterIdFilter.filter(e => e.uid !== eventToDelete.uid)
+            : afterIdFilter;
+          
+          // Also filter by signature if we have enough data
+          if (eventToDelete.title && eventToDelete.startDate) {
+            const startTime = new Date(eventToDelete.startDate).getTime();
+            const signature = `${eventToDelete.calendarId}-${eventToDelete.title}-${startTime}`;
+            const crossCalSignature = `${eventToDelete.title}-${startTime}`;
+            
+            return afterUidFilter.filter(e => {
+              if (!e.title || !e.startDate) return true; // Keep if no title/startDate
+              
+              const eStartTime = new Date(e.startDate).getTime();
+              const eSignature = `${e.calendarId}-${e.title}-${eStartTime}`;
+              const eCrossCalSignature = `${e.title}-${eStartTime}`;
+              
+              // Filter out if it matches any of our signatures
+              return eSignature !== signature && eCrossCalSignature !== crossCalSignature;
+            });
+          }
+          
+          return afterUidFilter;
+        }
+        
+        return afterIdFilter;
       });
       
-      // 2. Remove from date-range filtered caches
+      // 2. Remove from date-range filtered caches with the same enhanced logic
       if (context?.allQueryKeys) {
         context.allQueryKeys.forEach((key: QueryKey) => {
           if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
             queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
-              return oldEvents.filter((e: Event) => e.id !== id);
+              if (!oldEvents) return [];
+              
+              // Apply the same filtering logic from above
+              const afterIdFilter = oldEvents.filter((e: Event) => e.id !== id);
+              
+              if (context?.eventToDelete) {
+                const eventToDelete = context.eventToDelete;
+                
+                // Filter by UID if available
+                const afterUidFilter = eventToDelete.uid 
+                  ? afterIdFilter.filter(e => e.uid !== eventToDelete.uid)
+                  : afterIdFilter;
+                
+                // Also filter by signature if we have enough data
+                if (eventToDelete.title && eventToDelete.startDate) {
+                  const startTime = new Date(eventToDelete.startDate).getTime();
+                  const signature = `${eventToDelete.calendarId}-${eventToDelete.title}-${startTime}`;
+                  const crossCalSignature = `${eventToDelete.title}-${startTime}`;
+                  
+                  return afterUidFilter.filter(e => {
+                    if (!e.title || !e.startDate) return true; // Keep if no title/startDate
+                    
+                    const eStartTime = new Date(e.startDate).getTime();
+                    const eSignature = `${e.calendarId}-${e.title}-${eStartTime}`;
+                    const eCrossCalSignature = `${e.title}-${eStartTime}`;
+                    
+                    // Filter out if it matches any of our signatures
+                    return eSignature !== signature && eCrossCalSignature !== crossCalSignature;
+                  });
+                }
+                
+                return afterUidFilter;
+              }
+              
+              return afterIdFilter;
             });
           }
         });
       }
       
-      // 3. Update calendar-specific cache
+      // 3. Update calendar-specific cache with the same enhanced logic
       if (context?.eventToDelete?.calendarId) {
         queryClient.setQueryData<Event[]>(
           ['/api/calendars', context.eventToDelete.calendarId, 'events'], 
           (oldEvents = []) => {
-            return oldEvents.filter((e: Event) => e.id !== id);
+            if (!oldEvents) return [];
+            
+            // Apply the same filtering logic from above
+            const afterIdFilter = oldEvents.filter((e: Event) => e.id !== id);
+            
+            if (context?.eventToDelete) {
+              const eventToDelete = context.eventToDelete;
+              
+              // Filter by UID if available
+              const afterUidFilter = eventToDelete.uid 
+                ? afterIdFilter.filter(e => e.uid !== eventToDelete.uid)
+                : afterIdFilter;
+              
+              // Also filter by signature if we have enough data
+              if (eventToDelete.title && eventToDelete.startDate) {
+                const startTime = new Date(eventToDelete.startDate).getTime();
+                const signature = `${eventToDelete.calendarId}-${eventToDelete.title}-${startTime}`;
+                const crossCalSignature = `${eventToDelete.title}-${startTime}`;
+                
+                return afterUidFilter.filter(e => {
+                  if (!e.title || !e.startDate) return true; // Keep if no title/startDate
+                  
+                  const eStartTime = new Date(e.startDate).getTime();
+                  const eSignature = `${e.calendarId}-${e.title}-${eStartTime}`;
+                  const eCrossCalSignature = `${e.title}-${eStartTime}`;
+                  
+                  // Filter out if it matches any of our signatures
+                  return eSignature !== signature && eCrossCalSignature !== crossCalSignature;
+                });
+              }
+              
+              return afterUidFilter;
+            }
+            
+            return afterIdFilter;
           }
         );
       }
+      
+      // Force an immediate invalidation of all event queries to refresh data
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      }, 100);
       
       // Show customized toast based on sync status
       if (result.sync) {
