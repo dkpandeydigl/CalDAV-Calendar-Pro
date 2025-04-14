@@ -104,6 +104,9 @@ export function useCalendarSync() {
           } else {
             // For all other environments, use the host and appropriate protocol
             wsUrl = `${finalProtocol}//${window.location.host}${wsPath}?userId=${user.id}`;
+            
+            // Make WebSocket connection globally available for other components
+            (window as any).calendarSocket = ws;
           }
           console.log(`Constructed WebSocket URL: ${wsUrl}`);
         } catch (urlError) {
@@ -114,6 +117,9 @@ export function useCalendarSync() {
         
         console.log(`🔄 Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
         ws = new WebSocket(wsUrl);
+        
+        // Make WebSocket connection globally available for other components
+        (window as any).calendarSocket = ws;
         
         ws.onopen = () => {
           console.log('✅ WebSocket connection established');

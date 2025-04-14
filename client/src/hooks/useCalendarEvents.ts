@@ -2232,22 +2232,122 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         });
       }
       
-      // Force an immediate invalidation to trigger a fresh fetch from the server
-      // This ensures the UI is in sync with the server
-      console.log("Forcing immediate data refresh after delete");
+      // Instead of simple invalidation, use a more controlled approach
+      // This ensures the UI is in sync with the server while preventing deleted events from reappearing
+      console.log("Implementing controlled data refresh after delete");
       
-      // A short timeout to allow the UI to update first
+      // First apply our filters to ensure current view is correct
+      controlledRefresh();
+      
+      // Connect to WebSocket if available to broadcast deletion
+      try {
+        // Try to get a WebSocket connection if available
+        const socket = (window as any).calendarSocket;
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          console.log(`Broadcasting event deletion via WebSocket: ${id}`);
+          // Send deletion notification to all connected clients
+          socket.send(JSON.stringify({
+            type: 'event_deleted',
+            eventId: id,
+            uid: context?.eventToDelete?.uid || null,
+            timestamp: Date.now(),
+            calendarId: context?.eventToDelete?.calendarId || null
+          }));
+        }
+      } catch (wsError) {
+        console.warn('Could not broadcast deletion via WebSocket:', wsError);
+      }
+      
+      // Then set up a series of carefully timed operations to keep the UI in sync
       setTimeout(() => {
-        // Invalidate everything related to events
+        // 1. Apply filters again before fetch to ensure consistent view
+        controlledRefresh();
+        
+        // 2. Get current filtered state to compare after fetch
+        const beforeEvents = queryClient.getQueryData<Event[]>(['/api/events']) || [];
+        const filteredIds = new Set(beforeEvents.map(e => e.id));
+        
+        // 3. Perform a controlled invalidation
+        console.log("Performing controlled query invalidation");
         queryClient.invalidateQueries({ 
           queryKey: ['/api/events'],
           refetchType: 'all' // Force an immediate refetch
+        }).then(() => {
+          console.log("Successfully refreshed events data");
+          // Apply our filters again after fetch completes
+          controlledRefresh();
+          
+          // Check if any deleted events reappeared and remove them
+          setTimeout(() => {
+            const afterEvents = queryClient.getQueryData<Event[]>(['/api/events']) || [];
+            const reappearedEvents = afterEvents.filter(e => 
+              // Event wasn't in our filtered set and matches our deleted event
+              !filteredIds.has(e.id) && 
+              (e.id === id || (context?.eventToDelete?.uid && e.uid === context.eventToDelete.uid))
+            );
+            
+            if (reappearedEvents.length > 0) {
+              console.log(`Found ${reappearedEvents.length} reappeared events, removing them`);
+              queryClient.setQueryData<Event[]>(['/api/events'], 
+                afterEvents.filter(e => !reappearedEvents.some(re => re.id === e.id))
+              );
+              
+              // Re-apply custom DOM filtering for any reappeared elements
+              try {
+                reappearedEvents.forEach(e => {
+                  const eventEls = document.querySelectorAll(`[data-event-id="${e.id}"]`);
+                  if (eventEls.length > 0) {
+                    console.log(`👉 Re-hiding ${eventEls.length} reappeared DOM elements for event ${e.id}`);
+                    eventEls.forEach(el => {
+                      (el as HTMLElement).style.display = 'none';
+                      (el as HTMLElement).style.opacity = '0';
+                      (el as HTMLElement).style.pointerEvents = 'none';
+                      el.setAttribute('data-deleted', 'true');
+                    });
+                  }
+                });
+              } catch (domError) {
+                console.error('Error hiding reappeared events in DOM:', domError);
+              }
+            }
+            
+            // Final filter application to ensure consistency
+            controlledRefresh();
+          }, 100);
         });
         
-        if (context?.eventToDelete) {
+        // Also handle calendar-specific queries with the same careful approach
+        if (context?.eventToDelete?.calendarId) {
+          const calendarId = context.eventToDelete.calendarId;
+          const calQueryKey = ['/api/calendars', calendarId, 'events'];
+          
+          // Get current calendar-specific filtered state
+          const beforeCalEvents = queryClient.getQueryData<Event[]>(calQueryKey) || [];
+          const filteredCalIds = new Set(beforeCalEvents.map(e => e.id));
+          
           queryClient.invalidateQueries({ 
-            queryKey: ['/api/calendars', context.eventToDelete.calendarId, 'events'],
+            queryKey: calQueryKey,
             refetchType: 'all' // Force an immediate refetch
+          }).then(() => {
+            // Apply our filters again after fetch completes
+            controlledRefresh();
+            
+            // Check for and remove any reappeared events
+            const afterCalEvents = queryClient.getQueryData<Event[]>(calQueryKey) || [];
+            const reappearedCalEvents = afterCalEvents.filter(e => 
+              !filteredCalIds.has(e.id) && 
+              (e.id === id || (context?.eventToDelete?.uid && e.uid === context.eventToDelete.uid))
+            );
+            
+            if (reappearedCalEvents.length > 0) {
+              console.log(`Found ${reappearedCalEvents.length} reappeared events in calendar cache, removing them`);
+              queryClient.setQueryData<Event[]>(calQueryKey, 
+                afterCalEvents.filter(e => !reappearedCalEvents.some(re => re.id === e.id))
+              );
+            }
+            
+            // Final calendar-specific filter application
+            controlledRefresh();
           });
         }
         
@@ -2256,8 +2356,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         
         const syncEvent = async () => {
           try {
-            // First, make sure the event is properly removed from our local database
-            await queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+            // Make sure our controlled refreshes are finished before syncing
+            await new Promise(resolve => setTimeout(resolve, 150));
             
             // Then trigger an immediate sync with the CalDAV server
             const syncResponse = await apiRequest('POST', '/api/sync/now', {
