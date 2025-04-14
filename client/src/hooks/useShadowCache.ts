@@ -62,6 +62,9 @@ export function useShadowCache<T extends { id: number | string, uid?: string } =
   // Shadow cache that persists between renders and queries
   const shadowCache = useRef<T[]>([]);
   
+  // Track deleted items to prevent restoration
+  const deletedItemIds = useRef<Set<number | string>>(new Set());
+  
   // Guard interval for continuous cache protection
   const guardIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
@@ -103,13 +106,31 @@ export function useShadowCache<T extends { id: number | string, uid?: string } =
         // Only restore if shadow cache has data
         if (shadowCache.current.length > 0) {
           log(`🔄 Restoring ${shadowCache.current.length} items from shadow cache`);
-          queryClient.setQueryData(normalizedQueryKey, [...shadowCache.current]);
+          
+          // Filter out any deleted items before restoring
+          const filteredCache = shadowCache.current.filter(item => 
+            !deletedItemIds.current.has(item.id)
+          );
+          
+          if (filteredCache.length !== shadowCache.current.length) {
+            log(`🗑️ Filtered out ${shadowCache.current.length - filteredCache.length} deleted items before restoring`);
+          }
+          
+          queryClient.setQueryData(normalizedQueryKey, [...filteredCache]);
         }
       } else if (currentQueryData && currentQueryData.length > 0) {
-        // Update shadow cache with latest data
-        if (currentQueryData.length >= shadowCache.current.length) {
-          shadowCache.current = [...currentQueryData];
-          log(`📸 Updated shadow cache with ${currentQueryData.length} items`);
+        // Update shadow cache with latest data, but filter out deleted items
+        const filteredQuery = currentQueryData.filter(item => 
+          !deletedItemIds.current.has(item.id)
+        );
+        
+        if (filteredQuery.length !== currentQueryData.length) {
+          log(`🗑️ Filtered out ${currentQueryData.length - filteredQuery.length} deleted items from query cache`);
+        }
+        
+        if (filteredQuery.length >= shadowCache.current.length) {
+          shadowCache.current = [...filteredQuery];
+          log(`📸 Updated shadow cache with ${filteredQuery.length} items`);
         }
       }
     }, 50); // Very aggressive protection - check every 50ms
@@ -183,15 +204,37 @@ export function useShadowCache<T extends { id: number | string, uid?: string } =
   }, [normalizedQueryKey, mergeInsteadOfReplace, log]);
   
   /**
+   * Track an item as deleted to prevent it from reappearing
+   * Used during event deletion to ensure it doesn't get restored from the cache
+   */
+  const trackDeletedItem = useCallback((id: number | string) => {
+    deletedItemIds.current.add(id);
+    log(`🗑️ Tracking deleted item with ID ${id}`);
+    
+    // Filter the item from shadow cache immediately
+    shadowCache.current = shadowCache.current.filter(item => item.id !== id);
+    
+    // After some time, we can forget about this deleted item
+    // as it should be properly removed from the server
+    setTimeout(() => {
+      deletedItemIds.current.delete(id);
+      log(`✓ Stopped tracking deleted item with ID ${id}`);
+    }, preservationTime * 3); // Keep tracking for 3x the preservation time
+  }, [log, preservationTime]);
+  
+  /**
    * Manually update the shadow cache
    * Used for operations like mutation where you want to ensure UI consistency
    */
   const updateShadowCache = useCallback((newData: T[]) => {
-    shadowCache.current = [...newData];
-    log(`Manually updated shadow cache with ${newData.length} items`);
+    // Filter out any deleted items before updating the cache
+    const filteredData = newData.filter(item => !deletedItemIds.current.has(item.id));
+    
+    shadowCache.current = [...filteredData];
+    log(`Manually updated shadow cache with ${filteredData.length} items (filtered ${newData.length - filteredData.length} deleted items)`);
     
     // Also update query cache for immediate visibility
-    queryClient.setQueryData(normalizedQueryKey, newData);
+    queryClient.setQueryData(normalizedQueryKey, filteredData);
   }, [queryClient, normalizedQueryKey, log]);
   
   /**
@@ -206,8 +249,17 @@ export function useShadowCache<T extends { id: number | string, uid?: string } =
    */
   const restoreFromShadowCache = useCallback(() => {
     if (shadowCache.current.length > 0) {
-      log(`🔄 Manually restoring ${shadowCache.current.length} items from shadow cache`);
-      queryClient.setQueryData(normalizedQueryKey, [...shadowCache.current]);
+      // Filter out deleted items before restoring
+      const filteredCache = shadowCache.current.filter(item => 
+        !deletedItemIds.current.has(item.id)
+      );
+      
+      if (filteredCache.length !== shadowCache.current.length) {
+        log(`🗑️ Filtered out ${shadowCache.current.length - filteredCache.length} deleted items before manually restoring`);
+      }
+      
+      log(`🔄 Manually restoring ${filteredCache.length} items from shadow cache`);
+      queryClient.setQueryData(normalizedQueryKey, [...filteredCache]);
       return true;
     }
     log('❌ Cannot restore: Shadow cache is empty');
@@ -228,6 +280,7 @@ export function useShadowCache<T extends { id: number | string, uid?: string } =
     getShadowCache,
     restoreFromShadowCache,
     wrapQueryClient,
+    trackDeletedItem,
     shadowCacheSize: shadowCache.current.length
   };
 }
