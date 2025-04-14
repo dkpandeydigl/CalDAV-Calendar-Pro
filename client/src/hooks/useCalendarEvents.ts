@@ -41,16 +41,31 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       recentlyDeletedEventUids.current.add(event.uid);
     }
     
-    // Create a composite signature for catching duplicates even if IDs change
-    // Format: calendarId-title-startTime
+    // Create multiple signature formats to improve catching duplicates
     if (event.title && event.startDate && event.calendarId) {
+      // Create standard signature: calendarId-title-startTime
       const startTime = new Date(event.startDate).getTime();
       const signature = `${event.calendarId}-${event.title}-${startTime}`;
       recentlyDeletedEventSignatures.current.add(signature);
       console.log(`Created deletion signature: ${signature}`);
+      
+      // Add an additional format without calendarId to catch cross-calendar duplicates
+      const crossCalendarSignature = `${event.title}-${startTime}`;
+      recentlyDeletedEventSignatures.current.add(crossCalendarSignature);
+      console.log(`Created cross-calendar deletion signature: ${crossCalendarSignature}`);
+      
+      // Also track end time for all-day events that might have different start/end
+      if (event.endDate) {
+        const endTime = new Date(event.endDate).getTime();
+        const endSignature = `${event.calendarId}-${event.title}-${endTime}`;
+        recentlyDeletedEventSignatures.current.add(endSignature);
+      }
     }
     
-    // Clean up expired entries after 30 minutes (increased from 15 to ensure deletions persist)
+    // Immediately invalidate queries to ensure deleted event disappears
+    queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+    
+    // Clean up expired entries after 60 minutes (increased to ensure deletions persist longer)
     // This is longer than normal sync intervals to ensure events don't reappear
     setTimeout(() => {
       recentlyDeletedEventIds.current.delete(event.id);
@@ -58,16 +73,29 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         recentlyDeletedEventUids.current.delete(event.uid);
       }
       
-      // Also clean up the signature if it exists
+      // Also clean up the signatures if they exist
       if (event.title && event.startDate && event.calendarId) {
         const startTime = new Date(event.startDate).getTime();
+        
+        // Clean up standard signature
         const signature = `${event.calendarId}-${event.title}-${startTime}`;
         recentlyDeletedEventSignatures.current.delete(signature);
+        
+        // Clean up cross-calendar signature
+        const crossCalendarSignature = `${event.title}-${startTime}`;
+        recentlyDeletedEventSignatures.current.delete(crossCalendarSignature);
+        
+        // Clean up end-time signature
+        if (event.endDate) {
+          const endTime = new Date(event.endDate).getTime();
+          const endSignature = `${event.calendarId}-${event.title}-${endTime}`;
+          recentlyDeletedEventSignatures.current.delete(endSignature);
+        }
       }
       
       console.log(`Removed event ID ${event.id} from deleted events tracking`);
-    }, 30 * 60 * 1000); // 30 minutes
-  }, []);
+    }, 60 * 60 * 1000); // 60 minutes (increased from 30)
+  }, [queryClient]);
   
   // Enhanced cache preservation system with specific handling for new events
   const preserveEventsCache = useCallback(() => {
@@ -249,7 +277,24 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         ? eventsCache.current 
         : []);
     
-  const filteredEvents = eventsData.filter((event: Event) => {
+  // First deduplicate the events based on signature to prevent seeing the same event twice
+  // This addresses the issue where events show up twice after deletion
+  const deduplicatedEvents = [...new Map(eventsData.map(event => {
+    // Create a signature for deduplication
+    let signature = `${event.id}`;
+    if (event.uid) signature += `-${event.uid}`;
+    if (event.title && event.startDate && event.calendarId) {
+      signature += `-${event.calendarId}-${event.title}-${new Date(event.startDate).getTime()}`;
+    }
+    return [signature, event];
+  })).values()];
+  
+  // Log if we deduplicated any events
+  if (deduplicatedEvents.length < eventsData.length) {
+    console.log(`Deduplication: removed ${eventsData.length - deduplicatedEvents.length} duplicate events`);
+  }
+  
+  const filteredEvents = deduplicatedEvents.filter((event: Event) => {
     // First filter out recently deleted events by ID and UID
     if (recentlyDeletedEventIds.current.has(event.id) || 
         (event.uid && recentlyDeletedEventUids.current.has(event.uid))) {
@@ -257,13 +302,32 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       return false;
     }
     
-    // Also filter by signature to catch duplicates that might have different IDs or UIDs
+    // Filter by signatures (both standard and cross-calendar)
     if (event.title && event.startDate && event.calendarId) {
       const startTime = new Date(event.startDate).getTime();
+      
+      // Check standard signature
       const signature = `${event.calendarId}-${event.title}-${startTime}`;
       if (recentlyDeletedEventSignatures.current.has(signature)) {
         console.log(`Filtering out deleted event by signature: ${signature}`);
         return false;
+      }
+      
+      // Check cross-calendar signature
+      const crossCalendarSignature = `${event.title}-${startTime}`;
+      if (recentlyDeletedEventSignatures.current.has(crossCalendarSignature)) {
+        console.log(`Filtering out deleted event by cross-calendar signature: ${crossCalendarSignature}`);
+        return false;
+      }
+      
+      // Check if event is deleted based on end time (for all-day events)
+      if (event.endDate) {
+        const endTime = new Date(event.endDate).getTime();
+        const endSignature = `${event.calendarId}-${event.title}-${endTime}`;
+        if (recentlyDeletedEventSignatures.current.has(endSignature)) {
+          console.log(`Filtering out deleted event by end time signature: ${endSignature}`);
+          return false;
+        }
       }
     }
     
