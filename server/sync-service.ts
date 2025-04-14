@@ -598,6 +598,13 @@ export class SyncService {
                 } else {
                   // Update the existing event
                   console.log(`Updating existing event: ${caldavEvent.uid}`);
+                  
+                  // Preserve existing resources if not provided in new data
+                  if (!eventData.resources && existingEvent.resources) {
+                    console.log(`Preserving existing resources for event ${existingEvent.id}`);
+                    eventData.resources = existingEvent.resources;
+                  }
+                  
                   await storage.updateEvent(existingEvent.id, eventData as any);
                 }
               } else {
@@ -771,6 +778,12 @@ export class SyncService {
                       if (!eventData.recurrenceRule && existingEvent.recurrenceRule) {
                         console.log(`Preserving existing recurrence rule for event ${existingEvent.id}`);
                         eventData.recurrenceRule = existingEvent.recurrenceRule;
+                      }
+                      
+                      // Preserve existing resources if not provided in new data
+                      if (!eventData.resources && existingEvent.resources) {
+                        console.log(`Preserving existing resources for event ${existingEvent.id}`);
+                        eventData.resources = existingEvent.resources;
                       }
                       
                       await storage.updateEvent(existingEvent.id, eventData as any);
