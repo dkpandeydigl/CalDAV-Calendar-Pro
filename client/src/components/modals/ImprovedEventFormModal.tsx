@@ -48,6 +48,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import EmailPreview from '@/components/email/EmailPreview';
 import { useEmailPreview } from '@/hooks/useEmailPreview';
 import ResourceManager, { Resource } from '@/components/resources/ResourceManager';
+import { extractResourcesFromEvent } from '@/lib/resource-utils';
 // Removed DirectResourceExtractor import - now using our enhanced resource extraction function
 import { parseResourcesFromEvent } from '@/utils/resourceUtils';
 import type { Event } from '@shared/schema';
@@ -266,7 +267,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         }
       }
       
-      const extractedResources = extractResourcesFromRawData(event);
+      // Use our new utility function from resource-utils.ts instead of the local one
+      const extractedResources = extractResourcesFromEvent(event);
       console.log('[RESOURCE DEBUG] Extracted deduplicated resources:', extractedResources);
       
       if (extractedResources.length > 0) {
