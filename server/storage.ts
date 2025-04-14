@@ -4,7 +4,8 @@ import {
   events, type Event, type InsertEvent,
   serverConnections, type ServerConnection, type InsertServerConnection,
   calendarSharing, type CalendarSharing, type InsertCalendarSharing,
-  smtpConfigurations, type SmtpConfig, type InsertSmtpConfig
+  smtpConfigurations, type SmtpConfig, type InsertSmtpConfig,
+  deletedEvents, type DeletedEvent, type InsertDeletedEvent
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 

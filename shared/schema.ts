@@ -207,6 +207,32 @@ export const insertSmtpConfigSchema = createInsertSchema(smtpConfigurations).pic
 export type InsertSmtpConfig = z.infer<typeof insertSmtpConfigSchema>;
 export type SmtpConfig = typeof smtpConfigurations.$inferSelect;
 
+// Deleted Events schema - for permanent tracking of deleted events
+export const deletedEvents = pgTable("deleted_events", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id"),  // Original event ID if available
+  uid: text("uid").notNull(),    // Event UID - primary identifier for syncing
+  url: text("url"),              // CalDAV URL if available
+  etag: text("etag"),            // Last known ETag
+  calendarId: integer("calendar_id").notNull(),
+  userId: integer("user_id").notNull(),
+  deletedAt: timestamp("deleted_at").notNull().defaultNow(),
+  data: json("data"),            // Additional info about the deleted event
+});
+
+export const insertDeletedEventSchema = createInsertSchema(deletedEvents).pick({
+  eventId: true,
+  uid: true,
+  url: true,
+  etag: true,
+  calendarId: true,
+  userId: true,
+  data: true
+});
+
+export type InsertDeletedEvent = z.infer<typeof insertDeletedEventSchema>;
+export type DeletedEvent = typeof deletedEvents.$inferSelect;
+
 // Re-export notification schema
 export {
   notifications,
