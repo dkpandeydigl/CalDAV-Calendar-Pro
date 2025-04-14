@@ -28,26 +28,45 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   // Track recently deleted events by both ID and UID to prevent them from reappearing
   const recentlyDeletedEventIds = useRef<Set<number>>(new Set());
   const recentlyDeletedEventUids = useRef<Set<string>>(new Set());
+  // Also track by title and start date to catch duplicates with different IDs
+  const recentlyDeletedEventSignatures = useRef<Set<string>>(new Set());
   
-  // Store a deleted event in our tracking system
+  // Store a deleted event in our tracking system with enhanced deduplication
   const trackDeletedEvent = useCallback((event: Event) => {
     console.log(`Tracking deleted event for filtering - ID: ${event.id}, UID: ${event.uid}`);
     
-    // Store both ID and UID for comprehensive filtering
+    // Store basic identifiers
     recentlyDeletedEventIds.current.add(event.id);
     if (event.uid) {
       recentlyDeletedEventUids.current.add(event.uid);
     }
     
-    // Clean up expired entries after 15 minutes
+    // Create a composite signature for catching duplicates even if IDs change
+    // Format: calendarId-title-startTime
+    if (event.title && event.startDate && event.calendarId) {
+      const startTime = new Date(event.startDate).getTime();
+      const signature = `${event.calendarId}-${event.title}-${startTime}`;
+      recentlyDeletedEventSignatures.current.add(signature);
+      console.log(`Created deletion signature: ${signature}`);
+    }
+    
+    // Clean up expired entries after 30 minutes (increased from 15 to ensure deletions persist)
     // This is longer than normal sync intervals to ensure events don't reappear
     setTimeout(() => {
       recentlyDeletedEventIds.current.delete(event.id);
       if (event.uid) {
         recentlyDeletedEventUids.current.delete(event.uid);
       }
+      
+      // Also clean up the signature if it exists
+      if (event.title && event.startDate && event.calendarId) {
+        const startTime = new Date(event.startDate).getTime();
+        const signature = `${event.calendarId}-${event.title}-${startTime}`;
+        recentlyDeletedEventSignatures.current.delete(signature);
+      }
+      
       console.log(`Removed event ID ${event.id} from deleted events tracking`);
-    }, 15 * 60 * 1000); // 15 minutes
+    }, 30 * 60 * 1000); // 30 minutes
   }, []);
   
   // Enhanced cache preservation system with specific handling for new events
@@ -231,11 +250,21 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         : []);
     
   const filteredEvents = eventsData.filter((event: Event) => {
-    // First filter out recently deleted events
+    // First filter out recently deleted events by ID and UID
     if (recentlyDeletedEventIds.current.has(event.id) || 
         (event.uid && recentlyDeletedEventUids.current.has(event.uid))) {
       console.log(`Filtering out deleted event from UI - ID: ${event.id}, UID: ${event.uid}`);
       return false;
+    }
+    
+    // Also filter by signature to catch duplicates that might have different IDs or UIDs
+    if (event.title && event.startDate && event.calendarId) {
+      const startTime = new Date(event.startDate).getTime();
+      const signature = `${event.calendarId}-${event.title}-${startTime}`;
+      if (recentlyDeletedEventSignatures.current.has(signature)) {
+        console.log(`Filtering out deleted event by signature: ${signature}`);
+        return false;
+      }
     }
     
     // Then filter by enabled calendar IDs
@@ -1092,16 +1121,49 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         // Track the deleted event to prevent it from reappearing during sync operations
         trackDeletedEvent(eventToDelete);
         
+        // Find all duplicate events with same properties but different IDs
+        // This handles the case where the same event appears twice with different IDs
+        const duplicateEvents = previousEvents?.filter(event => 
+          event.id !== eventToDelete.id && // Not the same ID
+          event.title === eventToDelete.title && // Same title
+          event.calendarId === eventToDelete.calendarId && // Same calendar
+          new Date(event.startDate).getTime() === new Date(eventToDelete.startDate).getTime() // Same start time
+        );
+        
+        // Track all duplicates for deletion as well
+        if (duplicateEvents && duplicateEvents.length > 0) {
+          console.log(`Found ${duplicateEvents.length} duplicate events to remove as well`);
+          duplicateEvents.forEach(dupEvent => {
+            console.log(`Tracking duplicate event with ID ${dupEvent.id} for deletion`);
+            trackDeletedEvent(dupEvent);
+          });
+        }
+        
+        // Create a filter function to remove main event and duplicates
+        const shouldKeepEvent = (e: Event) => {
+          // Keep if it's not the main deleted event by ID
+          if (e.id === id) return false;
+          
+          // Also filter out duplicates by checking signature
+          if (e.title === eventToDelete.title && 
+              e.calendarId === eventToDelete.calendarId &&
+              new Date(e.startDate).getTime() === new Date(eventToDelete.startDate).getTime()) {
+            return false;
+          }
+          
+          return true;
+        };
+        
         // 1. Update the main events cache immediately
         queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
-          return oldEvents.filter(e => e.id !== id);
+          return oldEvents.filter(shouldKeepEvent);
         });
         
         // 2. Update any date-filtered event caches
         allQueryKeys.forEach((key: QueryKey) => {
           if (Array.isArray(key) && key[0] === '/api/events' && key.length > 1) {
             queryClient.setQueryData<Event[]>(key, (oldEvents = []) => {
-              return oldEvents.filter((e: Event) => e.id !== id);
+              return oldEvents.filter(shouldKeepEvent);
             });
           }
         });
