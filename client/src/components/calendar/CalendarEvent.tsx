@@ -89,6 +89,9 @@ const CalendarEvent: React.FC<CalendarEventProps> = ({ event, onClick }) => {
       }`}
       style={borderStyle}
       onClick={onClick}
+      data-event-id={event.id}
+      data-event-uid={event.uid || ''}
+      data-event-signature={`${event.title || ''}-${new Date(event.startDate).getTime()}`}
     >
       <div className="flex justify-between items-start">
         <div className={`flex-1 ${needsSyncing ? 'relative' : ''}`}>

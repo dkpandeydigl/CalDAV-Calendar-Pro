@@ -1279,6 +1279,37 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         // Track the deleted event to prevent it from reappearing during sync operations
         trackDeletedEvent(eventToDelete);
         
+        // AGGRESSIVE APPROACH: Direct DOM manipulation to remove event elements
+        try {
+          // Try to immediately remove this event element from the DOM by data attributes
+          const eventEls = document.querySelectorAll(`[data-event-id="${id}"]`);
+          if (eventEls.length > 0) {
+            console.log(`👉 Eagerly removing ${eventEls.length} DOM elements for event ${id}`);
+            eventEls.forEach(el => el.remove());
+          }
+          
+          // Also try by UID if available
+          if (eventToDelete.uid) {
+            const uidEls = document.querySelectorAll(`[data-event-uid="${eventToDelete.uid}"]`);
+            if (uidEls.length > 0) {
+              console.log(`👉 Eagerly removing ${uidEls.length} DOM elements for event UID ${eventToDelete.uid}`);
+              uidEls.forEach(el => el.remove());
+            }
+          }
+          
+          // Also try by signature (title + start time)
+          if (eventToDelete.title && eventToDelete.startDate) {
+            const signature = `${eventToDelete.title}-${new Date(eventToDelete.startDate).getTime()}`;
+            const signatureEls = document.querySelectorAll(`[data-event-signature="${signature}"]`);
+            if (signatureEls.length > 0) {
+              console.log(`👉 Eagerly removing ${signatureEls.length} DOM elements with event signature ${signature}`);
+              signatureEls.forEach(el => el.remove());
+            }
+          }
+        } catch (domError) {
+          console.error('Error eagerly removing event from DOM:', domError);
+        }
+        
         // Store deleted event info in session storage immediately for better cross-component awareness
         try {
           const deletedEventsKey = 'recently_deleted_events';

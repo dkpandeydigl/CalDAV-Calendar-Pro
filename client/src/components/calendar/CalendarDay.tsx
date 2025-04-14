@@ -94,13 +94,49 @@ const CalendarDay: React.FC<CalendarDayProps> = ({ day, events, onEventClick, on
       
       {/* Events */}
       <div className="space-y-1">
-        {events.map((event) => (
-          <CalendarEvent 
-            key={event.id} 
-            event={event} 
-            onClick={() => onEventClick(event)} 
-          />
-        ))}
+        {events.map((event) => {
+          // Extra safety check - filter out deleted events at render time
+          // Check session storage for deleted events
+          try {
+            const deletedEventsKey = 'recently_deleted_events';
+            const sessionDeletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
+            
+            // Check if this event is in the deleted list
+            const isDeleted = sessionDeletedEvents.some(
+              (deleted: any) => {
+                // Check ID match
+                if (deleted.id === event.id) return true;
+                
+                // Check UID match if available
+                if (deleted.uid && event.uid && deleted.uid === event.uid) return true;
+                
+                // Check signature match (title + timestamp)
+                if (event.title && event.startDate) {
+                  const eventSignature = `${event.title}-${new Date(event.startDate).getTime()}`;
+                  return deleted.crossCalendarSignature === eventSignature;
+                }
+                
+                return false;
+              }
+            );
+            
+            // Skip rendering this event if it's deleted
+            if (isDeleted) {
+              console.log(`Skipping render of deleted event: ${event.id} (${event.title || 'Untitled'})`);
+              return null;
+            }
+          } catch (e) {
+            // Ignore session storage errors
+          }
+          
+          return (
+            <CalendarEvent 
+              key={event.id} 
+              event={event} 
+              onClick={() => onEventClick(event)} 
+            />
+          );
+        })}
       </div>
     </div>
   );
