@@ -1058,6 +1058,16 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
           }
         }
         
+        // Debug resources
+        if (resources && Array.isArray(resources)) {
+          console.log(`Processing cancellation with ${resources.length} resources:`);
+          resources.forEach((res, idx) => {
+            console.log(`Resource #${idx+1}: ${res.name || 'unnamed'} (${res.email || 'no email'}) type: ${res.type || 'unspecified'}`);
+          });
+        } else {
+          console.log(`No resources array available for cancellation, will attempt to extract from raw data`);
+        }
+        
         // Prepare the event object for the cancellation function
         const eventData = {
           uid: originalUid, // Use exactly the original UID

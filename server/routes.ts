@@ -1331,10 +1331,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
+          // Extract original UID from rawData if available, to ensure matching UID in cancellation
+          let originalUid = event.uid;
+          if (event.rawData && typeof event.rawData === 'string') {
+            const uidMatch = event.rawData.match(/UID:([^\r\n]+)/);
+            if (uidMatch && uidMatch[1]) {
+              originalUid = uidMatch[1];
+              console.log(`Using exact UID from raw data for event cancellation: ${originalUid}`);
+            }
+          }
+          
+          // Extract resources from event rawData if available
+          let extractedResources: any[] = [];
+          if (event.rawData && typeof event.rawData === 'string') {
+            // Try to extract resource attendees from the raw data with multiple patterns
+            const resourcePatterns = [
+              /ATTENDEE;[^:]*CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/gi,
+              /ATTENDEE;[^:]*CN=([^;:]+)[^:]*CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/gi,
+              /ATTENDEE;[^:]*X-RESOURCE-TYPE=[^:]*:mailto:([^\r\n]+)/gi
+            ];
+            
+            for (const pattern of resourcePatterns) {
+              const matches = Array.from(event.rawData.matchAll(pattern));
+              if (matches && matches.length > 0) {
+                console.log(`Found ${matches.length} resource attendees in raw data for cancellation`);
+                
+                // Parse resources into structured format
+                const resources = matches.map((match: any) => {
+                  const resourceStr = match[0];
+                  
+                  // Extract email
+                  const emailMatch = resourceStr.match(/:mailto:([^\r\n]+)/);
+                  const email = emailMatch ? emailMatch[1] : '';
+                  
+                  // Extract name/subType
+                  const nameMatch = resourceStr.match(/CN=([^;:]+)/);
+                  const subType = nameMatch ? nameMatch[1] : 'Resource';
+                  
+                  // Extract type from X-RESOURCE-TYPE or fallback to standard parameters
+                  const typeMatches = [
+                    resourceStr.match(/X-RESOURCE-TYPE=([^;:]+)/),
+                    resourceStr.match(/RESOURCE-TYPE=([^;:]+)/),
+                    resourceStr.match(/X-TYPE=([^;:]+)/)
+                  ];
+                  const typeMatch = typeMatches.find(match => match !== null);
+                  const resourceType = typeMatch ? typeMatch[1] : 'Resource';
+                  
+                  // Extract capacity with multiple patterns
+                  const capacityMatches = [
+                    resourceStr.match(/X-RESOURCE-CAPACITY=(\d+)/),
+                    resourceStr.match(/RESOURCE-CAPACITY=(\d+)/),
+                    resourceStr.match(/X-CAPACITY=(\d+)/),
+                    resourceStr.match(/CAPACITY=(\d+)/)
+                  ];
+                  const capacityMatch = capacityMatches.find(match => match !== null);
+                  const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : undefined;
+                  
+                  // Extract admin name
+                  const adminNameMatches = [
+                    resourceStr.match(/X-ADMIN-NAME=([^;:]+)/),
+                    resourceStr.match(/ADMIN-NAME=([^;:]+)/),
+                    resourceStr.match(/X-ADMIN=([^;:]+)/)
+                  ];
+                  const adminNameMatch = adminNameMatches.find(match => match !== null);
+                  const adminName = adminNameMatch ? adminNameMatch[1] : undefined;
+                  
+                  // Final resource object
+                  return {
+                    name: subType,
+                    email: email,
+                    adminEmail: email,
+                    adminName: adminName || subType,
+                    type: resourceType,
+                    subType,
+                    capacity
+                  };
+                });
+                
+                if (resources.length > 0) {
+                  extractedResources = resources;
+                  console.log(`Successfully extracted ${extractedResources.length} resources for cancellation`);
+                  break; // Once we have resources, stop trying patterns
+                }
+              }
+            }
+          }
+          
           // Create event data for cancellation with STATUS=CANCELLED
           const eventData = {
             eventId: event.id,
-            uid: event.uid,
+            uid: originalUid, // Use the extracted original UID
             title: event.title,
             description: event.description,
             location: event.location,
@@ -1351,6 +1437,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
               return a;
             }),
+            resources: extractedResources.length > 0 ? extractedResources : undefined, // Include extracted resources
             status: 'CANCELLED', // This is crucial for cancellation
             rawData: event.rawData || null, // Pass raw data to use for recurrence extraction
             sequence: sequenceNumber, // Pass sequence number for proper versioning
