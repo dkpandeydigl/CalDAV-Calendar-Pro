@@ -1317,6 +1317,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return res.status(404).json({ message: 'User not found' });
           }
           
+          // Extract sequence number from event data if available
+          let sequenceNumber = 0;
+          if (event.rawData) {
+            try {
+              // Try to extract SEQUENCE from raw data using our utility function
+              const { extractSequenceFromICal } = require('./ical-utils');
+              sequenceNumber = extractSequenceFromICal(event.rawData);
+              console.log(`Extracted sequence number for cancellation: ${sequenceNumber}`);
+            } catch (seqError) {
+              console.warn('Error extracting sequence number:', seqError);
+              // Continue with sequence 0 if we can't extract it
+            }
+          }
+          
           // Create event data for cancellation with STATUS=CANCELLED
           const eventData = {
             eventId: event.id,
@@ -1337,7 +1351,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
               return a;
             }),
-            status: 'CANCELLED' // This is crucial for cancellation
+            status: 'CANCELLED', // This is crucial for cancellation
+            rawData: event.rawData || null, // Pass raw data to use for recurrence extraction
+            sequence: sequenceNumber, // Pass sequence number for proper versioning
+            recurrenceRule: event.recurrenceRule // Pass recurrence rule if available
           };
           
           cancellationResult = await emailService.sendEventCancellation(req.user!.id, eventData);

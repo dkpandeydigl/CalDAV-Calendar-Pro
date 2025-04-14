@@ -268,26 +268,37 @@ export function generateICalEvent(event: any, options: {
     lines.push(formatContentLine('STATUS', options.status));
   }
   
-  // Recurrence rule if present
-  if (event.recurrenceRule) {
-    const rrule = formatRecurrenceRule(event.recurrenceRule);
-    if (rrule) {
-      lines.push(formatContentLine('RRULE', rrule));
+  // Handle recurrence rules
+  try {
+    // First check if there's a direct recurrenceRule property
+    if (event.recurrenceRule) {
+      // Check if it's already a string in RRULE format (starts with FREQ=)
+      if (typeof event.recurrenceRule === 'string' && event.recurrenceRule.includes('FREQ=')) {
+        lines.push(formatContentLine('RRULE', event.recurrenceRule));
+      } else {
+        // Otherwise try to format it
+        const rrule = formatRecurrenceRule(event.recurrenceRule);
+        if (rrule) {
+          lines.push(formatContentLine('RRULE', rrule));
+        }
+      }
     }
-  }
-  
-  // If the status is CANCELLED, check for recurrence information in rawData
-  if (options.status === 'CANCELLED' && !event.recurrenceRule && event.rawData) {
-    try {
+    
+    // If we still don't have a recurrence rule but it's a CANCELLED event, try to extract it from rawData
+    if (options.status === 'CANCELLED' && !event.recurrenceRule && event.rawData) {
       // Try to extract recurrence rule from raw data
-      const rruleMatch = event.rawData.match(/RRULE:([^\r\n]+)/);
+      const rruleMatch = typeof event.rawData === 'string' 
+        ? event.rawData.match(/RRULE:([^\r\n]+)/)
+        : null;
+      
       if (rruleMatch && rruleMatch[1]) {
         console.log(`Extracted RRULE from raw ICS data for cancellation: ${rruleMatch[1]}`);
         lines.push(formatContentLine('RRULE', rruleMatch[1]));
       }
-    } catch (error) {
-      console.warn('Error extracting recurrence rule from raw data:', error);
     }
+  } catch (rruleError) {
+    console.warn('Error processing recurrence rule:', rruleError);
+    // Continue without recurrence rule if there's an error
   }
   
   // Process attendees and resources
@@ -371,7 +382,16 @@ function generateAttendeesAndResources(event: any): string[] {
  * @param ruleString The recurrence rule as a JSON string
  * @returns Formatted RRULE string
  */
-export function formatRecurrenceRule(ruleString: string): string {
+export function formatRecurrenceRule(ruleString: string | undefined | null): string {
+  if (!ruleString) {
+    return '';
+  }
+  
+  // If the string already has FREQ= in it, it's likely already in proper RRULE format
+  if (typeof ruleString === 'string' && ruleString.includes('FREQ=')) {
+    return ruleString;
+  }
+  
   try {
     const parsedRule = JSON.parse(ruleString);
     
@@ -421,7 +441,16 @@ export function formatRecurrenceRule(ruleString: string): string {
     return ruleParts.join(';');
   } catch (error) {
     console.error(`Error formatting recurrence rule:`, error);
-    return ruleString; // Return the original string if parsing fails
+    // If it's not valid JSON but has a format that looks like a valid RRULE,
+    // return it as is instead of causing an error
+    if (typeof ruleString === 'string' && 
+        (ruleString.includes('DAILY') || 
+         ruleString.includes('WEEKLY') || 
+         ruleString.includes('MONTHLY') || 
+         ruleString.includes('YEARLY'))) {
+      return ruleString;
+    }
+    return ruleString || ''; // Return the original string or empty string if null/undefined
   }
 }
 
