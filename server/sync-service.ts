@@ -519,16 +519,16 @@ export class SyncService {
                   
                   // If this event is on the server but not locally, we should delete it from the server
                   // to ensure local deletions are propagated to the server during sync operations
-                  if (caldavEvent.url && connection) {
+                  if (caldavEvent.url && job && job.connection) {
                     try {
                       console.log(`Attempting to delete event ${caldavEvent.uid} from server during sync`);
                       
                       // Create a DAV client with headers
                       const davClient = new DAVClient({
-                        serverUrl: connection.url,
+                        serverUrl: job.connection.url,
                         credentials: {
-                          username: connection.username,
-                          password: connection.password
+                          username: job.connection.username,
+                          password: job.connection.password
                         },
                         authMethod: 'Basic',
                         defaultAccountType: 'caldav'

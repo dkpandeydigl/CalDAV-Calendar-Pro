@@ -25,6 +25,31 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   // Last known event count to detect significant changes
   const lastEventCount = useRef<number>(0);
   
+  // Track recently deleted events by both ID and UID to prevent them from reappearing
+  const recentlyDeletedEventIds = useRef<Set<number>>(new Set());
+  const recentlyDeletedEventUids = useRef<Set<string>>(new Set());
+  
+  // Store a deleted event in our tracking system
+  const trackDeletedEvent = useCallback((event: Event) => {
+    console.log(`Tracking deleted event for filtering - ID: ${event.id}, UID: ${event.uid}`);
+    
+    // Store both ID and UID for comprehensive filtering
+    recentlyDeletedEventIds.current.add(event.id);
+    if (event.uid) {
+      recentlyDeletedEventUids.current.add(event.uid);
+    }
+    
+    // Clean up expired entries after 15 minutes
+    // This is longer than normal sync intervals to ensure events don't reappear
+    setTimeout(() => {
+      recentlyDeletedEventIds.current.delete(event.id);
+      if (event.uid) {
+        recentlyDeletedEventUids.current.delete(event.uid);
+      }
+      console.log(`Removed event ID ${event.id} from deleted events tracking`);
+    }, 15 * 60 * 1000); // 15 minutes
+  }, []);
+  
   // Enhanced cache preservation system with specific handling for new events
   const preserveEventsCache = useCallback(() => {
     try {
@@ -205,9 +230,17 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         ? eventsCache.current 
         : []);
     
-  const filteredEvents = eventsData.filter((event: Event) => 
-    enabledCalendarIds.includes(event.calendarId)
-  );
+  const filteredEvents = eventsData.filter((event: Event) => {
+    // First filter out recently deleted events
+    if (recentlyDeletedEventIds.current.has(event.id) || 
+        (event.uid && recentlyDeletedEventUids.current.has(event.uid))) {
+      console.log(`Filtering out deleted event from UI - ID: ${event.id}, UID: ${event.uid}`);
+      return false;
+    }
+    
+    // Then filter by enabled calendar IDs
+    return enabledCalendarIds.includes(event.calendarId);
+  });
 
   type CreateMutationContext = {
     tempEvent?: Event;
@@ -1055,6 +1088,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       
       if (eventToDelete) {
         console.log(`Optimistically removing event ${id} from UI`);
+        
+        // Track the deleted event to prevent it from reappearing during sync operations
+        trackDeletedEvent(eventToDelete);
         
         // 1. Update the main events cache immediately
         queryClient.setQueryData<Event[]>(['/api/events'], (oldEvents = []) => {
