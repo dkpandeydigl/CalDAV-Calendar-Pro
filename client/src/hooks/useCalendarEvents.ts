@@ -33,8 +33,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   const recentlyDeletedEventSignatures = useRef<Set<string>>(new Set());
   
   // Store a deleted event in our tracking system with enhanced deduplication
-  const trackDeletedEvent = useCallback((event: Event) => {
-    console.log(`Tracking deleted event for filtering - ID: ${event.id}, UID: ${event.uid}`);
+  const trackDeletedInMemory = useCallback((event: Event) => {
+    console.log(`Tracking deleted event for in-memory filtering - ID: ${event.id}, UID: ${event.uid}`);
     
     // Store basic identifiers in memory
     recentlyDeletedEventIds.current.add(event.id);
@@ -1640,6 +1640,9 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     }
   };
   
+  // Get our deleted events tracker
+  const { trackDeletedEvent, cleanAllEventCaches } = useDeletedEventsTracker();
+  
   const deleteEventMutation = useMutation<DeleteResponse, Error, number, DeleteMutationContext>({
     mutationFn: async (id: number) => {
       console.log(`Deleting event with ID ${id}`);
@@ -1944,6 +1947,15 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     // This happens after successful mutation
     onSuccess: (result, id, context) => {
       console.log(`Delete mutation succeeded with result:`, result);
+      
+      // Make sure we run the specialized tracker for this deleted event
+      if (context?.eventToDelete) {
+        console.log(`Using specialized tracker to ensure permanent deletion of event ${id}`);
+        trackDeletedEvent(context.eventToDelete);
+        
+        // Run an immediate cleanup of all event caches to ensure deletion is applied
+        cleanAllEventCaches();
+      }
       
       // Connect to WebSocket if available to broadcast deletion
       try {
