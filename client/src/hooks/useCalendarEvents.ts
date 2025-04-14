@@ -298,6 +298,41 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     // First filter out recently deleted events by ID and UID
     if (recentlyDeletedEventIds.current.has(event.id) || 
         (event.uid && recentlyDeletedEventUids.current.has(event.uid))) {
+        
+    // Also check sessionStorage for deleted events to ensure cross-component consistency
+    try {
+      const deletedEventsKey = 'recently_deleted_events';
+      const sessionDeletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
+      
+      if (sessionDeletedEvents.length > 0) {
+        // Check if this event is in the deleted list by ID or UID
+        const isInDeletedList = sessionDeletedEvents.some(
+          (deleted: any) => {
+            // Direct ID match
+            if (deleted.id === event.id) return true;
+            
+            // UID match if available
+            if (deleted.uid && event.uid && deleted.uid === event.uid) return true;
+            
+            // Title + start date signature match (for events without stable IDs)
+            if (deleted.signature && 
+                event.title && event.startDate && 
+                deleted.signature === `${event.title}_${new Date(event.startDate).toISOString()}`) {
+              return true;
+            }
+            
+            return false;
+          }
+        );
+        
+        if (isInDeletedList) {
+          console.log(`Filtering out recently deleted event from session storage: ${event.id} (${event.title || 'Untitled'})`);
+          return false;
+        }
+      }
+    } catch (e) {
+      // Ignore any session storage errors - this is just an additional safety check
+    }
       console.log(`Filtering out deleted event from UI - ID: ${event.id}, UID: ${event.uid}`);
       return false;
     }

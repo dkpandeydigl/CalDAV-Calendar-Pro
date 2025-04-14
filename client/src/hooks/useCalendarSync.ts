@@ -176,11 +176,27 @@ export function useCalendarSync() {
                   const removeDeletedEvent = (events: any[] | undefined): any[] => {
                     if (!events) return [];
                     return events.filter(event => {
-                      // Remove the specific event and any with matching UID
+                      // Remove the specific event by ID
                       if (event.id === data.eventId) {
-                        console.log(`🗑️ Removing deleted event from cache: ${event.id} (${event.title || 'Untitled'})`);
+                        console.log(`🗑️ Removing deleted event from cache by ID: ${event.id} (${event.title || 'Untitled'})`);
                         return false;
                       }
+                      
+                      // Also remove by UID if available
+                      if (data.data?.uid && event.uid === data.data.uid) {
+                        console.log(`🗑️ Removing deleted event from cache by UID: ${event.uid} (${event.title || 'Untitled'})`);
+                        return false;
+                      }
+                      
+                      // Also remove by signature of start/end date if available
+                      if (data.data?.startDate && data.data?.endDate && 
+                          event.startDate === data.data.startDate && 
+                          event.endDate === data.data.endDate && 
+                          event.title === data.data.title) {
+                        console.log(`🗑️ Removing deleted event from cache by signature match: ${event.title || 'Untitled'}`);
+                        return false;
+                      }
+                      
                       return true;
                     });
                   };
@@ -190,6 +206,24 @@ export function useCalendarSync() {
                   for (const [queryKey, events] of allEventsQueries) {
                     if (Array.isArray(events)) {
                       queryClient.setQueryData(queryKey, removeDeletedEvent(events));
+                    }
+                  }
+                  
+                  // Also remove from specific calendar event queries
+                  if (data.data?.calendarId) {
+                    const calendarId = data.data.calendarId;
+                    console.log(`Looking for calendar-specific event caches for calendar ID: ${calendarId}`);
+                    
+                    // Handle calendar-specific event queries
+                    const calendarEventsQueries = queryClient.getQueriesData<any[]>({ 
+                      queryKey: ['/api/calendars', calendarId, 'events'] 
+                    });
+                    
+                    for (const [queryKey, events] of calendarEventsQueries) {
+                      if (Array.isArray(events)) {
+                        console.log(`Cleaning calendar-specific cache for calendar ID: ${calendarId}`);
+                        queryClient.setQueryData(queryKey, removeDeletedEvent(events));
+                      }
                     }
                   }
                 }
@@ -231,6 +265,58 @@ export function useCalendarSync() {
                   queryKey: ['/api/events'],
                   type: 'all'
                 });
+                
+                // For deleted events, perform one more delayed check to ensure they stay deleted
+                if (data.changeType === 'deleted' && data.eventId) {
+                  // Store the deleted event info in sessionStorage for additional verification
+                  const deletedEventsKey = 'recently_deleted_events';
+                  const deletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
+                  
+                  // Add this event to recently deleted list with timestamp
+                  const eventInfo = {
+                    id: data.eventId,
+                    uid: data.data?.uid || null,
+                    calendarId: data.data?.calendarId,
+                    title: data.data?.title,
+                    timestamp: new Date().toISOString(),
+                    signature: data.data?.startDate && data.data?.title ? 
+                      `${data.data.title}_${data.data.startDate}` : null
+                  };
+                  
+                  // Keep last 20 deleted events
+                  deletedEvents.push(eventInfo);
+                  if (deletedEvents.length > 20) {
+                    deletedEvents.shift();
+                  }
+                  
+                  sessionStorage.setItem(deletedEventsKey, JSON.stringify(deletedEvents));
+                  
+                  // Do one final cleanup pass after 2 seconds to catch any race conditions
+                  setTimeout(() => {
+                    console.log(`Final cleanup pass for deleted event ID: ${data.eventId}`);
+                    
+                    // Get all event queries and clean them once more
+                    const allEventsQueries = queryClient.getQueriesData<any[]>({ queryKey: ['/api/events'] });
+                    for (const [queryKey, events] of allEventsQueries) {
+                      if (Array.isArray(events)) {
+                        queryClient.setQueryData(queryKey, removeDeletedEvent(events));
+                      }
+                    }
+                    
+                    // Also clean calendar-specific queries once more
+                    if (data.data?.calendarId) {
+                      const calendarEventsQueries = queryClient.getQueriesData<any[]>({ 
+                        queryKey: ['/api/calendars', data.data.calendarId, 'events'] 
+                      });
+                      
+                      for (const [queryKey, events] of calendarEventsQueries) {
+                        if (Array.isArray(events)) {
+                          queryClient.setQueryData(queryKey, removeDeletedEvent(events));
+                        }
+                      }
+                    }
+                  }, 2000);
+                }
               }, 500);
             }
             else if (data.type === 'new_notification') {
