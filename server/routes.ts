@@ -31,9 +31,18 @@ import { initializeWebSocketServer, broadcastToUser, sendNotification, createAnd
 // Using directly imported syncService
 import type { SyncService as SyncServiceType } from "./sync-service";
 
+// Type for tracking deleted events
+interface DeletedEventInfo {
+  id: number;
+  uid?: string;
+  url?: string;
+  timestamp: string;
+}
+
 declare module 'express-session' {
   interface SessionData {
     recentlyDeletedEvents?: number[];
+    deletedEventDetails?: DeletedEventInfo[];
   }
 }
 
@@ -46,6 +55,7 @@ declare module 'express' {
   interface Request {
     session: session.Session & {
       recentlyDeletedEvents?: number[];
+      deletedEventDetails?: DeletedEventInfo[];
     };
   }
 }
@@ -2018,8 +2028,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.session.recentlyDeletedEvents = [];
       }
       
-      // Store both ID and UID in the recently deleted events tracking
-      req.session.recentlyDeletedEvents.push({
+      // Store the event ID in the legacy array format for backward compatibility
+      req.session.recentlyDeletedEvents.push(eventId);
+      
+      // Initialize deletedEventDetails if needed
+      if (!req.session.deletedEventDetails) {
+        req.session.deletedEventDetails = [];
+      }
+      
+      // Store detailed tracking information 
+      req.session.deletedEventDetails.push({
         id: eventId,
         uid: event.uid,
         url: event.url,
@@ -2047,9 +2065,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         response.message = "Event deleted successfully";
         
         // Force a calendar sync to make sure changes are propagated
-        syncService.syncUserCalendars(req.user!.id, {
-          forceFull: true,
-          ignoreRecentlyDeleted: true
+        syncService.syncNow(req.user!.id, {
+          forceRefresh: true,
+          preserveLocalEvents: false
         });
         
         return res.status(200).json(response);
