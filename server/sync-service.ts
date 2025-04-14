@@ -1280,7 +1280,9 @@ export class SyncService {
             
             // Extract administrator name if available - expanded pattern matching
             const adminNameMatch = 
+              fullLine.match(/X-ADMIN-NAME=([^;:]+)/) ||
               fullLine.match(/X-RESOURCE-ADMIN=([^;:]+)/) ||
+              fullLine.match(/ADMIN-NAME=([^;:]+)/) ||
               fullLine.match(/ADMIN=([^;:]+)/) ||
               fullLine.match(/X-ADMIN=([^;:]+)/) ||
               fullLine.match(/X-ADMINISTRATOR=([^;:]+)/) ||
@@ -1413,6 +1415,10 @@ export class SyncService {
               
               // Extract administrator name with multiple naming conventions
               const adminNameParams = [
+                'X-ADMIN-NAME',
+                'ADMIN-NAME',
+                'X-RESOURCE-ADMIN-NAME',
+                'RESOURCE-ADMIN-NAME',
                 'X-RESOURCE-ADMIN',
                 'RESOURCE-ADMIN',
                 'X-ADMIN',
