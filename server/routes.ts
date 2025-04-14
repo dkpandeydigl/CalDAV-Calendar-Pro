@@ -2113,13 +2113,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const { notifyEventChanged } = require('./websocket-handler');
         
-        // Notify the user who made the change
+        // Notify the user who made the change - enhanced with more data for better client-side handling
         notifyEventChanged(req.user!.id, eventId, 'deleted', {
           title: event.title || 'Unnamed event',
           calendarId: event.calendarId,
           calendarName: (await storage.getCalendar(event.calendarId))?.name || 'Unknown',
-          isExternalChange: false
+          isExternalChange: false,
+          uid: event.uid || null, // Add UID for better client-side filtering
+          startDate: event.startDate, // Add startDate for signature generation on client
+          endDate: event.endDate // Also add endDate for all-day event signature generation
         });
+        console.log(`Enhanced WebSocket notification sent for event deletion: ${event.title} (ID: ${eventId}, UID: ${event.uid || 'none'})`);
       } catch (wsError) {
         console.error("Error sending WebSocket notification for event deletion:", wsError);
         // Continue without failing - this is a non-critical error
@@ -2365,7 +2369,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   title: event.title || 'Unnamed event',
                   calendarId: event.calendarId,
                   calendarName: (await storage.getCalendar(event.calendarId))?.name || 'Unknown',
-                  isExternalChange: false
+                  isExternalChange: false,
+                  uid: event.uid || null, // Add UID for better client-side filtering
+                  startDate: event.startDate, // Add startDate for signature generation on client
+                  endDate: event.endDate // Also add endDate for all-day event signature generation
                 });
               } catch (wsError) {
                 console.error("Error sending WebSocket notification for bulk deletion:", wsError);
@@ -2498,7 +2505,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   title: event.title || 'Untitled event',
                   calendarId: event.calendarId,
                   calendarName: (await storage.getCalendar(event.calendarId))?.name || 'Unknown',
-                  isExternalChange: false
+                  isExternalChange: false,
+                  uid: event.uid || null, // Add UID for better client-side filtering
+                  startDate: event.startDate, // Add startDate for signature generation on client
+                  endDate: event.endDate // Also add endDate for all-day event signature generation
                 });
               } catch (wsError) {
                 console.error("Error sending WebSocket notification for cleanup deletion:", wsError);
