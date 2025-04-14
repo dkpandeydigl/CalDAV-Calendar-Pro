@@ -1015,16 +1015,26 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         // Use our proper cancellation function from ical-utils
         const { generateCancellationICalEvent } = require('./ical-utils');
         
+        // Extract original UID from rawData if available, to ensure we use the EXACT same UID
+        let originalUid = uid;
+        if (rawData && typeof rawData === 'string') {
+          const uidMatch = rawData.match(/UID:([^\r\n]+)/);
+          if (uidMatch && uidMatch[1]) {
+            originalUid = uidMatch[1];
+            console.log(`Using original UID from raw data: ${originalUid}`);
+          }
+        }
+        
         // Prepare the event object for the cancellation function
         const eventData = {
-          uid: uid || `event-${Date.now()}@caldav-app`,
+          uid: originalUid, // Use exactly the original UID
           title,
           description,
           location,
           startDate,
           endDate,
           attendees,
-          resources,
+          resources, // Make sure resources are passed to the cancellation function
           rawData,
           recurrenceRule: data.recurrenceRule
         };
@@ -1032,9 +1042,10 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         // Current timestamp formatted for iCalendar
         const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
         
-        // Generate proper cancellation ICS
+        // Generate proper cancellation ICS with organizer
         return generateCancellationICalEvent(eventData, {
           organizer: organizer?.email || 'unknown@example.com',
+          organizerName: organizer?.name, // Include organizer name
           sequence: sequence || 0,
           timestamp
         });

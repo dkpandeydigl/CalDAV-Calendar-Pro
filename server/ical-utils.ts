@@ -215,6 +215,7 @@ export function formatICalDate(date: Date | null | undefined, allDay: boolean = 
  */
 export function generateICalEvent(event: any, options: {
   organizer: string;
+  organizerName?: string; // Add organizer display name
   sequence: number;
   timestamp: string;
   method?: string;
@@ -305,10 +306,13 @@ export function generateICalEvent(event: any, options: {
   const attendeesAndResources = generateAttendeesAndResources(event);
   lines.push(...attendeesAndResources);
   
-  // Add organizer
+  // Add organizer with name if provided
   const emailMatch = options.organizer.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/);
   const email = emailMatch ? options.organizer : `${options.organizer}@caldavclient.local`;
-  lines.push(formatContentLine('ORGANIZER', `mailto:${email}`, { CN: options.organizer }));
+  const organizerParams: Record<string, string> = { 
+    CN: options.organizerName || options.organizer 
+  };
+  lines.push(formatContentLine('ORGANIZER', `mailto:${email}`, organizerParams));
   
   // Close the event and calendar
   lines.push('END:VEVENT');
@@ -481,6 +485,7 @@ export function extractSequenceFromICal(icalData: string): number {
  */
 export function generateCancellationICalEvent(event: any, options: {
   organizer: string;
+  organizerName?: string;
   sequence: number;
   timestamp: string;
 }): string {
@@ -490,6 +495,47 @@ export function generateCancellationICalEvent(event: any, options: {
   // Create a shallow copy of the event - we don't want to modify the original
   const eventCopy = { ...event };
   
+  // Make sure we retain the resources array for cancellations
+  if (!eventCopy.resources && event.rawData && typeof event.rawData === 'string') {
+    // Try to extract resource attendees from the raw data
+    const resourceMatches = event.rawData.match(/ATTENDEE;CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/g);
+    if (resourceMatches && resourceMatches.length > 0) {
+      console.log(`Found ${resourceMatches.length} resource attendees in raw data`);
+      
+      // Parse each resource attendee into our format
+      const extractedResources = resourceMatches.map((resourceStr: string) => {
+        // Extract email
+        const emailMatch = resourceStr.match(/:mailto:([^\r\n]+)/);
+        const email = emailMatch ? emailMatch[1] : '';
+        
+        // Extract name/subType
+        const nameMatch = resourceStr.match(/CN=([^;:]+)/);
+        const subType = nameMatch ? nameMatch[1] : 'Resource';
+        
+        // Extract capacity if available
+        const capacityMatch = resourceStr.match(/X-CAPACITY=(\d+)/);
+        const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : undefined;
+        
+        // Extract remarks if available
+        const remarksMatch = resourceStr.match(/X-REMARKS="([^"]+)"/);
+        const remarks = remarksMatch ? remarksMatch[1].replace(/\\n/g, '\n').replace(/\\;/g, ';').replace(/\\,/g, ',').replace(/\\\\/g, '\\') : undefined;
+        
+        return {
+          id: email,
+          adminEmail: email,
+          adminName: subType,
+          subType,
+          capacity,
+          remarks
+        };
+      });
+      
+      if (extractedResources.length > 0) {
+        eventCopy.resources = extractedResources;
+      }
+    }
+  }
+  
   // If the original event had a TRANSP property that wasn't TRANSPARENT,
   // ensure we don't carry that over as it conflicts with CANCELLED status
   eventCopy.transparency = 'TRANSPARENT';
@@ -497,6 +543,7 @@ export function generateCancellationICalEvent(event: any, options: {
   // Generate a cancellation iCalendar - make sure we use the original UID
   return generateICalEvent(eventCopy, {
     organizer: options.organizer,
+    organizerName: options.organizerName, // Pass through the organizer name
     sequence: updatedSequence,
     timestamp: options.timestamp,
     method: 'CANCEL',
