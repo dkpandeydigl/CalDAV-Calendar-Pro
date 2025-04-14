@@ -178,22 +178,51 @@ export function SyncSettings() {
       
       // First try to use WebSocket for real-time sync if available
       if (wsConnected) {
+        console.log('Attempting real-time sync via WebSocket...');
         const success = await requestRealTimeSync({ forceRefresh: true });
         
         if (success) {
+          console.log('✅ WebSocket sync completed successfully');
           toast({
             title: 'Success',
             description: 'Synchronization completed in real-time',
           });
           fetchStatus();
           return;
+        } else {
+          console.log('⚠️ WebSocket sync was not successful, falling back to REST API');
+        }
+      } else {
+        // Try to check WebSocket connection one more time
+        console.log('WebSocket not connected, attempting to establish connection...');
+        checkWebSocketConnection();
+        
+        // Wait a moment to see if connection succeeds
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // If we managed to connect, try WebSocket sync
+        if (wsConnected) {
+          console.log('WebSocket connected successfully, attempting real-time sync...');
+          const success = await requestRealTimeSync({ forceRefresh: true });
+          
+          if (success) {
+            console.log('✅ WebSocket sync completed successfully after reconnection');
+            toast({
+              title: 'Success',
+              description: 'Synchronization completed in real-time',
+            });
+            fetchStatus();
+            return;
+          }
         }
       }
       
-      // Fall back to REST API if WebSocket is not connected
+      console.log('Falling back to REST API for synchronization');
+      // Fall back to REST API if WebSocket is not connected or sync failed
       const response = await apiRequest('POST', '/api/sync/now');
       
       if (response.ok) {
+        console.log('✅ REST API sync initiated successfully');
         toast({
           title: 'Success',
           description: 'Synchronization started',
@@ -201,16 +230,19 @@ export function SyncSettings() {
         // Wait a moment to let the sync start
         setTimeout(fetchStatus, 1000);
       } else {
+        console.error('❌ REST API sync failed with status:', response.status);
         throw new Error('Failed to trigger sync');
       }
     } catch (error) {
-      console.error('Failed to trigger sync:', error);
+      console.error('❌ Failed to trigger sync:', error);
       toast({
         title: 'Error',
         description: 'Failed to start synchronization',
         variant: 'destructive',
       });
     } finally {
+      // Add a slight delay before resetting the progress indicator
+      // to give a better visual indication that something happened
       const resetSyncProgress = () => setSyncInProgress(false);
       setTimeout(resetSyncProgress, 2000);
     }
@@ -220,7 +252,7 @@ export function SyncSettings() {
   const { user: authUser } = useAuth();
   
   // Check for WebSocket connection
-  const checkWebSocketConnection = useCallback(() => {
+  const checkWebSocketConnection = useCallback((useFallbackPath = false) => {
     // First check if we already have a socket from the calendar sync hook
     if (socket && socket.readyState === WebSocket.OPEN) {
       console.log('✅ Using existing WebSocket connection from useCalendarSync');
@@ -230,6 +262,12 @@ export function SyncSettings() {
     
     // Otherwise try to establish a test connection
     try {
+      // Determine the WebSocket protocol based on current HTTP protocol
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      
+      // Determine the right WebSocket path
+      const wsPath = useFallbackPath ? '/ws' : '/api/ws';
+      
       // Get the current host
       const currentHost = window.location.host;
       let wsUrl;
@@ -237,20 +275,19 @@ export function SyncSettings() {
       // For Replit deployment
       if (currentHost.includes('replit') || currentHost.includes('replit.dev')) {
         // Use just the path for Replit
-        wsUrl = `/api/ws?userId=${authUser?.id || ''}`;
-        console.log('🔄 Using relative WebSocket URL for Replit:', wsUrl);
+        wsUrl = `${wsPath}?userId=${authUser?.id || ''}`;
+        console.log(`🔄 Using relative WebSocket URL for Replit: ${wsUrl}${useFallbackPath ? ' (fallback)' : ''}`);
       } 
       // For localhost (avoid protocol & port issues)
       else if (window.location.hostname === 'localhost') {
         const port = window.location.port || '5000';
-        wsUrl = `ws://localhost:${port}/api/ws?userId=${authUser?.id || ''}`;
-        console.log('🔄 Using explicit localhost WebSocket URL:', wsUrl);
+        wsUrl = `ws://localhost:${port}${wsPath}?userId=${authUser?.id || ''}`;
+        console.log(`🔄 Using explicit localhost WebSocket URL: ${wsUrl}${useFallbackPath ? ' (fallback)' : ''}`);
       } 
       // Standard case for other deployments
       else {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl = `${protocol}//${currentHost}/api/ws?userId=${authUser?.id || ''}`;
-        console.log('🔄 Using standard WebSocket URL:', wsUrl);
+        wsUrl = `${protocol}//${currentHost}${wsPath}?userId=${authUser?.id || ''}`;
+        console.log(`🔄 Using standard WebSocket URL: ${wsUrl}${useFallbackPath ? ' (fallback)' : ''}`);
       }
       
       console.log('🔄 Checking WebSocket connection to:', wsUrl);
@@ -265,7 +302,8 @@ export function SyncSettings() {
           try {
             ws.send(JSON.stringify({
               type: 'ping',
-              message: 'Connection test from SyncSettings'
+              message: 'Connection test from SyncSettings',
+              userId: authUser?.id
             }));
           } catch (e) {
             console.error('❌ Error sending test message:', e);
@@ -283,23 +321,70 @@ export function SyncSettings() {
       
       ws.onerror = (error) => {
         console.error('❌ Error checking WebSocket connection:', error);
+        
+        // If this is the primary path and we have an error, try the fallback path
+        if (!useFallbackPath) {
+          console.log('Primary WebSocket path failed, attempting fallback path');
+          
+          // Try to close the failed connection
+          try {
+            if (ws.readyState !== WebSocket.CLOSED) {
+              ws.close(1000, 'Switching to fallback path');
+            }
+          } catch (e) {
+            // Ignore errors on close
+          }
+          
+          // Try the fallback path after a short delay
+          setTimeout(() => checkWebSocketConnection(true), 100);
+          return;
+        }
+        
         setWsConnected(false);
+      };
+      
+      ws.onclose = (event) => {
+        // If this was an error close and not our manual close for the test,
+        // and we're using the primary path, try the fallback
+        if (event.code !== 1000 && !useFallbackPath) {
+          console.log('Primary WebSocket connection closed unexpectedly, trying fallback path');
+          setTimeout(() => checkWebSocketConnection(true), 100);
+          return;
+        }
       };
       
       // Set a timeout in case connection takes too long
       setTimeout(() => {
         if (ws.readyState !== WebSocket.OPEN) {
-          console.log('⚠️ WebSocket connection check timed out');
-          setWsConnected(false);
+          console.log(`⚠️ WebSocket connection check timed out${useFallbackPath ? ' (fallback path)' : ''}`);
+          
+          // If primary path timed out, try fallback
+          if (!useFallbackPath) {
+            console.log('Trying fallback WebSocket path after timeout');
+            checkWebSocketConnection(true);
+          } else {
+            setWsConnected(false);
+          }
+          
           try {
-            ws.close(1000, 'Connection test timeout');
+            if (ws.readyState !== WebSocket.CLOSED) {
+              ws.close(1000, 'Connection test timeout');
+            }
           } catch (e) {
             // Ignore errors on timeout close
           }
         }
       }, 3000);
     } catch (error) {
-      console.error('❌ Exception checking WebSocket connection:', error);
+      console.error(`❌ Exception checking WebSocket connection${useFallbackPath ? ' (fallback path)' : ''}:`, error);
+      
+      // If this is the primary path and we encountered an exception, try the fallback
+      if (!useFallbackPath) {
+        console.log('Exception with primary path, trying fallback WebSocket path');
+        setTimeout(() => checkWebSocketConnection(true), 100);
+        return;
+      }
+      
       setWsConnected(false);
     }
   }, [authUser?.id, socket]);

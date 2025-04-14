@@ -6,6 +6,7 @@ import NotFound from "@/pages/not-found";
 import Calendar from "@/pages/Calendar";
 import AuthPage from "@/pages/auth-page";
 import { NotificationsPage } from "@/pages/NotificationsPage";
+import { WebSocketTestPage } from "@/pages/WebSocketTestPage";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AuthProvider } from "@/hooks/use-auth";
 import { CalendarProvider } from "@/contexts/CalendarContext";
@@ -18,6 +19,9 @@ function Router() {
       <Route path="/login" component={AuthPage} /> {/* Alias for /auth */}
       <Route path="/notifications">
         {() => <ProtectedRoute component={NotificationsPage} />}
+      </Route>
+      <Route path="/websocket-test">
+        {() => <ProtectedRoute component={WebSocketTestPage} />}
       </Route>
       <Route path="/">
         {() => <ProtectedRoute component={Calendar} />}
