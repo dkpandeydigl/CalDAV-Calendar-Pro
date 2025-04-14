@@ -25,7 +25,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 
 export interface Resource {
   id: string;
-  subType: string;       // Conference Room, Projector, etc.
+  subType: string;       // Resource type (Conference Room, Projector, etc.)
+  name?: string;         // Display name of the resource
   capacity?: number;     // Optional capacity (e.g., 10 people)
   adminEmail: string;    // Email of resource administrator
   adminName?: string;    // Name of resource administrator
@@ -43,6 +44,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
   const [currentResource, setCurrentResource] = useState<Resource | null>(null);
   
   // Add refs for form fields
+  const nameRef = useRef<HTMLInputElement>(null);
   const subTypeRef = useRef<HTMLInputElement>(null);
   const capacityRef = useRef<HTMLInputElement>(null);
   const adminEmailRef = useRef<HTMLInputElement>(null);
@@ -50,6 +52,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
   const remarksRef = useRef<HTMLTextAreaElement>(null);
   
   // Refs for edit form
+  const editNameRef = useRef<HTMLInputElement>(null);
   const editSubTypeRef = useRef<HTMLInputElement>(null);
   const editCapacityRef = useRef<HTMLInputElement>(null);
   const editAdminEmailRef = useRef<HTMLInputElement>(null);
@@ -80,6 +83,7 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
     // Add new resource
     const resource: Resource = {
       id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      name: nameRef.current?.value || undefined, 
       subType: subTypeRef.current.value,
       capacity: capacityRef.current?.value ? parseInt(capacityRef.current.value, 10) : undefined,
       adminEmail: adminEmailRef.current.value,
@@ -177,11 +181,16 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Badge variant="secondary" className="font-medium">
-                        {resource.subType}
+                        {resource.name || resource.subType}
                       </Badge>
                       {resource.capacity && (
                         <Badge variant="outline">
                           Capacity: {resource.capacity}
+                        </Badge>
+                      )}
+                      {resource.name && resource.subType && resource.name !== resource.subType && (
+                        <Badge variant="outline" className="text-xs">
+                          Type: {resource.subType}
                         </Badge>
                       )}
                     </div>
@@ -262,6 +271,16 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
           
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
+              <Label htmlFor="name">Resource Name</Label>
+              <Input
+                id="name"
+                name="name"
+                placeholder="Main Board Room, Projector #2, etc."
+                ref={nameRef}
+              />
+            </div>
+            
+            <div className="grid gap-2">
               <Label htmlFor="subType">Resource Type*</Label>
               <Input
                 id="subType"
@@ -341,6 +360,16 @@ export default function ResourceManager({ resources, onResourcesChange }: Resour
           {currentResource && (
             <>
               <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Resource Name</Label>
+                  <Input
+                    id="edit-name"
+                    name="name"
+                    defaultValue={currentResource.name}
+                    ref={editNameRef}
+                  />
+                </div>
+                
                 <div className="grid gap-2">
                   <Label htmlFor="edit-subType">Resource Type*</Label>
                   <Input

@@ -7,7 +7,16 @@ import { Resource } from '@/components/resources/ResourceManager';
  * @returns A properly formatted iCalendar ATTENDEE line for a resource
  */
 export function formatResourceForICalendar(resource: Resource): string {
-  let resourceLine = `ATTENDEE;CUTYPE=RESOURCE;CN=${resource.subType};ROLE=NON-PARTICIPANT;RSVP=FALSE`;
+  // Ensure name is properly formatted (use either name or subType as Common Name)
+  const displayName = resource.name || resource.subType || 'Resource';
+  
+  // Start building the resource line
+  let resourceLine = `ATTENDEE;CUTYPE=RESOURCE;CN=${displayName};ROLE=NON-PARTICIPANT;RSVP=FALSE`;
+  
+  // Add resource type as a separate parameter
+  if (resource.subType) {
+    resourceLine += `;X-RESOURCE-TYPE=${resource.subType}`;
+  }
   
   // Add capacity if specified
   if (resource.capacity !== undefined) {
@@ -42,17 +51,45 @@ export function parseResourcesFromICalendar(attendeeLines: string[]): Resource[]
   return attendeeLines
     .filter(line => line.includes('CUTYPE=RESOURCE'))
     .map(line => {
-      // Create a new resource object
+      // Create a new resource object with a unique ID
       const resource: Resource = {
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
         subType: '',
         adminEmail: ''
       };
       
-      // Extract CN (Common Name) for the subType
+      // Extract CN (Common Name) - this is the display name of the resource
       const cnMatch = line.match(/CN=([^;:]+)/);
       if (cnMatch && cnMatch[1]) {
-        resource.subType = cnMatch[1];
+        // Set the name from CN parameter
+        resource.name = cnMatch[1].trim();
+      }
+      
+      // Extract X-RESOURCE-TYPE for the actual resource type/category
+      const resourceTypeMatch = line.match(/X-RESOURCE-TYPE=([^;:]+)/);
+      if (resourceTypeMatch && resourceTypeMatch[1]) {
+        resource.subType = resourceTypeMatch[1].trim();
+      } else if (resource.name) {
+        // If no X-RESOURCE-TYPE but we have a name, use name as subType too
+        resource.subType = resource.name;
+      }
+      
+      // If we still don't have a subType but have a name with type-like words, extract that
+      if (!resource.subType && resource.name) {
+        const typeKeywords = ['projector', 'room', 'board', 'chair', 'equipment'];
+        const lowerName = resource.name.toLowerCase();
+        
+        for (const keyword of typeKeywords) {
+          if (lowerName.includes(keyword)) {
+            resource.subType = keyword.charAt(0).toUpperCase() + keyword.slice(1);
+            break;
+          }
+        }
+      }
+      
+      // If we still don't have a subType, use a fallback
+      if (!resource.subType) {
+        resource.subType = 'Equipment';
       }
       
       // Extract capacity if available
