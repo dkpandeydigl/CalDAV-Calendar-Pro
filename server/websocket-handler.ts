@@ -513,31 +513,77 @@ async function handleWebSocketMessage(userId: number, data: any, ws: WebSocket):
  */
 function sendToSocket(ws: WebSocket, data: any): boolean {
   try {
-    // Check if the socket is open and ready
+    // Enhanced readyState checking
     if (ws.readyState === WebSocket.OPEN) {
-      // Convert data to JSON string
-      const message = JSON.stringify(data);
+      // Convert data to JSON string with better error handling
+      let message;
+      try {
+        message = JSON.stringify(data);
+      } catch (jsonError) {
+        console.error('❌ Error stringifying WebSocket message:', jsonError);
+        console.error('Problem data:', typeof data, Array.isArray(data) ? 'array' : '', data);
+        return false;
+      }
       
       // Send the message
       ws.send(message);
       
-      // Log successful send for important messages
-      if (data.type && ['connection_established', 'sync_complete', 'auth_success', 'error'].includes(data.type)) {
-        console.log(`WebSocket message sent (${data.type}): ${message.substring(0, 200)}${message.length > 200 ? '...' : ''}`);
+      // Log successful send with size information
+      const messageSizeKB = (message.length / 1024).toFixed(2);
+      
+      // More detailed logging for important message types
+      if (data.type && ['connection_established', 'sync_complete', 'auth_success', 'error', 'new_notification'].includes(data.type)) {
+        console.log(`✅ WebSocket message sent (${data.type}) - ${messageSizeKB} KB: ${message.substring(0, 200)}${message.length > 200 ? '...' : ''}`);
+      } else {
+        // Simple log for regular messages
+        console.log(`✅ WebSocket message sent - ${messageSizeKB} KB - Type: ${data.type || 'unknown type'}`);
       }
       
       return true;
     } else {
-      // Log if we tried to send to a closed or connecting socket
-      const stateText = ws.readyState === WebSocket.CONNECTING ? 'CONNECTING' :
-                         ws.readyState === WebSocket.CLOSING ? 'CLOSING' :
-                         ws.readyState === WebSocket.CLOSED ? 'CLOSED' : 'UNKNOWN';
-                         
-      console.warn(`⚠️ Attempted to send message type ${data.type} to a socket in ${stateText} state`);
+      // More detailed state description with numeric codes for reference
+      const stateText = ws.readyState === WebSocket.CONNECTING ? 'CONNECTING (0)' :
+                        ws.readyState === WebSocket.CLOSING ? 'CLOSING (2)' :
+                        ws.readyState === WebSocket.CLOSED ? 'CLOSED (3)' : 'UNKNOWN';
+      
+      console.warn(`⚠️ Cannot send WebSocket message of type ${data.type || 'unknown'}, socket is ${stateText}`);
+      
+      // Additional diagnostic info for non-open sockets
+      console.warn({
+        messageType: data.type || 'unknown',
+        socketReadyState: ws.readyState,
+        socketReadyStateText: stateText,
+        timestamp: new Date().toISOString()
+      });
+      
       return false;
     }
   } catch (error) {
+    // Enhanced error logging with full diagnostics
     console.error('❌ Error sending WebSocket message:', error);
+    
+    // Add extra diagnostic info
+    try {
+      const diagnostics = {
+        errorName: error instanceof Error ? error.name : 'Unknown',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        dataType: typeof data,
+        dataIsArray: Array.isArray(data),
+        messageType: data?.type || 'unknown',
+        socketState: ws ? ws.readyState : 'No socket',
+        socketStateText: ws ? (
+          ws.readyState === WebSocket.CONNECTING ? 'CONNECTING (0)' :
+          ws.readyState === WebSocket.OPEN ? 'OPEN (1)' :
+          ws.readyState === WebSocket.CLOSING ? 'CLOSING (2)' :
+          ws.readyState === WebSocket.CLOSED ? 'CLOSED (3)' : 'UNKNOWN'
+        ) : 'UNDEFINED',
+        timestamp: new Date().toISOString()
+      };
+      console.error('WebSocket send error diagnostics:', diagnostics);
+    } catch (diagError) {
+      console.error('Error creating diagnostics:', diagError);
+    }
+    
     return false;
   }
 }
