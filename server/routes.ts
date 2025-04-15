@@ -74,6 +74,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerExportRoutes(app);
   registerImportRoutes(app);
   
+  // Test endpoint for verifying cancellation ICS transformation (no auth required)
+  app.post('/api/test-cancellation-ics', async (req, res) => {
+    try {
+      const originalIcs = req.body.originalIcs;
+      if (!originalIcs) {
+        return res.status(400).json({ error: 'Original ICS data required' });
+      }
+      
+      console.log('Received original ICS for cancellation test:', originalIcs.substring(0, 50) + '...');
+      
+      // Create a dummy event data object
+      const eventData: any = {
+        uid: 'test-uid-12345',
+        title: 'Test Event For Cancellation',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 3600000),
+        organizer: { email: 'test@example.com', name: 'Test Organizer' },
+        attendees: [{ email: 'attendee@example.com', name: 'Test Attendee' }],
+        rawData: originalIcs
+      };
+      
+      // Transform using our new public method
+      const cancelled = emailService.transformIcsForCancellation(originalIcs, eventData);
+      
+      // Compare before/after
+      const result = {
+        success: true,
+        preserved: {
+          originalUid: originalIcs.match(/UID:([^\r\n]+)/i)?.[1],
+          cancelledUid: cancelled.match(/UID:([^\r\n]+)/i)?.[1],
+          uidsMatch: originalIcs.match(/UID:([^\r\n]+)/i)?.[1] === cancelled.match(/UID:([^\r\n]+)/i)?.[1]
+        },
+        changed: {
+          originalMethod: originalIcs.match(/METHOD:([^\r\n]+)/i)?.[1] || 'none',
+          cancelledMethod: cancelled.match(/METHOD:([^\r\n]+)/i)?.[1] || 'none',
+          originalStatus: originalIcs.match(/STATUS:([^\r\n]+)/i)?.[1] || 'none',
+          cancelledStatus: cancelled.match(/STATUS:([^\r\n]+)/i)?.[1] || 'none',
+          originalSequence: originalIcs.match(/SEQUENCE:(\d+)/i)?.[1] || '0',
+          cancelledSequence: cancelled.match(/SEQUENCE:(\d+)/i)?.[1] || '0'
+        },
+        originalIcs,
+        cancelledIcs: cancelled
+      };
+      
+      console.log('Cancellation transformation result:', JSON.stringify(result));
+      return res.json(result);
+    } catch (error) {
+      console.error('Error in cancellation test:', error);
+      return res.status(500).json({ error: String(error) });
+    }
+  });
+  
   function isAuthenticated(req: Request, res: Response, next: NextFunction) {
     if (req.isAuthenticated()) {
       return next();
