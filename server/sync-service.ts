@@ -441,8 +441,10 @@ export class SyncService {
         },
         authMethod: 'Basic',
         defaultAccountType: 'caldav',
-        // Add explicit timeout to prevent hung connections
-        timeout: 30000
+        // Add custom fetch options with timeout
+        fetchOptions: {
+          signal: AbortSignal.timeout(30000) // 30 second timeout
+        }
       });
       
       // Try to login and fetch calendars
@@ -453,19 +455,34 @@ export class SyncService {
       // Discover calendars with detailed logging
       console.log(`Discovering calendars for user ID ${userId} from server ${formattedUrl}`);
       
-      // Ensure discovery works by checking principals first
+      // Try to get the principal URL manually using PROPFIND
       try {
-        console.log(`Fetching principal URL for ${username}`);
-        const principal = await davClient.fetchPrincipal();
-        console.log(`Principal URL: ${principal?.url || 'Not found'}`);
+        console.log(`Looking for principal information for ${username}`);
+        // Use direct PROPFIND to get the principal URL
+        const userPrincipalPath = '/.well-known/caldav';
         
-        if (principal?.url) {
-          console.log(`Principal found at ${principal.url}, home set should be discoverable`);
-        } else {
-          console.log(`Principal not found, will attempt direct calendar discovery`);
+        try {
+          const wellKnownResults = await davClient.propfind({
+            url: `${formattedUrl}${userPrincipalPath}`,
+            depth: '0',
+            props: ['{DAV:}current-user-principal']
+          });
+          
+          if (wellKnownResults && wellKnownResults.length > 0) {
+            const principalUrl = wellKnownResults[0]?.props?.['{DAV:}current-user-principal']?.href;
+            if (principalUrl) {
+              console.log(`Found principal URL from well-known: ${principalUrl}`);
+            } else {
+              console.log('Principal URL not found in well-known response');
+            }
+          } else {
+            console.log('No results from well-known PROPFIND');
+          }
+        } catch (wellKnownError) {
+          console.log(`Failed to get principal from well-known: ${wellKnownError}`);
         }
       } catch (principalError) {
-        console.error(`Error fetching principal for ${username}:`, principalError);
+        console.error(`Error getting principal info for ${username}:`, principalError);
         console.log(`Will attempt direct calendar discovery despite principal error`);
       }
       
@@ -777,8 +794,194 @@ export class SyncService {
         }
       } else {
         // Normal sync for all calendars
-        const davCalendars = await davClient.fetchCalendars();
-        console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server`);
+        console.log(`Attempting to fetch calendars from CalDAV server for user ${username}`);
+        
+        // Define interface for DAV calendar objects to avoid 'any' type errors
+        interface DAVCalendar {
+          url: string;
+          displayName: string;
+          color?: string;
+          components?: string[];
+          href?: string;
+          props?: Record<string, any>;
+        }
+        
+        let davCalendars: DAVCalendar[] = [];
+        
+        // First, try standard calendar fetching
+        try {
+          davCalendars = await davClient.fetchCalendars();
+          console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server using standard method`);
+        } catch (fetchCalendarError) {
+          console.error(`Error fetching calendars using standard method:`, fetchCalendarError);
+          
+          // Try an alternative approach by manually discovering calendars
+          console.log(`Attempting alternative calendar discovery for user ${username}`);
+          
+          // Method 1: Try to find using calendar-home-set property
+          let foundCalendarsViaHomeSet = false;
+          try {
+            console.log(`Looking for calendar collections via home-set property`);
+            
+            // Try direct discovery with explicit PROPFIND
+            const userPropfind = await davClient.propfind({
+              url: formattedUrl,
+              depth: '1',
+              props: [
+                '{DAV:}resourcetype',
+                '{DAV:}displayname',
+                '{urn:ietf:params:xml:ns:caldav}calendar-home-set'
+              ]
+            });
+            
+            console.log(`Found ${userPropfind.length} resources at top level`);
+            
+            // Look for calendar-home-set property in results
+            let calendarHomeUrl = '';
+            for (const resource of userPropfind) {
+              const calendarHomeSet = resource.props && 
+                resource.props['{urn:ietf:params:xml:ns:caldav}calendar-home-set'];
+              
+              if (calendarHomeSet && calendarHomeSet.href) {
+                calendarHomeUrl = calendarHomeSet.href;
+                console.log(`Found calendar-home-set at ${calendarHomeUrl}`);
+                break;
+              }
+            }
+            
+            // If we found a calendar home, try to fetch calendars from it
+            if (calendarHomeUrl) {
+              try {
+                console.log(`Fetching calendars from home: ${calendarHomeUrl}`);
+                
+                // Make sure URL is absolute
+                const homeUrl = calendarHomeUrl.startsWith('http') 
+                  ? calendarHomeUrl 
+                  : new URL(calendarHomeUrl, formattedUrl).href;
+                
+                // PROPFIND on the calendar home
+                const homeResults = await davClient.propfind({
+                  url: homeUrl,
+                  depth: '1',
+                  props: [
+                    '{DAV:}resourcetype',
+                    '{DAV:}displayname',
+                    '{http://apple.com/ns/ical/}calendar-color',
+                    '{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set'
+                  ]
+                });
+                
+                console.log(`Found ${homeResults.length} resources in calendar home`);
+                
+                // Filter for calendar collections
+                const calendarsInHome = homeResults.filter(item => {
+                  if (item.props && item.props['{DAV:}resourcetype']) {
+                    const resourceType = item.props['{DAV:}resourcetype'];
+                    // Check if it's a calendar resource (array may have different formats)
+                    if (Array.isArray(resourceType)) {
+                      return resourceType.includes('{urn:ietf:params:xml:ns:caldav}calendar');
+                    } else if (typeof resourceType === 'string') {
+                      return resourceType === '{urn:ietf:params:xml:ns:caldav}calendar';
+                    } else if (resourceType.value) {
+                      // Some servers may use a value property
+                      return resourceType.value === '{urn:ietf:params:xml:ns:caldav}calendar';
+                    }
+                  }
+                  return false;
+                });
+                
+                console.log(`Found ${calendarsInHome.length} calendars in home`);
+                
+                // Map to our expected format
+                const formattedCalendars = calendarsInHome.map(cal => ({
+                  url: cal.href,
+                  displayName: cal.props['{DAV:}displayname'] || 'Unnamed Calendar',
+                  color: cal.props['{http://apple.com/ns/ical/}calendar-color'] || '#3788d8',
+                  components: cal.props['{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set'] || ['VEVENT']
+                }));
+                
+                davCalendars = [...davCalendars, ...formattedCalendars];
+                foundCalendarsViaHomeSet = true;
+              } catch (homeError) {
+                console.error(`Error fetching calendars from home ${calendarHomeUrl}:`, homeError);
+              }
+            }
+          } catch (propfindError) {
+            console.error(`Error during home-set PROPFIND:`, propfindError);
+          }
+          
+          // Method 2: Direct discovery at well-known locations if Method 1 failed
+          if (!foundCalendarsViaHomeSet) {
+            try {
+              console.log(`Attempting direct discovery at standard locations for user ${username}`);
+              
+              // Common paths for DaviCal server
+              const possiblePaths = [
+                `/caldav.php/${username}/`,
+                `/caldav.php/${username}/calendar/`,
+                `/caldav.php/${username}/home/`,
+                `/caldav/${username}/`,
+                `/calendar/${username}/`,
+                `/calendars/${username}/`
+              ];
+              
+              for (const path of possiblePaths) {
+                try {
+                  console.log(`Trying to find calendars at: ${formattedUrl}${path.replace(/^\//, '')}`);
+                  const directDiscovery = await davClient.propfind({
+                    url: `${formattedUrl}${path.replace(/^\//, '')}`,
+                    depth: '1',
+                    props: [
+                      '{DAV:}resourcetype',
+                      '{DAV:}displayname',
+                      '{http://apple.com/ns/ical/}calendar-color',
+                      '{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set'
+                    ]
+                  });
+                  
+                  console.log(`PROPFIND result at ${path}:`, directDiscovery);
+                  
+                  // Filter for calendar collections
+                  const calendars = directDiscovery.filter((item: any) => {
+                    if (item.props && item.props['{DAV:}resourcetype']) {
+                      const resourceType = item.props['{DAV:}resourcetype'];
+                      // Check if it's a calendar resource (array may have different formats)
+                      if (Array.isArray(resourceType)) {
+                        return resourceType.includes('{urn:ietf:params:xml:ns:caldav}calendar');
+                      } else if (typeof resourceType === 'string') {
+                        return resourceType === '{urn:ietf:params:xml:ns:caldav}calendar';
+                      } else if (resourceType.value) {
+                        // Some servers may use a value property
+                        return resourceType.value === '{urn:ietf:params:xml:ns:caldav}calendar';
+                      }
+                    }
+                    return false;
+                  });
+                  
+                  if (calendars.length > 0) {
+                    console.log(`Found ${calendars.length} calendars at ${path}`);
+                    
+                    // Map to our expected format
+                    const formattedCalendars = calendars.map((cal: any) => ({
+                      url: cal.href,
+                      displayName: cal.props['{DAV:}displayname'] || 'Unnamed Calendar',
+                      color: cal.props['{http://apple.com/ns/ical/}calendar-color'] || '#3788d8',
+                      components: cal.props['{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set'] || ['VEVENT']
+                    }));
+                    
+                    davCalendars = [...davCalendars, ...formattedCalendars];
+                  }
+                } catch (directError) {
+                  console.log(`No calendars found at ${path}:`, directError);
+                }
+              }
+            } catch (directDiscoveryError) {
+              console.error(`Direct calendar discovery failed:`, directDiscoveryError);
+            }
+          }
+        }
+        
+        console.log(`Total calendars found for user ${username}: ${davCalendars.length}`);
         
         // Process each calendar - first update our local calendars database
         for (const davCalendar of davCalendars) {
