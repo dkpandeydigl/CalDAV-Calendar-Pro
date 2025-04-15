@@ -855,17 +855,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                   </Button>
                 )}
                 
-                {serverConnection?.status === 'connected' && (
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="p-0 h-auto text-primary hover:text-primary/80 font-normal ml-4"
-                    onClick={() => syncWithServer()}
-                    disabled={isSyncing}
-                  >
-                    {isSyncing ? 'Syncing...' : 'Sync Now'}
-                  </Button>
-                )}
+                {/* Sync button removed - replaced by header component */}
               </div>
             </div>
           </div>
