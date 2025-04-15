@@ -3,6 +3,14 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Accordion,
   AccordionContent,
@@ -20,6 +28,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { useCalendars } from '@/hooks/useCalendars';
+import { getTimezones } from '@/lib/date-utils';
 import { Calendar } from '@shared/schema';
 import { 
   CalendarIcon, 
@@ -103,6 +112,15 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     error: sharedCalendarsError
   } = useSharedCalendars();
   
+  // Timezone settings from CalendarContext
+  const {
+    selectedTimezone,
+    setSelectedTimezone,
+    saveTimezonePreference,
+    isSavingTimezone,
+    timezoneLabel
+  } = useCalendarContext();
+  
   // New state variables for enhanced UI
   const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
   const [sharedCalendarSearchQuery, setSharedCalendarSearchQuery] = useState('');
@@ -143,6 +161,9 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   const [calendarsToUnshare, setCalendarsToUnshare] = useState<Calendar[]>([]);
   
   const { toast } = useToast();
+  
+  // Get available timezones
+  const timezones = getTimezones();
   
   // Filter calendars based on search query and sort alphabetically by name
   const filteredOwnCalendars = calendars
