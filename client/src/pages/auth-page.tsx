@@ -31,7 +31,7 @@ import { Loader2 } from "lucide-react";
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
-  caldavServerUrl: z.string().url("Please enter a valid URL").default("https://zpush.ajaydata.com/davical/"),
+  caldavServerUrl: z.string().url("Please enter a valid URL").default("https://zpush.xgenplus.com/Microsoft-Server-ActiveSync"),
 });
 
 // Registration schema
@@ -39,7 +39,7 @@ const registerSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string().min(6, "Confirm your password"),
-  caldavServerUrl: z.string().url("Please enter a valid URL").default("https://zpush.ajaydata.com/davical/"),
+  caldavServerUrl: z.string().url("Please enter a valid URL").default("https://zpush.xgenplus.com/Microsoft-Server-ActiveSync"),
 }).refine(
   (data) => data.password === data.confirmPassword,
   {
@@ -61,7 +61,7 @@ export default function AuthPage() {
     defaultValues: {
       username: "",
       password: "",
-      caldavServerUrl: "https://zpush.ajaydata.com/davical/",
+      caldavServerUrl: "https://zpush.xgenplus.com/Microsoft-Server-ActiveSync",
     },
   });
 
@@ -72,7 +72,7 @@ export default function AuthPage() {
       username: "",
       password: "",
       confirmPassword: "",
-      caldavServerUrl: "https://zpush.ajaydata.com/davical/",
+      caldavServerUrl: "https://zpush.xgenplus.com/Microsoft-Server-ActiveSync",
     },
   });
 
