@@ -827,11 +827,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                   <div className="text-xs text-neutral-500 mb-2">
                     Server: {serverConnection.url}
                   </div>
-                  {serverConnection.lastSync && (
-                    <div className="text-xs text-neutral-500 mb-2">
-                      Last Sync: {formatFullDate(serverConnection.lastSync)}
-                    </div>
-                  )}
+                  {/* Last Sync info removed */}
                 </>
               )}
               <div className="flex">
@@ -844,16 +840,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                   Server Settings
                 </Button>
                 
-                {onOpenSyncSettings && (
-                  <Button 
-                    variant="link" 
-                    size="sm" 
-                    className="p-0 h-auto text-primary hover:text-primary/80 font-normal ml-4"
-                    onClick={onOpenSyncSettings}
-                  >
-                    Sync Settings
-                  </Button>
-                )}
+                {/* Sync Settings button removed */}
                 
                 {/* Sync button removed - replaced by header component */}
               </div>
