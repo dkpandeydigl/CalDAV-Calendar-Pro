@@ -32,8 +32,12 @@ export function ProfileSettingsModal({ isOpen, onClose, currentFullName }: Profi
     selectedTimezone, 
     timezoneLabel,
     saveTimezonePreference,
-    isSavingTimezone 
+    isSavingTimezone,
+    setSelectedTimezone
   } = useCalendarContext();
+  
+  // Local state to track timezone selection
+  const [timezoneValue, setTimezoneValue] = useState(selectedTimezone);
   
   // Update fullName state when currentFullName prop changes or when modal opens
   useEffect(() => {
@@ -65,6 +69,11 @@ export function ProfileSettingsModal({ isOpen, onClose, currentFullName }: Profi
       setFullName(currentFullName);
     }
   }, [currentFullName]);
+  
+  // Update local timezone value when context timezone changes
+  useEffect(() => {
+    setTimezoneValue(selectedTimezone);
+  }, [selectedTimezone]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,7 +149,13 @@ export function ProfileSettingsModal({ isOpen, onClose, currentFullName }: Profi
                 Current: <span className="font-medium">{timezoneLabel}</span>
               </div>
               
-              <Select defaultValue={selectedTimezone}>
+              <Select 
+                value={timezoneValue} 
+                onValueChange={(value) => {
+                  console.log('Selected new timezone:', value);
+                  setTimezoneValue(value);
+                }}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select timezone" />
                 </SelectTrigger>
@@ -159,13 +174,14 @@ export function ProfileSettingsModal({ isOpen, onClose, currentFullName }: Profi
                 className="w-full"
                 onClick={async () => {
                   try {
-                    await saveTimezonePreference(selectedTimezone);
+                    // Save the locally selected timezone value
+                    await saveTimezonePreference(timezoneValue);
                   } catch (error) {
                     console.error('Error saving timezone preference in profile settings:', error);
                     // Error is already handled in the context via toast
                   }
                 }}
-                disabled={isSavingTimezone}
+                disabled={isSavingTimezone || timezoneValue === selectedTimezone}
               >
                 {isSavingTimezone ? (
                   <span className="flex items-center">
