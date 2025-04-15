@@ -10,6 +10,7 @@ import WebSocketTestPage from "@/pages/WebSocketTestPage";
 import WebSocketDebugPage from "@/pages/WebSocketDebugPage";
 import WebSocketDiagnosticPage from "@/pages/WebSocketDiagnosticPage";
 import ResourceTestPage from "@/pages/ResourceTestPage";
+import { EmailSettingsPage } from "@/pages/EmailSettingsPage";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AuthProvider } from "@/hooks/use-auth";
 import { CalendarProvider } from "@/contexts/CalendarContext";
@@ -22,6 +23,9 @@ function Router() {
       <Route path="/login" component={AuthPage} /> {/* Alias for /auth */}
       <Route path="/notifications">
         {() => <ProtectedRoute component={NotificationsPage} />}
+      </Route>
+      <Route path="/email-settings">
+        {() => <ProtectedRoute component={EmailSettingsPage} />}
       </Route>
       <Route path="/websocket-test">
         {() => <ProtectedRoute component={WebSocketTestPage} />}

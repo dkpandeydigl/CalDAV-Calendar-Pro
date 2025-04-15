@@ -39,7 +39,7 @@ export function EmailSettings() {
   const fetchSmtpConfig = async () => {
     try {
       setLoading(true);
-      const response = await apiRequest('/api/test-smtp-config', { method: 'GET' });
+      const response = await apiRequest<{success: boolean; config: SMTPConfig | null}>('GET', '/api/smtp-config');
       
       if (response.success && response.config) {
         setConfig(response.config);
@@ -86,13 +86,7 @@ export function EmailSettings() {
         updateData.password = password;
       }
       
-      const response = await apiRequest('/api/smtp-config', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(updateData)
-      });
+      const response = await apiRequest<{success: boolean; message?: string; config: SMTPConfig}>('POST', '/api/smtp-config', updateData);
       
       if (response.success) {
         setConfig(response.config);
@@ -120,9 +114,7 @@ export function EmailSettings() {
   const handleTestConnection = async () => {
     try {
       setTesting(true);
-      const response = await apiRequest('/api/test-smtp-connection', {
-        method: 'POST'
-      });
+      const response = await apiRequest<{success: boolean; message?: string}>('POST', '/api/test-smtp-connection');
       
       if (response.success) {
         toast({
