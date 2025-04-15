@@ -962,7 +962,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
    * @param data Additional event data for the cancellation
    * @returns Modified ICS data for cancellation
    */
-  private transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
+  public transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
       console.log('Transforming original ICS for cancellation according to RFC 5546');
       
