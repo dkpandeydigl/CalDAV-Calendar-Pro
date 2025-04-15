@@ -902,6 +902,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         };
       }
       
+      // Make sure resources are properly serialized if they're present
+      if (newEvent.resources && typeof newEvent.resources === 'object' && !Array.isArray(newEvent.resources)) {
+        newEvent = {
+          ...newEvent,
+          resources: JSON.stringify(newEvent.resources)
+        };
+      } else if (newEvent.resources && Array.isArray(newEvent.resources)) {
+        newEvent = {
+          ...newEvent,
+          resources: JSON.stringify(newEvent.resources)
+        };
+      }
+      
       console.log("Creating event with data:", newEvent);
       const res = await apiRequest('POST', '/api/events', newEvent);
       return res.json();
@@ -1269,6 +1282,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         data = {
           ...data,
           attendees: JSON.stringify(data.attendees)
+        };
+      }
+      
+      // Make sure resources are properly serialized if they're present
+      if (data.resources && typeof data.resources === 'object' && !Array.isArray(data.resources)) {
+        data = {
+          ...data,
+          resources: JSON.stringify(data.resources)
+        };
+      } else if (data.resources && Array.isArray(data.resources)) {
+        data = {
+          ...data,
+          resources: JSON.stringify(data.resources)
         };
       }
       
