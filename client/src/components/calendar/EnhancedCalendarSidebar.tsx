@@ -47,7 +47,7 @@ import {
   Info,
   RefreshCw
 } from 'lucide-react';
-import { SyncStatusIndicator } from '../SyncStatusIndicator';
+// SyncStatusIndicator import removed
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
@@ -626,10 +626,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             </Button>
           </div>
           
-          {/* Sync Status Indicator */}
-          <div className="mb-4 flex justify-center">
-            <SyncStatusIndicator />
-          </div>
+          {/* Sync Status Indicator removed */}
           
           <ScrollArea className="flex-1 pr-2 -mr-2" type="always">
             {/* Own Calendars Section */}
