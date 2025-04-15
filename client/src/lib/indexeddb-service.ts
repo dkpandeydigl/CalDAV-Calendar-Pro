@@ -566,7 +566,7 @@ class IndexedDBService {
     const userNotifications = await userIndex.getAll(userId);
     
     // Count unread notifications
-    return userNotifications.filter(n => !n.read).length;
+    return userNotifications.filter(n => !n.isRead).length;
   }
 
   // Get unread notifications for a user
@@ -580,7 +580,7 @@ class IndexedDBService {
     
     // Filter unread notifications and sort by creation time (newest first)
     return userNotifications
-      .filter(n => !n.read)
+      .filter(n => !n.isRead)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
@@ -591,7 +591,7 @@ class IndexedDBService {
       const notification = await db.get('notifications', id);
       if (!notification) return false;
       
-      notification.read = true;
+      notification.isRead = true;
       await db.put('notifications', notification);
       return true;
     } catch (error) {
@@ -607,8 +607,8 @@ class IndexedDBService {
       const notifications = await db.getAllFromIndex('notifications', 'by-userId', userId);
       
       for (const notification of notifications) {
-        if (!notification.read) {
-          notification.read = true;
+        if (!notification.isRead) {
+          notification.isRead = true;
           await db.put('notifications', notification);
         }
       }

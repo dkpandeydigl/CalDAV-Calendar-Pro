@@ -676,7 +676,7 @@ class ClientSyncService {
       }
 
       // Push notification read status to server
-      const readNotifications = localNotifications.filter(n => n.read);
+      const readNotifications = localNotifications.filter(n => n.isRead);
       if (readNotifications.length > 0) {
         try {
           const readIds = readNotifications.map(n => n.id);

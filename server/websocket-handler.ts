@@ -202,7 +202,7 @@ async function handleNotificationRead(userId: number, message: any) {
     }
     
     // Mark notification as read in the database
-    await storage.markNotificationRead(notificationId, userId);
+    await storage.markNotificationRead(notificationId);
     
     // Send confirmation to user
     broadcastToUser(userId, {
@@ -345,7 +345,7 @@ export async function createAndSendNotification(
       entityId,
       createdBy,
       isRead: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date()
     });
     
     // Send the notification to the user
