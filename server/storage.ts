@@ -5,7 +5,8 @@ import {
   serverConnections, type ServerConnection, type InsertServerConnection,
   calendarSharing, type CalendarSharing, type InsertCalendarSharing,
   smtpConfigurations, type SmtpConfig, type InsertSmtpConfig,
-  deletedEvents, type DeletedEvent, type InsertDeletedEvent
+  deletedEvents, type DeletedEvent, type InsertDeletedEvent,
+  notifications, type Notification, type InsertNotification
 } from "@shared/schema";
 import bcrypt from "bcryptjs";
 
@@ -62,6 +63,15 @@ export interface IStorage {
   createSmtpConfig(config: InsertSmtpConfig): Promise<SmtpConfig>;
   updateSmtpConfig(id: number, config: Partial<SmtpConfig>): Promise<SmtpConfig | undefined>;
   deleteSmtpConfig(id: number): Promise<boolean>;
+  
+  // Notification methods
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  getNotifications(userId: number, limit?: number): Promise<Notification[]>;
+  getUnreadNotificationCount(userId: number): Promise<number>;
+  getUnreadNotifications(userId: number): Promise<Notification[]>;
+  markNotificationRead(id: number): Promise<boolean>;
+  markAllNotificationsRead(userId: number): Promise<boolean>;
+  deleteNotification(id: number): Promise<boolean>;
   
   // Session store for authentication
   sessionStore: session.Store;
