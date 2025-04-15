@@ -731,10 +731,10 @@ export class MemStorage implements IStorage {
     
     // Find all unread notifications for this user and mark them as read
     const userNotifications = Array.from(this.notificationsMap.values())
-      .filter(notification => notification.userId === userId && !notification.read);
+      .filter(notification => notification.userId === userId && !notification.isRead);
     
     for (const notification of userNotifications) {
-      notification.read = true;
+      notification.isRead = true;
       this.notificationsMap.set(notification.id, notification);
     }
     
