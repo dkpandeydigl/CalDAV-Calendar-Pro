@@ -390,7 +390,7 @@ export function setupAuth(app: Express) {
             // Force an immediate full calendar sync with server for new users
             try {
               console.log(`Triggering immediate full calendar sync for new user ${user.username}`);
-              await syncService.syncUser(user.id, { 
+              await syncService.syncNow(user.id, { 
                 forceRefresh: true,
                 preserveLocalEvents: false,
                 preserveLocalDeletes: false
@@ -493,7 +493,7 @@ export function setupAuth(app: Express) {
             // Force an immediate full calendar sync with server
             try {
               console.log(`Triggering immediate full calendar sync for user ${(user as SelectUser).username}`);
-              await syncService.syncUser(userId, { 
+              await syncService.syncNow(userId, { 
                 forceRefresh: true,
                 preserveLocalEvents: false,
                 preserveLocalDeletes: false
