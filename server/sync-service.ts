@@ -426,22 +426,48 @@ export class SyncService {
       
       const { url, username, password } = job.connection;
       
-      // Create a new DAV client
+      // Create a new DAV client with explicit configuration
+      console.log(`Creating DAV client for user ${username} with server URL: ${url}`);
+      
+      // Debug the server URL to ensure it's properly formatted
+      const formattedUrl = url.endsWith('/') ? url : `${url}/`;
+      console.log(`Using formatted server URL: ${formattedUrl}`);
+      
       const davClient = new DAVClient({
-        serverUrl: url,
+        serverUrl: formattedUrl,
         credentials: {
           username,
           password
         },
         authMethod: 'Basic',
-        defaultAccountType: 'caldav'
+        defaultAccountType: 'caldav',
+        // Add explicit timeout to prevent hung connections
+        timeout: 30000
       });
       
       // Try to login and fetch calendars
+      console.log(`Attempting to login to CalDAV server for user ${username}`);
       await davClient.login();
+      console.log(`Successfully logged in to CalDAV server for user ${username}`);
       
-      // Discover calendars
-      console.log(`Discovering calendars for user ID ${userId}`);
+      // Discover calendars with detailed logging
+      console.log(`Discovering calendars for user ID ${userId} from server ${formattedUrl}`);
+      
+      // Ensure discovery works by checking principals first
+      try {
+        console.log(`Fetching principal URL for ${username}`);
+        const principal = await davClient.fetchPrincipal();
+        console.log(`Principal URL: ${principal?.url || 'Not found'}`);
+        
+        if (principal?.url) {
+          console.log(`Principal found at ${principal.url}, home set should be discoverable`);
+        } else {
+          console.log(`Principal not found, will attempt direct calendar discovery`);
+        }
+      } catch (principalError) {
+        console.error(`Error fetching principal for ${username}:`, principalError);
+        console.log(`Will attempt direct calendar discovery despite principal error`);
+      }
       
       // If a specific calendar ID was provided, only sync that calendar
       if (calendarId !== null) {
