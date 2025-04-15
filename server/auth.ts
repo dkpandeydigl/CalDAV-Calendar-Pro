@@ -23,7 +23,15 @@ declare global {
     interface Request {
       caldavServerUrl?: string;  // Add property for CalDAV server URL during authentication
     }
-    interface User extends SelectUser {}
+    // Define the User interface with all the fields from shared/schema.ts
+    interface User {
+      id: number;
+      username: string;
+      password: string;
+      preferredTimezone?: string;
+      email?: string | null;
+      fullName?: string | null;
+    }
   }
 }
 
@@ -555,30 +563,56 @@ export function setupAuth(app: Express) {
         const caldavUserInfo = typeof caldavResult === 'object' ? caldavResult : null;
         
         // Check if user already has a server connection
-        const userId = (user as SelectUser).id;
+        const userId = user.id;
         const existingConnection = await storage.getServerConnection(userId);
         
         // Update user profile with CalDAV info if available
+        const updateData: Partial<User> = {};
+        
+        // First try to get data from CalDAV server response
         if (caldavUserInfo) {
-          const updateData: Partial<SelectUser> = {};
-          
-          // Update full name if available
+          // Update full name if available from CalDAV
           if (caldavUserInfo.displayName && (!user.fullName || user.fullName.trim() === '')) {
             updateData.fullName = caldavUserInfo.displayName;
             console.log(`Updating user fullName to ${caldavUserInfo.displayName} from CalDAV`);
           }
           
-          // Update email if available
+          // Update email if available from CalDAV
           if (caldavUserInfo.email && (!user.email || user.email.trim() === '')) {
             updateData.email = caldavUserInfo.email;
             console.log(`Updating user email to ${caldavUserInfo.email} from CalDAV`);
           }
-          
-          // Apply updates if any fields changed
-          if (Object.keys(updateData).length > 0) {
-            await storage.updateUser(userId, updateData);
-            console.log(`Updated user profile from CalDAV data`);
+        }
+        
+        // If no full name from CalDAV but it's missing, generate one from email/username
+        if (!updateData.fullName && (!user.fullName || user.fullName.trim() === '')) {
+          // Use email to generate name if available
+          const emailToUse = user.email || username;
+          if (emailToUse && emailToUse.includes('@')) {
+            // Extract name part from email (before @)
+            const namePart = emailToUse.split('@')[0];
+            if (namePart) {
+              // Convert name formats like "john.doe" or "johndoe" to "John Doe"
+              const formattedName = namePart
+                .replace(/\./g, ' ')  // Replace dots with spaces
+                .replace(/_/g, ' ')   // Replace underscores with spaces
+                .split(' ')
+                .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+                .join(' ');
+                
+              updateData.fullName = formattedName;
+              console.log(`Generated full name from email: ${formattedName}`);
+            }
           }
+        }
+        
+        // Apply updates if any fields changed
+        if (Object.keys(updateData).length > 0) {
+          await storage.updateUser(userId, updateData);
+          console.log(`Updated user profile with new data`);
+          
+          // Also update the user object in memory so changes reflect immediately
+          Object.assign(user, updateData);
         }
         
         if (existingConnection) {
@@ -589,7 +623,7 @@ export function setupAuth(app: Express) {
             password: password,
             status: "connected"
           });
-          console.log(`Updated server connection for user ${(user as SelectUser).username}`);
+          console.log(`Updated server connection for user ${user.username}`);
         } else {
           // Create new server connection
           await storage.createServerConnection({
@@ -601,7 +635,7 @@ export function setupAuth(app: Express) {
             syncInterval: 15,
             status: "connected"
           });
-          console.log(`Created server connection for user ${(user as SelectUser).username}`);
+          console.log(`Created server connection for user ${user.username}`);
         }
       } catch (error) {
         console.error("Error with CalDAV credentials:", error);
