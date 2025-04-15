@@ -150,25 +150,131 @@ export function setupAuth(app: Express) {
   app.use(passport.session());
 
   passport.use(
-    new LocalStrategy(async (username, password, done) => {
+    new LocalStrategy({ passReqToCallback: true }, async (req, username, password, done) => {
       try {
         console.log(`Attempting to authenticate user: ${username}`);
-        const user = await storage.getUserByUsername(username);
         
-        if (!user) {
+        // Get server URL from request object
+        // Note: We set this in the req object in the login route
+        const serverUrl = req?.caldavServerUrl || '';
+        
+        // First check if user exists in our system
+        const existingUser = await storage.getUserByUsername(username);
+        
+        // Try to authenticate with CalDAV server first, regardless of whether user exists
+        // since we prioritize CalDAV authentication over local authentication
+        try {
+          if (serverUrl) {
+            console.log(`Attempting CalDAV authentication for ${username} at ${serverUrl}`);
+            const isCalDAVValid = await verifyCalDAVCredentials(serverUrl, username, password);
+            
+            if (!isCalDAVValid) {
+              console.log(`CalDAV authentication failed for ${username}`);
+              return done(null, false, { message: "Invalid CalDAV credentials. Please check your username and password." });
+            }
+            
+            console.log(`CalDAV authentication successful for ${username}`);
+            
+            // If user doesn't exist in our system yet, create them
+            if (!existingUser) {
+              console.log(`User ${username} authenticated via CalDAV but not found in local database. Creating user.`);
+              
+              // Create the user with the provided credentials
+              const hashedPassword = await hashPassword(password);
+              const newUser = await storage.createUser({
+                username,
+                password: hashedPassword,
+                email: username.includes('@') ? username : null,
+                fullName: null // This will be populated later from server data if available
+              });
+              
+              console.log(`Created new user ${username} with ID ${newUser.id}`);
+              
+              // Also create server connection for the new user
+              await storage.createServerConnection({
+                userId: newUser.id,
+                url: serverUrl,
+                username,
+                password, // Store the plain password for CalDAV access
+                autoSync: true,
+                syncInterval: 15,
+                status: "connected"
+              });
+              
+              console.log(`Created server connection for new user ${username}`);
+              
+              return done(null, newUser);
+            }
+            
+            // At this point, user exists in our system and CalDAV authentication succeeded
+            // Update server connection if needed
+            try {
+              const existingConnection = await storage.getServerConnection(existingUser.id);
+              
+              if (existingConnection) {
+                // Update existing connection with latest credentials
+                await storage.updateServerConnection(existingConnection.id, {
+                  url: serverUrl,
+                  username,
+                  password,
+                  status: "connected"
+                });
+                console.log(`Updated server connection for ${username}`);
+              } else {
+                // Create new connection if none exists
+                await storage.createServerConnection({
+                  userId: existingUser.id,
+                  url: serverUrl,
+                  username,
+                  password,
+                  autoSync: true,
+                  syncInterval: 15,
+                  status: "connected"
+                });
+                console.log(`Created new server connection for existing user ${username}`);
+              }
+            } catch (connectionError) {
+              console.error(`Error updating server connection for ${username}:`, connectionError);
+              // Continue login process even if connection update fails
+            }
+            
+            // Update user's password hash if it's different
+            try {
+              const isStoredPasswordValid = await comparePasswords(password, existingUser.password);
+              if (!isStoredPasswordValid) {
+                console.log(`Updating password hash for ${username} to match CalDAV credentials`);
+                const hashedPassword = await hashPassword(password);
+                await storage.updateUser(existingUser.id, { password: hashedPassword });
+              }
+            } catch (passwordUpdateError) {
+              console.error(`Error updating password for ${username}:`, passwordUpdateError);
+              // Continue login process even if password update fails
+            }
+            
+            return done(null, existingUser);
+          }
+        } catch (caldavError) {
+          console.error(`Error during CalDAV authentication for ${username}:`, caldavError);
+          // Fall back to local authentication if CalDAV authentication fails
+        }
+        
+        // If we reach here, either CalDAV auth failed or serverUrl wasn't provided
+        // Fall back to standard local authentication
+        
+        if (!existingUser) {
           console.log(`Authentication failed: User ${username} not found`);
           return done(null, false, { message: "Invalid username or password" });
         }
         
-        console.log(`User found: ${user.id}, checking password field:`, 
-          user.password ? `Password exists (${user.password.length} chars)` : 'No password');
+        console.log(`User found: ${existingUser.id}, checking password field:`, 
+          existingUser.password ? `Password exists (${existingUser.password.length} chars)` : 'No password');
         
-        if (!user.password) {
+        if (!existingUser.password) {
           console.log(`Authentication failed: User ${username} has no password set`);
           return done(null, false, { message: "User has no password set" });
         }
         
-        let isPasswordValid = await comparePasswords(password, user.password);
+        let isPasswordValid = await comparePasswords(password, existingUser.password);
         
         // If password check fails, try to check against server_connections table password
         if (!isPasswordValid) {
@@ -180,7 +286,7 @@ export function setupAuth(app: Express) {
               
               // Update the user's password in the database to match the server_connection password
               const hashedPassword = await hashPassword(password);
-              await storage.updateUser(user.id, { password: hashedPassword });
+              await storage.updateUser(existingUser.id, { password: hashedPassword });
               console.log(`Updated user password hash in database for ${username}`);
               
               isPasswordValid = true;
@@ -198,7 +304,7 @@ export function setupAuth(app: Express) {
         }
         
         console.log(`Authentication successful for user ${username}`);
-        return done(null, user);
+        return done(null, existingUser);
       } catch (error) {
         console.error(`Authentication error for user ${username}:`, error);
         return done(error);
@@ -305,6 +411,9 @@ export function setupAuth(app: Express) {
 
   app.post("/api/login", async (req, res, next) => {
     const { username, password, caldavServerUrl } = req.body;
+    
+    // Store caldavServerUrl in req so it can be accessed by the LocalStrategy
+    (req as any).caldavServerUrl = caldavServerUrl;
     
     passport.authenticate("local", async (err: Error | null, user: Express.User | false, info: { message: string } | undefined) => {
       if (err) return next(err);
