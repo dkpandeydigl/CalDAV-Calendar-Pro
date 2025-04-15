@@ -1443,34 +1443,70 @@ export class SyncService {
         console.log(`Could not find principal URL`);
       }
       
-      // Last resort: For dil.in accounts, try direct calendar creation
-      const userDomain = username.includes('@') ? username.split('@')[1] : 'unknown';
-      if (userDomain === 'dil.in') {
-        console.log('All standard discovery methods failed for dil.in user - trying direct calendar creation as last resort');
-        const usernameWithoutDomain = username.includes('@') ? username.split('@')[0] : username;
+      // Last resort: Try direct calendar creation for any valid user
+      console.log('All standard discovery methods failed - trying direct calendar creation as last resort');
+      
+      // Username can be either plain or with domain, we need to handle both cases
+      let usernameSegment = username;
+      // If username contains @ (email format), use different potential formats
+      if (username.includes('@')) {
+        const usernameWithoutDomain = username.split('@')[0];
         
-        try {
-          // Create a minimal set of default calendars directly
-          const defaultCalendars = [
-            {
-              url: `https://zpush.ajaydata.com/davical/caldav.php/${usernameWithoutDomain}/calendar/`,
-              displayName: `${usernameWithoutDomain}'s Calendar`,
-              description: 'Primary calendar',
-              color: '#0078d4',
-              ctag: new Date().toISOString(),
-              resourcetype: { calendar: true },
-              components: ['VEVENT', 'VTODO'],
-              syncToken: new Date().toISOString(),
-              timezone: 'UTC',
-              privileges: ['read', 'write']
+        // Try to construct potential path segments for this user's calendars
+        const potentialUserPaths = [
+          username,             // Full email (lalchand.saini@dil.in)
+          usernameWithoutDomain // Just username (lalchand.saini)
+        ];
+        
+        // Try both potential username formats with different fallback paths
+        for (const potentialUsername of potentialUserPaths) {
+          try {
+            // Try direct PROPFIND to see if a calendar exists at this path
+            const testUrl = `${normalizedUrl}caldav.php/${encodeURIComponent(potentialUsername)}/calendar/`;
+            console.log(`Testing direct calendar access: ${testUrl}`);
+            
+            const testResponse = await fetch(testUrl, {
+              method: 'PROPFIND',
+              headers: {
+                'Depth': '0',
+                'Content-Type': 'application/xml; charset=utf-8',
+                'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+              }
+            });
+            
+            // If we get a successful response, use this path
+            if (testResponse.ok || testResponse.status === 207) {
+              console.log(`Found working calendar at: ${testUrl}`);
+              usernameSegment = potentialUsername;
+              break;
             }
-          ];
-          
-          console.log(`Created default calendar for dil.in user ${username} as fallback mechanism`);
-          return defaultCalendars;
-        } catch (directCreationError) {
-          console.error('Direct calendar creation failed:', directCreationError);
+          } catch (error) {
+            // Just continue to try the next format
+          }
         }
+      }
+      
+      try {
+        // Create a minimal set of default calendars directly
+        const defaultCalendars = [
+          {
+            url: `${normalizedUrl}caldav.php/${encodeURIComponent(usernameSegment)}/calendar/`,
+            displayName: `${usernameSegment}'s Calendar`,
+            description: 'Primary calendar',
+            color: '#0078d4',
+            ctag: new Date().toISOString(),
+            resourcetype: { calendar: true },
+            components: ['VEVENT', 'VTODO'],
+            syncToken: new Date().toISOString(),
+            timezone: 'UTC',
+            privileges: ['read', 'write']
+          }
+        ];
+        
+        console.log(`Created default calendar for user ${username} as fallback mechanism`);
+        return defaultCalendars;
+      } catch (directCreationError) {
+        console.error('Direct calendar creation failed:', directCreationError);
       }
       
       // If all discovery methods fail, return an empty array
