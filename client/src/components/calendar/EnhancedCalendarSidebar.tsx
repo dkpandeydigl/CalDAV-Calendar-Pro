@@ -34,7 +34,8 @@ import {
   ChevronUp,
   Search,
   Filter,
-  X
+  X,
+  Info
 } from 'lucide-react';
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 import { useQueryClient } from '@tanstack/react-query';
