@@ -2,7 +2,7 @@ import { type Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
-import { storage } from "./database-storage";
+import { storage } from "./storage"; // Changed from database-storage to storage
 import bcrypt from "bcryptjs";
 import { InsertUser, User } from "@shared/schema";
 import { DAVClient } from "tsdav";
