@@ -3,9 +3,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { updateUserFullName, apiRequest } from '@/lib/api';
+import { getTimezones } from '@/lib/date-utils';
+import { useCalendarContext } from '@/contexts/CalendarContext';
+import { Loader2 } from 'lucide-react';
 
 interface ProfileSettingsModalProps {
   isOpen: boolean;
@@ -18,6 +23,17 @@ export function ProfileSettingsModal({ isOpen, onClose, currentFullName }: Profi
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Get available timezones
+  const availableTimezones = getTimezones();
+  
+  // Get context from CalendarContext for timezone management
+  const { 
+    selectedTimezone, 
+    timezoneLabel,
+    saveTimezonePreference,
+    isSavingTimezone 
+  } = useCalendarContext();
   
   // Update fullName state when currentFullName prop changes or when modal opens
   useEffect(() => {
@@ -112,6 +128,56 @@ export function ProfileSettingsModal({ isOpen, onClose, currentFullName }: Profi
                 className="col-span-3"
                 placeholder="Your full name"
               />
+            </div>
+            
+            <Separator className="my-2" />
+            
+            <div className="space-y-3">
+              <div className="text-sm font-medium">Timezone Settings</div>
+              
+              <div className="text-xs text-muted-foreground mb-2">
+                {/* Display the current timezone in a user-friendly format */}
+                Current: <span className="font-medium">{timezoneLabel}</span>
+              </div>
+              
+              <Select defaultValue={selectedTimezone}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select timezone" />
+                </SelectTrigger>
+                <SelectContent className="max-h-80">
+                  {availableTimezones.map((timezone) => (
+                    <SelectItem key={timezone.value} value={timezone.value}>
+                      {timezone.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Button 
+                size="sm" 
+                variant="outline"
+                className="w-full"
+                onClick={async () => {
+                  try {
+                    await saveTimezonePreference(selectedTimezone);
+                  } catch (error) {
+                    console.error('Error saving timezone preference in profile settings:', error);
+                    // Error is already handled in the context via toast
+                  }
+                }}
+                disabled={isSavingTimezone}
+              >
+                {isSavingTimezone ? (
+                  <span className="flex items-center">
+                    <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                    Saving Timezone...
+                  </span>
+                ) : 'Save Timezone Preference'}
+              </Button>
+              
+              <div className="text-xs text-muted-foreground">
+                <span className="italic">All events will display in your selected timezone</span>
+              </div>
             </div>
           </div>
           
