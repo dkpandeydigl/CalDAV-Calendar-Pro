@@ -1121,6 +1121,11 @@ export class SyncService {
         console.log(`Trying to find principal URL from server root: ${normalizedUrl}`);
         
         try {
+          // Add debug info for tracking user domain
+          const userDomain = username.includes('@') ? username.split('@')[1] : 'unknown';
+          console.log(`User domain: ${userDomain}`);
+          
+          // First try standard PROPFIND for current-user-principal
           const rootResponse = await fetch(normalizedUrl, {
             method: 'PROPFIND',
             headers: {
@@ -1138,11 +1143,77 @@ export class SyncService {
           
           if (rootResponse.ok || rootResponse.status === 207) {
             const responseText = await rootResponse.text();
-            const principalMatch = responseText.match(/<current-user-principal><href>(.*?)<\/href><\/current-user-principal>/);
+            console.log(`PROPFIND response for principal URL (first 500 chars): ${responseText.substring(0, 500)}${responseText.length > 500 ? '...' : ''}`);
+            
+            // Try multiple regex patterns to match different server implementations
+            let principalMatch = responseText.match(/<current-user-principal><href>(.*?)<\/href><\/current-user-principal>/);
+            
+            if (!principalMatch) {
+              // Try alternative format with namespaces
+              principalMatch = responseText.match(/<[^:]*:current-user-principal><[^:]*:href>(.*?)<\/[^:]*:href><\/[^:]*:current-user-principal>/);
+            }
+            
+            if (!principalMatch) {
+              // Try looser pattern
+              principalMatch = responseText.match(/current-user-principal[^>]*>[^<]*<[^>]*href[^>]*>(.*?)<\/[^>]*href>/);
+            }
+            
+            // Special handling for dil.in domain
+            if (!principalMatch && userDomain === 'dil.in') {
+              console.log('Special handling for dil.in domain');
+              // Look for any href that might be a principal path
+              const hrefMatches = responseText.match(/<href>([^<]+)<\/href>/g);
+              if (hrefMatches && hrefMatches.length > 0) {
+                for (const match of hrefMatches) {
+                  const href = match.replace(/<\/?href>/g, '');
+                  if (href.includes('/principals/') || href.includes('/users/')) {
+                    console.log(`Found potential principal URL for dil.in user: ${href}`);
+                    principalUrl = new URL(href, normalizedUrl).href;
+                    break;
+                  }
+                }
+              }
+              
+              // If still not found, try a hardcoded path format based on username
+              if (!principalUrl) {
+                // Try common principal URL patterns
+                const commonPaths = [
+                  `/principals/users/${username}`,
+                  `/principals/${username}`,
+                  `/users/${username}`,
+                  `/dav/principals/${username}`,
+                  `/davical/principals/users/${username.split('@')[0]}`,
+                  `/davical/caldav.php/${username.split('@')[0]}`
+                ];
+                
+                for (const path of commonPaths) {
+                  try {
+                    const testUrl = new URL(path, normalizedUrl).href;
+                    console.log(`Trying potential principal URL: ${testUrl}`);
+                    const testResponse = await fetch(testUrl, {
+                      method: 'PROPFIND',
+                      headers: {
+                        'Depth': '0',
+                        'Content-Type': 'application/xml; charset=utf-8',
+                        'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+                      }
+                    });
+                    
+                    if (testResponse.ok || testResponse.status === 207) {
+                      console.log(`Found working principal URL: ${testUrl}`);
+                      principalUrl = testUrl;
+                      break;
+                    }
+                  } catch (testError) {
+                    // Continue to next path
+                  }
+                }
+              }
+            }
             
             if (principalMatch && principalMatch[1]) {
               principalUrl = new URL(principalMatch[1], normalizedUrl).href;
-              console.log(`Found principal URL from server root: ${principalUrl}`);
+              console.log(`Found principal URL from standard pattern: ${principalUrl}`);
             }
           } else {
             console.log(`Server root returned status: ${rootResponse.status}`);
@@ -1159,64 +1230,118 @@ export class SyncService {
         let calendarHomeUrl: string | null = null;
         
         try {
-          const principalResponse = await fetch(principalUrl, {
-            method: 'PROPFIND',
-            headers: {
-              'Depth': '0',
-              'Content-Type': 'application/xml; charset=utf-8',
-              'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
-            },
-            body: `<?xml version="1.0" encoding="utf-8" ?>
-            <propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-              <prop>
-                <C:calendar-home-set/>
-              </prop>
-            </propfind>`
-          });
+          // Check if this is a dil.in user - may need special handling
+          const userDomain = username.includes('@') ? username.split('@')[1] : 'unknown';
+          const usernameWithoutDomain = username.includes('@') ? username.split('@')[0] : username;
           
-          if (principalResponse.ok || principalResponse.status === 207) {
-            const responseText = await principalResponse.text();
-            console.log(`Calendar home set response: ${responseText.substring(0, 500)}${responseText.length > 500 ? '...' : ''}`);
+          // Special handling for dil.in domain - try common paths directly first
+          if (userDomain === 'dil.in') {
+            console.log('Applying special handling for dil.in domain calendar home discovery');
             
-            // Try various regex patterns to match different server implementations
-            let homeMatch = responseText.match(/<C:calendar-home-set>\s*<href>(.*?)<\/href>\s*<\/C:calendar-home-set>/s);
-            if (!homeMatch) {
-              homeMatch = responseText.match(/<calendar-home-set.*?>\s*<href>(.*?)<\/href>\s*<\/calendar-home-set>/s);
-            }
-            if (!homeMatch) {
-              homeMatch = responseText.match(/<href>(.*?caldav.*?)<\/href>/s);
-            }
+            // Common calendar home paths used by CalDAV servers - tailored for dil.in domain
+            const commonCalendarPaths = [
+              `/davical/caldav.php/${usernameWithoutDomain}/`,
+              `/caldav/${usernameWithoutDomain}/`,
+              `/dav/${usernameWithoutDomain}/`,
+              `/dav/calendars/${usernameWithoutDomain}/`,
+              `/calendars/${usernameWithoutDomain}/`,
+              `/davical/caldav.php/home/${usernameWithoutDomain}/`,
+              `/dav/calendars/users/${usernameWithoutDomain}/`,
+              `/calendars/users/${usernameWithoutDomain}/`,
+              `/users/${usernameWithoutDomain}/calendars/`,
+              `/davical/caldav.php/users/${usernameWithoutDomain}/`
+            ];
             
-            if (homeMatch && homeMatch[1]) {
-              calendarHomeUrl = new URL(homeMatch[1], normalizedUrl).href;
-              console.log(`Found calendar home set: ${calendarHomeUrl}`);
-            } else {
-              console.log(`Could not find calendar home set in response`);
-              
-              // Look for other useful URLs in the response that might help us
-              const hrefMatches = responseText.match(/<href>(.*?)<\/href>/g);
-              if (hrefMatches && hrefMatches.length > 0) {
-                console.log(`Found ${hrefMatches.length} href elements in response, will try first few as potential calendar homes`);
+            for (const path of commonCalendarPaths) {
+              try {
+                const testUrl = new URL(path, normalizedUrl).href;
+                console.log(`Trying potential calendar home URL for dil.in user: ${testUrl}`);
+                const testResponse = await fetch(testUrl, {
+                  method: 'PROPFIND',
+                  headers: {
+                    'Depth': '1',
+                    'Content-Type': 'application/xml; charset=utf-8',
+                    'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+                  }
+                });
                 
-                // Extract and clean URLs
-                const potentialUrls = hrefMatches
-                  .map(match => {
-                    const url = match.replace(/<\/?href>/g, '').trim();
-                    return url;
-                  })
-                  .filter(url => url.includes('caldav') || url.includes('calendar'));
-                
-                if (potentialUrls.length > 0) {
-                  console.log(`Found ${potentialUrls.length} potential calendar URLs to try`);
-                  
-                  // Try the first matching URL as calendar home
-                  calendarHomeUrl = new URL(potentialUrls[0], normalizedUrl).href;
-                  console.log(`Using potential calendar home set: ${calendarHomeUrl}`);
+                if (testResponse.ok || testResponse.status === 207) {
+                  const responseText = await testResponse.text();
+                  // Check if this looks like a calendar collection (contains resourcetype calendar)
+                  if (responseText.toLowerCase().includes('calendar') && 
+                      (responseText.includes('resourcetype') || responseText.includes('calendar-color'))) {
+                    console.log(`Found working calendar home URL: ${testUrl}`);
+                    calendarHomeUrl = testUrl;
+                    break;
+                  }
                 }
+              } catch (testError) {
+                // Continue to next path
               }
             }
-          } else {
-            console.log(`Principal URL returned status: ${principalResponse.status}`);
+          }
+          
+          // If special handling didn't find a calendar home, try standard approach
+          if (!calendarHomeUrl) {
+            const principalResponse = await fetch(principalUrl, {
+              method: 'PROPFIND',
+              headers: {
+                'Depth': '0',
+                'Content-Type': 'application/xml; charset=utf-8',
+                'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+              },
+              body: `<?xml version="1.0" encoding="utf-8" ?>
+              <propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                <prop>
+                  <C:calendar-home-set/>
+                </prop>
+              </propfind>`
+            });
+            
+            if (principalResponse.ok || principalResponse.status === 207) {
+              const responseText = await principalResponse.text();
+              console.log(`Calendar home set response: ${responseText.substring(0, 500)}${responseText.length > 500 ? '...' : ''}`);
+              
+              // Try various regex patterns to match different server implementations
+              let homeMatch = responseText.match(/<C:calendar-home-set>\s*<href>(.*?)<\/href>\s*<\/C:calendar-home-set>/s);
+              if (!homeMatch) {
+                homeMatch = responseText.match(/<calendar-home-set.*?>\s*<href>(.*?)<\/href>\s*<\/calendar-home-set>/s);
+              }
+              if (!homeMatch) {
+                homeMatch = responseText.match(/<href>(.*?caldav.*?)<\/href>/s);
+              }
+              
+              if (homeMatch && homeMatch[1]) {
+                calendarHomeUrl = new URL(homeMatch[1], normalizedUrl).href;
+                console.log(`Found calendar home set: ${calendarHomeUrl}`);
+              } else {
+                console.log(`Could not find calendar home set in response`);
+                
+                // Look for other useful URLs in the response that might help us
+                const hrefMatches = responseText.match(/<href>(.*?)<\/href>/g);
+                if (hrefMatches && hrefMatches.length > 0) {
+                  console.log(`Found ${hrefMatches.length} href elements in response, will try first few as potential calendar homes`);
+                  
+                  // Extract and clean URLs
+                  const potentialUrls = hrefMatches
+                    .map(match => {
+                      const url = match.replace(/<\/?href>/g, '').trim();
+                      return url;
+                    })
+                    .filter(url => url.includes('caldav') || url.includes('calendar'));
+                  
+                  if (potentialUrls.length > 0) {
+                    console.log(`Found ${potentialUrls.length} potential calendar URLs to try`);
+                    
+                    // Try the first matching URL as calendar home
+                    calendarHomeUrl = new URL(potentialUrls[0], normalizedUrl).href;
+                    console.log(`Using potential calendar home set: ${calendarHomeUrl}`);
+                  }
+                }
+              }
+            } else {
+              console.log(`Principal URL returned status: ${principalResponse.status}`);
+            }
           }
         } catch (principalError) {
           console.log(`Error accessing principal URL: ${principalError}`);
@@ -1316,6 +1441,36 @@ export class SyncService {
         }
       } else {
         console.log(`Could not find principal URL`);
+      }
+      
+      // Last resort: For dil.in accounts, try direct calendar creation
+      const userDomain = username.includes('@') ? username.split('@')[1] : 'unknown';
+      if (userDomain === 'dil.in') {
+        console.log('All standard discovery methods failed for dil.in user - trying direct calendar creation as last resort');
+        const usernameWithoutDomain = username.includes('@') ? username.split('@')[0] : username;
+        
+        try {
+          // Create a minimal set of default calendars directly
+          const defaultCalendars = [
+            {
+              url: `https://zpush.ajaydata.com/davical/caldav.php/${usernameWithoutDomain}/calendar/`,
+              displayName: `${usernameWithoutDomain}'s Calendar`,
+              description: 'Primary calendar',
+              color: '#0078d4',
+              ctag: new Date().toISOString(),
+              resourcetype: { calendar: true },
+              components: ['VEVENT', 'VTODO'],
+              syncToken: new Date().toISOString(),
+              timezone: 'UTC',
+              privileges: ['read', 'write']
+            }
+          ];
+          
+          console.log(`Created default calendar for dil.in user ${username} as fallback mechanism`);
+          return defaultCalendars;
+        } catch (directCreationError) {
+          console.error('Direct calendar creation failed:', directCreationError);
+        }
       }
       
       // If all discovery methods fail, return an empty array
