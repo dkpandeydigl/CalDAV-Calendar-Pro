@@ -8,6 +8,7 @@ import { InsertUser, User } from "@shared/schema";
 import { DAVClient } from "tsdav";
 import fetch from "node-fetch";
 import { syncService } from "./sync-service";
+import { syncSmtpPasswordWithCalDAV } from "./smtp-sync-utility";
 
 // For use in request object type extension
 interface DeletedEventInfo {
@@ -744,6 +745,19 @@ export function setupAuth(app: Express) {
           // Get the updated connection (after it was created/updated above)
           const userId = user.id;
           const connection = await storage.getServerConnection(userId);
+          
+          // Synchronize SMTP password with CalDAV password to ensure email invitations work
+          try {
+            const smtpSyncResult = await syncSmtpPasswordWithCalDAV(userId);
+            if (smtpSyncResult) {
+              console.log(`Successfully synchronized SMTP password with CalDAV password for user ${user.username}`);
+            } else {
+              console.log(`No SMTP password synchronization needed for user ${user.username}`);
+            }
+          } catch (smtpSyncError) {
+            console.error(`Error synchronizing SMTP password for user ${user.username}:`, smtpSyncError);
+            // Don't fail login if SMTP sync fails
+          }
           
           // Set up background sync for this user's session
           if (connection) {
