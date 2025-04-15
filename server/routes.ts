@@ -83,21 +83,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Original ICS data required' });
       }
       
-      console.log('Received original ICS for cancellation test:', originalIcs.substring(0, 50) + '...');
+      console.log('=== TESTING CANCELLATION ICS TRANSFORMATION ===');
+      console.log('Original ICS sample:', originalIcs.substring(0, 100) + '...');
       
-      // Create a dummy event data object
+      // Extract resource attendees from the original ICS for verification
+      const originalAttendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+      const originalAttendeeLines = originalIcs.match(originalAttendeePattern) || [];
+      const originalResourceLines = originalAttendeeLines.filter(line => 
+        line.includes('CUTYPE=RESOURCE') || 
+        line.includes('X-RESOURCE-TYPE') || 
+        line.includes('RESOURCE-TYPE')
+      );
+      
+      console.log(`Original ICS contains ${originalAttendeeLines.length} attendees and ${originalResourceLines.length} resources`);
+      
+      // Create a test event data object that matches the original ICS
+      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+      const uid = uidMatch ? uidMatch[1] : 'test-uid-12345';
+      
+      const summaryMatch = originalIcs.match(/SUMMARY:([^\r\n]+)/i);
+      const title = summaryMatch ? summaryMatch[1] : 'Test Event For Cancellation';
+      
+      const organizerMatch = originalIcs.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
+      const organizerEmail = organizerMatch ? organizerMatch[1] : 'test@example.com';
+      
+      const organizerNameMatch = originalIcs.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
+      const organizerName = organizerNameMatch ? organizerNameMatch[1] : 'Test Organizer';
+      
       const eventData: any = {
-        uid: 'test-uid-12345',
-        title: 'Test Event For Cancellation',
-        startDate: new Date(),
+        uid: uid,
+        title: title,
+        startDate: new Date(),  // Actual dates don't matter for cancellation test
         endDate: new Date(Date.now() + 3600000),
-        organizer: { email: 'test@example.com', name: 'Test Organizer' },
-        attendees: [{ email: 'attendee@example.com', name: 'Test Attendee' }],
+        organizer: { 
+          email: organizerEmail, 
+          name: organizerName 
+        },
+        attendees: originalAttendeeLines
+          .filter(line => !line.includes('CUTYPE=RESOURCE'))
+          .map(line => {
+            const emailMatch = line.match(/:mailto:([^\r\n]+)/i);
+            const nameMatch = line.match(/CN=([^:;]+)/i);
+            return {
+              email: emailMatch ? emailMatch[1] : 'attendee@example.com',
+              name: nameMatch ? nameMatch[1] : undefined
+            };
+          }),
+        resources: originalResourceLines.length > 0 ? 
+          originalResourceLines.map(line => {
+            const emailMatch = line.match(/:mailto:([^\r\n]+)/i);
+            const nameMatch = line.match(/CN=([^:;]+)/i);
+            const typeMatch = line.match(/X-RESOURCE-TYPE=([^:;]+)/i) || line.match(/RESOURCE-TYPE=([^:;]+)/i);
+            return {
+              email: emailMatch ? emailMatch[1] : 'resource@example.com',
+              adminEmail: emailMatch ? emailMatch[1] : 'resource@example.com',
+              name: nameMatch ? nameMatch[1] : 'Resource',
+              type: typeMatch ? typeMatch[1] : 'Resource',
+              subType: typeMatch ? typeMatch[1] : 'Resource'
+            };
+          }) : undefined,
+        _originalResourceAttendees: originalResourceLines.length > 0 ? originalResourceLines : undefined,
         rawData: originalIcs
       };
       
-      // Transform using our new public method
+      console.log(`Created test event data with ${eventData.attendees.length} attendees and ${eventData.resources ? eventData.resources.length : 0} resources`);
+      
+      // Transform using our unified method
+      console.log('Transforming ICS for cancellation...');
       const cancelled = emailService.transformIcsForCancellation(originalIcs, eventData);
+      
+      // Extract the resource attendees from the cancelled ICS
+      const cancelledAttendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+      const cancelledAttendeeLines = cancelled.match(cancelledAttendeePattern) || [];
+      const cancelledResourceLines = cancelledAttendeeLines.filter(line => 
+        line.includes('CUTYPE=RESOURCE') || 
+        line.includes('X-RESOURCE-TYPE') || 
+        line.includes('RESOURCE-TYPE')
+      );
+      
+      console.log(`Cancelled ICS contains ${cancelledAttendeeLines.length} attendees and ${cancelledResourceLines.length} resources`);
+      
+      // Check if all resource attendees are preserved
+      const allResourcesPreserved = originalResourceLines.every(original => 
+        cancelledResourceLines.some(cancelled => 
+          cancelled.includes(original.split(':mailto:')[1])
+        )
+      );
       
       // Compare before/after
       const result = {
@@ -105,7 +176,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         preserved: {
           originalUid: originalIcs.match(/UID:([^\r\n]+)/i)?.[1],
           cancelledUid: cancelled.match(/UID:([^\r\n]+)/i)?.[1],
-          uidsMatch: originalIcs.match(/UID:([^\r\n]+)/i)?.[1] === cancelled.match(/UID:([^\r\n]+)/i)?.[1]
+          uidsMatch: originalIcs.match(/UID:([^\r\n]+)/i)?.[1] === cancelled.match(/UID:([^\r\n]+)/i)?.[1],
+          originalResourceCount: originalResourceLines.length,
+          cancelledResourceCount: cancelledResourceLines.length,
+          allResourcesPreserved: allResourcesPreserved
         },
         changed: {
           originalMethod: originalIcs.match(/METHOD:([^\r\n]+)/i)?.[1] || 'none',
@@ -114,6 +188,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           cancelledStatus: cancelled.match(/STATUS:([^\r\n]+)/i)?.[1] || 'none',
           originalSequence: originalIcs.match(/SEQUENCE:(\d+)/i)?.[1] || '0',
           cancelledSequence: cancelled.match(/SEQUENCE:(\d+)/i)?.[1] || '0'
+        },
+        resourceLines: {
+          original: originalResourceLines,
+          cancelled: cancelledResourceLines
         },
         originalIcs,
         cancelledIcs: cancelled

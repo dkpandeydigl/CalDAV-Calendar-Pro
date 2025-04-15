@@ -880,33 +880,68 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     data: EventInvitationData
   ): Promise<{ success: boolean; message: string; details?: any }> {
     try {
+      console.log('=== BEGINNING EVENT CANCELLATION PROCESS ===');
+      console.log(`Event title: "${data.title}" (UID: ${data.uid})`);
+      
       // Initialize email service if not already initialized
       if (!this.transporter || !this.config || this.config.userId !== userId) {
+        console.log(`Initializing email service for user ID ${userId}`);
         const initSuccess = await this.initialize(userId);
         if (!initSuccess) {
+          console.error('Email service initialization failed');
           return {
             success: false,
             message: 'Failed to initialize email service. Please check your SMTP configuration.'
           };
         }
+        console.log('Email service initialization successful');
       }
 
       // Per RFC 5546, we MUST use the original ICS data when cancelling events
       // and only make the necessary modifications to convert it to a cancellation
       let cancellationIcsData: string;
       
-      if (data.rawData && typeof data.rawData === 'string') {
-        // Transform the existing ICS directly - this ensures perfect compatibility
-        // with the original event including preserving the exact UID
-        console.log('Using original ICS data with direct modification for cancellation');
-        cancellationIcsData = this.transformIcsForCancellation(data.rawData, data);
-      } else {
-        // Fallback to generating new ICS if raw data is not available
-        console.log('No original ICS data available, generating new cancellation ICS');
+      // Validate the raw data first
+      if (!data.rawData || typeof data.rawData !== 'string' || data.rawData.length < 50) {
+        console.warn(`Raw ICS data is missing or invalid (length: ${data.rawData ? data.rawData.length : 0})`);
+        console.log('Generating new cancellation ICS as a fallback');
+        
         // Mark the status as CANCELLED for ICS generation
         const cancellationData = { ...data, status: 'CANCELLED' };
         cancellationIcsData = this.generateICSData(cancellationData);
+      } else {
+        // We have valid raw data, use our specialized transformer for maximum RFC 5546 compliance
+        console.log(`Raw ICS data available (${data.rawData.length} chars), using direct modification for cancellation`);
+        console.log('This preserves the exact UID and all original resource attendees');
+        
+        try {
+          cancellationIcsData = this.transformIcsForCancellation(data.rawData, data);
+          
+          // Validate the generated ICS
+          const hasMethod = cancellationIcsData.includes('METHOD:CANCEL');
+          const hasStatus = cancellationIcsData.includes('STATUS:CANCELLED');
+          const hasValidStructure = cancellationIcsData.includes('BEGIN:VCALENDAR') && 
+                                   cancellationIcsData.includes('END:VCALENDAR') &&
+                                   cancellationIcsData.includes('BEGIN:VEVENT') &&
+                                   cancellationIcsData.includes('END:VEVENT');
+          
+          console.log(`Validation - METHOD:CANCEL: ${hasMethod}, STATUS:CANCELLED: ${hasStatus}, Valid structure: ${hasValidStructure}`);
+          
+          if (!hasMethod || !hasStatus || !hasValidStructure) {
+            throw new Error('Generated cancellation ICS failed validation');
+          }
+        } catch (transformError) {
+          console.error('Error in ICS transformation:', transformError);
+          console.log('Falling back to standard cancellation ICS generation');
+          const cancellationData = { ...data, status: 'CANCELLED' };
+          cancellationIcsData = this.generateICSData(cancellationData);
+        }
       }
+      
+      // Log the number of recipients
+      const attendeeCount = data.attendees?.length || 0;
+      const resourceCount = data.resources?.length || 0;
+      console.log(`Sending cancellation to ${attendeeCount} attendees and ${resourceCount} resources`);
       
       // Create arrays to track results for both attendees and resources
       let allResults: PromiseSettledResult<any>[] = [];
@@ -914,7 +949,9 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       
       // Send cancellation to each attendee
       if (data.attendees && data.attendees.length > 0) {
+        console.log(`Processing ${data.attendees.length} attendees for cancellation emails`);
         const attendeePromises = data.attendees.map(attendee => {
+          console.log(`Sending cancellation to attendee: ${attendee.email}`);
           return this.sendCancellationEmail(data, attendee, cancellationIcsData);
         });
         
@@ -985,16 +1022,34 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
    */
   public transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
+      // Add detailed logging to help with debugging
+      console.log('=== TRANSFORMING ICS FOR CANCELLATION (RFC 5546 COMPLIANT) ===');
+      console.log(`Original ICS length: ${originalIcs.length} characters`);
+      
+      // First, extract the original UID to make absolutely sure we preserve it
+      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+      if (!uidMatch || !uidMatch[1]) {
+        console.warn('Could not find UID in original ICS data, falling back to generation');
+        const cancellationData = { ...data, status: 'CANCELLED' };
+        return this.generateICSData(cancellationData);
+      }
+      
+      const originalUid = uidMatch[1];
+      console.log(`PRESERVING EXACT ORIGINAL UID FOR CANCELLATION: ${originalUid}`);
+      
+      // Extract the original sequence number
+      const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
+      const originalSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
+      console.log(`Original sequence number: ${originalSequence}, will increment to ${originalSequence + 1}`);
+      
       // Import the dedicated cancellation generator
       const { generateCancellationIcs } = require('./ics-cancellation-generator');
       
-      console.log('Using dedicated cancellation generator for maximum RFC 5546 compliance');
-      
-      // Extract resource attendees first for preservation
+      // Extract ALL attendee lines for comprehensive preservation
       const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
       const allAttendeeLines = originalIcs.match(attendeePattern) || [];
       
-      // Specifically identify resource attendee lines for special handling
+      // Specifically identify resource attendee lines using multiple patterns
       const resourceAttendeeLines = allAttendeeLines.filter(line => 
         line.includes('CUTYPE=RESOURCE') || 
         line.includes('X-RESOURCE-TYPE') || 
@@ -1006,21 +1061,46 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       console.log(`Found ${allAttendeeLines.length} total attendee lines`);
       console.log(`Identified ${resourceAttendeeLines.length} resource attendee lines to preserve`);
       
-      // Make a copy of the data object to ensure we preserve resources when generating the event
-      const eventDataWithResources = { ...data };
-      
-      // If resource attendee lines were found, add them to the event data
+      // Log the actual resource attendee lines for debugging
       if (resourceAttendeeLines.length > 0) {
-        eventDataWithResources._originalResourceAttendees = resourceAttendeeLines;
-        console.log(`Preserved ${resourceAttendeeLines.length} resource attendee lines for cancellation`);
+        console.log('Resource attendee lines to preserve:');
+        resourceAttendeeLines.forEach((line, idx) => {
+          console.log(`#${idx+1}: ${line}`);
+        });
       } else {
-        // If we couldn't extract resource attendees from the attendee lines,
-        // try an alternative approach to extract them from the raw data
-        this.extractResourcesFromRawIcs(originalIcs, eventDataWithResources);
+        console.log('No resource attendee lines found in original ICS');
+      }
+      
+      // Create a complete event data object with all available data
+      const completeEventData = { 
+        ...data,
+        uid: originalUid,  // Always use the extracted original UID
+        sequence: originalSequence,  // Use the original sequence (will be incremented)
+        _originalResourceAttendees: resourceAttendeeLines.length > 0 ? resourceAttendeeLines : undefined
+      };
+      
+      // Try to extract resources as structured objects if we don't have original lines
+      if (resourceAttendeeLines.length === 0) {
+        console.log('Attempting to extract resources from raw ICS data in alternative ways');
+        this.extractResourcesFromRawIcs(originalIcs, completeEventData);
       }
       
       // Generate the cancellation ICS with our specialized generator
-      return generateCancellationIcs(originalIcs, eventDataWithResources);
+      console.log('Generating cancellation ICS with specialized generator');
+      const result = generateCancellationIcs(originalIcs, completeEventData);
+      
+      // Verify the result has the necessary components
+      const resultHasMethod = result.includes('METHOD:CANCEL');
+      const resultHasStatus = result.includes('STATUS:CANCELLED');
+      const resultHasUid = result.includes(`UID:${originalUid}`);
+      
+      console.log(`Verification - METHOD:CANCEL: ${resultHasMethod}, STATUS:CANCELLED: ${resultHasStatus}, Original UID preserved: ${resultHasUid}`);
+      
+      // Count resource attendees in result
+      const resultResourceCount = (result.match(/CUTYPE=RESOURCE/g) || []).length;
+      console.log(`Original resource count: ${resourceAttendeeLines.length}, Result resource count: ${resultResourceCount}`);
+      
+      return result;
     } catch (error) {
       console.error('Error transforming ICS for cancellation:', error);
       // Fall back to generating new ICS if transformation fails
@@ -1297,13 +1377,68 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
   public generateICSData(data: EventInvitationData): string {
     const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status, rawData, sequence } = data;
     
-    // For cancellations, use our RFC-compliant cancellation generator
+    // For cancellations, use our unified RFC-compliant cancellation generator
     if (status === 'CANCELLED') {
       try {
-        // Use our proper cancellation function from ical-utils
+        // Log what we're doing for clarity
+        console.log('=== GENERATING CANCELLATION ICS FILE ===');
+        
+        // IMPORTANT: If we have raw ICS data, always use our dedicated cancellation generator
+        // which preserves the exact original format including all resource attendees
+        if (rawData && typeof rawData === 'string') {
+          console.log('Using raw ICS data with specialized cancellation generator for full RFC 5546 compliance');
+          
+          // Import our specialized generator that properly preserves ALL original data
+          const { generateCancellationIcs } = require('./ics-cancellation-generator');
+          
+          // First extract and log resource attendees for diagnostics
+          const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const allAttendeeLines = rawData.match(attendeePattern) || [];
+          const resourceAttendeeLines = allAttendeeLines.filter(line => 
+            line.includes('CUTYPE=RESOURCE') || 
+            line.includes('X-RESOURCE-TYPE') || 
+            line.includes('RESOURCE-TYPE') ||
+            line.includes('X-RESOURCE-CAPACITY') || 
+            line.includes('RESOURCE-CAPACITY')
+          );
+          
+          console.log(`Original ICS contains ${allAttendeeLines.length} attendees and ${resourceAttendeeLines.length} resources`);
+          
+          // Create a copy with all the original data plus the extracted resource lines
+          const completeEventData = { ...data };
+          
+          // Store original resource attendee lines for direct preservation
+          if (resourceAttendeeLines.length > 0) {
+            completeEventData._originalResourceAttendees = resourceAttendeeLines;
+            console.log(`Added ${resourceAttendeeLines.length} original resource attendee lines for preservation`);
+            
+            // Log contents for debugging
+            resourceAttendeeLines.forEach((line, idx) => {
+              console.log(`Resource line #${idx+1}: ${line}`);
+            });
+          }
+          
+          // Use our specialized cancellation generator
+          return generateCancellationIcs(rawData, completeEventData);
+        }
+        
+        // Fallback path if no raw data is available
+        console.log('No raw ICS data available - using alternative cancellation generator');
+        
+        // Use our proper cancellation function from ical-utils as a fallback
         const { generateCancellationICalEvent } = require('./ical-utils');
         
-        // Extract original UID from rawData if available, to ensure we use the EXACT same UID
+        // Debug resources
+        if (resources && Array.isArray(resources)) {
+          console.log(`Resources to include in cancellation: ${resources.length}`);
+          resources.forEach((res, idx) => {
+            console.log(`Resource #${idx+1}: ${res.name || 'unnamed'} (${res.email || 'no email'}) type: ${res.type || 'unspecified'}`);
+          });
+        } else {
+          console.log(`No resources array available for cancellation`);
+        }
+        
+        // Extract original UID if possible for compliance
         let originalUid = uid;
         if (rawData && typeof rawData === 'string') {
           const uidMatch = rawData.match(/UID:([^\r\n]+)/);
@@ -1311,16 +1446,6 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
             originalUid = uidMatch[1];
             console.log(`Using original UID from raw data: ${originalUid}`);
           }
-        }
-        
-        // Debug resources
-        if (resources && Array.isArray(resources)) {
-          console.log(`Processing cancellation with ${resources.length} resources:`);
-          resources.forEach((res, idx) => {
-            console.log(`Resource #${idx+1}: ${res.name || 'unnamed'} (${res.email || 'no email'}) type: ${res.type || 'unspecified'}`);
-          });
-        } else {
-          console.log(`No resources array available for cancellation, will attempt to extract from raw data`);
         }
         
         // Prepare the event object for the cancellation function
