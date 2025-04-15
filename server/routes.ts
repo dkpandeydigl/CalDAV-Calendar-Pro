@@ -350,10 +350,179 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
-      // Create the calendar locally
-      const newCalendar = await storage.createCalendar(calendarData);
+      // Check if this calendar should be created on the server
+      let serverCreationSuccessful = true;
+      let serverCalendarUrl: string | null = null;
       
-      res.status(201).json(newCalendar);
+      if (calendarData.url || (!calendarData.isLocal && calendarData.name)) {
+        try {
+          // Get the user's server connection
+          const connection = await storage.getServerConnection(userId);
+          
+          if (connection && connection.status === 'connected') {
+            console.log(`Attempting to create or verify calendar on server before creating locally`);
+            // Create a DAV client
+            const { DAVClient } = await import('tsdav');
+            const davClient = new DAVClient({
+              serverUrl: connection.url,
+              credentials: {
+                username: connection.username,
+                password: connection.password
+              },
+              authMethod: 'Basic',
+              defaultAccountType: 'caldav'
+            });
+            
+            // Login to the server
+            await davClient.login();
+            
+            // If this is a custom URL, verify it exists before creating
+            if (calendarData.url) {
+              console.log(`Verifying custom calendar URL: ${calendarData.url}`);
+              
+              try {
+                // Create auth header
+                const authHeader = 'Basic ' + Buffer.from(`${connection.username}:${connection.password}`).toString('base64');
+                
+                // Check if the URL is accessible
+                const response = await fetch(calendarData.url, {
+                  method: 'PROPFIND',
+                  headers: {
+                    'Authorization': authHeader,
+                    'Depth': '0',
+                    'Content-Type': 'application/xml'
+                  }
+                });
+                
+                if (response.ok || response.status === 207) {
+                  console.log(`Custom calendar URL verified successfully`);
+                  serverCalendarUrl = calendarData.url;
+                } else {
+                  console.error(`Custom calendar URL is not accessible, status: ${response.status}`);
+                  serverCreationSuccessful = false;
+                  return res.status(400).json({ 
+                    message: `The calendar URL could not be accessed. Status: ${response.status}`
+                  });
+                }
+              } catch (urlError) {
+                console.error(`Error verifying custom calendar URL:`, urlError);
+                serverCreationSuccessful = false;
+                return res.status(400).json({ 
+                  message: `Error verifying calendar URL: ${urlError.message || 'Unknown error'}`
+                });
+              }
+            } 
+            // Otherwise try to create a new calendar on the server
+            else if (!calendarData.isLocal) {
+              console.log(`Attempting to create new calendar "${calendarData.name}" on server`);
+              
+              try {
+                // Get calendars first to determine the base URL structure
+                const davCalendars = await davClient.fetchCalendars();
+                
+                if (davCalendars && davCalendars.length > 0) {
+                  // Extract the base URL pattern
+                  let calendarHome = '';
+                  for (const cal of davCalendars) {
+                    if (cal.url) {
+                      const basePath = cal.url.split('/').slice(0, -2).join('/') + '/';
+                      calendarHome = basePath;
+                      break;
+                    }
+                  }
+                  
+                  if (calendarHome) {
+                    console.log(`Using calendar home URL: ${calendarHome}`);
+                    
+                    // Create a new calendar with sanitized name for the URL
+                    const sanitizedName = calendarData.name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+                    
+                    try {
+                      const newCalendarUrl = await davClient.makeCalendar({
+                        url: `${calendarHome}${sanitizedName}/`,
+                        displayName: calendarData.name, 
+                        description: calendarData.description || '',
+                        color: calendarData.color || '#0078d4'
+                      });
+                      
+                      if (newCalendarUrl) {
+                        console.log(`Successfully created calendar on server: ${newCalendarUrl}`);
+                        serverCalendarUrl = newCalendarUrl;
+                      } else {
+                        console.error(`Server did not return URL for created calendar`);
+                        serverCreationSuccessful = false;
+                        return res.status(500).json({ 
+                          message: 'Server did not return calendar URL after creation'
+                        });
+                      }
+                    } catch (createError) {
+                      console.error(`Error creating calendar on server:`, createError);
+                      serverCreationSuccessful = false;
+                      return res.status(400).json({ 
+                        message: `Failed to create calendar on server: ${createError.message || 'Unknown error'}`
+                      });
+                    }
+                  } else {
+                    console.error(`Could not determine calendar home URL`);
+                    serverCreationSuccessful = false;
+                    return res.status(500).json({ 
+                      message: 'Could not determine where to create the calendar on the server'
+                    });
+                  }
+                } else {
+                  console.error(`No existing calendars found to determine URL structure`);
+                  serverCreationSuccessful = false;
+                  return res.status(500).json({ 
+                    message: 'Could not find existing calendars to determine server structure'
+                  });
+                }
+              } catch (serverError) {
+                console.error(`Server calendar creation error:`, serverError);
+                serverCreationSuccessful = false;
+                return res.status(500).json({ 
+                  message: `Server error during calendar creation: ${serverError.message || 'Unknown error'}`
+                });
+              }
+            }
+          } else {
+            console.warn(`No server connection available or not connected`);
+            
+            // For non-local calendars, require server connection
+            if (!calendarData.isLocal) {
+              serverCreationSuccessful = false;
+              return res.status(400).json({ 
+                message: 'Cannot create a server calendar without an active server connection'
+              });
+            }
+          }
+        } catch (serverCheckError) {
+          console.error(`Error during server calendar verification/creation:`, serverCheckError);
+          serverCreationSuccessful = false;
+          
+          // If not explicitly local, fail when server operations fail
+          if (!calendarData.isLocal) {
+            return res.status(500).json({
+              message: `Failed to create calendar on server: ${serverCheckError.message || 'Unknown error'}`
+            });
+          }
+        }
+      }
+      
+      // Only create locally if the calendar is meant to be local-only OR server creation was successful
+      if (calendarData.isLocal || serverCreationSuccessful) {
+        // Update with server URL if available
+        if (serverCalendarUrl) {
+          calendarData.url = serverCalendarUrl;
+          calendarData.isLocal = false;
+        }
+        
+        // Create the calendar locally
+        const newCalendar = await storage.createCalendar(calendarData);
+        return res.status(201).json(newCalendar);
+      }
+      
+      // This is a fallback that should not be reached due to the early returns above
+      return res.status(500).json({ message: 'Calendar creation failed' });
     } catch (err) {
       console.error("Error creating calendar:", err);
       return handleZodError(err, res);
