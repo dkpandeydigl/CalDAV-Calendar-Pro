@@ -626,6 +626,11 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             </Button>
           </div>
           
+          {/* Sync Status Indicator */}
+          <div className="mb-4 flex justify-center">
+            <SyncStatusIndicator />
+          </div>
+          
           <ScrollArea className="flex-1 pr-2 -mr-2" type="always">
             {/* Own Calendars Section */}
             <Collapsible 
