@@ -1443,11 +1443,13 @@ export class SyncService {
         console.log(`Could not find principal URL`);
       }
       
-      // Last resort: Try direct calendar creation for any valid user
-      console.log('All standard discovery methods failed - trying direct calendar creation as last resort');
+      // Last resort: Try to discover all available calendars by scanning 
+      console.log('All standard discovery methods failed - trying comprehensive calendar discovery');
       
       // Username can be either plain or with domain, we need to handle both cases
       let usernameSegment = username;
+      let foundCalendars: any[] = [];
+      
       // If username contains @ (email format), use different potential formats
       if (username.includes('@')) {
         const usernameWithoutDomain = username.split('@')[0];
@@ -1461,31 +1463,205 @@ export class SyncService {
         // Try both potential username formats with different fallback paths
         for (const potentialUsername of potentialUserPaths) {
           try {
-            // Try direct PROPFIND to see if a calendar exists at this path
-            const testUrl = `${normalizedUrl}caldav.php/${encodeURIComponent(potentialUsername)}/calendar/`;
-            console.log(`Testing direct calendar access: ${testUrl}`);
+            // Try direct PROPFIND to see if calendars exist at the user's root path
+            const userRootUrl = `${normalizedUrl}caldav.php/${encodeURIComponent(potentialUsername)}/`;
+            console.log(`Scanning for calendars at user root path: ${userRootUrl}`);
             
-            const testResponse = await fetch(testUrl, {
+            const rootResponse = await fetch(userRootUrl, {
               method: 'PROPFIND',
               headers: {
-                'Depth': '0',
+                'Depth': '1',  // Include immediate children to find all calendars
                 'Content-Type': 'application/xml; charset=utf-8',
                 'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
-              }
+              },
+              body: `<?xml version="1.0" encoding="utf-8" ?>
+                    <propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                      <prop>
+                        <resourcetype />
+                        <displayname />
+                        <C:calendar-description />
+                        <C:calendar-timezone />
+                        <C:supported-calendar-component-set />
+                        <C:calendar-color />
+                        <current-user-privilege-set />
+                        <getctag />
+                      </prop>
+                    </propfind>`
             });
             
-            // If we get a successful response, use this path
-            if (testResponse.ok || testResponse.status === 207) {
-              console.log(`Found working calendar at: ${testUrl}`);
-              usernameSegment = potentialUsername;
+            // If we get a successful response, we may have found the user's calendars path
+            if (rootResponse.ok || rootResponse.status === 207) {
+              const text = await rootResponse.text();
+              console.log(`Found potential calendars at user root path: ${userRootUrl}`);
+              
+              // Look for calendar collections in the response
+              if (text.includes('calendar-collection') || text.includes('<C:calendar') || text.includes('calendar>')) {
+                console.log('Response contains calendar collections');
+                
+                // Parse the XML to extract calendar information
+                try {
+                  const parser = new DOMParser();
+                  const doc = parser.parseFromString(text, 'application/xml');
+                  const responses = doc.getElementsByTagNameNS('DAV:', 'response');
+                  
+                  console.log(`Found ${responses.length} resources in user's root path`);
+                  
+                  for (let i = 0; i < responses.length; i++) {
+                    const response = responses[i];
+                    const href = response.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent;
+                    
+                    if (!href) continue;
+                    
+                    // Check if this is a calendar (has resourcetype/calendar)
+                    const isCalendar = response.innerHTML.includes('calendar-collection') || 
+                                      response.innerHTML.includes('<C:calendar') || 
+                                      response.innerHTML.includes('calendar>');
+                    
+                    if (isCalendar) {
+                      const displayName = response.getElementsByTagNameNS('DAV:', 'displayname')[0]?.textContent || 
+                                         `Calendar ${i}`;
+                      
+                      const description = response.getElementsByTagNameNS('urn:ietf:params:xml:ns:caldav', 'calendar-description')[0]?.textContent || 
+                                         'Calendar';
+                      
+                      // Extract color if available
+                      const colorElement = response.getElementsByTagNameNS('urn:ietf:params:xml:ns:caldav', 'calendar-color')[0];
+                      const color = colorElement?.textContent || '#0078d4';
+                      
+                      // Create full URL for this calendar
+                      let calendarUrl = new URL(href, userRootUrl).href;
+                      // Some servers respond with relative URLs that are incorrectly combined
+                      if (!calendarUrl.includes(normalizedUrl)) {
+                        calendarUrl = `${normalizedUrl}${href.startsWith('/') ? href.substring(1) : href}`;
+                      }
+                      
+                      console.log(`Found calendar: ${displayName} at ${calendarUrl}`);
+                      
+                      foundCalendars.push({
+                        url: calendarUrl,
+                        displayName: displayName,
+                        description: description,
+                        color: color,
+                        ctag: new Date().toISOString(),
+                        resourcetype: { calendar: true },
+                        components: ['VEVENT', 'VTODO'],
+                        syncToken: new Date().toISOString(),
+                        timezone: 'UTC',
+                        privileges: ['read', 'write']
+                      });
+                    }
+                  }
+                } catch (parseError) {
+                  console.error('Error parsing calendar discovery XML:', parseError);
+                }
+              }
+              
+              if (foundCalendars.length > 0) {
+                usernameSegment = potentialUsername;
+                break;
+              }
+            }
+            
+            // If we didn't find calendars at the root, try specific known paths
+            if (foundCalendars.length === 0) {
+              // Try the default calendar path
+              const defaultCalendarUrl = `${normalizedUrl}caldav.php/${encodeURIComponent(potentialUsername)}/calendar/`;
+              console.log(`Testing default calendar path: ${defaultCalendarUrl}`);
+              
+              const calendarResponse = await fetch(defaultCalendarUrl, {
+                method: 'PROPFIND',
+                headers: {
+                  'Depth': '0',
+                  'Content-Type': 'application/xml; charset=utf-8',
+                  'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+                }
+              });
+              
+              if (calendarResponse.ok || calendarResponse.status === 207) {
+                console.log(`Found working default calendar at: ${defaultCalendarUrl}`);
+                usernameSegment = potentialUsername;
+                
+                foundCalendars.push({
+                  url: defaultCalendarUrl,
+                  displayName: `${potentialUsername}'s Calendar`,
+                  description: 'Primary calendar',
+                  color: '#0078d4',
+                  ctag: new Date().toISOString(),
+                  resourcetype: { calendar: true },
+                  components: ['VEVENT', 'VTODO'],
+                  syncToken: new Date().toISOString(),
+                  timezone: 'UTC',
+                  privileges: ['read', 'write']
+                });
+              }
+            }
+            
+            // If we found calendars with this username format, no need to try others
+            if (foundCalendars.length > 0) {
               break;
             }
           } catch (error) {
-            // Just continue to try the next format
+            console.error(`Error exploring calendars for ${potentialUsername}:`, error);
+            // Continue to the next format
           }
         }
       }
       
+      // Additional fallback: Try scanning for common calendar names
+      if (foundCalendars.length === 0) {
+        try {
+          // Common calendar names to check
+          const commonCalendarNames = [
+            'calendar', 'home', 'work', 'personal', 'default',
+            'lalchand', 'lal', 'lalchandji', 'ashu', 'dkpandey', 'dk_pp'
+          ];
+          
+          for (const calName of commonCalendarNames) {
+            const tryUrl = `${normalizedUrl}caldav.php/${encodeURIComponent(usernameSegment)}/${calName}/`;
+            console.log(`Testing common calendar name: ${tryUrl}`);
+            
+            try {
+              const response = await fetch(tryUrl, {
+                method: 'PROPFIND',
+                headers: {
+                  'Depth': '0',
+                  'Content-Type': 'application/xml; charset=utf-8',
+                  'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+                }
+              });
+              
+              if (response.ok || response.status === 207) {
+                console.log(`Found working calendar at: ${tryUrl}`);
+                
+                foundCalendars.push({
+                  url: tryUrl,
+                  displayName: calName.charAt(0).toUpperCase() + calName.slice(1),
+                  description: `${calName} calendar`,
+                  color: '#0078d4',
+                  ctag: new Date().toISOString(),
+                  resourcetype: { calendar: true },
+                  components: ['VEVENT', 'VTODO'],
+                  syncToken: new Date().toISOString(),
+                  timezone: 'UTC',
+                  privileges: ['read', 'write']
+                });
+              }
+            } catch (e) {
+              // Just skip this one and try the next
+            }
+          }
+        } catch (error) {
+          console.error('Error in common calendar name checks:', error);
+        }
+      }
+      
+      // If we found any calendars, return them
+      if (foundCalendars.length > 0) {
+        console.log(`Found ${foundCalendars.length} calendars through comprehensive discovery for ${username}`);
+        return foundCalendars;
+      }
+      
+      // Last resort: create a default calendar
       try {
         // Create a minimal set of default calendars directly
         const defaultCalendars = [
@@ -1503,10 +1679,10 @@ export class SyncService {
           }
         ];
         
-        console.log(`Created default calendar for user ${username} as fallback mechanism`);
+        console.log(`Created default calendar for user ${username} as last resort fallback mechanism`);
         return defaultCalendars;
       } catch (directCreationError) {
-        console.error('Direct calendar creation failed:', directCreationError);
+        console.error('Default calendar creation failed:', directCreationError);
       }
       
       // If all discovery methods fail, return an empty array
