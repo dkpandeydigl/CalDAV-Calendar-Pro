@@ -664,58 +664,13 @@ export class MemStorage implements IStorage {
   }
 }
 
-// Use in-memory storage by default due to PostgreSQL endpoint being disabled
-let storage: IStorage;
+// Create and export the memory storage instance directly
+const memStorage = new MemStorage();
 
-// Create a function to initialize storage with fallback
-async function initStorage() {
-  // Temporarily use in-memory storage due to PostgreSQL endpoint being disabled
-  console.log("Using in-memory storage to bypass database issues");
-  const memStorage = new MemStorage();
-  await memStorage.initializeDatabase();
-  return memStorage;
-  
-  /* Disabled due to PostgreSQL endpoint issues:
-  if (process.env.DATABASE_URL) {
-    try {
-      console.log("Attempting to use PostgreSQL database storage");
-      
-      // Try with PostgreSQL first
-      const dbStorage = new DatabaseStorage();
-      
-      // Test if the database is accessible (will throw if there's a connection issue)
-      await dbStorage.initializeDatabase();
-      
-      console.log("Database initialized successfully");
-      return dbStorage;
-    } catch (err) {
-      console.error("Failed to initialize database storage, falling back to in-memory:", err);
-      
-      // If database fails, fall back to in-memory
-      const memStorage = new MemStorage();
-      await memStorage.initializeDatabase();
-      console.log("Using in-memory storage due to database connection failure");
-      return memStorage;
-    }
-  } else {
-    console.log("No DATABASE_URL found, using in-memory storage");
-    const memStorage = new MemStorage();
-    await memStorage.initializeDatabase();
-    return memStorage;
-  }
-  */
-}
+// Initialize it immediately
+memStorage.initializeDatabase().catch(err => {
+  console.error("Error initializing memory storage:", err);
+});
 
-// Start with memory storage as default
-storage = new MemStorage();
-
-// Initialize storage asynchronously and update the reference when ready
-initStorage()
-  .then(initedStorage => {
-    storage = initedStorage;
-  })
-  .catch(err => {
-    console.error("Error during storage initialization:", err);
-  });
-
-export { storage };
+// Export the memory storage as the main storage interface
+export const storage: IStorage = memStorage;
