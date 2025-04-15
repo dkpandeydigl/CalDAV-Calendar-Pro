@@ -438,10 +438,29 @@ export class SyncService {
       });
       
       // Try to login and fetch calendars
-      await davClient.login();
+      try {
+        console.log(`Logging into CalDAV server for user ID ${userId} at URL: ${url}`);
+        await davClient.login();
+        console.log(`Successfully logged into CalDAV server for user ID ${userId}`);
+      } catch (loginError) {
+        console.error(`Failed to login to CalDAV server for user ID ${userId}:`, loginError);
+        
+        // Try to provide more details about login failure
+        let errorMessage = "Unknown login error";
+        if (loginError instanceof Error) {
+          errorMessage = loginError.message;
+        } else if (typeof loginError === 'string') {
+          errorMessage = loginError;
+        } else if (loginError && typeof loginError === 'object') {
+          errorMessage = JSON.stringify(loginError);
+        }
+        
+        console.error(`Login error details: ${errorMessage}`);
+        return false;
+      }
       
       // Discover calendars
-      console.log(`Discovering calendars for user ID ${userId}`);
+      console.log(`Discovering calendars for user ID ${userId} at ${url}`);
       
       // If a specific calendar ID was provided, only sync that calendar
       if (calendarId !== null) {
@@ -751,22 +770,51 @@ export class SyncService {
         }
       } else {
         // Normal sync for all calendars
-        const davCalendars = await davClient.fetchCalendars();
-        console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server`);
+        console.log(`Attempting to fetch calendars for user ID ${userId} from CalDAV server at ${url}`);
         
-        // Process each calendar - first update our local calendars database
-        for (const davCalendar of davCalendars) {
-          try {
-            // Check if we have this calendar in our database
-            // First try to find by URL
-            let localCalendar = await this.findCalendarByUrl(davCalendar.url, userId);
-            
-            // If we couldn't find it by URL, try to find it by name
-            if (!localCalendar) {
-              // Get all calendars for this user
-              const userCalendars = await storage.getCalendars(userId);
-              localCalendar = userCalendars.find(cal => cal.name === davCalendar.displayName);
+        try {
+          const davCalendars = await davClient.fetchCalendars();
+          console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server`);
+          
+          if (davCalendars.length === 0) {
+            console.log(`No calendars found for user ID ${userId} at CalDAV server. Checking server connection...`);
+            // Try a simpler server verification to see if credentials are working
+            try {
+              // Try a simpler server verification using a direct fetch
+              const normalizedUrl = url.endsWith('/') ? url : url + '/';
+              const response = await fetch(`${normalizedUrl}`, {
+                method: 'PROPFIND',
+                headers: {
+                  'Depth': '0',
+                  'Content-Type': 'application/xml',
+                  'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+                },
+                body: '<?xml version="1.0" encoding="utf-8" ?><propfind xmlns="DAV:"><prop><resourcetype/></prop></propfind>'
+              });
+              
+              console.log(`Direct server verification status: ${response.status}`);
+              if (!response.ok && response.status !== 207) {
+                console.error(`Server verification failed with status ${response.status}`);
+                return false;
+              }
+            } catch (verifyError) {
+              console.error(`Error verifying server connection: ${verifyError}`);
             }
+          }
+          
+          // Process each calendar - first update our local calendars database
+          for (const davCalendar of davCalendars) {
+            try {
+              // Check if we have this calendar in our database
+              // First try to find by URL
+              let localCalendar = await this.findCalendarByUrl(davCalendar.url, userId);
+              
+              // If we couldn't find it by URL, try to find it by name
+              if (!localCalendar) {
+                // Get all calendars for this user
+                const userCalendars = await storage.getCalendars(userId);
+                localCalendar = userCalendars.find(cal => cal.name === davCalendar.displayName);
+              }
             
             let calendarId: number;
             
@@ -990,26 +1038,25 @@ export class SyncService {
             console.error(`Error processing calendar ${davCalendar.displayName}:`, error);
           }
         }
-      }
+        
+        // After downloading events from the server, let's push any local events to the server
+        console.log(`Now pushing local events to server for user ID ${userId}`);
+        await this.pushLocalEvents(userId, calendarId ? calendarId : undefined);
+    
+        // Store the time of the sync
+        const syncTime = new Date();
       
-      // After downloading events from the server, let's push any local events to the server
-      console.log(`Now pushing local events to server for user ID ${userId}`);
-      await this.pushLocalEvents(userId, calendarId ? calendarId : undefined);
-      
-      // Store the time of the sync
-      const syncTime = new Date();
-      
-      // Update connection status
-      await storage.updateServerConnection(job.connection.id, {
-        status: 'connected',
-        lastSync: syncTime
-      });
-      
-      // Update the job's last sync time
-      job.lastSync = syncTime;
-      
-      console.log(`Sync completed for user ID ${userId}`);
-      return true;
+        // Update connection status
+        await storage.updateServerConnection(job.connection.id, {
+          status: 'connected',
+          lastSync: syncTime
+        });
+        
+        // Update the job's last sync time
+        job.lastSync = syncTime;
+        
+        console.log(`Sync completed for user ID ${userId}`);
+        return true;
     } catch (error) {
       console.error(`Sync failed for user ID ${userId}:`, error);
       
@@ -1032,7 +1079,7 @@ export class SyncService {
    * @param userId The user ID to limit the search to
    * @returns The calendar if found, undefined otherwise
    */
-  private async findCalendarByUrl(url: string, userId: number): Promise<Calendar | undefined> {
+  private async findCalendarByURL(url: string, userId: number): Promise<Calendar | undefined> {
     const calendars = await storage.getCalendars(userId);
     
     // Check for exact match
