@@ -978,33 +978,19 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
   
   /**
    * Transform original ICS data for cancellation (RFC 5546 compliant)
-   * This directly modifies the raw ICS data while preserving critical fields like UID
+   * Uses the specialized ICS cancellation generator to ensure full compliance
    * @param originalIcs The original ICS data string
    * @param data Additional event data for the cancellation
    * @returns Modified ICS data for cancellation
    */
   public transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
-      console.log('Transforming original ICS for cancellation according to RFC 5546');
+      // Import the dedicated cancellation generator
+      const { generateCancellationIcs } = require('./ics-cancellation-generator');
       
-      // First, extract the original UID to make absolutely sure we preserve it
-      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
-      if (!uidMatch || !uidMatch[1]) {
-        console.warn('Could not find UID in original ICS data, falling back to generation');
-        const cancellationData = { ...data, status: 'CANCELLED' };
-        return this.generateICSData(cancellationData);
-      }
+      console.log('Using dedicated cancellation generator for maximum RFC 5546 compliance');
       
-      const originalUid = uidMatch[1];
-      console.log(`PRESERVING EXACT ORIGINAL UID FOR CANCELLATION: ${originalUid}`);
-      
-      // Extract the original sequence number and increment it
-      const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
-      const originalSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
-      const newSequence = originalSequence + 1;
-      console.log(`Incrementing sequence from ${originalSequence} to ${newSequence}`);
-      
-      // Extract all attendee lines, particularly resource attendees for preservation
+      // Extract resource attendees first for preservation
       const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
       const allAttendeeLines = originalIcs.match(attendeePattern) || [];
       
@@ -1023,7 +1009,7 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       // Make a copy of the data object to ensure we preserve resources when generating the event
       const eventDataWithResources = { ...data };
       
-      // If resource attendee lines were found, add them to the event data for later use in generateICSData
+      // If resource attendee lines were found, add them to the event data
       if (resourceAttendeeLines.length > 0) {
         eventDataWithResources._originalResourceAttendees = resourceAttendeeLines;
         console.log(`Preserved ${resourceAttendeeLines.length} resource attendee lines for cancellation`);
@@ -1033,92 +1019,8 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         this.extractResourcesFromRawIcs(originalIcs, eventDataWithResources);
       }
       
-      // Replace or add critical fields for cancellation
-      let modifiedIcs = originalIcs;
-      
-      // Change METHOD to CANCEL
-      if (modifiedIcs.includes('METHOD:REQUEST')) {
-        modifiedIcs = modifiedIcs.replace('METHOD:REQUEST', 'METHOD:CANCEL');
-      } else if (modifiedIcs.includes('METHOD:')) {
-        // Replace any other METHOD with CANCEL
-        modifiedIcs = modifiedIcs.replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL');
-      } else {
-        // Add METHOD:CANCEL if no METHOD exists
-        modifiedIcs = modifiedIcs.replace('BEGIN:VCALENDAR', 'BEGIN:VCALENDAR\r\nMETHOD:CANCEL');
-      }
-      
-      // Add or update STATUS:CANCELLED
-      if (modifiedIcs.includes('STATUS:')) {
-        modifiedIcs = modifiedIcs.replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED');
-      } else {
-        // Add STATUS:CANCELLED if no STATUS exists
-        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', 'BEGIN:VEVENT\r\nSTATUS:CANCELLED');
-      }
-      
-      // Add TRANSP:TRANSPARENT for cancelled events
-      if (modifiedIcs.includes('TRANSP:')) {
-        modifiedIcs = modifiedIcs.replace(/TRANSP:[^\r\n]+/i, 'TRANSP:TRANSPARENT');
-      } else {
-        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', 'BEGIN:VEVENT\r\nTRANSP:TRANSPARENT');
-      }
-      
-      // Update SEQUENCE to the incremented value
-      if (modifiedIcs.includes('SEQUENCE:')) {
-        modifiedIcs = modifiedIcs.replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
-      } else {
-        // Add SEQUENCE if it doesn't exist
-        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nSEQUENCE:${newSequence}`);
-      }
-      
-      // Update timestamps
-      const now = new Date();
-      const timestamp = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-      
-      if (modifiedIcs.includes('DTSTAMP:')) {
-        modifiedIcs = modifiedIcs.replace(/DTSTAMP:[^\r\n]+/i, `DTSTAMP:${timestamp}`);
-      } else {
-        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nDTSTAMP:${timestamp}`);
-      }
-      
-      // Also update LAST-MODIFIED
-      if (modifiedIcs.includes('LAST-MODIFIED:')) {
-        modifiedIcs = modifiedIcs.replace(/LAST-MODIFIED:[^\r\n]+/i, `LAST-MODIFIED:${timestamp}`);
-      } else {
-        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nLAST-MODIFIED:${timestamp}`);
-      }
-      
-      // Double-check the UID is still exactly the same
-      const finalUidMatch = modifiedIcs.match(/UID:([^\r\n]+)/i);
-      if (finalUidMatch && finalUidMatch[1] !== originalUid) {
-        console.error(`UID changed during transformation! Original: ${originalUid}, New: ${finalUidMatch[1]}`);
-        // Fix it by force if somehow it changed
-        modifiedIcs = modifiedIcs.replace(/UID:[^\r\n]+/i, `UID:${originalUid}`);
-      }
-      
-      // Verify if the resources are in the data for the generateICSData fallback
-      if (eventDataWithResources.resources) {
-        console.log(`Event data contains ${Array.isArray(eventDataWithResources.resources) ? eventDataWithResources.resources.length : 'unknown number of'} resources`);
-      }
-      
-      // RFC 5546 requires UID preservation for cancellations
-      // Check if the attendee lines, especially for resources, are preserved
-      const finalAttendeeLines = modifiedIcs.match(attendeePattern) || [];
-      const finalResourceAttendeeLines = finalAttendeeLines.filter(line => 
-        line.includes('CUTYPE=RESOURCE') || 
-        line.includes('X-RESOURCE-TYPE')
-      );
-      
-      console.log(`Final ICS has ${finalAttendeeLines.length} attendee lines and ${finalResourceAttendeeLines.length} resource lines`);
-      
-      // If we lost resource attendees during transformation, regenerate the ICS
-      if (resourceAttendeeLines.length > 0 && finalResourceAttendeeLines.length < resourceAttendeeLines.length) {
-        console.log(`Resource attendees were lost during transformation. Regenerating ICS with preserved resources.`);
-        return this.generateICSData({ ...eventDataWithResources, status: 'CANCELLED' });
-      }
-      
-      console.log('Successfully transformed ICS for cancellation with RFC 5546 compliance');
-      console.log('Final cancellation ICS includes original UID and sequence+1');
-      return modifiedIcs;
+      // Generate the cancellation ICS with our specialized generator
+      return generateCancellationIcs(originalIcs, eventDataWithResources);
     } catch (error) {
       console.error('Error transforming ICS for cancellation:', error);
       // Fall back to generating new ICS if transformation fails
