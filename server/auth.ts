@@ -156,8 +156,64 @@ export function setupAuth(app: Express) {
         const user = await storage.getUserByUsername(username);
         
         if (!user) {
-          console.log(`Authentication failed: User ${username} not found`);
-          return done(null, false, { message: "Invalid username or password" });
+          console.log(`User ${username} not found in local database. Checking CalDAV server credentials directly...`);
+          
+          // Instead of failing immediately, try to authenticate against CalDAV server
+          // Get the server URL from defaults or environment
+          const defaultServerUrl = process.env.DEFAULT_CALDAV_SERVER || "https://zpush.ajaydata.com/davical/caldav.php";
+          const formattedServerUrl = `${defaultServerUrl}/${encodeURIComponent(username)}/`;
+          
+          console.log(`Checking CalDAV credentials for ${username} against server: ${formattedServerUrl}`);
+          
+          try {
+            const isValidCalDAV = await verifyCalDAVCredentials(
+              formattedServerUrl,
+              username,
+              password
+            );
+            
+            if (isValidCalDAV) {
+              console.log(`CalDAV credentials valid for ${username}. Auto-registering user.`);
+              
+              // Auto-register the user in our database
+              try {
+                // Create the user first
+                const hashedPassword = await hashPassword(password);
+                const newUser = await storage.createUser({
+                  username,
+                  password: hashedPassword,
+                  email: username, // Email is same as username for CalDAV users
+                  preferredTimezone: "Asia/Kolkata", // Default timezone
+                  fullName: username.split('@')[0] // Default full name from username
+                });
+                
+                // Create server connection record with CalDAV credentials
+                await storage.createServerConnection({
+                  userId: newUser.id,
+                  url: formattedServerUrl,
+                  username: username,
+                  password: password,
+                  autoSync: true,
+                  syncInterval: 15, // 15 minutes default
+                  status: "connected"
+                });
+                
+                console.log(`Auto-registered user ${username} with ID ${newUser.id}`);
+                return done(null, newUser);
+              } catch (registerError) {
+                console.error(`Error auto-registering user ${username}:`, registerError);
+                return done(null, false, { 
+                  message: "Valid CalDAV credentials, but failed to register in our system. Please try again." 
+                });
+              }
+            } else {
+              console.log(`Invalid CalDAV credentials for ${username}`);
+              return done(null, false, { message: "Invalid username or password" });
+            }
+          } catch (caldavError) {
+            console.error(`Error verifying CalDAV credentials for ${username}:`, caldavError);
+            return done(null, false, { message: "Error verifying your credentials" });
+          }
         }
         
         console.log(`User found: ${user.id}, checking password field:`, 
@@ -186,6 +242,48 @@ export function setupAuth(app: Express) {
               isPasswordValid = true;
             } else {
               console.log('Password did not match server_connections table password either');
+              
+              // As a last resort, try checking with CalDAV server directly
+              try {
+                const serverUrl = serverConnection?.url || 
+                  `${process.env.DEFAULT_CALDAV_SERVER || "https://zpush.ajaydata.com/davical/caldav.php"}/${encodeURIComponent(username)}/`;
+                
+                console.log(`Trying direct CalDAV verification for ${username} against ${serverUrl}`);
+                
+                const isValidCalDAV = await verifyCalDAVCredentials(
+                  serverUrl,
+                  username,
+                  password
+                );
+                
+                if (isValidCalDAV) {
+                  console.log(`Direct CalDAV verification successful for ${username}. Updating credentials.`);
+                  
+                  // Update the server connection with the new password
+                  if (serverConnection) {
+                    await storage.updateServerConnection(serverConnection.id, { password });
+                  } else {
+                    // Create a new server connection if none exists
+                    await storage.createServerConnection({
+                      userId: user.id,
+                      url: serverUrl,
+                      username,
+                      password,
+                      autoSync: true,
+                      syncInterval: 15,
+                      status: "connected"
+                    });
+                  }
+                  
+                  // Update the user's password
+                  const hashedPassword = await hashPassword(password);
+                  await storage.updateUser(user.id, { password: hashedPassword });
+                  
+                  isPasswordValid = true;
+                }
+              } catch (directCalDAVError) {
+                console.error('Error during direct CalDAV verification:', directCalDAVError);
+              }
             }
           } catch (serverConnectionError) {
             console.error('Error checking server_connections table:', serverConnectionError);
@@ -306,6 +404,12 @@ export function setupAuth(app: Express) {
   app.post("/api/login", async (req, res, next) => {
     const { username, password, caldavServerUrl } = req.body;
     
+    // Set default CalDAV server URL if not provided
+    const serverUrl = caldavServerUrl || 
+      `${process.env.DEFAULT_CALDAV_SERVER || "https://zpush.ajaydata.com/davical/caldav.php"}/${encodeURIComponent(username)}/`;
+    
+    console.log(`Login attempt for ${username} with server URL: ${serverUrl}`);
+    
     passport.authenticate("local", async (err: Error | null, user: Express.User | false, info: { message: string } | undefined) => {
       if (err) return next(err);
       if (!user) {
@@ -315,7 +419,7 @@ export function setupAuth(app: Express) {
       // App login successful, now check CalDAV credentials
       try {
         const isValidCalDAV = await verifyCalDAVCredentials(
-          caldavServerUrl,
+          serverUrl,
           username,
           password
         );
