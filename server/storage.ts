@@ -669,13 +669,6 @@ let storage: IStorage;
 
 // Create a function to initialize storage with fallback
 async function initStorage() {
-  // Temporarily use in-memory storage due to PostgreSQL endpoint being disabled
-  console.log("Using in-memory storage to bypass database issues");
-  const memStorage = new MemStorage();
-  await memStorage.initializeDatabase();
-  return memStorage;
-  
-  /* Disabled due to PostgreSQL endpoint issues:
   if (process.env.DATABASE_URL) {
     try {
       console.log("Attempting to use PostgreSQL database storage");
@@ -703,7 +696,6 @@ async function initStorage() {
     await memStorage.initializeDatabase();
     return memStorage;
   }
-  */
 }
 
 // Start with memory storage as default
