@@ -386,6 +386,19 @@ export function setupAuth(app: Express) {
           if (connection) {
             await syncService.setupSyncForUser(user.id, connection);
             console.log(`Started sync service for new user ${user.username}`);
+            
+            // Force an immediate full calendar sync with server for new users
+            try {
+              console.log(`Triggering immediate full calendar sync for new user ${user.username}`);
+              await syncService.syncUser(user.id, { 
+                forceRefresh: true,
+                preserveLocalEvents: false,
+                preserveLocalDeletes: false
+              });
+            } catch (syncNowError) {
+              console.error(`Error during immediate sync for new user ${user.username}:`, syncNowError);
+              // Don't fail registration if immediate sync fails
+            }
           }
         } catch (syncError) {
           console.error("Error setting up sync service for new user:", syncError);
@@ -476,6 +489,19 @@ export function setupAuth(app: Express) {
           if (connection) {
             await syncService.setupSyncForUser(userId, connection);
             console.log(`Started sync service for user ${(user as SelectUser).username}`);
+            
+            // Force an immediate full calendar sync with server
+            try {
+              console.log(`Triggering immediate full calendar sync for user ${(user as SelectUser).username}`);
+              await syncService.syncUser(userId, { 
+                forceRefresh: true,
+                preserveLocalEvents: false,
+                preserveLocalDeletes: false
+              });
+            } catch (syncNowError) {
+              console.error(`Error during immediate sync for ${(user as SelectUser).username}:`, syncNowError);
+              // Don't fail login if immediate sync fails
+            }
           }
         } catch (syncError) {
           console.error("Error setting up sync service:", syncError);
