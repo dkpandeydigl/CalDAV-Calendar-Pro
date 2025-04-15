@@ -437,7 +437,7 @@ export function setupAuth(app: Express) {
         if (existingConnection) {
           // Update existing connection
           await storage.updateServerConnection(existingConnection.id, {
-            url: caldavServerUrl,
+            url: serverUrl, // Use the calculated server URL
             username: username,
             password: password,
             status: "connected"
@@ -447,7 +447,7 @@ export function setupAuth(app: Express) {
           // Create new server connection
           await storage.createServerConnection({
             userId: userId,
-            url: caldavServerUrl,
+            url: serverUrl, // Use the calculated server URL
             username: username,
             password: password,
             autoSync: true,
