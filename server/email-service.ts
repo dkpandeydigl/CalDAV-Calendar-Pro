@@ -16,10 +16,13 @@ export interface Resource {
   id: string;
   name?: string;         // Display name of the resource
   subType: string;       // Resource type (Conference Room, Projector, etc.)
+  type?: string;         // Alternative type field for compatibility
   capacity?: number;     // Optional capacity (e.g., 10 people)
   adminEmail: string;    // Email of resource administrator
+  email?: string;        // Alternative email field for compatibility
   adminName?: string;    // Name of resource administrator
   remarks?: string;      // Optional remarks or notes
+  displayName?: string;  // For backward compatibility
 }
 
 export interface EventInvitationData {
@@ -41,6 +44,7 @@ export interface EventInvitationData {
   recurrenceRule?: string | object; // Recurrence rule as string or object
   rawData?: string; // Original raw iCalendar data
   sequence?: number; // Sequence number for versioning events (RFC 5545)
+  _originalResourceAttendees?: string[]; // Preserved original resource attendee lines for RFC 5546 compliance
 }
 
 export class EmailService {
