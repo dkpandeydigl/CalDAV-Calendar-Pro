@@ -5,89 +5,79 @@
  * to verify that email sending will work correctly.
  */
 
-import { storage } from '../server/memory-storage'; // Use memory storage instead of database-storage
-import { EmailService } from '../server/email-service';
-
-// Create a new email service instance
-const emailService = new EmailService();
+import { storage } from '../server/memory-storage';
+import nodemailer from 'nodemailer';
 
 async function testSmtpConnection(userId: number) {
-  console.log(`Testing SMTP connection for user ID ${userId}...`);
-  
   try {
-    // Get the user
+    console.log(`Testing SMTP connection for user ${userId}...`);
+    
+    // Get the user's SMTP configuration
+    const smtpConfig = await storage.getSmtpConfig(userId);
+    
+    if (!smtpConfig) {
+      console.error(`No SMTP configuration found for user ${userId}`);
+      return false;
+    }
+    
+    // Get the user details
     const user = await storage.getUser(userId);
     if (!user) {
-      console.error(`User with ID ${userId} not found`);
-      return;
+      console.error(`User ${userId} not found`);
+      return false;
     }
     
-    console.log(`Found user: ${user.username} (${user.fullName || 'No name'})`);
+    console.log(`Found SMTP config for ${user.username} (${smtpConfig.host}:${smtpConfig.port})`);
+    console.log(`From: ${smtpConfig.fromName} <${smtpConfig.fromEmail}>`);
     
-    // Initialize the email service
-    const initialized = await emailService.initialize(userId);
-    if (!initialized) {
-      console.error('Failed to initialize email service');
-      
-      // Check if SMTP config exists
-      const smtpConfig = await storage.getSmtpConfig(userId);
-      if (!smtpConfig) {
-        console.error('No SMTP configuration found for this user');
-      } else {
-        console.log('SMTP configuration exists but initialization failed:');
-        console.log(`- Host: ${smtpConfig.host}`);
-        console.log(`- Port: ${smtpConfig.port}`);
-        console.log(`- Secure: ${smtpConfig.secure}`);
-        console.log(`- Username: ${smtpConfig.username}`);
-        console.log(`- From Email: ${smtpConfig.fromEmail}`);
-        console.log(`- From Name: ${smtpConfig.fromName || 'Not set'}`);
-        console.log(`- Password: ${smtpConfig.password ? '******' : 'Not set'}`);
-        
-        if (!smtpConfig.password) {
-          console.error('SMTP password is not set. This is likely the cause of the failure.');
-        }
+    // Create a transporter using the user's SMTP settings
+    const transporter = nodemailer.createTransport({
+      host: smtpConfig.host,
+      port: smtpConfig.port,
+      secure: smtpConfig.secure,
+      auth: {
+        user: smtpConfig.username,
+        pass: smtpConfig.password
       }
-      return;
-    }
+    });
     
     // Verify the connection
-    const verificationResult = await emailService.verifyConnection();
-    console.log(`Verification result: ${verificationResult.success ? 'SUCCESS' : 'FAILED'}`);
-    console.log(`Message: ${verificationResult.message}`);
-    
-    if (!verificationResult.success) {
-      console.log('\nTrying to get more information...');
+    try {
+      console.log('Verifying connection...');
+      const verified = await transporter.verify();
+      console.log('Connection verified:', verified);
+      return true;
+    } catch (verifyError) {
+      console.error('SMTP connection verification failed:', verifyError);
       
-      // Get the server connection to check if CalDAV password is available
-      const serverConnection = await storage.getServerConnection(userId);
-      if (!serverConnection) {
-        console.log('No server connection found for this user');
-      } else {
-        console.log('Server connection details:');
-        console.log(`- URL: ${serverConnection.url}`);
-        console.log(`- Username: ${serverConnection.username}`);
-        console.log(`- Password: ${serverConnection.password ? '******' : 'Not set'}`);
-        
-        if (serverConnection.password) {
-          console.log('\nA password is available in the server connection. You can run the fix-smtp-password.ts script to copy this password to the SMTP configuration.');
-        }
+      // Print detailed error information
+      if (verifyError instanceof Error) {
+        console.error('Error message:', verifyError.message);
+        console.error('Error name:', verifyError.name);
+        console.error('Error stack:', verifyError.stack);
       }
+      
+      return false;
     }
   } catch (error) {
     console.error('Error testing SMTP connection:', error);
+    return false;
   }
 }
 
-// Get the user ID from command line arguments or use a default
-const userId = process.argv[2] ? parseInt(process.argv[2], 10) : 4; // Default to user ID 4
+// Call the function directly when this script is run
+if (require.main === module) {
+  const userId = process.argv[2] ? parseInt(process.argv[2]) : 1;
+  
+  testSmtpConnection(userId)
+    .then(success => {
+      console.log('Test completed. Success:', success);
+      process.exit(success ? 0 : 1);
+    })
+    .catch(err => {
+      console.error('Test failed with error:', err);
+      process.exit(1);
+    });
+}
 
-// Run the test
-testSmtpConnection(userId)
-  .then(() => {
-    console.log('SMTP connection test completed');
-    process.exit(0);
-  })
-  .catch(error => {
-    console.error('Error running test:', error);
-    process.exit(1);
-  });
+export { testSmtpConnection };

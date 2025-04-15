@@ -17,6 +17,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { setupAuth } from "./auth";
 import { DAVClient } from "tsdav";
 import { emailService } from "./email-service";
+import { syncSmtpPasswordWithCalDAV } from "./smtp-sync-utility";
 import { z } from "zod";
 import { registerExportRoutes } from "./export-routes";
 import { registerImportRoutes } from "./import-routes";
@@ -28,7 +29,6 @@ import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./memory-notification-service";
 import { initializeWebSocketServer, broadcastToUser, sendNotification, createAndSendNotification } from "./websocket-handler";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
-import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
 
 // Using directly imported syncService
 import type { SyncService as SyncServiceType } from "./sync-service";
@@ -3399,6 +3399,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ 
           message: "User email not available. Please update your profile with a valid email."
         });
+      }
+      
+      // Sync SMTP password with CalDAV password to ensure email sending works
+      try {
+        await syncSmtpPasswordWithCalDAV(userId);
+        console.log(`SMTP password synchronized with CalDAV password for user ${userId} before sending email`);
+      } catch (smtpSyncError) {
+        console.error(`Error synchronizing SMTP password for user ${userId}:`, smtpSyncError);
+        // Continue with email sending even if sync fails, as the passwords might already match
       }
       
       // Get the event data from the request

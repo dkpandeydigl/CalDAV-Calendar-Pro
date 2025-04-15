@@ -6,79 +6,77 @@
  */
 
 import { storage } from '../server/memory-storage';
-import bcrypt from 'bcryptjs';
+import { syncSmtpPasswordWithCalDAV } from '../server/smtp-sync-utility';
+import { hashPassword } from '../server/auth';
 
 async function setupSampleUserWithSmtp() {
-  console.log('Setting up sample user with SMTP configuration...');
-  
   try {
-    // Check if user already exists
-    const existingUsers = await storage.getAllUsers();
-    console.log(`Found ${existingUsers.length} existing users`);
+    console.log('Starting sample user SMTP setup...');
     
-    // Hash password
-    const hashedPassword = await bcrypt.hash('password', 10);
+    // Check if we already have users in the system
+    const users = await storage.getAllUsers();
     
-    // Create user
-    const user = await storage.createUser({
-      username: 'dk.pandey@xgenplus.com',
-      password: hashedPassword,
-      email: 'dk.pandey@xgenplus.com',
-      fullName: 'Dharmendra Pandey',
-      preferredTimezone: 'Asia/Kolkata'
-    });
-    
-    console.log(`Created user: ${user.username} (ID: ${user.id})`);
-    
-    // Create server connection with the same password for CalDAV
-    const serverConnection = await storage.createServerConnection({
-      userId: user.id,
-      url: 'https://zpush.ajaydata.com/davical/',
-      username: 'dk.pandey@xgenplus.com',
-      password: 'dkp_3010024', // Set the actual password
-      autoSync: true,
-      syncInterval: 15,
-      status: 'connected'
-    });
-    
-    console.log(`Created server connection for user ${user.username}`);
-    
-    // Create SMTP configuration with the same password
-    const smtpConfig = await storage.createSmtpConfig({
-      userId: user.id,
-      host: 'smtps.xgen.in',
-      port: 465,
-      secure: true,
-      username: 'dk.pandey@xgenplus.com',
-      password: 'dkp_3010024', // Set the same password
-      fromEmail: 'dk.pandey@xgenplus.com',
-      fromName: 'Dharmendra Pandey',
-      enabled: true
-    });
-    
-    console.log(`Created SMTP configuration for user ${user.username}`);
-    console.log(`SMTP Configuration details:`);
-    console.log(`- Host: ${smtpConfig.host}`);
-    console.log(`- Port: ${smtpConfig.port}`);
-    console.log(`- Secure: ${smtpConfig.secure}`);
-    console.log(`- Username: ${smtpConfig.username}`);
-    console.log(`- From Email: ${smtpConfig.fromEmail}`);
-    console.log(`- From Name: ${smtpConfig.fromName || 'Not set'}`);
-    console.log(`- Enabled: ${smtpConfig.enabled}`);
-    
-    console.log('\nSetup completed successfully');
+    if (users.length === 0) {
+      console.log('No users found in storage, creating sample user...');
+      
+      // Create a sample user
+      const hashedPassword = await hashPassword('testpassword');
+      const user = await storage.createUser({
+        username: 'testuser',
+        password: hashedPassword,
+        email: 'test@example.com',
+        fullName: 'Test User',
+        preferredTimezone: 'Asia/Kolkata'
+      });
+      
+      console.log(`Created sample user with ID ${user.id}`);
+      
+      // Create a server connection for the user
+      const serverConnection = await storage.createServerConnection({
+        userId: user.id,
+        url: 'https://zpush.ajaydata.com/davical/',
+        username: 'testuser',
+        password: 'testpassword',
+        autoSync: true,
+        syncInterval: 300,
+        status: 'connected'
+      });
+      
+      console.log(`Created server connection for user: ${serverConnection.id}`);
+      
+      // Use the SMTP sync utility to create a proper SMTP config based on CalDAV credentials
+      const result = await syncSmtpPasswordWithCalDAV(user.id);
+      
+      if (result) {
+        console.log('Successfully created SMTP configuration from CalDAV credentials');
+      } else {
+        console.log('Failed to create SMTP configuration');
+      }
+      
+      console.log('Sample user setup complete!');
+    } else {
+      console.log(`Found ${users.length} existing users, setting up SMTP configs for each...`);
+      
+      // If users exist, ensure they all have SMTP configs
+      for (const user of users) {
+        const result = await syncSmtpPasswordWithCalDAV(user.id);
+        if (result) {
+          console.log(`Successfully set up SMTP for user ${user.id} (${user.username})`);
+        } else {
+          console.log(`No SMTP setup needed for user ${user.id} (${user.username})`);
+        }
+      }
+    }
   } catch (error) {
-    console.error('Error setting up sample user:', error);
+    console.error('Error setting up sample user with SMTP:', error);
   }
 }
 
-// Run the script
-setupSampleUserWithSmtp()
-  .then(() => {
-    console.log('\nDone');
-    process.exit(0);
-  })
-  .catch(error => {
-    console.error('Error running script:', error);
-    process.exit(1);
-  });
+// Call the function directly when this script is run
+if (require.main === module) {
+  setupSampleUserWithSmtp()
+    .then(() => console.log('Script execution complete'))
+    .catch(err => console.error('Script execution failed:', err));
+}
+
+export { setupSampleUserWithSmtp };

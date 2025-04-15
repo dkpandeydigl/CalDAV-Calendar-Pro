@@ -5,76 +5,68 @@
  * the CalDAV server password to ensure email invitations work properly.
  */
 
-import { storage } from './memory-storage';  // Use memory storage
+import { storage } from './memory-storage';
 
+/**
+ * Synchronizes the user's SMTP password with their CalDAV password
+ * 
+ * @param userId The user ID whose SMTP password needs to be synchronized
+ * @returns true if the password was updated, false if no update was necessary
+ */
 export async function syncSmtpPasswordWithCalDAV(userId: number): Promise<boolean> {
   try {
-    console.log(`Syncing SMTP password with CalDAV password for user ${userId}...`);
-    
-    // 1. Get the server connection to extract the CalDAV password
+    // Get the server connection which has the CalDAV password
     const serverConnection = await storage.getServerConnection(userId);
-    
     if (!serverConnection) {
-      console.log(`No server connection found for user ${userId}, can't sync SMTP password`);
+      console.log(`No server connection found for user ${userId}, cannot sync SMTP password`);
       return false;
     }
-    
-    if (!serverConnection.password) {
-      console.log(`Server connection for user ${userId} doesn't have a password, can't sync SMTP password`);
-      return false;
-    }
-    
-    // 2. Get the user's profile to get email and name
-    const user = await storage.getUser(userId);
-    if (!user) {
-      console.log(`User ${userId} not found, can't sync SMTP password`);
-      return false;
-    }
-    
-    // 3. Get or create SMTP configuration
-    let smtpConfig = await storage.getSmtpConfig(userId);
-    
-    if (smtpConfig) {
-      // Check if the password is different - if so, update it
-      if (smtpConfig.password !== serverConnection.password) {
-        console.log(`Updating SMTP password for user ${userId} to match CalDAV password`);
-        
-        // Update SMTP configuration with server connection password
-        await storage.updateSmtpConfig(smtpConfig.id, {
-          password: serverConnection.password,
-          // Also ensure username matches the server connection username
-          username: serverConnection.username,
-          // Update other fields if needed
-          fromEmail: user.email || serverConnection.username,
-          fromName: user.fullName || (user.email ? user.email.split('@')[0] : serverConnection.username.split('@')[0])
-        });
-        
-        console.log(`SMTP password updated successfully for user ${userId}`);
-      } else {
-        console.log(`SMTP password already matches CalDAV password for user ${userId}`);
-      }
-    } else {
-      // Create new SMTP configuration with server connection password
-      console.log(`Creating new SMTP configuration for user ${userId} with CalDAV password`);
+
+    // Get the SMTP configuration
+    const smtpConfig = await storage.getSmtpConfig(userId);
+    if (!smtpConfig) {
+      console.log(`No SMTP configuration found for user ${userId}, creating one based on CalDAV credentials`);
       
-      await storage.createSmtpConfig({
+      // Get the user details to use for SMTP config
+      const user = await storage.getUser(userId);
+      if (!user || !user.email) {
+        console.log(`User ${userId} doesn't have an email address, cannot create SMTP config`);
+        return false;
+      }
+      
+      // Create a new SMTP configuration based on server connection
+      const newSmtpConfig = {
         userId,
-        host: 'smtps.xgen.in',
-        port: 465,
-        secure: true,
         username: serverConnection.username,
         password: serverConnection.password,
-        fromEmail: user.email || serverConnection.username,
-        fromName: user.fullName || (user.email ? user.email.split('@')[0] : serverConnection.username.split('@')[0]),
+        host: 'smtps.xgen.in', // Default SMTP server
+        port: 465,
+        secure: true,
+        fromEmail: user.email,
+        fromName: user.fullName || user.username,
         enabled: true
-      });
+      };
       
-      console.log(`New SMTP configuration created for user ${userId} with CalDAV password`);
+      // Save the new configuration
+      await storage.createSmtpConfig(newSmtpConfig);
+      console.log(`Created new SMTP configuration for user ${userId} using CalDAV credentials`);
+      return true;
     }
     
-    return true;
-  } catch (error) {
-    console.error(`Error syncing SMTP password for user ${userId}:`, error);
+    // Check if passwords match
+    if (smtpConfig.password !== serverConnection.password) {
+      // Update the SMTP password to match the CalDAV password
+      await storage.updateSmtpConfig(smtpConfig.id, {
+        password: serverConnection.password
+      });
+      console.log(`Updated SMTP password for user ${userId} to match CalDAV password`);
+      return true;
+    }
+    
+    // Passwords already match, no update needed
     return false;
+  } catch (error) {
+    console.error(`Error synchronizing SMTP password for user ${userId}:`, error);
+    throw error;
   }
 }

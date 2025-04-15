@@ -36,11 +36,11 @@ declare global {
   }
 }
 
-async function hashPassword(password: string) {
+export async function hashPassword(password: string) {
   return bcrypt.hash(password, 10);
 }
 
-async function comparePasswords(supplied: string, stored: string) {
+export async function comparePasswords(supplied: string, stored: string) {
   return bcrypt.compare(supplied, stored);
 }
 
