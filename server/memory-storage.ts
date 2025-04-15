@@ -677,7 +677,7 @@ export class MemStorage implements IStorage {
       message: notification.message,
       relatedId: notification.relatedId || null,
       relatedType: notification.relatedType || null,
-      read: false,
+      isRead: false,
       createdAt: now,
       priority: notification.priority || "normal",
       actionLink: notification.actionLink || null,
@@ -702,7 +702,7 @@ export class MemStorage implements IStorage {
   async getUnreadNotificationCount(userId: number): Promise<number> {
     // Count unread notifications for this user
     const count = Array.from(this.notificationsMap.values())
-      .filter(notification => notification.userId === userId && !notification.read)
+      .filter(notification => notification.userId === userId && !notification.isRead)
       .length;
     
     return count;
@@ -711,7 +711,7 @@ export class MemStorage implements IStorage {
   async getUnreadNotifications(userId: number): Promise<Notification[]> {
     // Get unread notifications for this user
     const unreadNotifications = Array.from(this.notificationsMap.values())
-      .filter(notification => notification.userId === userId && !notification.read)
+      .filter(notification => notification.userId === userId && !notification.isRead)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     
     return unreadNotifications;
@@ -721,7 +721,7 @@ export class MemStorage implements IStorage {
     const notification = this.notificationsMap.get(id);
     if (!notification) return false;
     
-    notification.read = true;
+    notification.isRead = true;
     this.notificationsMap.set(id, notification);
     return true;
   }
@@ -743,6 +743,12 @@ export class MemStorage implements IStorage {
   
   async deleteNotification(id: number): Promise<boolean> {
     return this.notificationsMap.delete(id);
+  }
+  
+  async getAllNotifications(): Promise<Notification[]> {
+    // Return all notifications in the system, sorted by creation time (newest first)
+    return Array.from(this.notificationsMap.values())
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 }
 
