@@ -751,7 +751,8 @@ export class SyncService {
         }
       } else {
         // Normal sync for all calendars
-        const davCalendars = await davClient.fetchCalendars();
+        // Use our enhanced discovery method that follows the CalDAV RFC standards
+        const davCalendars = await this.discoverCalendarsRFC(davClient, job.connection.url, job.connection.username, job.connection.password);
         console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server`);
         
         // Process each calendar - first update our local calendars database
@@ -1045,6 +1046,287 @@ export class SyncService {
     return undefined;
   }
   
+  /**
+   * Discover CalDAV calendars following the RFC standards
+   * This method implements the multi-step discovery process defined in RFC 6764 and RFC 4918
+   * - First tries well-known URL
+   * - Then discovers principal URL
+   * - Then finds calendar home set
+   * - Finally lists available calendars
+   * 
+   * @param davClient The DAVClient to use for requests
+   * @param serverUrl The base server URL
+   * @param username The username for authentication
+   * @param password The password for authentication
+   * @returns Array of discovered calendars
+   */
+  private async discoverCalendarsRFC(davClient: any, serverUrl: string, username: string, password: string): Promise<any[]> {
+    console.log(`Starting RFC-compliant calendar discovery for ${username} at ${serverUrl}`);
+    
+    try {
+      // Step 1: Try the standard tsdav method first (which should work for most servers)
+      try {
+        const calendars = await davClient.fetchCalendars();
+        if (calendars && calendars.length > 0) {
+          console.log(`Successfully found ${calendars.length} calendars using standard tsdav method`);
+          return calendars;
+        }
+        console.log(`No calendars found with standard tsdav method, trying advanced discovery...`);
+      } catch (error) {
+        console.log(`Standard tsdav calendar discovery failed, trying advanced discovery:`, error);
+      }
+      
+      // Step 2: Try well-known URL as per RFC 6764
+      const normalizedUrl = serverUrl.endsWith('/') ? serverUrl : serverUrl + '/';
+      const wellKnownUrl = new URL('/.well-known/caldav', normalizedUrl).href;
+      
+      console.log(`Trying well-known URL: ${wellKnownUrl}`);
+      
+      let principalUrl: string | null = null;
+      
+      try {
+        // Send PROPFIND to well-known URL
+        const wellKnownResponse = await fetch(wellKnownUrl, {
+          method: 'PROPFIND',
+          headers: {
+            'Depth': '0',
+            'Content-Type': 'application/xml; charset=utf-8',
+            'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+          },
+          body: `<?xml version="1.0" encoding="utf-8" ?>
+          <propfind xmlns="DAV:">
+            <prop>
+              <current-user-principal/>
+            </prop>
+          </propfind>`
+        });
+        
+        if (wellKnownResponse.ok || wellKnownResponse.status === 207) {
+          const responseText = await wellKnownResponse.text();
+          const principalMatch = responseText.match(/<current-user-principal><href>(.*?)<\/href><\/current-user-principal>/);
+          
+          if (principalMatch && principalMatch[1]) {
+            principalUrl = new URL(principalMatch[1], normalizedUrl).href;
+            console.log(`Found principal URL from well-known URL: ${principalUrl}`);
+          }
+        } else {
+          console.log(`Well-known URL returned status: ${wellKnownResponse.status}`);
+        }
+      } catch (wellKnownError) {
+        console.log(`Error accessing well-known URL: ${wellKnownError}`);
+      }
+      
+      // Step 3: If well-known URL didn't work, try the server root
+      if (!principalUrl) {
+        console.log(`Trying to find principal URL from server root: ${normalizedUrl}`);
+        
+        try {
+          const rootResponse = await fetch(normalizedUrl, {
+            method: 'PROPFIND',
+            headers: {
+              'Depth': '0',
+              'Content-Type': 'application/xml; charset=utf-8',
+              'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+            },
+            body: `<?xml version="1.0" encoding="utf-8" ?>
+            <propfind xmlns="DAV:">
+              <prop>
+                <current-user-principal/>
+              </prop>
+            </propfind>`
+          });
+          
+          if (rootResponse.ok || rootResponse.status === 207) {
+            const responseText = await rootResponse.text();
+            const principalMatch = responseText.match(/<current-user-principal><href>(.*?)<\/href><\/current-user-principal>/);
+            
+            if (principalMatch && principalMatch[1]) {
+              principalUrl = new URL(principalMatch[1], normalizedUrl).href;
+              console.log(`Found principal URL from server root: ${principalUrl}`);
+            }
+          } else {
+            console.log(`Server root returned status: ${rootResponse.status}`);
+          }
+        } catch (rootError) {
+          console.log(`Error accessing server root: ${rootError}`);
+        }
+      }
+      
+      // Step 4: Find calendar home set from principal URL
+      if (principalUrl) {
+        console.log(`Looking for calendar-home-set in principal URL: ${principalUrl}`);
+        
+        let calendarHomeUrl: string | null = null;
+        
+        try {
+          const principalResponse = await fetch(principalUrl, {
+            method: 'PROPFIND',
+            headers: {
+              'Depth': '0',
+              'Content-Type': 'application/xml; charset=utf-8',
+              'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+            },
+            body: `<?xml version="1.0" encoding="utf-8" ?>
+            <propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+              <prop>
+                <C:calendar-home-set/>
+              </prop>
+            </propfind>`
+          });
+          
+          if (principalResponse.ok || principalResponse.status === 207) {
+            const responseText = await principalResponse.text();
+            console.log(`Calendar home set response: ${responseText.substring(0, 500)}${responseText.length > 500 ? '...' : ''}`);
+            
+            // Try various regex patterns to match different server implementations
+            let homeMatch = responseText.match(/<C:calendar-home-set>\s*<href>(.*?)<\/href>\s*<\/C:calendar-home-set>/s);
+            if (!homeMatch) {
+              homeMatch = responseText.match(/<calendar-home-set.*?>\s*<href>(.*?)<\/href>\s*<\/calendar-home-set>/s);
+            }
+            if (!homeMatch) {
+              homeMatch = responseText.match(/<href>(.*?caldav.*?)<\/href>/s);
+            }
+            
+            if (homeMatch && homeMatch[1]) {
+              calendarHomeUrl = new URL(homeMatch[1], normalizedUrl).href;
+              console.log(`Found calendar home set: ${calendarHomeUrl}`);
+            } else {
+              console.log(`Could not find calendar home set in response`);
+              
+              // Look for other useful URLs in the response that might help us
+              const hrefMatches = responseText.match(/<href>(.*?)<\/href>/g);
+              if (hrefMatches && hrefMatches.length > 0) {
+                console.log(`Found ${hrefMatches.length} href elements in response, will try first few as potential calendar homes`);
+                
+                // Extract and clean URLs
+                const potentialUrls = hrefMatches
+                  .map(match => {
+                    const url = match.replace(/<\/?href>/g, '').trim();
+                    return url;
+                  })
+                  .filter(url => url.includes('caldav') || url.includes('calendar'));
+                
+                if (potentialUrls.length > 0) {
+                  console.log(`Found ${potentialUrls.length} potential calendar URLs to try`);
+                  
+                  // Try the first matching URL as calendar home
+                  calendarHomeUrl = new URL(potentialUrls[0], normalizedUrl).href;
+                  console.log(`Using potential calendar home set: ${calendarHomeUrl}`);
+                }
+              }
+            }
+          } else {
+            console.log(`Principal URL returned status: ${principalResponse.status}`);
+          }
+        } catch (principalError) {
+          console.log(`Error accessing principal URL: ${principalError}`);
+        }
+        
+        // Step 5: Discover calendars in the calendar home set
+        if (calendarHomeUrl) {
+          console.log(`Discovering calendars in home set: ${calendarHomeUrl}`);
+          
+          try {
+            const homeResponse = await fetch(calendarHomeUrl, {
+              method: 'PROPFIND',
+              headers: {
+                'Depth': '1',
+                'Content-Type': 'application/xml; charset=utf-8',
+                'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+              },
+              body: `<?xml version="1.0" encoding="utf-8" ?>
+              <propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CS="http://calendarserver.org/ns/">
+                <prop>
+                  <resourcetype/>
+                  <displayname/>
+                  <C:calendar-description/>
+                  <C:supported-calendar-component-set/>
+                  <C:calendar-color/>
+                  <C:calendar-timezone/>
+                  <current-user-privilege-set/>
+                  <CS:getctag/>
+                </prop>
+              </propfind>`
+            });
+            
+            if (homeResponse.ok || homeResponse.status === 207) {
+              const responseText = await homeResponse.text();
+              
+              // Extract calendar URLs - find <D:href> tags followed by <D:resourcetype> containing <C:calendar>
+              // This is a complex regex, but it identifies calendars by looking for the calendar resourcetype
+              const calendarMatches = responseText.match(/<href>([^<]+)<\/href>(?:(?!<\/response>).)*?<resourcetype>(?:(?!<\/resourcetype>).)*?<C:calendar>(?:(?!<\/resourcetype>).)*?<\/resourcetype>/gs);
+              
+              if (calendarMatches && calendarMatches.length > 0) {
+                console.log(`Found ${calendarMatches.length} calendars in home set`);
+                
+                // Parse calendar information
+                const discoveredCalendars = [];
+                
+                for (const match of calendarMatches) {
+                  // Extract the href/URL
+                  const urlMatch = match.match(/<href>([^<]+)<\/href>/);
+                  if (!urlMatch || !urlMatch[1]) continue;
+                  
+                  const url = new URL(urlMatch[1], normalizedUrl).href;
+                  
+                  // Extract display name
+                  const nameMatch = match.match(/<displayname>([^<]+)<\/displayname>/);
+                  const displayName = nameMatch && nameMatch[1] ? nameMatch[1] : 'Unnamed Calendar';
+                  
+                  // Extract description
+                  const descMatch = match.match(/<C:calendar-description>([^<]+)<\/C:calendar-description>/);
+                  const description = descMatch && descMatch[1] ? descMatch[1] : null;
+                  
+                  // Extract color
+                  const colorMatch = match.match(/<C:calendar-color>([^<]+)<\/C:calendar-color>/);
+                  const color = colorMatch && colorMatch[1] ? colorMatch[1] : '#3788d8';
+                  
+                  // Extract ctag (for change detection)
+                  const ctagMatch = match.match(/<CS:getctag>([^<]+)<\/CS:getctag>/);
+                  const ctag = ctagMatch && ctagMatch[1] ? ctagMatch[1] : null;
+                  
+                  // Create a calendar object compatible with tsdav's format
+                  discoveredCalendars.push({
+                    url,
+                    displayName,
+                    description,
+                    color,
+                    ctag,
+                    resourcetype: { calendar: true },
+                    components: ['VEVENT', 'VTODO'],
+                    syncToken: ctag,
+                    timezone: 'UTC',
+                    privileges: ['read', 'write']
+                  });
+                }
+                
+                console.log(`Successfully discovered ${discoveredCalendars.length} calendars`);
+                return discoveredCalendars;
+              } else {
+                console.log(`No calendars found in home set response`);
+              }
+            } else {
+              console.log(`Calendar home set returned status: ${homeResponse.status}`);
+            }
+          } catch (homeError) {
+            console.log(`Error accessing calendar home set: ${homeError}`);
+          }
+        } else {
+          console.log(`Could not find calendar home set`);
+        }
+      } else {
+        console.log(`Could not find principal URL`);
+      }
+      
+      // If all discovery methods fail, return an empty array
+      console.log(`All discovery methods failed, returning empty calendar list`);
+      return [];
+    } catch (error) {
+      console.error(`Error in calendar discovery:`, error);
+      return [];
+    }
+  }
+
   /**
    * Parse raw ICS data into a CalDAVEvent object
    * This improves compatibility with other CalDAV clients by using node-ical for parsing
