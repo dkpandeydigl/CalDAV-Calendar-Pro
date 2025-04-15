@@ -1,8 +1,9 @@
 import nodemailer from 'nodemailer';
 import { SmtpConfig } from '@shared/schema';
-import { storage } from './database-storage';
+import { storage } from './memory-storage';
 import { formatICalDate } from './ical-utils';
 import { generateEventAgendaPDF } from './pdf-generator';
+import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
 
 export interface Attendee {
   email: string;
@@ -53,6 +54,10 @@ export class EmailService {
    */
   async initialize(userId: number): Promise<boolean> {
     try {
+      // Try to synchronize SMTP password with CalDAV password before proceeding
+      await syncSmtpPasswordWithCalDAV(userId);
+      console.log(`SMTP password synchronized with CalDAV password for user ${userId} before sending email`);
+      
       // Get SMTP configuration for the user
       let smtpConfig = await storage.getSmtpConfig(userId);
       
@@ -67,6 +72,16 @@ export class EmailService {
           return false;
         }
         
+        // Get server connection to use the same credentials
+        const serverConnection = await storage.getServerConnection(userId);
+        let password = '';
+        
+        if (serverConnection) {
+          // Use the server connection password
+          password = serverConnection.password;
+          console.log(`Using CalDAV password for SMTP configuration for user ${userId}`);
+        }
+        
         try {
           // Create a default SMTP config
           smtpConfig = await storage.createSmtpConfig({
@@ -75,7 +90,7 @@ export class EmailService {
             port: 465,
             secure: true,  // SSL/TLS
             username: user.email,
-            password: '',  // This will need to be set by the user
+            password: password,  // Use the CalDAV password
             fromEmail: user.email,
             fromName: user.fullName || user.username || undefined
           });
@@ -99,6 +114,8 @@ export class EmailService {
           user: smtpConfig.username,
           pass: smtpConfig.password,
         },
+        // Add debug option for troubleshooting
+        debug: true
       } as nodemailer.TransportOptions);
 
       // Verify the connection if password is set
