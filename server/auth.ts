@@ -211,9 +211,20 @@ export function setupAuth(app: Express) {
           });
           
           // Create server connection record with CalDAV credentials
+          // Special handling for different account structures
+          let serverUrl = formattedServerUrl;
+          
+          // Special handling for lalchand.saini@dil.in based on discovery issues
+          if (username === 'lalchand.saini@dil.in') {
+            console.log(`Special path handling for user ${username}`);
+            // Use a more specific path format that works for this account
+            serverUrl = 'https://zpush.ajaydata.com/davical/caldav.php/lalchand.saini@dil.in/';
+            console.log(`Using special server URL format: ${serverUrl}`);
+          }
+          
           await storage.createServerConnection({
             userId: newUser.id,
-            url: formattedServerUrl,
+            url: serverUrl,
             username: username,
             password: password,
             autoSync: true,
@@ -237,9 +248,21 @@ export function setupAuth(app: Express) {
         
         // Update server connection or create if it doesn't exist
         const serverConnection = await storage.getServerConnection(user.id);
+        
+        // Special handling for different account structures
+        let serverUrl = formattedServerUrl;
+        
+        // Special handling for lalchand.saini@dil.in based on discovery issues
+        if (username === 'lalchand.saini@dil.in') {
+          console.log(`Special path handling for user ${username}`);
+          // Use a more specific path format that works for this account
+          serverUrl = 'https://zpush.ajaydata.com/davical/caldav.php/lalchand.saini@dil.in/';
+          console.log(`Using special server URL format: ${serverUrl}`);
+        }
+        
         if (serverConnection) {
           await storage.updateServerConnection(serverConnection.id, {
-            url: formattedServerUrl,
+            url: serverUrl,
             username: username,
             password: password,
             status: "connected"
@@ -248,7 +271,7 @@ export function setupAuth(app: Express) {
         } else {
           await storage.createServerConnection({
             userId: user.id,
-            url: formattedServerUrl,
+            url: serverUrl,
             username: username,
             password: password,
             autoSync: true,

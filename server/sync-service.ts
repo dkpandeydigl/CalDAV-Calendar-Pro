@@ -943,6 +943,27 @@ export class SyncService {
                 `/davical/caldav.php/${username}/ashu/`,
                 
                 // Try direct paths to the collections we saw in the screenshot
+                // Special handling for lalchand.saini@dil.in based on the screenshot
+                username === 'lalchand.saini@dil.in' ? [
+                  // Direct paths from the screenshot for lalchand.saini@dil.in
+                  `/davical/caldav.php/lalchand.saini@dil.in/calendar/`,
+                  `/davical/caldav.php/lalchand.saini@dil.in/ashu/`,
+                  `/davical/caldav.php/lalchand.saini@dil.in/neshu/`,
+                  `/davical/caldav.php/lalchand.saini@dil.in/dkpandey/`,
+                  `/davical/caldav.php/lalchand.saini@dil.in/dk_pp/`,
+                  `/davical/caldav.php/lalchand.saini@dil.in/lalchand/`,
+                  // Try with the slashes but without URL encoding
+                  `/davical/caldav.php/lalchand.saini@dil.in/calendar/`,
+                  // Try the paths explicitly as seen in the screenshot
+                  `/lalchand.saini@dil.in/calendar/`,
+                  `/lalchand.saini@dil.in/ashu/`,
+                  `/lalchand.saini@dil.in/neshu/`,
+                  `/lalchand.saini@dil.in/dkpandey/`,
+                  `/lalchand.saini@dil.in/dk_pp/`, 
+                  `/lalchand.saini@dil.in/lalchand/`
+                ].flat() : [], // Flatten if username is lalchand.saini@dil.in, otherwise empty array
+                
+                // Try direct paths to the collections for other users
                 `/davical/caldav.php/${username}/ashu/`,
                 `/davical/caldav.php/${username}/calendar/`,
                 `/davical/caldav.php/${username}/dkpandey/`,
@@ -955,9 +976,11 @@ export class SyncService {
               
               for (const path of possiblePaths) {
                 try {
-                  console.log(`Trying to find calendars at: ${formattedUrl}${path.replace(/^\//, '')}`);
+                  // Handle both string and array values safely
+                  const processedPath = typeof path === 'string' ? path.replace(/^\//, '') : path;
+                  console.log(`Trying to find calendars at: ${formattedUrl}${processedPath}`);
                   const directDiscovery = await davClient.propfind({
-                    url: `${formattedUrl}${path.replace(/^\//, '')}`,
+                    url: `${formattedUrl}${processedPath}`,
                     depth: '1',
                     props: [
                       '{DAV:}resourcetype',
