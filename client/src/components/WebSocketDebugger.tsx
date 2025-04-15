@@ -27,9 +27,17 @@ export function WebSocketDebugger() {
 
     // Construct WebSocket URL according to the development guidelines
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}${path}?userId=${user?.id || ''}`;
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}${path}?userId=${user?.id || ''}`;
     
     console.log(`Connecting to WebSocket at: ${wsUrl}`);
+    console.log(`WebSocket connection details:
+      - Protocol: ${protocol}
+      - Host: ${host}
+      - Path: ${path}
+      - User ID: ${user?.id || 'not logged in'}
+      - Full URL: ${wsUrl}
+    `);
     setConnectionStatus('connecting');
 
     try {

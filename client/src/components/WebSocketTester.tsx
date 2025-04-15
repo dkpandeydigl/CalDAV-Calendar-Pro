@@ -32,22 +32,19 @@ export function WebSocketTester() {
       
       let wsUrl;
       
-      // For Replit deployment
-      if (currentHost.includes('replit') || currentHost.includes('replit.dev')) {
-        wsUrl = `${wsPath}?userId=${user?.id || ''}`;
-        console.log(`Testing relative WebSocket URL for Replit: ${wsUrl}`);
-      } 
-      // For localhost (avoid protocol & port issues)
-      else if (window.location.hostname === 'localhost') {
-        const port = window.location.port || '5000';
-        wsUrl = `ws://localhost:${port}${wsPath}?userId=${user?.id || ''}`;
-        console.log(`Testing explicit localhost WebSocket URL: ${wsUrl}`);
-      } 
-      // Standard case for other deployments
-      else {
-        wsUrl = `${protocol}//${currentHost}${wsPath}?userId=${user?.id || ''}`;
-        console.log(`Testing standard WebSocket URL: ${wsUrl}`);
-      }
+      // Always use the current protocol and host with relative path for all environments
+      // This works consistently across Replit, localhost and production deployments
+      wsUrl = `${protocol}//${currentHost}${wsPath}?userId=${user?.id || ''}`;
+      console.log(`Testing WebSocket URL: ${wsUrl}`);
+      
+      // Log extra diagnostics
+      console.log(`WebSocket connection details:
+        - Protocol: ${protocol}
+        - Host: ${currentHost}
+        - Path: ${wsPath}
+        - Final URL: ${wsUrl}
+        - User ID: ${user?.id || 'not logged in'}
+      `);
       
       setConnectionStatus('connecting');
       setErrorMessage(null);
