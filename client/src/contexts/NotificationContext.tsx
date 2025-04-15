@@ -257,23 +257,28 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         const currentHost = window.location.host;
         const wsPath = useFallbackPath ? '/ws' : '/api/ws';
         
+        // Determine WebSocket URL based on the environment and path
+        let wsUrl;
+        
         // Add userId parameter for authentication
         const userIdParam = user?.id ? `?userId=${user.id}` : '';
         
-        // Always use standard WebSocket URL format with protocol and host
-        // This works consistently across all environments
-        const wsUrl = `${protocol}//${currentHost}${wsPath}${userIdParam}`;
-        
-        console.log(`Creating WebSocket URL: ${wsUrl} (${useFallbackPath ? 'fallback' : 'primary'})`);
-        
-        // Log diagnostic information
-        console.log(`WebSocket connection details:
-          - Protocol: ${protocol}
-          - Host: ${currentHost}
-          - Path: ${wsPath}
-          - User ID param: ${userIdParam}
-          - Full URL: ${wsUrl}
-        `);
+        // For Replit deployment - use path-only format to avoid CORS issues
+        if (currentHost.includes('replit') || currentHost.includes('replit.dev')) {
+          wsUrl = `${wsPath}${userIdParam}`;
+          console.log(`Creating relative WebSocket URL for Replit: ${wsUrl}`);
+        } 
+        // For localhost (avoid protocol & port issues)
+        else if (window.location.hostname === 'localhost') {
+          const port = window.location.port || '5000';
+          wsUrl = `ws://localhost:${port}${wsPath}${userIdParam}`;
+          console.log(`Creating explicit localhost WebSocket URL: ${wsUrl}`);
+        } 
+        // Standard case for other deployments
+        else {
+          wsUrl = `${protocol}//${currentHost}${wsPath}${userIdParam}`;
+          console.log(`Creating standard WebSocket URL: ${wsUrl}`);
+        }
         
         const connectionAttempt = reconnectAttempts + 1;
         console.log(`🔄 NotificationContext: Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
