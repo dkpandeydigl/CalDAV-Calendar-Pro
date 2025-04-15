@@ -182,7 +182,7 @@ export function setupAuth(app: Express) {
         console.log(`CalDAV authentication successful for ${username}`);
         
         // Check if the user exists in our local database
-        const user = await storage.getUserByUsername(username);
+        let user = await storage.getUserByUsername(username);
         
         // Extract user's full name from username - will be enhanced later
         // In a real implementation, we would try to get the full name from CalDAV server
@@ -198,27 +198,35 @@ export function setupAuth(app: Express) {
           
           // Create the user first
           const hashedPassword = await hashPassword(password);
-          const newUser = await storage.createUser({
-            username,
-            password: hashedPassword,
-            email: username, // Email is same as username for CalDAV users
-            preferredTimezone: "Asia/Kolkata", // Default timezone
-            fullName: fullName // Use extracted full name
-          });
           
-          // Create server connection record with CalDAV credentials
-          await storage.createServerConnection({
-            userId: newUser.id,
-            url: formattedServerUrl,
-            username: username,
-            password: password,
-            autoSync: true,
-            syncInterval: 15, // 15 minutes default
-            status: "connected"
-          });
-          
-          console.log(`Created user ${username} with ID ${newUser.id} and fullName: ${fullName}`);
-          return done(null, newUser);
+          try {
+            const newUser = await storage.createUser({
+              username,
+              password: hashedPassword,
+              email: username, // Email is same as username for CalDAV users
+              preferredTimezone: "Asia/Kolkata", // Default timezone
+              fullName: fullName // Use extracted full name
+            });
+            
+            // Create server connection record with CalDAV credentials
+            await storage.createServerConnection({
+              userId: newUser.id,
+              url: formattedServerUrl,
+              username: username,
+              password: password,
+              autoSync: true,
+              syncInterval: 15, // 15 minutes default
+              status: "connected"
+            });
+            
+            console.log(`Created user ${username} with ID ${newUser.id} and fullName: ${fullName}`);
+            user = newUser;
+          } catch (creationError) {
+            console.error(`Error creating user in database: ${creationError}`);
+            return done(creationError);
+          }
+        } else {
+          console.log(`User ${username} found in database with ID ${user.id}`);
         }
         
         // User exists in local database, update credentials and other details
