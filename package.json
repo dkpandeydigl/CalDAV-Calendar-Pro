@@ -79,6 +79,7 @@
     "express-session": "^1.18.1",
     "framer-motion": "^11.13.1",
     "html-pdf-node": "^1.0.8",
+    "idb": "^8.0.2",
     "input-otp": "^1.2.4",
     "lucide-react": "^0.453.0",
     "memorystore": "^1.6.7",
