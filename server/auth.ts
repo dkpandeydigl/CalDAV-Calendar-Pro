@@ -4,7 +4,7 @@ import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
 import { storage } from "./database-storage";
 import bcrypt from "bcryptjs";
-import type { SelectUser } from "@shared/schema";
+import { InsertUser, User } from "@shared/schema";
 import { DAVClient } from "tsdav";
 import fetch from "node-fetch";
 import { syncService } from "./sync-service";
@@ -401,50 +401,101 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Username already exists" });
       }
       
-      // Verify CalDAV credentials first
+      // Will hold the newly created user
+      let user;
+      
       try {
-        const isValidCalDAV = await verifyCalDAVCredentials(
+        // Verify CalDAV credentials first and get user info
+        const caldavResult = await verifyCalDAVCredentials(
           caldavServerUrl,
           username,
           password
         );
         
-        if (!isValidCalDAV) {
+        if (!caldavResult || (typeof caldavResult === 'boolean' && !caldavResult)) {
           return res.status(400).json({ 
             message: "Invalid CalDAV credentials. Please check your server URL, username and password." 
           });
         }
+        
+        // Extract user info from the CalDAV response (if available)
+        const caldavUserInfo = typeof caldavResult === 'object' ? caldavResult : null;
+        
+        // Create new user with CalDAV info if available
+        const hashedPassword = await hashPassword(password);
+        const userData: InsertUser = {
+          username,
+          password: hashedPassword,
+        };
+        
+        // Add email and fullName if available from CalDAV
+        if (caldavUserInfo) {
+          if (caldavUserInfo.email) {
+            userData.email = caldavUserInfo.email;
+            console.log(`Using email from CalDAV for new user: ${caldavUserInfo.email}`);
+          }
+          
+          if (caldavUserInfo.displayName) {
+            userData.fullName = caldavUserInfo.displayName;
+            console.log(`Using display name from CalDAV for new user: ${caldavUserInfo.displayName}`);
+          }
+        }
+        
+        // For email-like usernames, use as email if not already set
+        if (!userData.email && username.includes('@')) {
+          userData.email = username;
+          console.log(`Using username as email for new user: ${username}`);
+        }
+        
+        // If no full name is available but we have an email, extract name part
+        if (!userData.fullName && userData.email) {
+          const namePart = userData.email.split('@')[0];
+          if (namePart) {
+            // Convert name formats like "john.doe" or "johndoe" to "John Doe"
+            const formattedName = namePart
+              .replace(/\./g, ' ')
+              .split(' ')
+              .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+              .join(' ');
+            
+            userData.fullName = formattedName;
+            console.log(`Generated full name from email: ${formattedName}`);
+          }
+        }
+        
+        // Create the user in the database
+        user = await storage.createUser(userData);
+        console.log(`Created new user: ${username} with ID ${user.id}`);
+        
+        // Create server connection record with CalDAV credentials
+        try {
+          await storage.createServerConnection({
+            userId: user.id,
+            url: caldavServerUrl,
+            username: username,
+            password: password,
+            autoSync: true,
+            syncInterval: 15, // 15 minutes default
+            status: "connected"
+          });
+          
+          console.log(`Created server connection for user ${username}`);
+        } catch (serverConnectionError) {
+          console.error("Error creating server connection:", serverConnectionError);
+          // Continue even if server connection creation fails
+          // We've already created the user
+        }
       } catch (error) {
-        console.error("CalDAV credential verification error:", error);
+        console.error("Registration error:", error);
         return res.status(400).json({
-          message: "Failed to verify CalDAV credentials. Please check your server URL, username and password."
+          message: "Failed to register. Please check your server URL, username and password."
         });
       }
       
-      // Create new user
-      const hashedPassword = await hashPassword(password);
-      const user = await storage.createUser({
-        username,
-        password: hashedPassword,
-      });
-      
-      // Create server connection record with CalDAV credentials
-      try {
-        await storage.createServerConnection({
-          userId: user.id,
-          url: caldavServerUrl,
-          username: username,
-          password: password,
-          autoSync: true,
-          syncInterval: 15, // 15 minutes default
-          status: "connected"
-        });
-        
-        console.log(`Created server connection for user ${username}`);
-      } catch (error) {
-        console.error("Error creating server connection:", error);
-        // Continue even if server connection creation fails
-        // We've already created the user
+      // If we got this far without user being set, something went wrong
+      if (!user) {
+        console.error("User creation failed in an unexpected way");
+        return res.status(500).json({ message: "Error creating user" });
       }
 
       // Log in the new user
