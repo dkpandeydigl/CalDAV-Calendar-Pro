@@ -57,13 +57,12 @@ export const WebSocketConnectionTest: React.FC = () => {
     setConnectionAttempts(prev => prev + 1);
     
     try {
-      // Construct WebSocket URL
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
+      // Simplified WebSocket URL construction for better Replit compatibility
+      // Using relative paths directly without protocol/host for maximum compatibility
       const path = useFallbackPath ? '/ws' : '/api/ws';
-      const wsUrl = `${protocol}//${host}${path}?userId=${userId}`;
+      const wsUrl = `${path}?userId=${userId}`;
       
-      console.log(`Connecting to WebSocket at ${wsUrl}`);
+      console.log(`Connecting to WebSocket at relative path: ${wsUrl}`);
       
       const newSocket = new WebSocket(wsUrl);
       

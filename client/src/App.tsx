@@ -8,6 +8,7 @@ import AuthPage from "@/pages/auth-page";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import { WebSocketTestPage } from "@/pages/WebSocketTestPage";
 import { WebSocketDebugPage } from "@/pages/WebSocketDebugPage";
+import WebSocketDiagnosticPage from "@/pages/WebSocketDiagnosticPage";
 import ResourceTestPage from "@/pages/ResourceTestPage";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AuthProvider } from "@/hooks/use-auth";
@@ -27,6 +28,9 @@ function Router() {
       </Route>
       <Route path="/websocket-debug">
         {() => <ProtectedRoute component={WebSocketDebugPage} />}
+      </Route>
+      <Route path="/websocket-diagnostic">
+        {() => <ProtectedRoute component={WebSocketDiagnosticPage} />}
       </Route>
       <Route path="/resource-test">
         {() => <ProtectedRoute component={ResourceTestPage} />}
