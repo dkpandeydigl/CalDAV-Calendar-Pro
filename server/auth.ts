@@ -263,13 +263,38 @@ export function setupAuth(app: Express) {
     }),
   );
 
-  passport.serializeUser((user, done) => done(null, user.id));
-  passport.deserializeUser(async (id: number, done) => {
+  passport.serializeUser((user, done) => {
+    if (!user || typeof user !== 'object' || !('id' in user)) {
+      console.error('Invalid user object in serializeUser:', user);
+      return done(new Error('Invalid user object'));
+    }
+    console.log(`Serializing user ID: ${user.id}`);
+    done(null, user.id);
+  });
+
+  passport.deserializeUser(async (id: any, done) => {
     try {
-      const user = await storage.getUser(id);
+      // Ensure ID is a number
+      const userId = typeof id === 'string' ? parseInt(id, 10) : id;
+      
+      if (isNaN(userId)) {
+        console.error(`Invalid user ID in deserializeUser: ${id}`);
+        return done(null, false);
+      }
+      
+      console.log(`Deserializing user ID: ${userId}`);
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        console.log(`User with ID ${userId} not found during deserialization`);
+        return done(null, false);
+      }
+      
+      console.log(`User deserialized successfully: ${user.username} (ID: ${user.id})`);
       done(null, user);
     } catch (error) {
-      done(error);
+      console.error(`Error in deserializeUser:`, error);
+      done(null, false);
     }
   });
 
