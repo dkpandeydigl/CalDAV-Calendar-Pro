@@ -205,6 +205,237 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Test endpoint for cancellation emails with resource preservation
+  app.post('/api/test-cancellation-email', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { eventId, sendRealEmails = false } = req.body;
+      
+      if (!eventId) {
+        return res.status(400).json({ error: 'Event ID is required' });
+      }
+      
+      // Get the event from storage
+      const event = await storage.getEvent(eventId);
+      if (!event) {
+        return res.status(404).json({ error: 'Event not found' });
+      }
+      
+      console.log(`=== TESTING CANCELLATION EMAIL FOR EVENT ID ${eventId} ===`);
+      console.log(`Event title: ${event.title}, UID: ${event.uid}`);
+      
+      // Parse attendees and resources from event
+      let attendees = [];
+      let resources = [];
+      
+      try {
+        attendees = event.attendees ? 
+          (typeof event.attendees === 'string' ? 
+            JSON.parse(event.attendees) : event.attendees) : [];
+      } catch (e) {
+        console.error('Error parsing attendees:', e);
+        attendees = [];
+      }
+      
+      try {
+        resources = event.resources ? 
+          (typeof event.resources === 'string' ? 
+            JSON.parse(event.resources) : event.resources) : [];
+      } catch (e) {
+        console.error('Error parsing resources:', e);
+        resources = [];
+      }
+      
+      const organizer = {
+        email: req.user!.email || req.user!.username,
+        name: req.user!.fullName || req.user!.username
+      };
+      
+      console.log(`Event has ${attendees.length} attendees and ${resources.length} resources`);
+      
+      // Prepare event data for cancellation
+      const eventData = {
+        eventId: event.id,
+        uid: event.uid,
+        title: event.title,
+        description: event.description,
+        location: event.location,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        organizer,
+        attendees,
+        resources,
+        rawData: event.rawData,
+        status: 'CANCELLED'
+      };
+      
+      // If not sending real emails, just do the ICS transformation and return
+      if (!sendRealEmails) {
+        console.log('Test mode - not sending actual emails');
+        
+        if (!event.rawData) {
+          return res.status(400).json({ 
+            error: 'Event has no raw ICS data, cannot test resource preservation',
+            event: {
+              id: event.id,
+              title: event.title,
+              hasRawData: false,
+              attendeeCount: attendees.length,
+              resourceCount: resources.length
+            }
+          });
+        }
+        
+        // Transform the ICS for cancellation
+        const cancellationIcs = emailService.transformIcsForCancellation(
+          event.rawData as string,
+          eventData
+        );
+        
+        // Extract attendee and resource lines
+        const originalAttendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+        const originalAttendeeLines = (event.rawData as string).match(originalAttendeePattern) || [];
+        const originalResourceLines = originalAttendeeLines.filter(line => 
+          line.includes('CUTYPE=RESOURCE') || 
+          line.includes('X-RESOURCE-TYPE') || 
+          line.includes('RESOURCE-TYPE')
+        );
+        
+        const cancelledAttendeeLines = cancellationIcs.match(originalAttendeePattern) || [];
+        const cancelledResourceLines = cancelledAttendeeLines.filter(line => 
+          line.includes('CUTYPE=RESOURCE') || 
+          line.includes('X-RESOURCE-TYPE') || 
+          line.includes('RESOURCE-TYPE')
+        );
+        
+        // Check if all resource attendees are preserved
+        const allResourcesPreserved = originalResourceLines.every(original => {
+          // Extract email from original line
+          const originalEmail = original.match(/:mailto:([^\r\n]+)/i)?.[1];
+          if (!originalEmail) return false;
+          
+          // Check if any cancelled line contains this email
+          return cancelledResourceLines.some(cancelled => 
+            cancelled.includes(`:mailto:${originalEmail}`)
+          );
+        });
+        
+        // Count and compare
+        const result = {
+          success: true,
+          tested: 'cancellation-ics-transformation',
+          event: {
+            id: event.id,
+            title: event.title,
+            uid: event.uid,
+            hasRawData: true
+          },
+          originalIcs: {
+            attendeeCount: originalAttendeeLines.length,
+            resourceCount: originalResourceLines.length,
+            resourceLines: originalResourceLines
+          },
+          cancellationIcs: {
+            attendeeCount: cancelledAttendeeLines.length,
+            resourceCount: cancelledResourceLines.length,
+            resourceLines: cancelledResourceLines,
+            method: cancellationIcs.match(/METHOD:([^\r\n]+)/i)?.[1],
+            status: cancellationIcs.match(/STATUS:([^\r\n]+)/i)?.[1],
+            sequence: cancellationIcs.match(/SEQUENCE:(\d+)/i)?.[1]
+          },
+          preservation: {
+            resourcesPreserved: originalResourceLines.length === cancelledResourceLines.length,
+            allResourcesExactlyPreserved: allResourcesPreserved,
+            uidsMatch: event.uid === cancellationIcs.match(/UID:([^\r\n]+)/i)?.[1]
+          }
+        };
+        
+        return res.json(result);
+      }
+      
+      // Send actual cancellation emails
+      console.log('Sending actual cancellation emails');
+      const result = await emailService.sendEventCancellation(userId, eventData);
+      
+      res.json({
+        success: result.success,
+        tested: 'cancellation-email-sending',
+        message: result.message,
+        details: result.details
+      });
+      
+    } catch (error) {
+      console.error('Error testing cancellation email:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Error testing cancellation email',
+        error: String(error)
+      });
+    }
+  });
+  
+  // Test endpoint for SMTP configuration and email sending
+  app.post('/api/test-email', isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { recipient, useSmtpConfig = true } = req.body;
+      
+      if (!recipient) {
+        return res.status(400).json({ error: 'Recipient email address is required' });
+      }
+      
+      console.log(`=== TESTING EMAIL SERVICE FOR USER ${userId} ===`);
+      
+      // Initialize the email service with the user's SMTP configuration
+      let initialized = false;
+      
+      if (useSmtpConfig) {
+        console.log(`Initializing email service with SMTP config for user ${userId}`);
+        initialized = await emailService.initialize(userId);
+      }
+      
+      if (!initialized && useSmtpConfig) {
+        // Try to fetch the SMTP config to provide more details about the failure
+        const config = await storage.getSmtpConfig(userId);
+        
+        let configDetails = 'No SMTP configuration found';
+        if (config) {
+          configDetails = `SMTP Config: ${config.host}:${config.port}, From: ${config.fromEmail}`;
+          if (config.fromName) {
+            configDetails += ` (${config.fromName})`;
+          }
+        }
+        
+        return res.status(400).json({
+          success: false,
+          message: `Failed to initialize email service with user's SMTP configuration`,
+          details: {
+            userId,
+            smtpConfigured: !!config,
+            smtpDetails: configDetails
+          }
+        });
+      }
+      
+      // Send a test email
+      console.log(`Sending test email to ${recipient}`);
+      const result = await emailService.sendTestEmail(recipient);
+      
+      return res.json({
+        success: result.success,
+        message: result.message,
+        details: result.details || {}
+      });
+    } catch (error) {
+      console.error('Error sending test email:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error sending test email',
+        error: String(error)
+      });
+    }
+  });
+  
   function isAuthenticated(req: Request, res: Response, next: NextFunction) {
     if (req.isAuthenticated()) {
       return next();
