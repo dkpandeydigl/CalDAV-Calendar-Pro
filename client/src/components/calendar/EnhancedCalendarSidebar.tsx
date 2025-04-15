@@ -44,8 +44,10 @@ import {
   Search,
   Filter,
   X,
-  Info
+  Info,
+  RefreshCw
 } from 'lucide-react';
+import { SyncStatusIndicator } from '../SyncStatusIndicator';
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
