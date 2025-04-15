@@ -65,7 +65,7 @@ interface CalendarAppDB extends DBSchema {
     value: Notification;
     indexes: {
       'by-userId': number;
-      'by-read': boolean;
+      'by-isRead': boolean;
     };
   };
   syncState: {
@@ -149,7 +149,7 @@ class IndexedDBService {
         if (!db.objectStoreNames.contains('notifications')) {
           const notifStore = db.createObjectStore('notifications', { keyPath: 'id' });
           notifStore.createIndex('by-userId', 'userId', { unique: false });
-          notifStore.createIndex('by-read', 'read', { unique: false });
+          notifStore.createIndex('by-isRead', 'isRead', { unique: false });
         }
         
         // Create sync state store
