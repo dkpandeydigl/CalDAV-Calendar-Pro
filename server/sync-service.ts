@@ -915,14 +915,42 @@ export class SyncService {
             try {
               console.log(`Attempting direct discovery at standard locations for user ${username}`);
               
-              // Common paths for DaviCal server
+              // Get username without domain for path construction
+              const usernameWithoutDomain = username.split('@')[0];
+              const userDomain = username.includes('@') ? username.split('@')[1] : '';
+              
+              // Common paths for DaviCal server - now with more variations
               const possiblePaths = [
+                // Original paths
                 `/caldav.php/${username}/`,
                 `/caldav.php/${username}/calendar/`,
                 `/caldav.php/${username}/home/`,
                 `/caldav/${username}/`,
                 `/calendar/${username}/`,
-                `/calendars/${username}/`
+                `/calendars/${username}/`,
+                
+                // Try paths with the full email address
+                `/${username}/`,
+                `/${username}/calendar/`,
+                
+                // Try paths with username without domain (common for DAViCal)
+                `/${usernameWithoutDomain}/`,
+                `/${usernameWithoutDomain}/calendar/`,
+                
+                // DAViCal specific paths based on the screenshot
+                `/davical/caldav.php/${username}/`,
+                `/davical/caldav.php/${username}/calendar/`,
+                `/davical/caldav.php/${username}/ashu/`,
+                
+                // Try direct paths to the collections we saw in the screenshot
+                `/davical/caldav.php/${username}/ashu/`,
+                `/davical/caldav.php/${username}/calendar/`,
+                `/davical/caldav.php/${username}/dkpandey/`,
+                
+                // If the server URL already includes caldav.php, try with just the username
+                `./${username}/`,
+                `./${username}/calendar/`,
+                `./${username}/ashu/`
               ];
               
               for (const path of possiblePaths) {
@@ -1264,13 +1292,59 @@ export class SyncService {
   private async findCalendarByUrl(url: string, userId: number): Promise<Calendar | undefined> {
     const calendars = await storage.getCalendars(userId);
     
+    if (!url) {
+      console.log('findCalendarByUrl called with empty URL');
+      return undefined;
+    }
+    
+    // Normalize URL for comparison - strip trailing slashes and query params
+    const normalizeUrl = (inputUrl: string | null): string => {
+      if (!inputUrl) return '';
+      
+      // Remove query parameters
+      const urlWithoutParams = inputUrl.split('?')[0];
+      
+      // Remove hash fragments
+      const urlWithoutHash = urlWithoutParams.split('#')[0];
+      
+      // Remove trailing slashes
+      return urlWithoutHash.replace(/\/+$/, '');
+    };
+    
+    const normalizedSearchUrl = normalizeUrl(url);
+    console.log(`Looking for calendar with normalized URL: ${normalizedSearchUrl}`);
+    
     // Check for exact match
-    const exactMatch = calendars.find(cal => cal.url === url);
+    const exactMatch = calendars.find(cal => normalizeUrl(cal.url) === normalizedSearchUrl);
     if (exactMatch) {
+      console.log(`Found exact URL match for calendar: ${exactMatch.name}`);
       return exactMatch;
     }
     
-    // No match found
+    // Check for partial URL match (calendar might be stored with a different base URL)
+    const partialMatch = calendars.find(cal => {
+      if (!cal.url) return false;
+      
+      // Extract path components 
+      const calPathSegments = normalizeUrl(cal.url).split('/').filter(Boolean);
+      const searchPathSegments = normalizedSearchUrl.split('/').filter(Boolean);
+      
+      // If the last 2+ path segments match, consider it the same calendar
+      if (calPathSegments.length >= 2 && searchPathSegments.length >= 2) {
+        const calLastSegments = calPathSegments.slice(-2).join('/');
+        const searchLastSegments = searchPathSegments.slice(-2).join('/');
+        return calLastSegments === searchLastSegments;
+      }
+      
+      return false;
+    });
+    
+    if (partialMatch) {
+      console.log(`Found partial URL match for calendar: ${partialMatch.name}`);
+      return partialMatch;
+    }
+    
+    console.log(`No matching calendar found for URL: ${url}`);
     return undefined;
   }
   

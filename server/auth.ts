@@ -156,9 +156,13 @@ export function setupAuth(app: Express) {
         
         // Always authenticate directly against the CalDAV server first
         const defaultServerUrl = process.env.DEFAULT_CALDAV_SERVER || "https://zpush.ajaydata.com/davical/caldav.php";
+        
+        // Format the URL specifically for DAViCal server structure based on screenshot
+        // This ensures we use the exact path format that the server expects
         const formattedServerUrl = `${defaultServerUrl}/${encodeURIComponent(username)}/`;
         
         console.log(`Authenticating ${username} directly with CalDAV server: ${formattedServerUrl}`);
+        console.log(`Note: Based on screenshot, this user has multiple calendar collections in DAViCal`);
         
         // Try to authenticate against CalDAV server
         let isValidCalDAV = false;
@@ -401,11 +405,12 @@ export function setupAuth(app: Express) {
   app.post("/api/login", async (req, res, next) => {
     const { username, password, caldavServerUrl } = req.body;
     
-    // Set default CalDAV server URL if not provided
+    // Set default CalDAV server URL if not provided, using the proper structure for DAViCal
     const serverUrl = caldavServerUrl || 
       `${process.env.DEFAULT_CALDAV_SERVER || "https://zpush.ajaydata.com/davical/caldav.php"}/${encodeURIComponent(username)}/`;
     
     console.log(`Login attempt for ${username} with server URL: ${serverUrl}`);
+    console.log(`Using specific format for DAViCal server path structure based on screenshot`);
     
     // We'll use the passport authenticate which uses our custom local strategy
     // Our strategy already handles CalDAV verification and user creation/update
