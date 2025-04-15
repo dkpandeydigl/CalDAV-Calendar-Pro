@@ -1138,8 +1138,9 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     const endDateStr = formatICalDate(endDate);
     const now = formatICalDate(new Date());
     
-    // Generate unique identifier for the event
-    const eventId = uid || `event-${Date.now()}@caldav-app`;
+    // For cancellations, we MUST use the original event's UID - crucial for RFC compliance
+    // For new events, generate a unique identifier
+    const eventId = uid || `event-${Date.now()}@caldavclient.local`;
     
     // Start building the ICS content
     let icsContent = [

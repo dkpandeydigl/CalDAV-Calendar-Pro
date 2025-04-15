@@ -234,7 +234,8 @@ export function generateICalEvent(event: any, options: {
   
   lines.push('BEGIN:VEVENT');
   
-  // Add required properties
+  // Add required properties - UID must be preserved exactly as-is for RFC 5546 compliance
+  // especially for cancellations that MUST use the same UID as the original event
   lines.push(formatContentLine('UID', event.uid));
   lines.push(formatContentLine('SUMMARY', event.title || "Untitled Event"));
   
@@ -517,6 +518,7 @@ export function generateCancellationICalEvent(event: any, options: {
   // Increment the sequence number
   const updatedSequence = options.sequence + 1;
   
+  // RFC 5546 requires the EXACT same UID to be used for cancellation events
   // Extract the original UID from raw data if available to ensure exact match
   let originalUid = event.uid;
   if (event.rawData && typeof event.rawData === 'string') {
@@ -529,10 +531,12 @@ export function generateCancellationICalEvent(event: any, options: {
     }
   }
   
+  // Log detailed information for debugging
+  console.log(`[RFC 5546] Preserving original UID for cancellation: ${originalUid}`);
   console.log(`Preparing cancellation for event: ${event.title} with UID: ${originalUid}`);
   console.log(`Original event has ${event.resources ? event.resources.length : 0} resources and ${event.attendees ? event.attendees.length : 0} attendees`);
   
-  // Create a shallow copy of the event - we don't want to modify the original
+  // Create a shallow copy of the event and FORCE the original UID
   const eventCopy = { ...event, uid: originalUid };
   
   // Make sure we retain the resources array for cancellations
