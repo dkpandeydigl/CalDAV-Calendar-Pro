@@ -67,6 +67,7 @@ export interface IStorage {
   // Notification methods
   createNotification(notification: InsertNotification): Promise<Notification>;
   getNotifications(userId: number, limit?: number): Promise<Notification[]>;
+  getAllNotifications(): Promise<Notification[]>; // Get all notifications regardless of user
   getUnreadNotificationCount(userId: number): Promise<number>;
   getUnreadNotifications(userId: number): Promise<Notification[]>;
   markNotificationRead(id: number): Promise<boolean>;
@@ -720,6 +721,12 @@ export class MemStorage implements IStorage {
     }
     
     return notifications;
+  }
+  
+  async getAllNotifications(): Promise<Notification[]> {
+    // Return all notifications from the map
+    return Array.from(this.notificationsMap.values())
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()); // Sort newest first
   }
   
   async getUnreadNotificationCount(userId: number): Promise<number> {

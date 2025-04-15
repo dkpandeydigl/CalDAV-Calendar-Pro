@@ -102,7 +102,7 @@ export class MemoryNotificationService {
       relatedUserId: fromUserId,
       relatedUserName: fromUserName,
       relatedUserEmail: fromUserEmail,
-      additionalData: reason ? JSON.stringify({ reason }) : undefined,
+      additionalData: reason ? JSON.stringify({ reason }) : null,
       requiresAction: false,
       isRead: false,
       isDismissed: false,
@@ -156,32 +156,68 @@ export class MemoryNotificationService {
   }
 
   /**
-   * Get notifications for a user
+   * Get notifications for a user with filtering
    */
   async getNotifications(filter: NotificationFilter): Promise<Notification[]> {
-    const { userId, limit = 50, offset = 0 } = filter;
+    const { userId, unreadOnly, requiresActionOnly, type, priority, relatedEventId, relatedEventUid, limit = 50, offset = 0 } = filter;
     
-    if (userId === undefined) {
-      return [];
+    // Get all notifications for this user
+    let notifications = await storage.getNotifications(userId);
+    
+    // Apply filters
+    if (unreadOnly) {
+      notifications = notifications.filter(notification => !notification.isRead);
     }
     
-    return storage.getNotifications(userId, limit);
+    if (requiresActionOnly) {
+      notifications = notifications.filter(notification => notification.requiresAction);
+    }
+    
+    if (type !== undefined) {
+      if (Array.isArray(type)) {
+        notifications = notifications.filter(notification => type.includes(notification.type));
+      } else {
+        notifications = notifications.filter(notification => notification.type === type);
+      }
+    }
+    
+    if (priority !== undefined) {
+      notifications = notifications.filter(notification => notification.priority === priority);
+    }
+    
+    if (relatedEventId !== undefined) {
+      notifications = notifications.filter(notification => notification.relatedEventId === relatedEventId);
+    }
+    
+    if (relatedEventUid !== undefined) {
+      notifications = notifications.filter(notification => notification.relatedEventUid === relatedEventUid);
+    }
+    
+    // Don't show dismissed notifications unless explicitly requested
+    if (!filter.hasOwnProperty('isDismissed')) {
+      notifications = notifications.filter(notification => !notification.isDismissed);
+    }
+    
+    // Apply sorting (newest first)
+    notifications.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    // Apply pagination
+    return notifications.slice(offset, offset + limit);
   }
 
   /**
    * Get a notification by ID
    */
   async getNotification(id: number): Promise<Notification | undefined> {
-    const allNotifications = await storage.getAllNotifications();
-    return allNotifications.find(n => n.id === id);
+    const notifications = await storage.getAllNotifications();
+    return notifications.find(notification => notification.id === id);
   }
 
   /**
    * Get unread notification count for user
    */
   async getUnreadCount(userId: number): Promise<number> {
-    const count = await storage.getUnreadNotificationCount(userId);
-    return count;
+    return storage.getUnreadNotificationCount(userId);
   }
 
   /**
@@ -196,12 +232,10 @@ export class MemoryNotificationService {
    */
   async markMultipleAsRead(ids: number[]): Promise<boolean> {
     let success = true;
-    
     for (const id of ids) {
       const result = await storage.markNotificationRead(id);
       if (!result) success = false;
     }
-    
     return success;
   }
 
@@ -216,19 +250,12 @@ export class MemoryNotificationService {
    * Dismiss a notification
    */
   async dismissNotification(id: number): Promise<boolean> {
-    const notification = await this.getNotification(id);
+    const notification = (await storage.getNotifications(-1))
+      .find(notification => notification.id === id);
     
     if (!notification) return false;
     
-    // We don't have a direct "dismiss" method in our storage interface,
-    // so we'll update the notification with isDismissed = true
     notification.isDismissed = true;
-    
-    // Since memory-storage doesn't have an update method for notifications,
-    // we'll delete and recreate
-    await storage.deleteNotification(id);
-    await storage.createNotification(notification);
-    
     return true;
   }
 
@@ -236,20 +263,52 @@ export class MemoryNotificationService {
    * Mark action taken on a notification
    */
   async markActionTaken(id: number): Promise<boolean> {
-    const notification = await this.getNotification(id);
+    const notification = (await storage.getNotifications(-1))
+      .find(notification => notification.id === id);
     
     if (!notification) return false;
     
-    // Update the notification
     notification.actionTaken = true;
     notification.requiresAction = false;
-    
-    // Since memory-storage doesn't have an update method for notifications,
-    // we'll delete and recreate
-    await storage.deleteNotification(id);
-    await storage.createNotification(notification);
-    
     return true;
+  }
+
+  /**
+   * Delete old notifications
+   * Removes notifications older than the specified number of days
+   */
+  async cleanupOldNotifications(daysToKeep: number = 30): Promise<number> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
+    
+    let deletedCount = 0;
+    const notifications = await storage.getNotifications(-1);
+    
+    for (const notification of notifications) {
+      if (notification.createdAt < cutoffDate) {
+        const success = await storage.deleteNotification(notification.id);
+        if (success) deletedCount++;
+      }
+    }
+    
+    return deletedCount;
+  }
+
+  /**
+   * Delete notifications for an event
+   */
+  async deleteNotificationsForEvent(eventId: number): Promise<number> {
+    let deletedCount = 0;
+    const notifications = await storage.getNotifications(-1);
+    
+    for (const notification of notifications) {
+      if (notification.relatedEventId === eventId) {
+        const success = await storage.deleteNotification(notification.id);
+        if (success) deletedCount++;
+      }
+    }
+    
+    return deletedCount;
   }
 }
 
