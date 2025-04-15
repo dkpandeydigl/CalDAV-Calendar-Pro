@@ -1,394 +1,474 @@
 /**
- * WebSocket Handler Module
+ * WebSocket Handler
  * 
- * This module manages real-time WebSocket connections for the application.
- * It provides functionality for:
- * - Establishing WebSocket connections with clients
- * - Maintaining a registry of active connections by user ID
- * - Broadcasting notifications and updates to clients
- * - Handling client disconnections and reconnections
+ * This module handles WebSocket connections and provides real-time
+ * notification capabilities for the application.
  */
 
-import { Server } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { Server } from 'http';
 import { storage } from './database-storage';
-import { 
-  type Notification, 
-  NotificationType,
-  notificationSchema 
-} from '@shared/schema';
 import { notificationService } from './notification-service';
+import { Notification } from '@shared/schema';
 
-// Map to track active WebSocket connections by user ID
-const userSockets = new Map<number, Set<WebSocket>>();
+// Track active WebSocket connections by user ID
+const userConnections: Map<number, Set<WebSocket>> = new Map();
 
-// Map to track user IDs associated with each socket (for cleanup on disconnect)
-const socketUsers = new Map<WebSocket, number>();
+// User IDs by WebSocket instance for quick lookup
+const socketUsers: Map<WebSocket, number> = new Map();
 
-// WebSocket server instance
-let wss: WebSocketServer;
-let wssAlternate: WebSocketServer;  // Alternative path WebSocket server
+// Track ping/pong status for each connection
+const socketLastPing: Map<WebSocket, number> = new Map();
+const socketLastPong: Map<WebSocket, number> = new Map();
 
-// Initialize the WebSocket server
-export function initializeWebSocketServer(server: Server) {
-  console.log('Initializing WebSocket server with dual paths');
+// Initialize the WebSocket server with two paths for redundancy
+// - Main path at '/api/ws' for normal operations
+// - Fallback path at '/ws' for environments where the main path might be blocked
+export function initializeWebSocketServer(httpServer: Server) {
+  console.log("Initializing WebSocket server with dual paths");
   
-  // Create WebSocket server on the primary path /api/ws
-  wss = new WebSocketServer({ 
-    server, 
-    path: '/api/ws',
-    clientTracking: true 
+  // Primary WebSocket server on /api/ws path
+  const wssApiPath = new WebSocketServer({ 
+    server: httpServer, 
+    path: '/api/ws'
   });
   
-  // Create WebSocket server on the alternate path /ws for environments 
-  // where the primary path might be blocked
-  wssAlternate = new WebSocketServer({
-    server,
-    path: '/ws',
-    clientTracking: true
+  // Fallback WebSocket server on /ws path
+  const wssFallback = new WebSocketServer({
+    server: httpServer,
+    path: '/ws'
   });
-
-  // Set up connection handling for the primary WebSocket server
-  wss.on('connection', handleConnection);
   
-  // Set up connection handling for the alternate WebSocket server
-  wssAlternate.on('connection', handleConnection);
+  // Set up handlers for primary path
+  wssApiPath.on('connection', (ws, req) => {
+    handleNewConnection(ws, req, 'primary');
+  });
   
-  console.log('WebSocket server initialized on paths: /api/ws and /ws');
-}
-
-// Handle incoming WebSocket connections
-function handleConnection(ws: WebSocket, req: any) {
-  // Extract user ID from the request session or query parameters
-  let userId: number | undefined;
-
-  // Try to extract from URL parameters
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const userIdParam = url.searchParams.get('userId');
-  if (userIdParam) {
-    userId = parseInt(userIdParam, 10);
-  } else {
-    // Not authenticated yet - wait for auth message
-    console.log('WebSocket connection established, waiting for authentication');
-  }
-
-  // Set up ping-pong to keep connection alive
-  const pingInterval = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      const timestamp = Date.now();
-      ws.ping(timestamp.toString());
-    }
+  // Set up handlers for fallback path
+  wssFallback.on('connection', (ws, req) => {
+    handleNewConnection(ws, req, 'fallback');
+  });
+  
+  // Regularly check connection health
+  setInterval(() => {
+    pingAllClients();
+    checkStaleConnections();
   }, 30000);
-
-  ws.on('pong', (data) => {
-    // Echo back the timestamp to measure latency
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        const timestamp = data.toString();
-        const now = Date.now();
-        const latency = now - parseInt(timestamp);
-        ws.send(JSON.stringify({
-          type: 'pong',
-          timestamp: parseInt(timestamp),
-          receivedAt: now,
-          latency
-        }));
-      } catch (err) {
-        console.error('Error handling pong:', err);
-      }
-    }
-  });
-
-  // Handle messages from client
-  ws.on('message', async (message: string) => {
-    try {
-      const data = JSON.parse(message.toString());
-      
-      // Handle authentication message
-      if (data.type === 'auth' && data.userId) {
-        userId = parseInt(data.userId, 10);
-        if (isNaN(userId)) {
-          console.error('Invalid user ID in WebSocket auth:', data.userId);
-          return;
-        }
-        
-        // Register this socket with the user
-        registerUserSocket(userId, ws);
-        
-        // Acknowledge the authentication
-        ws.send(JSON.stringify({ 
-          type: 'auth_success', 
-          message: 'WebSocket connection authenticated' 
-        }));
-        
-        // Send initial unread notifications
-        sendInitialNotifications(userId, ws);
-        
-        console.log(`WebSocket authenticated for user ${userId}`);
-      }
-      
-      // Handle mark notification as read
-      if (data.type === 'mark_read' && data.notificationId && userId) {
-        try {
-          await storage.markNotificationRead(data.notificationId);
-          
-          // Send updated notification status
-          const updatedNotifications = await storage.getUnreadNotifications(userId);
-          ws.send(JSON.stringify({
-            type: 'notifications_update',
-            notifications: updatedNotifications
-          }));
-        } catch (error) {
-          console.error('Error marking notification as read:', error);
-        }
-      }
-      
-      // Handle mark all notifications as read
-      if (data.type === 'mark_all_read' && userId) {
-        try {
-          await storage.markAllNotificationsRead(userId);
-          
-          // Send updated notification status (should be empty now)
-          ws.send(JSON.stringify({
-            type: 'notifications_update',
-            notifications: []
-          }));
-        } catch (error) {
-          console.error('Error marking all notifications as read:', error);
-        }
-      }
-      
-      // Handle ping message (manual ping for troubleshooting)
-      if (data.type === 'ping') {
-        ws.send(JSON.stringify({ 
-          type: 'pong', 
-          timestamp: Date.now(),
-          echo: data.timestamp 
-        }));
-      }
-      
-      // Handle test message
-      if (data.type === 'test') {
-        ws.send(JSON.stringify({ 
-          type: 'test_response', 
-          message: 'Test successful', 
-          received: data 
-        }));
-      }
-      
-    } catch (error) {
-      console.error('Error processing WebSocket message:', error);
-    }
-  });
-
-  // Handle client disconnection
-  ws.on('close', () => {
-    clearInterval(pingInterval);
-    
-    // Clean up the connection from our registry
-    if (userId) {
-      unregisterUserSocket(userId, ws);
-    }
-    
-    console.log('WebSocket connection closed');
-  });
-
-  // Handle errors
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-    clearInterval(pingInterval);
-    
-    // Clean up on error
-    if (userId) {
-      unregisterUserSocket(userId, ws);
-    }
-  });
-}
-
-// Register a WebSocket connection for a user
-function registerUserSocket(userId: number, ws: WebSocket) {
-  // Add to user -> sockets map
-  if (!userSockets.has(userId)) {
-    userSockets.set(userId, new Set());
-  }
-  userSockets.get(userId)?.add(ws);
   
-  // Add to socket -> user map (for cleanup)
-  socketUsers.set(ws, userId);
-}
-
-// Unregister a WebSocket connection for a user
-function unregisterUserSocket(userId: number, ws: WebSocket) {
-  // Remove from user -> sockets map
-  const userSocketSet = userSockets.get(userId);
-  if (userSocketSet) {
-    userSocketSet.delete(ws);
-    if (userSocketSet.size === 0) {
-      userSockets.delete(userId);
-    }
-  }
+  console.log("WebSocket server initialized on paths: /api/ws and /ws");
   
-  // Remove from socket -> user map
-  socketUsers.delete(ws);
+  return { wssApiPath, wssFallback };
 }
 
-// Send notifications to a specific user
-export function sendNotification(userId: number, notification: Notification) {
-  // Validate notification schema
+// Handle new WebSocket connections
+function handleNewConnection(ws: WebSocket, req: any, pathType: 'primary' | 'fallback') {
   try {
-    notificationSchema.parse(notification);
+    // Extract user ID from request query parameters
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const userId = parseInt(url.searchParams.get('userId') || '0');
+    
+    console.log(`New WebSocket connection (${pathType}) from user ID: ${userId}`);
+    
+    if (isNaN(userId) || userId <= 0) {
+      console.log('WebSocket connection rejected: Invalid user ID');
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Authentication required',
+        timestamp: Date.now()
+      }));
+      ws.close();
+      return;
+    }
+    
+    // Add to user connections map
+    if (!userConnections.has(userId)) {
+      userConnections.set(userId, new Set());
+    }
+    userConnections.get(userId)?.add(ws);
+    
+    // Track which user this socket belongs to
+    socketUsers.set(ws, userId);
+    
+    // Initialize ping tracking
+    const now = Date.now();
+    socketLastPing.set(ws, now);
+    socketLastPong.set(ws, now);
+    
+    // Set up message handler
+    ws.on('message', (message) => handleWebSocketMessage(ws, message));
+    
+    // Set up close handler
+    ws.on('close', () => handleWebSocketClose(ws));
+    
+    // Set up error handler
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
+      cleanupConnection(ws);
+    });
+    
+    // Set up pong handler
+    ws.on('pong', () => {
+      socketLastPong.set(ws, Date.now());
+    });
+    
+    // Send welcome message
+    ws.send(JSON.stringify({
+      type: 'connected',
+      message: `Connected to ${pathType} WebSocket server`,
+      timestamp: Date.now(),
+      userId
+    }));
+    
+    // Fetch and send pending notifications
+    sendPendingNotifications(userId, ws);
   } catch (error) {
-    console.error('Invalid notification schema:', error);
-    return;
-  }
-  
-  const userSocketSet = userSockets.get(userId);
-  if (!userSocketSet || userSocketSet.size === 0) {
-    // User doesn't have an active WebSocket connection
-    // We'll just store it in the database for when they connect
-    return;
-  }
-  
-  // Send to all connections for this user
-  for (const socket of userSocketSet) {
-    if (socket.readyState === WebSocket.OPEN) {
-      try {
-        socket.send(JSON.stringify({
-          type: 'notification',
-          notification
-        }));
-      } catch (error) {
-        console.error(`Error sending notification to user ${userId}:`, error);
-      }
+    console.error('Error handling WebSocket connection:', error);
+    try {
+      ws.close();
+    } catch (closeError) {
+      console.error('Error closing WebSocket:', closeError);
     }
   }
 }
 
-// Create and send a notification in one step
-export function createAndSendNotification(
+// Handle incoming WebSocket messages
+function handleWebSocketMessage(ws: WebSocket, message: any) {
+  try {
+    const userId = socketUsers.get(ws);
+    
+    if (!userId) {
+      console.log('Message from unauthenticated WebSocket, closing');
+      ws.close();
+      return;
+    }
+    
+    let parsedMessage;
+    try {
+      parsedMessage = JSON.parse(message.toString());
+      console.log(`Received WebSocket message from user ${userId}:`, parsedMessage.type);
+    } catch (e) {
+      console.error('Failed to parse WebSocket message:', message.toString());
+      return;
+    }
+    
+    // Handle different message types
+    switch (parsedMessage.type) {
+      case 'ping':
+        handlePingMessage(ws, parsedMessage);
+        break;
+        
+      case 'notification_read':
+        handleNotificationRead(userId, parsedMessage);
+        break;
+        
+      case 'notification_read_all':
+        handleNotificationReadAll(userId);
+        break;
+        
+      case 'sync_request':
+        handleSyncRequest(userId, parsedMessage);
+        break;
+        
+      default:
+        console.log(`Unknown WebSocket message type: ${parsedMessage.type}`);
+    }
+  } catch (error) {
+    console.error('Error handling WebSocket message:', error);
+  }
+}
+
+// Handle ping messages from clients (not the built-in WebSocket ping)
+function handlePingMessage(ws: WebSocket, message: any) {
+  try {
+    // Echo back the ping message with the server's timestamp
+    ws.send(JSON.stringify({
+      type: 'pong',
+      originalTimestamp: message.timestamp,
+      timestamp: Date.now()
+    }));
+  } catch (error) {
+    console.error('Error handling ping message:', error);
+  }
+}
+
+// Handle notification read message
+async function handleNotificationRead(userId: number, message: any) {
+  try {
+    const notificationId = message.notificationId;
+    
+    if (!notificationId) {
+      console.error('Missing notification ID in read request');
+      return;
+    }
+    
+    // Mark notification as read in the database
+    await storage.markNotificationRead(notificationId, userId);
+    
+    // Send confirmation to user
+    broadcastToUser(userId, {
+      type: 'notification_marked_read',
+      notificationId,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+  }
+}
+
+// Handle mark all notifications read
+async function handleNotificationReadAll(userId: number) {
+  try {
+    // Mark all notifications as read in the database
+    await storage.markAllNotificationsRead(userId);
+    
+    // Send confirmation to user
+    broadcastToUser(userId, {
+      type: 'all_notifications_marked_read',
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('Error marking all notifications as read:', error);
+  }
+}
+
+// Handle sync request message
+async function handleSyncRequest(userId: number, message: any) {
+  try {
+    // Fetch the sync service dynamically
+    const { syncService } = await import('./sync-service');
+    
+    // Request a sync with provided options
+    const result = await syncService.requestSync(userId, message.options || {});
+    
+    // Send confirmation to user
+    broadcastToUser(userId, {
+      type: 'sync_requested',
+      success: result,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('Error handling sync request:', error);
+    
+    // Send error notification to user
+    broadcastToUser(userId, {
+      type: 'sync_request_error',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: Date.now()
+    });
+  }
+}
+
+// Handle WebSocket close event
+function handleWebSocketClose(ws: WebSocket) {
+  console.log('WebSocket connection closed');
+  cleanupConnection(ws);
+}
+
+// Clean up WebSocket connection when it closes
+function cleanupConnection(ws: WebSocket) {
+  try {
+    const userId = socketUsers.get(ws);
+    
+    if (userId) {
+      const userSockets = userConnections.get(userId);
+      if (userSockets) {
+        userSockets.delete(ws);
+        
+        // If this was the last connection for this user, clean up the map entry
+        if (userSockets.size === 0) {
+          userConnections.delete(userId);
+        }
+      }
+    }
+    
+    // Clean up socket tracking maps
+    socketUsers.delete(ws);
+    socketLastPing.delete(ws);
+    socketLastPong.delete(ws);
+  } catch (error) {
+    console.error('Error cleaning up WebSocket connection:', error);
+  }
+}
+
+// Send a message to all connected WebSockets for a specific user
+export function broadcastToUser(userId: number, message: any) {
+  try {
+    const userSockets = userConnections.get(userId);
+    
+    if (!userSockets || userSockets.size === 0) {
+      return;
+    }
+    
+    const messageString = typeof message === 'string' ? message : JSON.stringify(message);
+    
+    for (const socket of userSockets) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(messageString);
+      }
+    }
+  } catch (error) {
+    console.error(`Error broadcasting to user ${userId}:`, error);
+  }
+}
+
+// Send a notification to a specific user
+export function sendNotification(userId: number, notification: Notification) {
+  try {
+    broadcastToUser(userId, {
+      type: 'notification',
+      notification,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error(`Error sending notification to user ${userId}:`, error);
+  }
+}
+
+// Create a notification in the database and send it to the user
+export async function createAndSendNotification(
   userId: number,
-  type: NotificationType,
   title: string,
   message: string,
-  data?: Record<string, any>,
-  actionUrl?: string
+  notificationType: string,
+  entityType?: string,
+  entityId?: number,
+  createdBy?: number
 ) {
-  const notification = notificationService.createNotification({
-    userId,
-    type,
-    title,
-    message,
-    data,
-    actionUrl
-  });
-  
-  // Send the notification via WebSocket
-  sendNotification(userId, notification);
-  
-  return notification;
-}
-
-// Send notifications to all users (system-wide)
-export function broadcastNotification(notification: Notification) {
-  // For non-targeted system messages
-  if (!notification.userId) {
-    console.error('Broadcast notification must have a userId set');
-    return;
-  }
-  
-  // For each user ID with active connections
-  for (const [userId, sockets] of userSockets.entries()) {
-    // Clone the notification for each user
-    const userNotification = {
-      ...notification,
-      userId
-    };
-    
-    // Send to all connections for this user
-    for (const socket of sockets) {
-      if (socket.readyState === WebSocket.OPEN) {
-        try {
-          socket.send(JSON.stringify({
-            type: 'notification',
-            notification: userNotification
-          }));
-        } catch (error) {
-          console.error(`Error broadcasting notification to user ${userId}:`, error);
-        }
-      }
-    }
-  }
-}
-
-// Send existing unread notifications when a user connects
-async function sendInitialNotifications(userId: number, ws: WebSocket) {
   try {
-    // Get unread notifications from the database
+    // Create the notification in the database
+    const notification = await notificationService.createNotification({
+      userId,
+      title,
+      message,
+      type: notificationType,
+      entityType,
+      entityId,
+      createdBy,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    });
+    
+    // Send the notification to the user
+    if (notification) {
+      sendNotification(userId, notification);
+    }
+    
+    return notification;
+  } catch (error) {
+    console.error(`Error creating and sending notification to user ${userId}:`, error);
+    return null;
+  }
+}
+
+// Notify about calendar changes
+export function notifyCalendarChanged(
+  userId: number,
+  calendarId: number,
+  changeType: 'created' | 'updated' | 'deleted',
+  details?: any
+) {
+  try {
+    broadcastToUser(userId, {
+      type: 'calendar_changed',
+      calendarId,
+      changeType,
+      details,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error(`Error sending calendar change notification to user ${userId}:`, error);
+  }
+}
+
+// Notify about event changes
+export function notifyEventChanged(
+  userId: number,
+  eventId: number,
+  calendarId: number,
+  changeType: 'created' | 'updated' | 'deleted',
+  details?: any
+) {
+  try {
+    broadcastToUser(userId, {
+      type: 'event_changed',
+      eventId,
+      calendarId,
+      changeType,
+      details,
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error(`Error sending event change notification to user ${userId}:`, error);
+  }
+}
+
+// Send any pending notifications for a user
+async function sendPendingNotifications(userId: number, ws: WebSocket) {
+  try {
+    // Get unread notifications for this user
     const notifications = await storage.getUnreadNotifications(userId);
     
     if (notifications.length > 0) {
-      // Send them to the newly connected client
-      ws.send(JSON.stringify({
-        type: 'initial_notifications',
-        notifications
-      }));
-    }
-  } catch (error) {
-    console.error(`Error sending initial notifications to user ${userId}:`, error);
-  }
-}
-
-// Broadcast to a specific user on all their connections
-export function broadcastToUser(userId: number, message: any) {
-  const userSocketSet = userSockets.get(userId);
-  if (!userSocketSet || userSocketSet.size === 0) {
-    // User doesn't have an active WebSocket connection
-    return;
-  }
-  
-  // Send to all connections for this user
-  for (const [socket, socketUserId] of socketUsers.entries()) {
-    if (socketUserId === userId && socket.readyState === WebSocket.OPEN) {
-      try {
-        socket.send(JSON.stringify(message));
-      } catch (error) {
-        console.error(`Error broadcasting to user ${userId}:`, error);
+      console.log(`Sending ${notifications.length} pending notifications to user ${userId}`);
+      
+      // Send each notification
+      for (const notification of notifications) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'notification',
+            notification,
+            timestamp: Date.now()
+          }));
+        }
       }
     }
+  } catch (error) {
+    console.error(`Error sending pending notifications to user ${userId}:`, error);
   }
 }
 
-// Notify all clients when a calendar is changed
-export function notifyCalendarChanged(userId: number, calendarId: number, action: 'create' | 'update' | 'delete') {
-  broadcastToUser(userId, {
-    type: 'calendar_changed',
-    calendarId,
-    action
-  });
+// Ping all connected clients to check for stale connections
+function pingAllClients() {
+  try {
+    for (const [ws, userId] of socketUsers.entries()) {
+      if (ws.readyState === WebSocket.OPEN) {
+        // Update last ping time
+        socketLastPing.set(ws, Date.now());
+        
+        // Send ping
+        try {
+          ws.ping();
+        } catch (pingError) {
+          console.error(`Error pinging client for user ${userId}:`, pingError);
+          cleanupConnection(ws);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error pinging WebSocket clients:', error);
+  }
 }
 
-// Notify all clients when an event is changed
-export function notifyEventChanged(userId: number, eventId: number, action: 'create' | 'update' | 'delete') {
-  broadcastToUser(userId, {
-    type: 'event_changed',
-    eventId,
-    action
-  });
-}
-
-// Get connection statistics
-export function getConnectionStats() {
-  return {
-    totalConnections: socketUsers.size,
-    uniqueUsers: userSockets.size,
-    connectionsByUser: Array.from(userSockets.entries()).map(([userId, sockets]) => ({
-      userId,
-      connections: sockets.size
-    }))
-  };
-}
-
-// Get all connected users
-export function getConnectedUsers() {
-  return Array.from(userSockets.keys());
+// Check for stale connections that haven't responded to pings
+function checkStaleConnections() {
+  try {
+    const now = Date.now();
+    const timeout = 60000; // 60 seconds
+    
+    for (const [ws, lastPong] of socketLastPong.entries()) {
+      // If we haven't received a pong in the timeout period, close the connection
+      if (now - lastPong > timeout) {
+        console.log(`Closing stale WebSocket connection (no pong for ${Math.floor((now - lastPong) / 1000)}s)`);
+        
+        try {
+          ws.close();
+          cleanupConnection(ws);
+        } catch (closeError) {
+          console.error('Error closing stale WebSocket connection:', closeError);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking for stale WebSocket connections:', error);
+  }
 }

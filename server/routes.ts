@@ -15,7 +15,6 @@ import {
 } from "@shared/schema";
 import { WebSocketServer, WebSocket } from "ws";
 import { setupAuth } from "./auth";
-import { setupTestAuth } from "./test-auth";
 import { DAVClient } from "tsdav";
 import { emailService } from "./email-service";
 import { z } from "zod";
@@ -64,9 +63,6 @@ declare module 'express' {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupAuth(app);
-  
-  // Set up test authentication for development purposes
-  setupTestAuth(app);
   
   // Create the HTTP server
   const httpServer = createServer(app);
