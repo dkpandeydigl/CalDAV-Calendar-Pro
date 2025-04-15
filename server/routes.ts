@@ -25,7 +25,7 @@ import { escapeICalString, formatICalDate, formatContentLine, formatRecurrenceRu
 import { syncService } from "./sync-service";
 import { webdavSyncService } from "./webdav-sync";
 import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
-import { notificationService } from "./notification-service";
+import { notificationService } from "./memory-notification-service";
 import { initializeWebSocketServer, broadcastToUser, sendNotification, createAndSendNotification } from "./websocket-handler";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 

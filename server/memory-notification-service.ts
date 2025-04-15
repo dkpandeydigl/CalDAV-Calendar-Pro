@@ -162,7 +162,7 @@ export class MemoryNotificationService {
     const { userId, unreadOnly, requiresActionOnly, type, priority, relatedEventId, relatedEventUid, limit = 50, offset = 0 } = filter;
     
     // Get all notifications for this user
-    let notifications = await storage.getNotifications(userId);
+    let notifications = await storage.getNotifications(userId ?? -1);
     
     // Apply filters
     if (unreadOnly) {
