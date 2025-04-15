@@ -1000,6 +1000,35 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       const newSequence = originalSequence + 1;
       console.log(`Incrementing sequence from ${originalSequence} to ${newSequence}`);
       
+      // Extract all attendee lines, particularly resource attendees for preservation
+      const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+      const allAttendeeLines = originalIcs.match(attendeePattern) || [];
+      
+      // Specifically identify resource attendee lines for special handling
+      const resourceAttendeeLines = allAttendeeLines.filter(line => 
+        line.includes('CUTYPE=RESOURCE') || 
+        line.includes('X-RESOURCE-TYPE') || 
+        line.includes('RESOURCE-TYPE') ||
+        line.includes('X-RESOURCE-CAPACITY') || 
+        line.includes('RESOURCE-CAPACITY')
+      );
+      
+      console.log(`Found ${allAttendeeLines.length} total attendee lines`);
+      console.log(`Identified ${resourceAttendeeLines.length} resource attendee lines to preserve`);
+      
+      // Make a copy of the data object to ensure we preserve resources when generating the event
+      const eventDataWithResources = { ...data };
+      
+      // If resource attendee lines were found, add them to the event data for later use in generateICSData
+      if (resourceAttendeeLines.length > 0) {
+        eventDataWithResources._originalResourceAttendees = resourceAttendeeLines;
+        console.log(`Preserved ${resourceAttendeeLines.length} resource attendee lines for cancellation`);
+      } else {
+        // If we couldn't extract resource attendees from the attendee lines,
+        // try an alternative approach to extract them from the raw data
+        this.extractResourcesFromRawIcs(originalIcs, eventDataWithResources);
+      }
+      
       // Replace or add critical fields for cancellation
       let modifiedIcs = originalIcs;
       
@@ -1062,6 +1091,27 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         modifiedIcs = modifiedIcs.replace(/UID:[^\r\n]+/i, `UID:${originalUid}`);
       }
       
+      // Verify if the resources are in the data for the generateICSData fallback
+      if (eventDataWithResources.resources) {
+        console.log(`Event data contains ${Array.isArray(eventDataWithResources.resources) ? eventDataWithResources.resources.length : 'unknown number of'} resources`);
+      }
+      
+      // RFC 5546 requires UID preservation for cancellations
+      // Check if the attendee lines, especially for resources, are preserved
+      const finalAttendeeLines = modifiedIcs.match(attendeePattern) || [];
+      const finalResourceAttendeeLines = finalAttendeeLines.filter(line => 
+        line.includes('CUTYPE=RESOURCE') || 
+        line.includes('X-RESOURCE-TYPE')
+      );
+      
+      console.log(`Final ICS has ${finalAttendeeLines.length} attendee lines and ${finalResourceAttendeeLines.length} resource lines`);
+      
+      // If we lost resource attendees during transformation, regenerate the ICS
+      if (resourceAttendeeLines.length > 0 && finalResourceAttendeeLines.length < resourceAttendeeLines.length) {
+        console.log(`Resource attendees were lost during transformation. Regenerating ICS with preserved resources.`);
+        return this.generateICSData({ ...eventDataWithResources, status: 'CANCELLED' });
+      }
+      
       console.log('Successfully transformed ICS for cancellation with RFC 5546 compliance');
       console.log('Final cancellation ICS includes original UID and sequence+1');
       return modifiedIcs;
@@ -1071,6 +1121,113 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       console.log('Falling back to generating new cancellation ICS');
       const cancellationData = { ...data, status: 'CANCELLED' };
       return this.generateICSData(cancellationData);
+    }
+  }
+  
+  /**
+   * Extract resources from raw ICS data and add them to the event data
+   * This is a fallback method if we can't extract resource attendees directly
+   */
+  private extractResourcesFromRawIcs(rawIcs: string, eventData: any): void {
+    try {
+      if (!rawIcs) return;
+      
+      console.log('Attempting to extract resources from raw ICS data as a fallback');
+      
+      // Try to extract resource attendees from the raw data with multiple patterns
+      const resourcePatterns = [
+        /ATTENDEE;[^:]*CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/gi,
+        /ATTENDEE;[^:]*CN=([^;:]+)[^:]*CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/gi,
+        /ATTENDEE;[^:]*X-RESOURCE-TYPE=[^:]*:mailto:([^\r\n]+)/gi
+      ];
+      
+      let extractedResources: any[] = [];
+      
+      for (const pattern of resourcePatterns) {
+        const matches = Array.from(rawIcs.matchAll(pattern));
+        if (matches && matches.length > 0) {
+          console.log(`Found ${matches.length} resource attendees in raw data using pattern: ${pattern}`);
+          
+          // Parse each resource attendee into our format
+          const resources = matches.map((match: RegExpMatchArray) => {
+            const resourceStr = match[0];
+            
+            // Extract email
+            const emailMatch = resourceStr.match(/:mailto:([^\r\n]+)/);
+            const email = emailMatch ? emailMatch[1] : '';
+            
+            // Extract name/subType
+            const nameMatch = resourceStr.match(/CN=([^;:]+)/);
+            const subType = nameMatch ? nameMatch[1] : 'Resource';
+            
+            // Extract type from X-RESOURCE-TYPE or fallback to standard parameters
+            const typeMatches = [
+              resourceStr.match(/X-RESOURCE-TYPE=([^;:]+)/),
+              resourceStr.match(/RESOURCE-TYPE=([^;:]+)/),
+              resourceStr.match(/X-TYPE=([^;:]+)/)
+            ];
+            const typeMatch = typeMatches.find(match => match !== null);
+            const resourceType = typeMatch ? typeMatch[1] : 'Resource';
+            
+            // Extract capacity with multiple patterns
+            const capacityMatches = [
+              resourceStr.match(/X-RESOURCE-CAPACITY=(\d+)/),
+              resourceStr.match(/RESOURCE-CAPACITY=(\d+)/),
+              resourceStr.match(/X-CAPACITY=(\d+)/),
+              resourceStr.match(/CAPACITY=(\d+)/)
+            ];
+            const capacityMatch = capacityMatches.find(match => match !== null);
+            const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : undefined;
+            
+            // Extract admin name
+            const adminNameMatches = [
+              resourceStr.match(/X-ADMIN-NAME=([^;:]+)/),
+              resourceStr.match(/ADMIN-NAME=([^;:]+)/),
+              resourceStr.match(/X-ADMIN=([^;:]+)/)
+            ];
+            const adminNameMatch = adminNameMatches.find(match => match !== null);
+            const adminName = adminNameMatch ? adminNameMatch[1] : undefined;
+            
+            return {
+              id: email,
+              name: subType,
+              adminEmail: email,
+              adminName: adminName || subType,
+              type: resourceType,
+              subType,
+              capacity,
+              displayName: subType,
+              email: email
+            };
+          });
+          
+          if (resources.length > 0) {
+            extractedResources = resources;
+            break; // Once we have resources, stop trying patterns
+          }
+        }
+      }
+      
+      if (extractedResources.length > 0) {
+        console.log(`Successfully extracted ${extractedResources.length} resources from raw ICS`);
+        eventData.resources = extractedResources;
+        
+        // Also save the original resource attendee lines for direct use
+        const attendeeLines = rawIcs.match(/ATTENDEE[^:\r\n]+:[^\r\n]+/g) || [];
+        const resourceAttendeeLines = attendeeLines.filter(line => 
+          line.includes('CUTYPE=RESOURCE') || 
+          line.includes('X-RESOURCE-TYPE')
+        );
+        
+        if (resourceAttendeeLines.length > 0) {
+          eventData._originalResourceAttendees = resourceAttendeeLines;
+          console.log(`Preserved ${resourceAttendeeLines.length} complete resource attendee lines`);
+        }
+      } else {
+        console.warn('No resources could be extracted from raw ICS data');
+      }
+    } catch (e) {
+      console.error('Error extracting resources from raw ICS:', e);
     }
   }
 
@@ -1454,17 +1611,32 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       });
     }
     
-    // Add resource attendees if they exist
-    if (resources && Array.isArray(resources) && resources.length > 0) {
+    // First check if we have preserved original resource attendee lines
+    // This is critical for cancellations to maintain exact RFC 5546 compliance
+    if (Array.isArray(data._originalResourceAttendees) && data._originalResourceAttendees.length > 0 && status === 'CANCELLED') {
+      console.log(`Using ${data._originalResourceAttendees.length} preserved original resource attendee lines`);
+      
+      // Add the original resource attendee lines exactly as they were
+      data._originalResourceAttendees.forEach(line => {
+        icsContent.push(line);
+      });
+      
+      // If we have preserved original resource lines, we'll skip the regular resource processing
+      console.log('Skipping regular resource processing since we have preserved original resource lines');
+    }
+    // Otherwise add resource attendees if they exist (standard processing)
+    else if (resources && Array.isArray(resources) && resources.length > 0) {
+      console.log(`Processing ${resources.length} resources using standard method`);
+      
       resources.forEach(resource => {
         // Format: ATTENDEE;CN=res name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=res type;X-RESOURCE-CAPACITY=5;X-ADMIN-NAME=Dharmendra Pandey;X-NOTES-REMARKS=remarks:mailto:dk.pandey@xgenplus.com
         
         // Start with CN (name) and basic resource properties
-        let resourceStr = `ATTENDEE;CN=${resource.name || resource.subType};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT`;
+        let resourceStr = `ATTENDEE;CN=${resource.name || resource.subType || 'Resource'};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT`;
         
         // Add resource type as X-RESOURCE-TYPE
-        if (resource.subType) {
-          resourceStr += `;X-RESOURCE-TYPE=${resource.subType}`;
+        if (resource.type || resource.subType) {
+          resourceStr += `;X-RESOURCE-TYPE=${resource.type || resource.subType}`;
         }
         
         // Add capacity as X-RESOURCE-CAPACITY
@@ -1489,8 +1661,11 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
           resourceStr += `;X-NOTES-REMARKS=${escapedRemarks}`;
         }
         
+        // Use the appropriate email field for the resource
+        const email = resource.adminEmail || resource.email || (resource as any).id;
+        
         // Add the email as mailto
-        resourceStr += `:mailto:${resource.adminEmail}`;
+        resourceStr += `:mailto:${email}`;
         
         icsContent.push(resourceStr);
       });
