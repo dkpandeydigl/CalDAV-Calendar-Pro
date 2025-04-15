@@ -870,25 +870,63 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         }
       }
 
-      // Generate ICS data with CANCELLED status
-      const icsData = this.generateICSData(data);
-
-      // Send email to each attendee
-      const sendPromises = data.attendees.map(attendee => {
-        return this.sendCancellationEmail(data, attendee, icsData);
-      });
-
-      // Wait for all emails to be sent
-      const results = await Promise.allSettled(sendPromises);
+      // Per RFC 5546, we MUST use the original ICS data when cancelling events
+      // and only make the necessary modifications to convert it to a cancellation
+      let cancellationIcsData: string;
+      
+      if (data.rawData && typeof data.rawData === 'string') {
+        // Transform the existing ICS directly - this ensures perfect compatibility
+        // with the original event including preserving the exact UID
+        console.log('Using original ICS data with direct modification for cancellation');
+        cancellationIcsData = this.transformIcsForCancellation(data.rawData, data);
+      } else {
+        // Fallback to generating new ICS if raw data is not available
+        console.log('No original ICS data available, generating new cancellation ICS');
+        // Mark the status as CANCELLED for ICS generation
+        const cancellationData = { ...data, status: 'CANCELLED' };
+        cancellationIcsData = this.generateICSData(cancellationData);
+      }
+      
+      // Create arrays to track results for both attendees and resources
+      let allResults: PromiseSettledResult<any>[] = [];
+      let allRecipients: string[] = [];
+      
+      // Send cancellation to each attendee
+      if (data.attendees && data.attendees.length > 0) {
+        const attendeePromises = data.attendees.map(attendee => {
+          return this.sendCancellationEmail(data, attendee, cancellationIcsData);
+        });
+        
+        // Wait for all attendee emails to be sent
+        const attendeeResults = await Promise.allSettled(attendeePromises);
+        allResults = [...allResults, ...attendeeResults];
+        allRecipients = [...allRecipients, ...data.attendees.map(a => a.email)];
+      }
+      
+      // Send cancellation to each resource admin if resources are present
+      if (data.resources && data.resources.length > 0) {
+        const resourcePromises = data.resources.map(resource => {
+          return this.sendResourceBookingNotification(
+            { ...data, status: 'CANCELLED' },
+            resource,
+            cancellationIcsData
+          );
+        });
+        
+        // Wait for all resource booking emails to be sent
+        const resourceResults = await Promise.allSettled(resourcePromises);
+        allResults = [...allResults, ...resourceResults];
+        allRecipients = [...allRecipients, ...data.resources.map(r => r.adminEmail)];
+      }
       
       // Count successful deliveries
-      const successful = results.filter(r => r.status === 'fulfilled').length;
-      const failed = results.filter(r => r.status === 'rejected').length;
+      const successful = allResults.filter(r => r.status === 'fulfilled').length;
+      const failed = allResults.filter(r => r.status === 'rejected').length;
       
       // Detailed results for debugging
-      const detailedResults = results.map((result, index) => {
+      const detailedResults = allResults.map((result, index) => {
         return {
-          attendee: data.attendees[index].email,
+          recipient: allRecipients[index],
           success: result.status === 'fulfilled',
           details: result.status === 'rejected' ? (result as PromiseRejectedResult).reason : undefined
         };
@@ -897,14 +935,14 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       if (failed > 0) {
         return {
           success: successful > 0, // Consider partially successful if at least one email was sent
-          message: `Sent cancellation notices to ${successful} out of ${data.attendees.length} attendees.`,
+          message: `Sent cancellation notices to ${successful} out of ${allRecipients.length} recipients.`,
           details: detailedResults
         };
       }
 
       return {
         success: true,
-        message: `Successfully sent cancellation notices to all ${successful} attendees.`,
+        message: `Successfully sent all ${successful} cancellation notifications.`,
         details: detailedResults
       };
     } catch (error) {
@@ -914,6 +952,108 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         message: `Failed to send cancellations: ${error instanceof Error ? error.message : 'Unknown error'}`,
         details: error
       };
+    }
+  }
+  
+  /**
+   * Transform original ICS data for cancellation (RFC 5546 compliant)
+   * This directly modifies the raw ICS data while preserving critical fields like UID
+   * @param originalIcs The original ICS data string
+   * @param data Additional event data for the cancellation
+   * @returns Modified ICS data for cancellation
+   */
+  private transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
+    try {
+      console.log('Transforming original ICS for cancellation according to RFC 5546');
+      
+      // First, extract the original UID to make absolutely sure we preserve it
+      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+      if (!uidMatch || !uidMatch[1]) {
+        console.warn('Could not find UID in original ICS data, falling back to generation');
+        const cancellationData = { ...data, status: 'CANCELLED' };
+        return this.generateICSData(cancellationData);
+      }
+      
+      const originalUid = uidMatch[1];
+      console.log(`PRESERVING EXACT ORIGINAL UID FOR CANCELLATION: ${originalUid}`);
+      
+      // Extract the original sequence number and increment it
+      const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
+      const originalSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
+      const newSequence = originalSequence + 1;
+      console.log(`Incrementing sequence from ${originalSequence} to ${newSequence}`);
+      
+      // Replace or add critical fields for cancellation
+      let modifiedIcs = originalIcs;
+      
+      // Change METHOD to CANCEL
+      if (modifiedIcs.includes('METHOD:REQUEST')) {
+        modifiedIcs = modifiedIcs.replace('METHOD:REQUEST', 'METHOD:CANCEL');
+      } else if (modifiedIcs.includes('METHOD:')) {
+        // Replace any other METHOD with CANCEL
+        modifiedIcs = modifiedIcs.replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL');
+      } else {
+        // Add METHOD:CANCEL if no METHOD exists
+        modifiedIcs = modifiedIcs.replace('BEGIN:VCALENDAR', 'BEGIN:VCALENDAR\r\nMETHOD:CANCEL');
+      }
+      
+      // Add or update STATUS:CANCELLED
+      if (modifiedIcs.includes('STATUS:')) {
+        modifiedIcs = modifiedIcs.replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED');
+      } else {
+        // Add STATUS:CANCELLED if no STATUS exists
+        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', 'BEGIN:VEVENT\r\nSTATUS:CANCELLED');
+      }
+      
+      // Add TRANSP:TRANSPARENT for cancelled events
+      if (modifiedIcs.includes('TRANSP:')) {
+        modifiedIcs = modifiedIcs.replace(/TRANSP:[^\r\n]+/i, 'TRANSP:TRANSPARENT');
+      } else {
+        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', 'BEGIN:VEVENT\r\nTRANSP:TRANSPARENT');
+      }
+      
+      // Update SEQUENCE to the incremented value
+      if (modifiedIcs.includes('SEQUENCE:')) {
+        modifiedIcs = modifiedIcs.replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
+      } else {
+        // Add SEQUENCE if it doesn't exist
+        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nSEQUENCE:${newSequence}`);
+      }
+      
+      // Update timestamps
+      const now = new Date();
+      const timestamp = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+      
+      if (modifiedIcs.includes('DTSTAMP:')) {
+        modifiedIcs = modifiedIcs.replace(/DTSTAMP:[^\r\n]+/i, `DTSTAMP:${timestamp}`);
+      } else {
+        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nDTSTAMP:${timestamp}`);
+      }
+      
+      // Also update LAST-MODIFIED
+      if (modifiedIcs.includes('LAST-MODIFIED:')) {
+        modifiedIcs = modifiedIcs.replace(/LAST-MODIFIED:[^\r\n]+/i, `LAST-MODIFIED:${timestamp}`);
+      } else {
+        modifiedIcs = modifiedIcs.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nLAST-MODIFIED:${timestamp}`);
+      }
+      
+      // Double-check the UID is still exactly the same
+      const finalUidMatch = modifiedIcs.match(/UID:([^\r\n]+)/i);
+      if (finalUidMatch && finalUidMatch[1] !== originalUid) {
+        console.error(`UID changed during transformation! Original: ${originalUid}, New: ${finalUidMatch[1]}`);
+        // Fix it by force if somehow it changed
+        modifiedIcs = modifiedIcs.replace(/UID:[^\r\n]+/i, `UID:${originalUid}`);
+      }
+      
+      console.log('Successfully transformed ICS for cancellation with RFC 5546 compliance');
+      console.log('Final cancellation ICS includes original UID and sequence+1');
+      return modifiedIcs;
+    } catch (error) {
+      console.error('Error transforming ICS for cancellation:', error);
+      // Fall back to generating new ICS if transformation fails
+      console.log('Falling back to generating new cancellation ICS');
+      const cancellationData = { ...data, status: 'CANCELLED' };
+      return this.generateICSData(cancellationData);
     }
   }
 
