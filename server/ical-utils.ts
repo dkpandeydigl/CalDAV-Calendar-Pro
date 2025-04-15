@@ -314,8 +314,23 @@ export function generateICalEvent(event: any, options: {
   }
   
   // Process attendees and resources
-  const attendeesAndResources = generateAttendeesAndResources(event);
-  lines.push(...attendeesAndResources);
+  // First check if we have preserved original attendee lines (especially for cancellations)
+  if (event._originalResourceAttendees && Array.isArray(event._originalResourceAttendees) && 
+      event._originalResourceAttendees.length > 0 && options.method === 'CANCEL') {
+    
+    console.log(`Using ${event._originalResourceAttendees.length} preserved original resource attendee lines for cancellation`);
+    
+    // First add regular attendees
+    const regularAttendees = generateAttendeesAndResources(event, true);
+    lines.push(...regularAttendees);
+    
+    // Then add the original resource attendee lines exactly as they were
+    lines.push(...event._originalResourceAttendees);
+  } else {
+    // Standard processing for regular events
+    const attendeesAndResources = generateAttendeesAndResources(event);
+    lines.push(...attendeesAndResources);
+  }
   
   // Add organizer with name if provided
   const emailMatch = options.organizer.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/);
@@ -335,9 +350,10 @@ export function generateICalEvent(event: any, options: {
 /**
  * Generate attendee and resource lines for an event
  * @param event The event data
+ * @param skipResources If true, only generate lines for regular attendees (not resources)
  * @returns Array of formatted iCalendar lines for attendees and resources
  */
-function generateAttendeesAndResources(event: any): string[] {
+function generateAttendeesAndResources(event: any, skipResources: boolean = false): string[] {
   const lines: string[] = [];
   
   // Process attendees if present
@@ -364,8 +380,8 @@ function generateAttendeesAndResources(event: any): string[] {
     }
   }
   
-  // Process resources if present
-  if (event.resources) {
+  // Process resources if present and not skipped
+  if (event.resources && !skipResources) {
     try {
       const resourcesArray = typeof event.resources === 'string' 
         ? JSON.parse(event.resources) 
@@ -556,6 +572,28 @@ export function generateCancellationICalEvent(event: any, options: {
           break;
         }
       }
+    }
+    
+    // Preserve all ATTENDEE lines, especially resources
+    try {
+      console.log("Extracting original ATTENDEE lines from raw data for preservation...");
+      const attendeeLines = event.rawData.match(/ATTENDEE[^:\r\n]+:[^\r\n]+/g);
+      if (attendeeLines && attendeeLines.length > 0) {
+        console.log(`Found ${attendeeLines.length} original ATTENDEE lines to preserve`);
+        
+        // Store resource attendees for later use
+        const resourceAttendees = attendeeLines.filter(line => 
+          line.includes('CUTYPE=RESOURCE') || 
+          line.includes('X-RESOURCE-TYPE')
+        );
+        
+        if (resourceAttendees.length > 0) {
+          console.log(`Found ${resourceAttendees.length} resource attendees to preserve:`, resourceAttendees);
+          event._originalResourceAttendees = resourceAttendees;
+        }
+      }
+    } catch (err) {
+      console.error("Error extracting original ATTENDEE lines:", err);
     }
   }
   
