@@ -70,8 +70,20 @@ async function comparePasswords(supplied: string, stored: string) {
   }
 }
 
-// Function to verify credentials with the CalDAV server
-async function verifyCalDAVCredentials(serverUrl: string, username: string, password: string): Promise<boolean> {
+// Enhanced function to verify credentials with the CalDAV server and extract user data
+interface CalDAVUserInfo {
+  authenticated: boolean;
+  displayName?: string;
+  email?: string;
+  principalUrl?: string;
+  calendars?: any[]; // Calendar objects from the server
+}
+
+async function verifyCalDAVCredentials(
+  serverUrl: string, 
+  username: string, 
+  password: string
+): Promise<boolean | CalDAVUserInfo> {
   try {
     console.log(`Verifying CalDAV credentials for ${username} at ${serverUrl}`);
     
@@ -91,16 +103,82 @@ async function verifyCalDAVCredentials(serverUrl: string, username: string, pass
       await davClient.login();
       console.log("CalDAV login successful with tsdav");
       
-      // Try fetching calendars (but don't fail auth if this fails)
+      // Initialize user info with authenticated status
+      const userInfo: CalDAVUserInfo = {
+        authenticated: true
+      };
+      
+      // Try to get user info
       try {
-        await davClient.fetchCalendars();
-        console.log("CalDAV fetchCalendars successful");
+        const accounts = await davClient.fetchPrincipalUrl();
+        if (accounts && accounts.length > 0) {
+          userInfo.principalUrl = accounts[0];
+          console.log(`Found principal URL: ${accounts[0]}`);
+          
+          // Try to get display name and email from principal properties
+          try {
+            const principalProps = await davClient.customRequest({
+              url: accounts[0],
+              method: 'PROPFIND',
+              headers: {
+                Depth: '0',
+                'Content-Type': 'application/xml; charset=utf-8',
+              },
+              body: `<?xml version="1.0" encoding="utf-8" ?>
+              <propfind xmlns="DAV:">
+                <prop>
+                  <displayname/>
+                  <email/>
+                  <calendar-user-address-set xmlns="urn:ietf:params:xml:ns:caldav"/>
+                </prop>
+              </propfind>`,
+            });
+            
+            if (principalProps && principalProps.status === 207) {
+              const responseText = await principalProps.text();
+              
+              // Extract display name from XML response
+              const displayNameMatch = responseText.match(/<displayname>(.*?)<\/displayname>/);
+              if (displayNameMatch && displayNameMatch[1]) {
+                userInfo.displayName = displayNameMatch[1];
+                console.log(`Found display name: ${userInfo.displayName}`);
+              }
+              
+              // Extract email from XML response
+              const emailMatch = responseText.match(/<email>(.*?)<\/email>/);
+              if (emailMatch && emailMatch[1]) {
+                userInfo.email = emailMatch[1];
+                console.log(`Found email: ${userInfo.email}`);
+              }
+              
+              // Extract calendar user address if email is not found
+              if (!userInfo.email) {
+                const addressMatch = responseText.match(/<href>mailto:(.*?)<\/href>/);
+                if (addressMatch && addressMatch[1]) {
+                  userInfo.email = addressMatch[1];
+                  console.log(`Found email from calendar-user-address-set: ${userInfo.email}`);
+                }
+              }
+            }
+          } catch (propError) {
+            console.error("Error fetching principal properties:", propError);
+          }
+        }
+      } catch (principalError) {
+        console.error("Error fetching principal URL:", principalError);
+      }
+      
+      // Try fetching calendars
+      try {
+        const calendars = await davClient.fetchCalendars();
+        console.log(`CalDAV fetchCalendars successful: ${calendars.length} calendars found`);
+        userInfo.calendars = calendars;
       } catch (fetchError) {
         console.log("CalDAV fetchCalendars failed, but login was successful:", fetchError);
         // Even if fetching calendars fails, consider auth successful if login worked
       }
       
-      return true;
+      return userInfo;
     } catch (tsdavError) {
       console.log("tsdav client failed, trying fallback method:", tsdavError);
       
@@ -120,7 +198,7 @@ async function verifyCalDAVCredentials(serverUrl: string, username: string, pass
       
       if (response.ok || response.status === 207) {
         console.log("CalDAV auth successful with direct PROPFIND");
-        return true;
+        return { authenticated: true };
       } else {
         console.log("Direct PROPFIND auth failed with status:", response.status);
         return false;
