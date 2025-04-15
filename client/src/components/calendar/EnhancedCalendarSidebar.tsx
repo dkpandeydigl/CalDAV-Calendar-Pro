@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { useCalendars } from '@/hooks/useCalendars';
-import { getTimezones } from '@/lib/date-utils';
+
 import { Calendar } from '@shared/schema';
 import { 
   CalendarIcon, 
@@ -112,8 +112,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     error: sharedCalendarsError
   } = useSharedCalendars();
   
-  // Only using timezoneLabel for display purposes
-  const { timezoneLabel } = useCalendarContext();
+
   
   // New state variables for enhanced UI
   const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
@@ -627,20 +626,6 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             </Button>
           </div>
           
-          {/* Timezone Display (moved configuration to Profile Settings) */}
-          <div className="mb-4">
-            <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Timezone</h3>
-            <div className="bg-neutral-100 rounded-md p-3">
-              <div className="text-xs text-muted-foreground mb-1 px-1">
-                Current: <span className="font-medium">{timezoneLabel}</span>
-              </div>
-              
-              <div className="text-xs text-muted-foreground mt-1 px-1">
-                <span className="italic">Timezone settings can be changed in Profile Settings</span>
-              </div>
-            </div>
-          </div>
-
           <ScrollArea className="flex-1 pr-2 -mr-2" type="always">
             {/* Own Calendars Section */}
             <Collapsible 
