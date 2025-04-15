@@ -97,9 +97,22 @@ export function useCalendarSync() {
         // We use a simplified approach that works across all environments, especially Replit
         let wsUrl;
         
-        // Use only relative path for WebSocket URLs - best practice for Replit
-        // This approach works in all environments including Replit, local dev, and production
-        wsUrl = `${wsPath}?userId=${user.id}`;
+        // Handle different environments appropriately
+        if (hostname.includes('replit') || hostname.includes('replit.dev')) {
+          // For Replit: Use relative URL path (no protocol, hostname or port)
+          wsUrl = `${wsPath}?userId=${user.id}`;
+          console.log(`Creating relative WebSocket URL for Replit: ${wsUrl}`);
+        } 
+        // For localhost: provide explicit protocol and hostname
+        else if (hostname === 'localhost') {
+          wsUrl = `ws://localhost:${port}${wsPath}?userId=${user.id}`;
+          console.log(`Creating explicit localhost WebSocket URL: ${wsUrl}`);
+        } 
+        // Standard case: Use protocol + current hostname + path
+        else {
+          wsUrl = `${finalProtocol}//${hostname}:${port}${wsPath}?userId=${user.id}`;
+          console.log(`Creating standard WebSocket URL: ${wsUrl}`);
+        }
         
         // Log the URL being used (for debugging)
         console.log(`Using WebSocket URL: ${wsUrl}`);
