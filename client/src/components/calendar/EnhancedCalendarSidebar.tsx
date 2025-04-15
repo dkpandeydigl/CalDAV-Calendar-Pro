@@ -112,8 +112,6 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     error: sharedCalendarsError
   } = useSharedCalendars();
   
-
-  
   // New state variables for enhanced UI
   const [calendarSearchQuery, setCalendarSearchQuery] = useState('');
   const [sharedCalendarSearchQuery, setSharedCalendarSearchQuery] = useState('');
