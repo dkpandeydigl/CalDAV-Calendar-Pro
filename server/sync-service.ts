@@ -1,4 +1,4 @@
-import { storage } from './database-storage';
+import { storage } from './memory-storage';
 import { ServerConnection, Calendar, InsertEvent } from '@shared/schema';
 import { DAVClient } from 'tsdav';
 import * as icalUtils from './ical-utils';

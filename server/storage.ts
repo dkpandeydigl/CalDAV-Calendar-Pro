@@ -84,6 +84,7 @@ export class MemStorage implements IStorage {
   private serverConnectionsMap: Map<number, ServerConnection>;
   private calendarSharingMap: Map<number, CalendarSharing>;
   private smtpConfigMap: Map<number, SmtpConfig>;
+  private notificationsMap: Map<number, Notification>;
   
   private userIdCounter: number;
   private calendarIdCounter: number;
@@ -91,6 +92,7 @@ export class MemStorage implements IStorage {
   private serverConnectionIdCounter: number;
   private calendarSharingIdCounter: number;
   private smtpConfigIdCounter: number;
+  private notificationIdCounter: number;
   
   // Initialize memory store for sessions
   public sessionStore: session.Store;
@@ -107,6 +109,7 @@ export class MemStorage implements IStorage {
     this.serverConnectionsMap = new Map();
     this.calendarSharingMap = new Map();
     this.smtpConfigMap = new Map();
+    this.notificationsMap = new Map();
     
     this.userIdCounter = 1;
     this.calendarIdCounter = 1;
@@ -114,6 +117,7 @@ export class MemStorage implements IStorage {
     this.serverConnectionIdCounter = 1;
     this.calendarSharingIdCounter = 1;
     this.smtpConfigIdCounter = 1;
+    this.notificationIdCounter = 1;
     
     // Initialize the memory store for session management
     const MemoryStore = createMemoryStore(session);
