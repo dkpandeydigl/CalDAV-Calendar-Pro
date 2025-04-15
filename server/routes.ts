@@ -4011,7 +4011,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           username: smtpConfig.username,
           fromEmail: smtpConfig.fromEmail,
           fromName: smtpConfig.fromName,
-          enabled: smtpConfig.enabled
+          enabled: smtpConfig.enabled,
+          hasPassword: !!smtpConfig.password
         }
       });
     } catch (error) {
@@ -4019,6 +4020,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(500).json({ 
         success: false, 
         message: "Failed to retrieve SMTP configuration" 
+      });
+    }
+  });
+  
+  // Update SMTP settings
+  app.post("/api/smtp-config", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Get existing config
+      let existingConfig = await storage.getSmtpConfig(userId);
+      
+      // If no configuration exists, create a default one first
+      if (!existingConfig) {
+        // Get user to retrieve their email for defaults
+        const user = await storage.getUser(userId);
+        if (!user?.email) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "User doesn't have an email address to use as default"
+          });
+        }
+        
+        // Create default config first
+        existingConfig = await storage.createSmtpConfig({
+          userId,
+          host: 'smtps.xgen.in',   // Default SMTP server
+          port: 465,
+          secure: true,
+          username: user.email,
+          password: '',             // Empty password initially
+          fromEmail: user.email,
+          fromName: user.fullName || user.username || undefined,
+          enabled: true
+        });
+      }
+      
+      // Prepare update data, only updating fields that are provided
+      const updateData: any = {};
+      
+      if (req.body.host !== undefined) updateData.host = req.body.host;
+      if (req.body.port !== undefined) updateData.port = parseInt(req.body.port);
+      if (req.body.secure !== undefined) updateData.secure = req.body.secure;
+      if (req.body.username !== undefined) updateData.username = req.body.username;
+      if (req.body.password !== undefined) updateData.password = req.body.password;
+      if (req.body.fromEmail !== undefined) updateData.fromEmail = req.body.fromEmail;
+      if (req.body.fromName !== undefined) updateData.fromName = req.body.fromName;
+      if (req.body.enabled !== undefined) updateData.enabled = req.body.enabled;
+      
+      // Update the configuration
+      const updatedConfig = await storage.updateSmtpConfig(existingConfig.id, updateData);
+      
+      // Return the updated configuration (without the password)
+      res.json({
+        success: true,
+        message: "SMTP configuration updated successfully",
+        config: {
+          host: updatedConfig.host,
+          port: updatedConfig.port,
+          secure: updatedConfig.secure,
+          username: updatedConfig.username,
+          fromEmail: updatedConfig.fromEmail,
+          fromName: updatedConfig.fromName,
+          enabled: updatedConfig.enabled,
+          hasPassword: !!updatedConfig.password
+        }
+      });
+    } catch (error) {
+      console.error("Error updating SMTP configuration:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to update SMTP configuration"
+      });
+    }
+  });
+  
+  // Test SMTP connection
+  app.post("/api/test-smtp-connection", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      
+      // Initialize email service for this user
+      const emailService = new EmailService();
+      const initialized = await emailService.initialize(userId);
+      
+      if (!initialized) {
+        return res.status(400).json({
+          success: false,
+          message: "Could not initialize email service. Please check your SMTP configuration."
+        });
+      }
+      
+      // Attempt to verify connection
+      try {
+        const verificationResult = await emailService.verifyConnection();
+        
+        if (verificationResult.success) {
+          return res.json({
+            success: true,
+            message: "SMTP connection successful. Email system is properly configured."
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: `SMTP connection failed: ${verificationResult.message}`
+          });
+        }
+      } catch (verifyError) {
+        return res.status(400).json({
+          success: false,
+          message: `SMTP connection verification failed: ${verifyError instanceof Error ? verifyError.message : 'Unknown error'}`
+        });
+      }
+    } catch (error) {
+      console.error("Error testing SMTP connection:", error);
+      res.status(500).json({
+        success: false,
+        message: `Error testing SMTP connection: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
   });

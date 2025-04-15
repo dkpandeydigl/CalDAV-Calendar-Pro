@@ -276,6 +276,41 @@ export function setupAuth(app: Express) {
               
               console.log(`Created server connection for new user ${username}`);
               
+              // Set up SMTP config with same credentials for email sending
+              try {
+                // Check if email is valid format
+                if (username.includes('@')) {
+                  const smtpConfig = await storage.getSmtpConfig(newUser.id);
+                  
+                  if (!smtpConfig) {
+                    // Create default SMTP config with CalDAV password
+                    await storage.createSmtpConfig({
+                      userId: newUser.id,
+                      host: 'smtps.xgen.in',
+                      port: 465,
+                      secure: true,
+                      username: username,
+                      password: password, // Use CalDAV password for SMTP
+                      fromEmail: username,
+                      fromName: newUser.fullName || username.split('@')[0],
+                      enabled: true
+                    });
+                    
+                    console.log(`Created SMTP configuration for new user ${username} using CalDAV credentials`);
+                  } else {
+                    // Update existing SMTP config with CalDAV password
+                    await storage.updateSmtpConfig(smtpConfig.id, {
+                      password: password
+                    });
+                    
+                    console.log(`Updated SMTP password for user ${username} using CalDAV credentials`);
+                  }
+                }
+              } catch (smtpError) {
+                console.error(`Error setting up SMTP for user ${username}:`, smtpError);
+                // Continue with authentication even if SMTP setup fails
+              }
+              
               return done(null, newUser);
             }
             
@@ -305,6 +340,41 @@ export function setupAuth(app: Express) {
                   status: "connected"
                 });
                 console.log(`Created new server connection for existing user ${username}`);
+              }
+              
+              // Update SMTP config with the same credentials
+              try {
+                // Only proceed for username that looks like an email
+                if (username.includes('@')) {
+                  const smtpConfig = await storage.getSmtpConfig(existingUser.id);
+                  
+                  if (!smtpConfig) {
+                    // Create default SMTP config with CalDAV password
+                    await storage.createSmtpConfig({
+                      userId: existingUser.id,
+                      host: 'smtps.xgen.in',
+                      port: 465,
+                      secure: true,
+                      username: username,
+                      password: password, // Use CalDAV password for SMTP
+                      fromEmail: username,
+                      fromName: existingUser.fullName || username.split('@')[0],
+                      enabled: true
+                    });
+                    
+                    console.log(`Created SMTP configuration for existing user ${username} using CalDAV credentials`);
+                  } else {
+                    // Update existing SMTP config with CalDAV password
+                    await storage.updateSmtpConfig(smtpConfig.id, {
+                      password: password
+                    });
+                    
+                    console.log(`Updated SMTP password for user ${username} using CalDAV credentials`);
+                  }
+                }
+              } catch (smtpError) {
+                console.error(`Error setting up SMTP for user ${username}:`, smtpError);
+                // Continue with authentication even if SMTP setup fails
               }
             } catch (connectionError) {
               console.error(`Error updating server connection for ${username}:`, connectionError);
@@ -488,6 +558,28 @@ export function setupAuth(app: Express) {
           });
           
           console.log(`Created server connection for user ${username}`);
+          
+          // Also create SMTP configuration with same credentials
+          try {
+            if (username.includes('@')) {
+              await storage.createSmtpConfig({
+                userId: user.id,
+                host: 'smtps.xgen.in',
+                port: 465,
+                secure: true,
+                username: username,
+                password: password, // Use CalDAV password for SMTP
+                fromEmail: username,
+                fromName: userData.fullName || username.split('@')[0],
+                enabled: true
+              });
+              
+              console.log(`Created SMTP configuration for new user ${username} using CalDAV credentials`);
+            }
+          } catch (smtpError) {
+            console.error(`Error setting up SMTP for user ${username}:`, smtpError);
+            // Continue with registration even if SMTP setup fails
+          }
         } catch (serverConnectionError) {
           console.error("Error creating server connection:", serverConnectionError);
           // Continue even if server connection creation fails

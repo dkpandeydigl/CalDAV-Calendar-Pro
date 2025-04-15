@@ -122,6 +122,41 @@ export class EmailService {
       return false;
     }
   }
+  
+  /**
+   * Verify the SMTP connection using the current configuration
+   * @returns A verification result object with success flag and message
+   */
+  async verifyConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      if (!this.transporter) {
+        return { 
+          success: false, 
+          message: "Email service not initialized" 
+        };
+      }
+      
+      if (!this.config?.password) {
+        return { 
+          success: false, 
+          message: "SMTP password not set. Please configure your password to send emails." 
+        };
+      }
+      
+      // Verify the SMTP connection
+      await this.transporter.verify();
+      
+      return {
+        success: true,
+        message: "SMTP connection verified successfully"
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
 
   /**
    * Send an event invitation to all attendees
