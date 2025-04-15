@@ -29,8 +29,6 @@ export function WebSocketTest() {
     // This handles both development and production environments
     const wsPath = connectionAttempts % 2 === 0 ? '/api/ws' : '/ws';
     
-    // Properly construct URL with host and port from current page
-    // This ensures it works in all environments including Replit
     return `${protocol}//${window.location.host}${wsPath}`;
   }, [connectionAttempts]);
 
@@ -51,92 +49,35 @@ export function WebSocketTest() {
     setStatus('connecting');
     
     try {
-      // Log browser environment details to help diagnose connection issues
-      const environmentInfo = {
-        protocol: window.location.protocol,
-        host: window.location.host,
-        hostname: window.location.hostname,
-        port: window.location.port || '(default)',
-        pathname: window.location.pathname,
-        userAgent: navigator.userAgent,
-        connectionAttempt: connectionAttempts + 1
-      };
-      
-      console.log('WebSocket connection environment:', environmentInfo);
-      
       const wsUrl = getWebSocketUrl();
-      
-      // Log connection details before attempting to connect
-      setMessages(prev => [
-        ...prev, 
-        `Connecting to ${wsUrl}...`,
-        `Protocol: ${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}`,
-        `Host: ${window.location.host}`
-      ]);
-      
-      // Create WebSocket with explicit error handling
       const newWs = new WebSocket(wsUrl);
       wsRef.current = newWs;
       
+      // Log connection attempt
+      setMessages(prev => [...prev, `Connecting to ${wsUrl}...`]);
+      
       // Connection event handlers
       newWs.onopen = () => {
-        console.log(`✅ WebSocket connected successfully to ${wsUrl}`);
         setStatus('connected');
         setMessages(prev => [...prev, `Connected successfully to ${wsUrl}`]);
         setConnectionAttempts(0); // Reset attempts on successful connection
-        
-        // Send a test message to verify the connection is working in both directions
-        try {
-          const testMsg = JSON.stringify({ 
-            type: 'auth', 
-            timestamp: new Date().toISOString(),
-            client: 'WebSocketTest component'
-          });
-          newWs.send(testMsg);
-          setMessages(prev => [...prev, `→ Sent authentication message`]);
-        } catch (sendError) {
-          console.error('Error sending initial message:', sendError);
-        }
       };
       
       newWs.onmessage = (event) => {
         try {
           // Try to parse as JSON first
           const data = JSON.parse(event.data);
-          console.log('WebSocket message received:', data);
           setMessages(prev => [...prev, `← Received: ${JSON.stringify(data)}`]);
         } catch (e) {
           // If not JSON, treat as plain text
-          console.log('WebSocket text message received:', event.data);
           setMessages(prev => [...prev, `← Received: ${event.data}`]);
         }
       };
       
       newWs.onerror = (error) => {
-        console.error('❌ WebSocket error:', error);
+        console.error('WebSocket error:', error);
         setStatus('error');
-        
-        // Log detailed error information
-        const errorInfo = {
-          error: error,
-          wsUrl: wsUrl,
-          readyState: newWs.readyState,
-          readyStateText: 
-            newWs.readyState === WebSocket.CONNECTING ? 'CONNECTING' :
-            newWs.readyState === WebSocket.OPEN ? 'OPEN' :
-            newWs.readyState === WebSocket.CLOSING ? 'CLOSING' :
-            newWs.readyState === WebSocket.CLOSED ? 'CLOSED' : 'UNKNOWN',
-          timestamp: new Date().toISOString()
-        };
-        
-        console.error('WebSocket error details:', errorInfo);
-        
-        // Add more detailed error message
-        setMessages(prev => [
-          ...prev, 
-          `Error: Connection failed (Ready state: ${errorInfo.readyStateText})`,
-          `WebSocket URL used: ${wsUrl}`
-        ]);
+        setMessages(prev => [...prev, `Error: Connection failed`]);
         
         // Increment connection attempts for the next try
         setConnectionAttempts(prev => prev + 1);
@@ -155,52 +96,22 @@ export function WebSocketTest() {
           
           setReconnectTimer(timerId);
         } else {
-          setMessages(prev => [
-            ...prev, 
-            `Max reconnection attempts (${maxReconnectAttempts}) reached. Please try manually reconnecting.`,
-            `If the error persists, check the browser console for detailed logs.`
-          ]);
+          setMessages(prev => [...prev, `Max reconnection attempts (${maxReconnectAttempts}) reached. Please try manually reconnecting.`]);
         }
       };
       
       newWs.onclose = (event) => {
-        console.log(`WebSocket closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
-        
-        // Only change status if not already in error state
-        if (status !== 'error') {
+        if (status !== 'error') { // Only change status if not already in error state
           setStatus('disconnected');
-          setMessages(prev => [
-            ...prev, 
-            `Disconnected. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`
-          ]);
-          
-          // Log with more details about close codes
-          const closeReason = 
-            event.code === 1000 ? 'Normal closure' :
-            event.code === 1001 ? 'Going away (e.g., page close)' :
-            event.code === 1006 ? 'Abnormal closure (no close frame)' :
-            event.code === 1008 ? 'Policy violation' :
-            event.code === 1011 ? 'Server error' : 'Other';
-            
-          console.log(`WebSocket close details: ${closeReason} (${event.code})`);
+          setMessages(prev => [...prev, `Disconnected. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`]);
         }
         
         wsRef.current = null;
       };
     } catch (error) {
-      console.error('❌ Error creating WebSocket:', error);
+      console.error('Error creating WebSocket:', error);
       setStatus('error');
-      
-      // Get more specific error information
-      const errorMessage = error instanceof Error ? 
-        `${error.name}: ${error.message}` : 
-        'Failed to create WebSocket';
-      
-      setMessages(prev => [
-        ...prev, 
-        `Error: ${errorMessage}`,
-        `Check network connection and try again.`
-      ]);
+      setMessages(prev => [...prev, `Error: ${error instanceof Error ? error.message : 'Failed to create WebSocket'}`]);
     }
   }, [connectionAttempts, getWebSocketUrl, reconnectTimer, status]);
 

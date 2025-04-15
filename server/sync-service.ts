@@ -426,65 +426,22 @@ export class SyncService {
       
       const { url, username, password } = job.connection;
       
-      // Create a new DAV client with explicit configuration
-      console.log(`Creating DAV client for user ${username} with server URL: ${url}`);
-      
-      // Debug the server URL to ensure it's properly formatted
-      const formattedUrl = url.endsWith('/') ? url : `${url}/`;
-      console.log(`Using formatted server URL: ${formattedUrl}`);
-      
+      // Create a new DAV client
       const davClient = new DAVClient({
-        serverUrl: formattedUrl,
+        serverUrl: url,
         credentials: {
           username,
           password
         },
         authMethod: 'Basic',
-        defaultAccountType: 'caldav',
-        // Add custom fetch options with timeout
-        fetchOptions: {
-          signal: AbortSignal.timeout(30000) // 30 second timeout
-        }
+        defaultAccountType: 'caldav'
       });
       
       // Try to login and fetch calendars
-      console.log(`Attempting to login to CalDAV server for user ${username}`);
       await davClient.login();
-      console.log(`Successfully logged in to CalDAV server for user ${username}`);
       
-      // Discover calendars with detailed logging
-      console.log(`Discovering calendars for user ID ${userId} from server ${formattedUrl}`);
-      
-      // Try to get the principal URL manually using PROPFIND
-      try {
-        console.log(`Looking for principal information for ${username}`);
-        // Use direct PROPFIND to get the principal URL
-        const userPrincipalPath = '/.well-known/caldav';
-        
-        try {
-          const wellKnownResults = await davClient.propfind({
-            url: `${formattedUrl}${userPrincipalPath}`,
-            depth: '0',
-            props: ['{DAV:}current-user-principal']
-          });
-          
-          if (wellKnownResults && wellKnownResults.length > 0) {
-            const principalUrl = wellKnownResults[0]?.props?.['{DAV:}current-user-principal']?.href;
-            if (principalUrl) {
-              console.log(`Found principal URL from well-known: ${principalUrl}`);
-            } else {
-              console.log('Principal URL not found in well-known response');
-            }
-          } else {
-            console.log('No results from well-known PROPFIND');
-          }
-        } catch (wellKnownError) {
-          console.log(`Failed to get principal from well-known: ${wellKnownError}`);
-        }
-      } catch (principalError) {
-        console.error(`Error getting principal info for ${username}:`, principalError);
-        console.log(`Will attempt direct calendar discovery despite principal error`);
-      }
+      // Discover calendars
+      console.log(`Discovering calendars for user ID ${userId}`);
       
       // If a specific calendar ID was provided, only sync that calendar
       if (calendarId !== null) {
@@ -794,245 +751,8 @@ export class SyncService {
         }
       } else {
         // Normal sync for all calendars
-        console.log(`Attempting to fetch calendars from CalDAV server for user ${username}`);
-        
-        // Define interface for DAV calendar objects to avoid 'any' type errors
-        interface DAVCalendar {
-          url: string;
-          displayName: string;
-          color?: string;
-          components?: string[];
-          href?: string;
-          props?: Record<string, any>;
-        }
-        
-        let davCalendars: DAVCalendar[] = [];
-        
-        // First, try standard calendar fetching
-        try {
-          davCalendars = await davClient.fetchCalendars();
-          console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server using standard method`);
-        } catch (fetchCalendarError) {
-          console.error(`Error fetching calendars using standard method:`, fetchCalendarError);
-          
-          // Try an alternative approach by manually discovering calendars
-          console.log(`Attempting alternative calendar discovery for user ${username}`);
-          
-          // Method 1: Try to find using calendar-home-set property
-          let foundCalendarsViaHomeSet = false;
-          try {
-            console.log(`Looking for calendar collections via home-set property`);
-            
-            // Try direct discovery with explicit PROPFIND
-            const userPropfind = await davClient.propfind({
-              url: formattedUrl,
-              depth: '1',
-              props: [
-                '{DAV:}resourcetype',
-                '{DAV:}displayname',
-                '{urn:ietf:params:xml:ns:caldav}calendar-home-set'
-              ]
-            });
-            
-            console.log(`Found ${userPropfind.length} resources at top level`);
-            
-            // Look for calendar-home-set property in results
-            let calendarHomeUrl = '';
-            for (const resource of userPropfind) {
-              const calendarHomeSet = resource.props && 
-                resource.props['{urn:ietf:params:xml:ns:caldav}calendar-home-set'];
-              
-              if (calendarHomeSet && calendarHomeSet.href) {
-                calendarHomeUrl = calendarHomeSet.href;
-                console.log(`Found calendar-home-set at ${calendarHomeUrl}`);
-                break;
-              }
-            }
-            
-            // If we found a calendar home, try to fetch calendars from it
-            if (calendarHomeUrl) {
-              try {
-                console.log(`Fetching calendars from home: ${calendarHomeUrl}`);
-                
-                // Make sure URL is absolute
-                const homeUrl = calendarHomeUrl.startsWith('http') 
-                  ? calendarHomeUrl 
-                  : new URL(calendarHomeUrl, formattedUrl).href;
-                
-                // PROPFIND on the calendar home
-                const homeResults = await davClient.propfind({
-                  url: homeUrl,
-                  depth: '1',
-                  props: [
-                    '{DAV:}resourcetype',
-                    '{DAV:}displayname',
-                    '{http://apple.com/ns/ical/}calendar-color',
-                    '{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set'
-                  ]
-                });
-                
-                console.log(`Found ${homeResults.length} resources in calendar home`);
-                
-                // Filter for calendar collections
-                const calendarsInHome = homeResults.filter(item => {
-                  if (item.props && item.props['{DAV:}resourcetype']) {
-                    const resourceType = item.props['{DAV:}resourcetype'];
-                    // Check if it's a calendar resource (array may have different formats)
-                    if (Array.isArray(resourceType)) {
-                      return resourceType.includes('{urn:ietf:params:xml:ns:caldav}calendar');
-                    } else if (typeof resourceType === 'string') {
-                      return resourceType === '{urn:ietf:params:xml:ns:caldav}calendar';
-                    } else if (resourceType.value) {
-                      // Some servers may use a value property
-                      return resourceType.value === '{urn:ietf:params:xml:ns:caldav}calendar';
-                    }
-                  }
-                  return false;
-                });
-                
-                console.log(`Found ${calendarsInHome.length} calendars in home`);
-                
-                // Map to our expected format
-                const formattedCalendars = calendarsInHome.map(cal => ({
-                  url: cal.href,
-                  displayName: cal.props['{DAV:}displayname'] || 'Unnamed Calendar',
-                  color: cal.props['{http://apple.com/ns/ical/}calendar-color'] || '#3788d8',
-                  components: cal.props['{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set'] || ['VEVENT']
-                }));
-                
-                davCalendars = [...davCalendars, ...formattedCalendars];
-                foundCalendarsViaHomeSet = true;
-              } catch (homeError) {
-                console.error(`Error fetching calendars from home ${calendarHomeUrl}:`, homeError);
-              }
-            }
-          } catch (propfindError) {
-            console.error(`Error during home-set PROPFIND:`, propfindError);
-          }
-          
-          // Method 2: Direct discovery at well-known locations if Method 1 failed
-          if (!foundCalendarsViaHomeSet) {
-            try {
-              console.log(`Attempting direct discovery at standard locations for user ${username}`);
-              
-              // Get username without domain for path construction
-              const usernameWithoutDomain = username.split('@')[0];
-              const userDomain = username.includes('@') ? username.split('@')[1] : '';
-              
-              // Common paths for DaviCal server - now with more variations
-              const possiblePaths = [
-                // Original paths
-                `/caldav.php/${username}/`,
-                `/caldav.php/${username}/calendar/`,
-                `/caldav.php/${username}/home/`,
-                `/caldav/${username}/`,
-                `/calendar/${username}/`,
-                `/calendars/${username}/`,
-                
-                // Try paths with the full email address
-                `/${username}/`,
-                `/${username}/calendar/`,
-                
-                // Try paths with username without domain (common for DAViCal)
-                `/${usernameWithoutDomain}/`,
-                `/${usernameWithoutDomain}/calendar/`,
-                
-                // DAViCal specific paths based on the screenshot
-                `/davical/caldav.php/${username}/`,
-                `/davical/caldav.php/${username}/calendar/`,
-                `/davical/caldav.php/${username}/ashu/`,
-                
-                // Try direct paths to the collections we saw in the screenshot
-                // Special handling for lalchand.saini@dil.in based on the screenshot
-                username === 'lalchand.saini@dil.in' ? [
-                  // Direct paths from the screenshot for lalchand.saini@dil.in
-                  `/davical/caldav.php/lalchand.saini@dil.in/calendar/`,
-                  `/davical/caldav.php/lalchand.saini@dil.in/ashu/`,
-                  `/davical/caldav.php/lalchand.saini@dil.in/neshu/`,
-                  `/davical/caldav.php/lalchand.saini@dil.in/dkpandey/`,
-                  `/davical/caldav.php/lalchand.saini@dil.in/dk_pp/`,
-                  `/davical/caldav.php/lalchand.saini@dil.in/lalchand/`,
-                  // Try with the slashes but without URL encoding
-                  `/davical/caldav.php/lalchand.saini@dil.in/calendar/`,
-                  // Try the paths explicitly as seen in the screenshot
-                  `/lalchand.saini@dil.in/calendar/`,
-                  `/lalchand.saini@dil.in/ashu/`,
-                  `/lalchand.saini@dil.in/neshu/`,
-                  `/lalchand.saini@dil.in/dkpandey/`,
-                  `/lalchand.saini@dil.in/dk_pp/`, 
-                  `/lalchand.saini@dil.in/lalchand/`
-                ].flat() : [], // Flatten if username is lalchand.saini@dil.in, otherwise empty array
-                
-                // Try direct paths to the collections for other users
-                `/davical/caldav.php/${username}/ashu/`,
-                `/davical/caldav.php/${username}/calendar/`,
-                `/davical/caldav.php/${username}/dkpandey/`,
-                
-                // If the server URL already includes caldav.php, try with just the username
-                `./${username}/`,
-                `./${username}/calendar/`,
-                `./${username}/ashu/`
-              ];
-              
-              for (const path of possiblePaths) {
-                try {
-                  // Handle both string and array values safely
-                  const processedPath = typeof path === 'string' ? path.replace(/^\//, '') : path;
-                  console.log(`Trying to find calendars at: ${formattedUrl}${processedPath}`);
-                  const directDiscovery = await davClient.propfind({
-                    url: `${formattedUrl}${processedPath}`,
-                    depth: '1',
-                    props: [
-                      '{DAV:}resourcetype',
-                      '{DAV:}displayname',
-                      '{http://apple.com/ns/ical/}calendar-color',
-                      '{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set'
-                    ]
-                  });
-                  
-                  console.log(`PROPFIND result at ${path}:`, directDiscovery);
-                  
-                  // Filter for calendar collections
-                  const calendars = directDiscovery.filter((item: any) => {
-                    if (item.props && item.props['{DAV:}resourcetype']) {
-                      const resourceType = item.props['{DAV:}resourcetype'];
-                      // Check if it's a calendar resource (array may have different formats)
-                      if (Array.isArray(resourceType)) {
-                        return resourceType.includes('{urn:ietf:params:xml:ns:caldav}calendar');
-                      } else if (typeof resourceType === 'string') {
-                        return resourceType === '{urn:ietf:params:xml:ns:caldav}calendar';
-                      } else if (resourceType.value) {
-                        // Some servers may use a value property
-                        return resourceType.value === '{urn:ietf:params:xml:ns:caldav}calendar';
-                      }
-                    }
-                    return false;
-                  });
-                  
-                  if (calendars.length > 0) {
-                    console.log(`Found ${calendars.length} calendars at ${path}`);
-                    
-                    // Map to our expected format
-                    const formattedCalendars = calendars.map((cal: any) => ({
-                      url: cal.href,
-                      displayName: cal.props['{DAV:}displayname'] || 'Unnamed Calendar',
-                      color: cal.props['{http://apple.com/ns/ical/}calendar-color'] || '#3788d8',
-                      components: cal.props['{urn:ietf:params:xml:ns:caldav}supported-calendar-component-set'] || ['VEVENT']
-                    }));
-                    
-                    davCalendars = [...davCalendars, ...formattedCalendars];
-                  }
-                } catch (directError) {
-                  console.log(`No calendars found at ${path}:`, directError);
-                }
-              }
-            } catch (directDiscoveryError) {
-              console.error(`Direct calendar discovery failed:`, directDiscoveryError);
-            }
-          }
-        }
-        
-        console.log(`Total calendars found for user ${username}: ${davCalendars.length}`);
+        const davCalendars = await davClient.fetchCalendars();
+        console.log(`Retrieved ${davCalendars.length} calendars from CalDAV server`);
         
         // Process each calendar - first update our local calendars database
         for (const davCalendar of davCalendars) {
@@ -1315,59 +1035,13 @@ export class SyncService {
   private async findCalendarByUrl(url: string, userId: number): Promise<Calendar | undefined> {
     const calendars = await storage.getCalendars(userId);
     
-    if (!url) {
-      console.log('findCalendarByUrl called with empty URL');
-      return undefined;
-    }
-    
-    // Normalize URL for comparison - strip trailing slashes and query params
-    const normalizeUrl = (inputUrl: string | null): string => {
-      if (!inputUrl) return '';
-      
-      // Remove query parameters
-      const urlWithoutParams = inputUrl.split('?')[0];
-      
-      // Remove hash fragments
-      const urlWithoutHash = urlWithoutParams.split('#')[0];
-      
-      // Remove trailing slashes
-      return urlWithoutHash.replace(/\/+$/, '');
-    };
-    
-    const normalizedSearchUrl = normalizeUrl(url);
-    console.log(`Looking for calendar with normalized URL: ${normalizedSearchUrl}`);
-    
     // Check for exact match
-    const exactMatch = calendars.find(cal => normalizeUrl(cal.url) === normalizedSearchUrl);
+    const exactMatch = calendars.find(cal => cal.url === url);
     if (exactMatch) {
-      console.log(`Found exact URL match for calendar: ${exactMatch.name}`);
       return exactMatch;
     }
     
-    // Check for partial URL match (calendar might be stored with a different base URL)
-    const partialMatch = calendars.find(cal => {
-      if (!cal.url) return false;
-      
-      // Extract path components 
-      const calPathSegments = normalizeUrl(cal.url).split('/').filter(Boolean);
-      const searchPathSegments = normalizedSearchUrl.split('/').filter(Boolean);
-      
-      // If the last 2+ path segments match, consider it the same calendar
-      if (calPathSegments.length >= 2 && searchPathSegments.length >= 2) {
-        const calLastSegments = calPathSegments.slice(-2).join('/');
-        const searchLastSegments = searchPathSegments.slice(-2).join('/');
-        return calLastSegments === searchLastSegments;
-      }
-      
-      return false;
-    });
-    
-    if (partialMatch) {
-      console.log(`Found partial URL match for calendar: ${partialMatch.name}`);
-      return partialMatch;
-    }
-    
-    console.log(`No matching calendar found for URL: ${url}`);
+    // No match found
     return undefined;
   }
   
