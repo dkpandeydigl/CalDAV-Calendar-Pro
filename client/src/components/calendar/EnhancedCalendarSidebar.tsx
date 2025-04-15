@@ -162,8 +162,8 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   
   const { toast } = useToast();
   
-  // Get available timezones
-  const timezones = getTimezones();
+  // Get available timezones from the utility function
+  const availableTimezones = getTimezones();
   
   // Filter calendars based on search query and sort alphabetically by name
   const filteredOwnCalendars = calendars
@@ -650,7 +650,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   <SelectValue placeholder="Select timezone" />
                 </SelectTrigger>
                 <SelectContent className="max-h-80">
-                  {timezones.map((timezone) => (
+                  {availableTimezones.map((timezone) => (
                     <SelectItem key={timezone.value} value={timezone.value}>
                       {timezone.label}
                     </SelectItem>
