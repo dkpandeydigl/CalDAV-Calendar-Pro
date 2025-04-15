@@ -236,6 +236,16 @@ export function generateICalEvent(event: any, options: {
   
   // Add required properties - UID must be preserved exactly as-is for RFC 5546 compliance
   // especially for cancellations that MUST use the same UID as the original event
+  
+  // CRITICAL: UID handling - ensure the exact UID is preserved and no modifications are made
+  if (!event.uid) {
+    console.error('CRITICAL ERROR: Attempting to generate ICS without a UID. This will cause RFC compliance issues.');
+    // Generate a fallback UID only in extreme cases - should never happen
+    event.uid = `emergency-fallback-${Date.now()}@caldavclient.local`;
+  }
+  
+  // For cancellations, this UID MUST match the original event exactly (RFC 5546 requirement)
+  console.log(`Generating ICS with UID: ${event.uid} (Method: ${options.method || 'REQUEST'})`);
   lines.push(formatContentLine('UID', event.uid));
   lines.push(formatContentLine('SUMMARY', event.title || "Untitled Event"));
   
@@ -518,26 +528,48 @@ export function generateCancellationICalEvent(event: any, options: {
   // Increment the sequence number
   const updatedSequence = options.sequence + 1;
   
-  // RFC 5546 requires the EXACT same UID to be used for cancellation events
-  // Extract the original UID from raw data if available to ensure exact match
+  // RFC 5546 REQUIRES the EXACT same UID to be used for cancellation events
+  // This is critical for cross-client compatibility
+  
+  // First try to get UID from the explicit property
   let originalUid = event.uid;
+  
+  // If we have raw data, ALWAYS prioritize extracting the exact UID from it
+  // This is the most reliable method to ensure we use the identical UID as the original event
   if (event.rawData && typeof event.rawData === 'string') {
-    const uidMatch = event.rawData.match(/UID:([^\r\n]+)/);
-    if (uidMatch && uidMatch[1]) {
-      console.log(`Using exact UID from raw data for cancellation: ${uidMatch[1]}`);
-      originalUid = uidMatch[1];
-      // Update the event object with the extracted UID to ensure it's used
-      event.uid = originalUid;
+    // Try multiple regex patterns to find the UID
+    const uidPatterns = [
+      /UID:([^\r\n]+)/i,           // Standard format
+      /UID;[^:]*:([^\r\n]+)/i,     // With parameters
+      /"UID":"([^"]+)"/i           // JSON format
+    ];
+    
+    // Try each pattern until we find a match
+    for (const pattern of uidPatterns) {
+      const uidMatch = event.rawData.match(pattern);
+      if (uidMatch && uidMatch[1]) {
+        const extractedUid = uidMatch[1].trim();
+        if (extractedUid) {
+          console.log(`[RFC 5546] Using exact UID from raw data for cancellation: ${extractedUid}`);
+          originalUid = extractedUid;
+          // Immediately break once we find a valid UID
+          break;
+        }
+      }
     }
   }
   
-  // Log detailed information for debugging
+  // Log detailed information for debugging and verification
   console.log(`[RFC 5546] Preserving original UID for cancellation: ${originalUid}`);
-  console.log(`Preparing cancellation for event: ${event.title} with UID: ${originalUid}`);
+  console.log(`Preparing cancellation for event: ${event.title || 'Untitled'} with UID: ${originalUid}`);
   console.log(`Original event has ${event.resources ? event.resources.length : 0} resources and ${event.attendees ? event.attendees.length : 0} attendees`);
   
   // Create a shallow copy of the event and FORCE the original UID
-  const eventCopy = { ...event, uid: originalUid };
+  // Double ensure the UID is set correctly by making it a direct property
+  const eventCopy = { 
+    ...event, 
+    uid: originalUid // Ensure the UID is exactly preserved
+  };
   
   // Make sure we retain the resources array for cancellations
   if (!eventCopy.resources || !Array.isArray(eventCopy.resources) || eventCopy.resources.length === 0) {

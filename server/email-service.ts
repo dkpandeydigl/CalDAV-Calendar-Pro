@@ -1295,9 +1295,19 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
     const endDateStr = formatICalDate(endDate);
     const now = formatICalDate(new Date());
     
+    // Extract original UID from raw data for cancellations - CRITICAL for RFC 5546 compliance
+    let originalUid = uid;
+    if (status === 'CANCELLED' && rawData && typeof rawData === 'string') {
+      const uidMatch = rawData.match(/UID:([^\r\n]+)/);
+      if (uidMatch && uidMatch[1]) {
+        originalUid = uidMatch[1];
+        console.log(`[FALLBACK] Using original UID from raw data for cancellation: ${originalUid}`);
+      }
+    }
+    
     // For cancellations, we MUST use the original event's UID - crucial for RFC compliance
     // For new events, generate a unique identifier
-    const eventId = uid || `event-${Date.now()}@caldavclient.local`;
+    const eventId = status === 'CANCELLED' ? originalUid : (uid || `event-${Date.now()}@caldavclient.local`);
     
     // Start building the ICS content
     let icsContent = [
