@@ -650,13 +650,13 @@ export function setupAuth(app: Express) {
         
         try {
           // Get the updated connection (after it was created/updated above)
-          const userId = (user as SelectUser).id;
+          const userId = user.id;
           const connection = await storage.getServerConnection(userId);
           
           // Set up background sync for this user's session
           if (connection) {
             await syncService.setupSyncForUser(userId, connection);
-            console.log(`Started sync service for user ${(user as SelectUser).username}`);
+            console.log(`Started sync service for user ${user.username}`);
           }
         } catch (syncError) {
           console.error("Error setting up sync service:", syncError);
