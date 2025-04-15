@@ -1,76 +1,41 @@
+import { type Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-import { Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
-import bcrypt from 'bcryptjs';
 import { storage } from "./database-storage";
-import { syncService } from "./sync-service";
-import { User as SelectUser } from "@shared/schema";
+import bcrypt from "bcryptjs";
+import type { SelectUser } from "@shared/schema";
 import { DAVClient } from "tsdav";
+import fetch from "node-fetch";
+import { syncService } from "./sync-service";
 
+// For use in request object type extension
+interface DeletedEventInfo {
+  id: number;
+  uid?: string;
+  url?: string;
+  timestamp: string;
+}
+
+// Extend the Express.Request type
 declare global {
   namespace Express {
+    interface Request {
+      caldavServerUrl?: string;  // Add property for CalDAV server URL during authentication
+    }
     interface User extends SelectUser {}
   }
 }
 
-const scryptAsync = promisify(scrypt);
-
 async function hashPassword(password: string) {
-  // Use bcrypt for new passwords to match existing database format
-  const saltRounds = 10;
-  return await bcrypt.hash(password, saltRounds);
+  return bcrypt.hash(password, 10);
 }
 
 async function comparePasswords(supplied: string, stored: string) {
-  if (!stored || typeof stored !== 'string') {
-    console.error('Invalid stored password:', stored);
-    return false;
-  }
-
-  try {
-    // Detect if the password is in bcrypt format (starts with $2a$ or $2b$)
-    if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
-      console.log('Detected bcrypt format password, using bcrypt compare');
-      console.log(`Password length: ${stored.length}, format: ${stored.substring(0, 7)}...`);
-      
-      try {
-        const result = await bcrypt.compare(supplied, stored);
-        console.log(`Bcrypt compare result: ${result}`);
-        return result;
-      } catch (bcryptError) {
-        console.error('Bcrypt compare error:', bcryptError);
-        return false;
-      }
-    } 
-    // For scrypt format (contains a dot separating hash and salt)
-    else if (stored.includes('.')) {
-      console.log('Detected scrypt format password, using scrypt compare');
-      const [hashed, salt] = stored.split(".");
-      
-      if (!hashed || !salt) {
-        console.error('Failed to extract hash or salt from stored password');
-        return false;
-      }
-
-      const hashedBuf = Buffer.from(hashed, "hex");
-      const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-      return timingSafeEqual(hashedBuf, suppliedBuf);
-    } 
-    // Unrecognized format
-    else {
-      console.error('Unrecognized password hash format, cannot compare');
-      return false;
-    }
-  } catch (error) {
-    console.error('Error comparing passwords:', error);
-    return false;
-  }
+  return bcrypt.compare(supplied, stored);
 }
 
-// Enhanced function to verify credentials with the CalDAV server and extract user data
+// Define a CalDAVUserInfo interface
 interface CalDAVUserInfo {
   authenticated: boolean;
   displayName?: string;
@@ -79,6 +44,7 @@ interface CalDAVUserInfo {
   calendars?: any[]; // Calendar objects from the server
 }
 
+// Enhanced function to verify credentials with the CalDAV server and extract user data
 async function verifyCalDAVCredentials(
   serverUrl: string, 
   username: string, 
@@ -110,58 +76,79 @@ async function verifyCalDAVCredentials(
       
       // Try to get user info
       try {
-        const accounts = await davClient.fetchPrincipalUrl();
-        if (accounts && accounts.length > 0) {
-          userInfo.principalUrl = accounts[0];
-          console.log(`Found principal URL: ${accounts[0]}`);
+        // Find principal URL using custom PROPFIND request
+        const principalResponse = await fetch(serverUrl, {
+          method: 'PROPFIND',
+          headers: {
+            'Depth': '0',
+            'Content-Type': 'application/xml; charset=utf-8',
+            'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+          },
+          body: `<?xml version="1.0" encoding="utf-8" ?>
+          <propfind xmlns="DAV:">
+            <prop>
+              <current-user-principal/>
+            </prop>
+          </propfind>`
+        });
+        
+        if (principalResponse.ok || principalResponse.status === 207) {
+          const responseText = await principalResponse.text();
+          const principalMatch = responseText.match(/<current-user-principal><href>(.*?)<\/href><\/current-user-principal>/);
           
-          // Try to get display name and email from principal properties
-          try {
-            const principalProps = await davClient.customRequest({
-              url: accounts[0],
-              method: 'PROPFIND',
-              headers: {
-                Depth: '0',
-                'Content-Type': 'application/xml; charset=utf-8',
-              },
-              body: `<?xml version="1.0" encoding="utf-8" ?>
-              <propfind xmlns="DAV:">
-                <prop>
-                  <displayname/>
-                  <email/>
-                  <calendar-user-address-set xmlns="urn:ietf:params:xml:ns:caldav"/>
-                </prop>
-              </propfind>`,
-            });
+          if (principalMatch && principalMatch[1]) {
+            const principalUrl = new URL(principalMatch[1], serverUrl).href;
+            userInfo.principalUrl = principalUrl;
+            console.log(`Found principal URL: ${principalUrl}`);
             
-            if (principalProps && principalProps.status === 207) {
-              const responseText = await principalProps.text();
+            // Try to get display name and email from principal properties
+            try {
+              const principalProps = await fetch(principalUrl, {
+                method: 'PROPFIND',
+                headers: {
+                  'Depth': '0',
+                  'Content-Type': 'application/xml; charset=utf-8',
+                  'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
+                },
+                body: `<?xml version="1.0" encoding="utf-8" ?>
+                <propfind xmlns="DAV:">
+                  <prop>
+                    <displayname/>
+                    <email/>
+                    <calendar-user-address-set xmlns="urn:ietf:params:xml:ns:caldav"/>
+                  </prop>
+                </propfind>`
+              });
               
-              // Extract display name from XML response
-              const displayNameMatch = responseText.match(/<displayname>(.*?)<\/displayname>/);
-              if (displayNameMatch && displayNameMatch[1]) {
-                userInfo.displayName = displayNameMatch[1];
-                console.log(`Found display name: ${userInfo.displayName}`);
-              }
-              
-              // Extract email from XML response
-              const emailMatch = responseText.match(/<email>(.*?)<\/email>/);
-              if (emailMatch && emailMatch[1]) {
-                userInfo.email = emailMatch[1];
-                console.log(`Found email: ${userInfo.email}`);
-              }
-              
-              // Extract calendar user address if email is not found
-              if (!userInfo.email) {
-                const addressMatch = responseText.match(/<href>mailto:(.*?)<\/href>/);
-                if (addressMatch && addressMatch[1]) {
-                  userInfo.email = addressMatch[1];
-                  console.log(`Found email from calendar-user-address-set: ${userInfo.email}`);
+              if (principalProps && principalProps.status === 207) {
+                const responseText = await principalProps.text();
+                
+                // Extract display name from XML response
+                const displayNameMatch = responseText.match(/<displayname>(.*?)<\/displayname>/);
+                if (displayNameMatch && displayNameMatch[1]) {
+                  userInfo.displayName = displayNameMatch[1];
+                  console.log(`Found display name: ${userInfo.displayName}`);
+                }
+                
+                // Extract email from XML response
+                const emailMatch = responseText.match(/<email>(.*?)<\/email>/);
+                if (emailMatch && emailMatch[1]) {
+                  userInfo.email = emailMatch[1];
+                  console.log(`Found email: ${userInfo.email}`);
+                }
+                
+                // Extract calendar user address if email is not found
+                if (!userInfo.email) {
+                  const addressMatch = responseText.match(/<href>mailto:(.*?)<\/href>/);
+                  if (addressMatch && addressMatch[1]) {
+                    userInfo.email = addressMatch[1];
+                    console.log(`Found email from calendar-user-address-set: ${userInfo.email}`);
+                  }
                 }
               }
+            } catch (propError) {
+              console.error("Error fetching principal properties:", propError);
             }
-          } catch (propError) {
-            console.error("Error fetching principal properties:", propError);
           }
         }
       } catch (principalError) {
@@ -234,7 +221,7 @@ export function setupAuth(app: Express) {
         
         // Get server URL from request object
         // Note: We set this in the req object in the login route
-        const serverUrl = req?.caldavServerUrl || '';
+        const serverUrl = (req as any).caldavServerUrl || '';
         
         // First check if user exists in our system
         const existingUser = await storage.getUserByUsername(username);
@@ -501,21 +488,47 @@ export function setupAuth(app: Express) {
 
       // App login successful, now check CalDAV credentials
       try {
-        const isValidCalDAV = await verifyCalDAVCredentials(
+        const caldavResult = await verifyCalDAVCredentials(
           caldavServerUrl,
           username,
           password
         );
         
-        if (!isValidCalDAV) {
+        if (!caldavResult || (typeof caldavResult === 'boolean' && !caldavResult)) {
           return res.status(400).json({ 
             message: "Invalid CalDAV credentials. Please check your server URL, username and password." 
           });
         }
         
+        // Extract user info from the CalDAV server response
+        const caldavUserInfo = typeof caldavResult === 'object' ? caldavResult : null;
+        
         // Check if user already has a server connection
         const userId = (user as SelectUser).id;
         const existingConnection = await storage.getServerConnection(userId);
+        
+        // Update user profile with CalDAV info if available
+        if (caldavUserInfo) {
+          const updateData: Partial<SelectUser> = {};
+          
+          // Update full name if available
+          if (caldavUserInfo.displayName && (!user.fullName || user.fullName.trim() === '')) {
+            updateData.fullName = caldavUserInfo.displayName;
+            console.log(`Updating user fullName to ${caldavUserInfo.displayName} from CalDAV`);
+          }
+          
+          // Update email if available
+          if (caldavUserInfo.email && (!user.email || user.email.trim() === '')) {
+            updateData.email = caldavUserInfo.email;
+            console.log(`Updating user email to ${caldavUserInfo.email} from CalDAV`);
+          }
+          
+          // Apply updates if any fields changed
+          if (Object.keys(updateData).length > 0) {
+            await storage.updateUser(userId, updateData);
+            console.log(`Updated user profile from CalDAV data`);
+          }
+        }
         
         if (existingConnection) {
           // Update existing connection

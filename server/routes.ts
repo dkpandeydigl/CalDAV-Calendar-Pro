@@ -27,6 +27,7 @@ import { webdavSyncService } from "./webdav-sync";
 import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./notification-service";
 import { initializeWebSocketServer, broadcastToUser, sendNotification, createAndSendNotification } from "./websocket-handler";
+import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 
 // Using directly imported syncService
 import type { SyncService as SyncServiceType } from "./sync-service";
@@ -3143,6 +3144,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return handleZodError(err, res);
     }
   });
+  
+
+  
+  // SMTP Management API - for admin use
+  app.post("/api/admin/smtp/setup-common", isAuthenticated, setupCommonSmtp);
+  app.get("/api/admin/smtp/status", isAuthenticated, getSmtpStatus);
   
   // EMAIL PREVIEW API
   app.post("/api/email-preview", isAuthenticated, async (req, res) => {
