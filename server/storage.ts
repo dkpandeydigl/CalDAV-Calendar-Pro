@@ -676,6 +676,100 @@ export class MemStorage implements IStorage {
   async deleteSmtpConfig(id: number): Promise<boolean> {
     return this.smtpConfigMap.delete(id);
   }
+
+  // Notification methods
+  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+    const id = this.notificationIdCounter++;
+    const now = new Date();
+    
+    // Create a complete notification with all fields from the schema
+    const notification: Notification = {
+      id,
+      userId: insertNotification.userId,
+      title: insertNotification.title,
+      message: insertNotification.message,
+      type: insertNotification.type,
+      priority: insertNotification.priority || 'medium',
+      relatedEventId: insertNotification.relatedEventId || null,
+      relatedEventUid: insertNotification.relatedEventUid || null,
+      relatedUserId: insertNotification.relatedUserId || null,
+      relatedUserName: insertNotification.relatedUserName || null,
+      relatedUserEmail: insertNotification.relatedUserEmail || null,
+      additionalData: insertNotification.additionalData || null,
+      isRead: insertNotification.isRead || false,
+      isDismissed: insertNotification.isDismissed || false,
+      requiresAction: insertNotification.requiresAction || false,
+      actionTaken: insertNotification.actionTaken || false,
+      createdAt: now,
+      expiresAt: insertNotification.expiresAt || null
+    };
+    
+    this.notificationsMap.set(id, notification);
+    return notification;
+  }
+  
+  async getNotifications(userId: number, limit?: number): Promise<Notification[]> {
+    // Get all notifications for this user
+    const notifications = Array.from(this.notificationsMap.values())
+      .filter(notification => notification.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()); // Sort newest first
+      
+    // Apply limit if specified
+    if (limit !== undefined) {
+      return notifications.slice(0, limit);
+    }
+    
+    return notifications;
+  }
+  
+  async getUnreadNotificationCount(userId: number): Promise<number> {
+    return Array.from(this.notificationsMap.values())
+      .filter(notification => notification.userId === userId && !notification.isRead)
+      .length;
+  }
+  
+  async getUnreadNotifications(userId: number): Promise<Notification[]> {
+    return Array.from(this.notificationsMap.values())
+      .filter(notification => notification.userId === userId && !notification.isRead)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()); // Sort newest first
+  }
+  
+  async markNotificationRead(id: number): Promise<boolean> {
+    const notification = this.notificationsMap.get(id);
+    if (!notification) return false;
+    
+    notification.isRead = true;
+    this.notificationsMap.set(id, notification);
+    return true;
+  }
+  
+  async markAllNotificationsRead(userId: number): Promise<boolean> {
+    const userNotifications = Array.from(this.notificationsMap.values())
+      .filter(notification => notification.userId === userId);
+      
+    if (userNotifications.length === 0) return false;
+    
+    for (const notification of userNotifications) {
+      notification.isRead = true;
+      this.notificationsMap.set(notification.id, notification);
+    }
+    
+    return true;
+  }
+  
+  async deleteNotification(id: number): Promise<boolean> {
+    return this.notificationsMap.delete(id);
+  }
+  
+  // Helper methods for syncing
+  async getActiveUserIds(): Promise<number[]> {
+    // In memory storage, we'll consider all users as "active"
+    return Array.from(this.users.values()).map(user => user.id);
+  }
+  
+  async getAllServerConnections(): Promise<ServerConnection[]> {
+    return Array.from(this.serverConnectionsMap.values());
+  }
 }
 
 // Create and export the memory storage instance directly
