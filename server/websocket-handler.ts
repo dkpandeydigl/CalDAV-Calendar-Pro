@@ -7,8 +7,8 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
-import { storage } from './database-storage';
-import { notificationService } from './notification-service';
+import { storage } from './memory-storage'; // Using in-memory storage instead of database storage
+import { notificationService } from './memory-notification-service'; // Using in-memory notification service
 import { Notification } from '@shared/schema';
 
 // Track active WebSocket connections by user ID

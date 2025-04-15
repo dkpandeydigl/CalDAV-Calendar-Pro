@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { storage } from "./storage";
+import { storage } from "./memory-storage"; // Using in-memory storage instead of database storage
 import { initializeSyncService, syncService } from "./sync-service";
 
 const app = express();
