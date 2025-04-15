@@ -90,12 +90,7 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
               <span className={`inline-flex rounded-full h-3 w-3 ${serverStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
             </div>
             
-            {/* Sync Status Indicator */}
-            {user && (
-              <div className="mr-3">
-                <SyncStatusIndicator />
-              </div>
-            )}
+            {/* Sync Status Indicator removed */}
             
             {/* User dropdown with logout */}
             {user ? (
