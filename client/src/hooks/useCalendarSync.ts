@@ -96,16 +96,20 @@ export function useCalendarSync() {
         // Construct the WebSocket URL using the current page's location
         // We use a simplified approach that works across all environments, especially Replit
         let wsUrl;
+        
+        // Use only relative path for WebSocket URLs - best practice for Replit
+        // This approach works in all environments including Replit, local dev, and production
+        wsUrl = `${wsPath}?userId=${user.id}`;
+        
+        // Log the URL being used (for debugging)
+        console.log(`Using WebSocket URL: ${wsUrl}`);
+        
+        // Also store the URL in localStorage for diagnostic purposes
         try {
-          // Always use relative paths for WebSocket URLs in Replit environments
-          // This is the most reliable approach that avoids protocol/port issues
-          wsUrl = `${wsPath}?userId=${user.id}`;
-          console.log(`Using simplified WebSocket URL: ${wsUrl}`);
-        } catch (urlError) {
-          console.error('Error constructing WebSocket URL:', urlError);
-          // Ultimate fallback with relative path
-          wsUrl = `/ws?userId=${user.id}`;
-          console.log(`Using ultimate fallback WebSocket URL: ${wsUrl}`);
+          localStorage.setItem('lastWsUrl', wsUrl);
+          localStorage.setItem('lastWsAttemptTime', new Date().toISOString());
+        } catch (storageError) {
+          console.warn('Could not store WebSocket URL in localStorage:', storageError);
         }
         
         console.log(`🔄 Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
