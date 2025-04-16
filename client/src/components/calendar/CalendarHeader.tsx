@@ -14,7 +14,7 @@ import { ChevronLeft, ChevronRight, Menu, LogOut, User, Settings, Wifi } from 'l
 import { ProfileSettingsModal } from '@/components/modals/ProfileSettingsModal';
 import { queryClient } from '@/lib/queryClient';
 import { useLocation } from 'wouter';
-import { WebSocketStatusIndicator } from '@/components/WebSocketStatusIndicator';
+import WebSocketStatusIndicator from '@/components/WebSocketStatusIndicator';
 
 interface CalendarHeaderProps {
   onToggleSidebar: () => void;

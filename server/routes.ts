@@ -74,6 +74,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize WebSocket server for real-time notifications
   initializeWebSocketServer(httpServer);
   
+  // Initialize WebSocket Notification Service
+  const notificationService = initializeWebSocketNotificationService();
+  console.log('[express] WebSocket server initialization handled in routes.ts');
+  
   // Register the export and import routes
   registerExportRoutes(app);
   registerImportRoutes(app);

@@ -1,31 +1,25 @@
-import { WebSocket } from 'ws';
-import { broadcastToUser, broadcastMessage } from './websocket-handler';
+import WebSocket from 'ws';
+import { storage } from './storage';
+import { WebSocketServer } from 'ws';
 
-// Types for notification messages
 export interface WebSocketNotification {
   type: 'event' | 'calendar' | 'system' | 'resource' | 'attendee' | 'email';
   action: 'created' | 'updated' | 'deleted' | 'status-change' | 'error' | 'info';
   timestamp: number;
   data: any;
-  sourceUserId?: number;
-  targetUserIds?: number[];
-  uid?: string; // Event UID for event-related notifications
+  sourceUserId?: number | null; // The user who triggered the notification
 }
 
-/**
- * Websocket notification service for real-time updates
- * Extends the base WebSocketHandler with specific notification functionality
- */
 export class WebSocketNotificationService {
-  private static instance: WebSocketNotificationService;
+  private static instance: WebSocketNotificationService | null = null;
+  private userConnections: Map<number, Set<WebSocket>> = new Map();
+  private adminConnections: Set<WebSocket> = new Set();
+  private wss: WebSocketServer | null = null;
 
-  private constructor() {
+  constructor() {
     console.log('WebSocket notification service initialized');
   }
 
-  /**
-   * Get the singleton instance of the notification service
-   */
   public static getInstance(): WebSocketNotificationService {
     if (!WebSocketNotificationService.instance) {
       WebSocketNotificationService.instance = new WebSocketNotificationService();
@@ -33,130 +27,155 @@ export class WebSocketNotificationService {
     return WebSocketNotificationService.instance;
   }
 
-  /**
-   * Send a notification to specific users
-   * @param notification The notification to send
-   */
-  public sendNotification(notification: WebSocketNotification): void {
-    try {
-      // If targetUserIds is specified, send only to those users
-      if (notification.targetUserIds && notification.targetUserIds.length > 0) {
-        // Add UID to data for event-related notifications if not already there
-        if (notification.type === 'event' && notification.uid && !notification.data.uid) {
-          notification.data.uid = notification.uid;
+  public initialize(wss: WebSocketServer): void {
+    this.wss = wss;
+  }
+
+  public addUserConnection(userId: number, connection: WebSocket): void {
+    if (!this.userConnections.has(userId)) {
+      this.userConnections.set(userId, new Set());
+    }
+    this.userConnections.get(userId)?.add(connection);
+    console.log(`Added WebSocket connection for user ${userId}, total connections: ${this.userConnections.get(userId)?.size}`);
+  }
+
+  public addAdminConnection(connection: WebSocket): void {
+    this.adminConnections.add(connection);
+    console.log(`Added admin WebSocket connection, total admin connections: ${this.adminConnections.size}`);
+  }
+
+  public removeConnection(userId: number | null, connection: WebSocket): void {
+    if (userId !== null) {
+      const userConnections = this.userConnections.get(userId);
+      if (userConnections) {
+        userConnections.delete(connection);
+        if (userConnections.size === 0) {
+          this.userConnections.delete(userId);
         }
-        
-        // Convert to JSON once to avoid multiple serialization operations
-        const notificationJson = JSON.stringify(notification);
-        
-        for (const userId of notification.targetUserIds) {
-          broadcastToUser(userId, notificationJson);
-        }
-        
-        console.log(`Notification sent to ${notification.targetUserIds.length} specific users`);
-        return;
+        console.log(`Removed WebSocket connection for user ${userId}, remaining connections: ${userConnections.size}`);
       }
-      
-      // Otherwise broadcast to all connected clients
-      // Add UID to data for event-related notifications if not already there
-      if (notification.type === 'event' && notification.uid && !notification.data.uid) {
-        notification.data.uid = notification.uid;
-      }
-      
-      broadcastMessage(notification);
-      console.log('Notification broadcast to all connected users');
-    } catch (error) {
-      console.error('Error sending WebSocket notification:', error);
+    } else {
+      this.adminConnections.delete(connection);
+      console.log(`Removed admin WebSocket connection, remaining admin connections: ${this.adminConnections.size}`);
     }
   }
 
-  /**
-   * Send an event notification
-   */
-  public sendEventNotification(action: 'created' | 'updated' | 'deleted', data: any, targetUserIds?: number[], sourceUserId?: number): void {
-    // Extract UID from data if available
-    const uid = data.uid || '';
+  public broadcastToUser(userId: number, notification: WebSocketNotification): boolean {
+    const userConnections = this.userConnections.get(userId);
+    if (!userConnections || userConnections.size === 0) {
+      return false;
+    }
+
+    let success = false;
+    try {
+      const message = JSON.stringify(notification);
+      
+      for (const connection of userConnections) {
+        if (connection.readyState === WebSocket.OPEN) {
+          connection.send(message);
+          success = true;
+        }
+      }
+    } catch (error) {
+      console.error(`Error broadcasting to user ${userId}:`, error);
+      return false;
+    }
+
+    return success;
+  }
+
+  public broadcastToAll(notification: WebSocketNotification): boolean {
+    let success = false;
     
-    this.sendNotification({
-      type: 'event',
-      action,
-      timestamp: Date.now(),
-      data,
-      sourceUserId,
-      targetUserIds,
-      uid
-    });
+    try {
+      const message = JSON.stringify(notification);
+      
+      // Broadcast to all user connections
+      for (const [userId, connections] of this.userConnections.entries()) {
+        for (const connection of connections) {
+          if (connection.readyState === WebSocket.OPEN) {
+            connection.send(message);
+            success = true;
+          }
+        }
+      }
+      
+      // Broadcast to admin connections
+      for (const connection of this.adminConnections) {
+        if (connection.readyState === WebSocket.OPEN) {
+          connection.send(message);
+          success = true;
+        }
+      }
+    } catch (error) {
+      console.error('Error broadcasting to all:', error);
+      return false;
+    }
+
+    return success;
   }
 
-  /**
-   * Send a calendar notification
-   */
-  public sendCalendarNotification(action: 'created' | 'updated' | 'deleted', data: any, targetUserIds?: number[], sourceUserId?: number): void {
-    this.sendNotification({
-      type: 'calendar',
-      action,
-      timestamp: Date.now(),
-      data,
-      sourceUserId,
-      targetUserIds
-    });
-  }
-
-  /**
-   * Send an attendee status change notification
-   */
-  public sendAttendeeStatusNotification(eventData: any, attendee: { email: string, status: string, name?: string }, targetUserIds?: number[]): void {
-    // Extract UID from data if available
-    const uid = eventData.uid || '';
+  public sendNotification(notification: WebSocketNotification): boolean {
+    // If notification has a source user ID, don't send it back to that user
+    const sourceUserId = notification.sourceUserId;
     
-    this.sendNotification({
-      type: 'attendee',
-      action: 'status-change',
-      timestamp: Date.now(),
-      data: {
-        event: eventData,
-        attendee
-      },
-      targetUserIds,
-      uid
-    });
-  }
-
-  /**
-   * Send an email status notification
-   */
-  public sendEmailNotification(action: 'created' | 'error', eventData: any, emailStatus: any, targetUserIds?: number[]): void {
-    // Extract UID from data if available
-    const uid = eventData.uid || '';
+    let success = false;
     
-    this.sendNotification({
-      type: 'email',
-      action,
-      timestamp: Date.now(),
-      data: {
-        event: eventData,
-        emailStatus
-      },
-      targetUserIds,
-      uid
-    });
+    try {
+      const message = JSON.stringify(notification);
+      
+      // Send to all connections except the source user
+      for (const [userId, connections] of this.userConnections.entries()) {
+        // Skip the source user
+        if (sourceUserId !== undefined && sourceUserId === userId) {
+          continue;
+        }
+        
+        for (const connection of connections) {
+          if (connection.readyState === WebSocket.OPEN) {
+            connection.send(message);
+            success = true;
+          }
+        }
+      }
+      
+      // Send to admin connections
+      for (const connection of this.adminConnections) {
+        if (connection.readyState === WebSocket.OPEN) {
+          connection.send(message);
+          success = true;
+        }
+      }
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      return false;
+    }
+
+    return success;
   }
 
-  /**
-   * Send a system notification
-   */
-  public sendSystemNotification(action: 'info' | 'error', message: string, targetUserIds?: number[]): void {
-    this.sendNotification({
-      type: 'system',
-      action,
-      timestamp: Date.now(),
-      data: { message },
-      targetUserIds
-    });
+  public getConnectionStats(): { totalUsers: number, totalConnections: number, adminConnections: number } {
+    let totalConnections = 0;
+    
+    for (const connections of this.userConnections.values()) {
+      totalConnections += connections.size;
+    }
+    
+    return {
+      totalUsers: this.userConnections.size,
+      totalConnections: totalConnections + this.adminConnections.size,
+      adminConnections: this.adminConnections.size
+    };
   }
 }
 
-// Create and export a convenience function to get the notification service
+// Create a singleton instance
+const notificationService = WebSocketNotificationService.getInstance();
+
 export function getWebSocketNotificationService(): WebSocketNotificationService {
-  return WebSocketNotificationService.getInstance();
+  return notificationService;
+}
+
+export function initializeWebSocketNotificationService(): WebSocketNotificationService {
+  return notificationService;
 }
