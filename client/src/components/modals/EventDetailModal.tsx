@@ -902,6 +902,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                   rawData={typeof event.rawData === 'string' ? event.rawData : null} 
                                   showMoreCount={10}
                                   isPreview={false}
+                                  fallbackEmail={event.organizer ? event.organizer.email : (user?.username || "")}
                                 />
                               </div>
                             </>

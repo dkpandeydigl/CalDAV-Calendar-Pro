@@ -13,12 +13,14 @@ interface DirectAttendeeExtractorProps {
   rawData: string | null | undefined;
   showMoreCount?: number; // Number of attendees to show before "more"
   isPreview?: boolean; // If true, only show limited attendees with count indicator
+  fallbackEmail?: string; // Fallback email to use when no valid email is found
 }
 
 const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({ 
   rawData,
   showMoreCount = 2,
-  isPreview = true
+  isPreview = true,
+  fallbackEmail = ""
 }) => {
   console.log('ATTENDEE DEBUG: DirectAttendeeExtractor component rendering with rawData:', 
               rawData ? `string of length ${rawData.length}` : 'null/undefined');
@@ -242,7 +244,22 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
     }
   }, [rawData]);
   
-  // Don't display anything if no attendees found
+  // Handle fallback email when no attendees found
+  useEffect(() => {
+    if (attendees.length === 0 && fallbackEmail && fallbackEmail.includes('@')) {
+      console.log('ATTENDEE DEBUG: Using fallback email:', fallbackEmail);
+      // Set a single fallback attendee
+      setAttendees([{
+        id: `fallback-attendee-${Date.now()}`,
+        email: fallbackEmail,
+        name: fallbackEmail.split('@')[0],
+        role: 'Attendee',
+        status: 'Needs Action'
+      }]);
+    }
+  }, [attendees.length, fallbackEmail]);
+  
+  // Don't display anything if no attendees found after fallback
   if (attendees.length === 0) {
     console.log('ATTENDEE DEBUG: No attendees found, component will not render');
     return null;
