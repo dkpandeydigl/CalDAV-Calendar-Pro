@@ -904,7 +904,24 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       // Validate the raw data first
       if (!data.rawData || typeof data.rawData !== 'string' || data.rawData.length < 50) {
         console.warn(`Raw ICS data is missing or invalid (length: ${data.rawData ? data.rawData.length : 0})`);
-        console.log('Generating new cancellation ICS as a fallback');
+        
+        // Check if we have preserved original resource attendees before giving up on raw data
+        if (data._originalResourceAttendees && data._originalResourceAttendees.length > 0) {
+          console.log(`We have ${data._originalResourceAttendees.length} preserved original resource attendees, using those despite missing raw data`);
+          
+          // Extract any UID from original resource attendees if possible for extra RFC compliance
+          let foundOriginalUid = data.uid;
+          const originalResourceText = data._originalResourceAttendees.join('\n');
+          const uidMatch = originalResourceText.match(/UID:([^\r\n]+)/i);
+          if (uidMatch && uidMatch[1]) {
+            foundOriginalUid = uidMatch[1];
+            console.log(`Extracted original UID from resource attendees: ${foundOriginalUid}`);
+            // Update the data object with this UID for maximum compliance
+            data.uid = foundOriginalUid;
+          }
+        }
+        
+        console.log('Generating cancellation ICS as a fallback, will try to preserve original data');
         
         // Mark the status as CANCELLED for ICS generation
         const cancellationData = { ...data, status: 'CANCELLED' };
@@ -933,6 +950,30 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         } catch (transformError) {
           console.error('Error in ICS transformation:', transformError);
           console.log('Falling back to standard cancellation ICS generation');
+          
+          // Even when falling back, try to extract and preserve resource attendees and UID
+          const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const allAttendeeLines = data.rawData ? (data.rawData.match(attendeePattern) || []) : [];
+          const resourceAttendeeLines = allAttendeeLines.filter(line => 
+            line.includes('CUTYPE=RESOURCE') || 
+            line.includes('X-RESOURCE-TYPE') ||
+            line.includes('RESOURCE-TYPE')
+          );
+          
+          if (resourceAttendeeLines.length > 0) {
+            console.log(`Extracted ${resourceAttendeeLines.length} resource attendees from raw data for fallback`);
+            data._originalResourceAttendees = resourceAttendeeLines;
+          }
+          
+          // Extract UID from raw data if possible
+          if (data.rawData) {
+            const uidMatch = data.rawData.match(/UID:([^\r\n]+)/i);
+            if (uidMatch && uidMatch[1]) {
+              console.log(`Using original UID from raw data for fallback: ${uidMatch[1]}`);
+              data.uid = uidMatch[1];
+            }
+          }
+          
           const cancellationData = { ...data, status: 'CANCELLED' };
           cancellationIcsData = this.generateICSData(cancellationData);
         }
@@ -1425,13 +1466,23 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
   }
 
   public generateICSData(data: EventInvitationData): string {
-    const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status, rawData, sequence } = data;
+    const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status, rawData, sequence, _originalResourceAttendees } = data;
     
     // For cancellations, use our unified RFC-compliant cancellation generator
     if (status === 'CANCELLED') {
       try {
         // Log what we're doing for clarity
         console.log('=== GENERATING CANCELLATION ICS FILE ===');
+        
+        // IMPORTANT: Check if we have preserved original resource attendees
+        if (_originalResourceAttendees && _originalResourceAttendees.length > 0) {
+          console.log(`Found ${_originalResourceAttendees.length} preserved original resource attendees`);
+          _originalResourceAttendees.forEach((line, idx) => {
+            console.log(`Original resource line #${idx+1}: ${line}`);
+          });
+        } else {
+          console.log('No preserved original resource attendees found in data');
+        }
         
         // IMPORTANT: If we have raw ICS data, always use our dedicated cancellation generator
         // which preserves the exact original format including all resource attendees
@@ -1458,9 +1509,12 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
           const completeEventData = { ...data };
           
           // Store original resource attendee lines for direct preservation
-          if (resourceAttendeeLines.length > 0) {
+          // First use any already preserved lines, then fall back to extracting from raw data
+          if (_originalResourceAttendees && _originalResourceAttendees.length > 0) {
+            console.log(`Using ${_originalResourceAttendees.length} previously preserved resource attendee lines`);
+          } else if (resourceAttendeeLines.length > 0) {
             completeEventData._originalResourceAttendees = resourceAttendeeLines;
-            console.log(`Added ${resourceAttendeeLines.length} original resource attendee lines for preservation`);
+            console.log(`Added ${resourceAttendeeLines.length} newly extracted resource attendee lines for preservation`);
             
             // Log contents for debugging
             resourceAttendeeLines.forEach((line, idx) => {
@@ -1509,7 +1563,8 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
           attendees,
           resources, // Make sure resources are passed to the cancellation function
           rawData,
-          recurrenceRule: data.recurrenceRule
+          recurrenceRule: data.recurrenceRule,
+          _originalResourceAttendees: data._originalResourceAttendees // Preserve any original resource attendee lines
         };
         
         // Current timestamp formatted for iCalendar
