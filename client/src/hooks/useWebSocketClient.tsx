@@ -89,11 +89,20 @@ export function useWebSocketClient() {
     try {
       const socket = new WebSocket(wsUrl);
       
-      // Add metadata to socket for logging/debugging
-      socket.url = wsUrl;
-      socket.userId = user.id;
-      socket.usingFallbackPath = usingFallbackPath;
-      socket.timestamp = new Date().toISOString();
+      // Define custom properties for type checking
+      interface CustomWebSocket extends WebSocket {
+        customUrl?: string;
+        userId?: number;
+        usingFallbackPath?: boolean;
+        connectionTimestamp?: string;
+      }
+      
+      // Add metadata to socket for logging/debugging (with proper typing)
+      const customSocket = socket as CustomWebSocket;
+      customSocket.customUrl = wsUrl;
+      customSocket.userId = user.id;
+      customSocket.usingFallbackPath = usingFallbackPath;
+      customSocket.connectionTimestamp = new Date().toISOString();
       
       // Set up event handlers
       socket.onopen = () => {
@@ -123,12 +132,14 @@ export function useWebSocketClient() {
         setState(prev => ({ ...prev, connected: false }));
         
         // Store connection details for debugging
+        const customSocket = socket as CustomWebSocket;
         console.log('WebSocket error details:', {
           readyState: socket.readyState,
           url: socket.url,
-          userId: socket.userId,
-          usingFallbackPath: socket.usingFallbackPath,
-          timestamp: socket.timestamp
+          customUrl: customSocket.customUrl,
+          userId: customSocket.userId,
+          usingFallbackPath: customSocket.usingFallbackPath,
+          timestamp: customSocket.connectionTimestamp
         });
         
         // If we've tried less than 5 times, try to reconnect
