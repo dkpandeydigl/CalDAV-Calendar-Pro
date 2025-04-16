@@ -49,18 +49,14 @@ app.use((req, res, next) => {
   
   // Initialize the WebSocket server for real-time communication
   initializeWebSocketServer(server);
-  console.log("Initializing WebSocket server with dual paths");
-  console.log("WebSocket server initialized on paths: /api/ws and /ws");
+  log("WebSocket server initialized with dual paths: /api/ws and /ws");
   
   // Register test endpoints for debugging cancellation functionality
-  console.log("Registered cancellation test endpoints: /api/test-cancellation and /api/test-delete-event/:eventId");
+  log("Registered cancellation test endpoints for event management");
   
   // Initialize the sync service for automatic CalDAV synchronization
   await initializeSyncService();
-  console.log("Initializing SyncService with automatic background sync...");
-  console.log("Setting up global sync timer with interval 300 seconds");
-  console.log("SyncService initialized with background sync enabled");
-  log("CalDAV synchronization service initialized");
+  log("CalDAV synchronization service initialized with background sync");
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
@@ -98,6 +94,12 @@ app.use((req, res, next) => {
     // Gracefully shut down sync service
     syncService.shutdownAll();
     log("Sync service shut down");
+    
+    // Gracefully shut down enhanced sync service if needed
+    if (enhancedSyncService && typeof enhancedSyncService.shutdown === 'function') {
+      enhancedSyncService.shutdown();
+      log("Enhanced sync service shut down");
+    }
     
     process.exit(0);
   };

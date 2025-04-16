@@ -540,6 +540,15 @@ export class EnhancedSyncService {
       };
     }
   }
+  
+  /**
+   * Shutdown the enhanced sync service
+   * This method should be called when the application is shutting down
+   */
+  shutdown(): void {
+    console.log('[Enhanced Sync] Shutting down enhanced sync service');
+    // Perform any cleanup operations here (if needed in the future)
+  }
 }
 
 // Create and export a singleton instance
