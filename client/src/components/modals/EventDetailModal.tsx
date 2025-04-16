@@ -388,11 +388,18 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     }
   };
 
-  // Check if this event has attendees or resources
-  const hasAttendees = Boolean(
-    event.attendees && 
-    (Array.isArray(event.attendees) ? event.attendees.length > 0 : true)
-  );
+  // Check if this event has attendees or resources with error handling
+  const hasAttendees = useMemo(() => {
+    try {
+      return Boolean(
+        event.attendees && 
+        (Array.isArray(event.attendees) ? event.attendees.length > 0 : true)
+      );
+    } catch (error) {
+      console.error('Error checking event attendees:', error);
+      return false;
+    }
+  }, [event.attendees]);
   
   // Always use our enhanced extractResourcesFromRawData function to deduplicate resources
   // from all possible sources
