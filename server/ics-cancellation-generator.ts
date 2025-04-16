@@ -80,6 +80,13 @@ export function generateCancellationIcs(originalIcs: string, eventData: EventInv
         cancellationIcs += 'TRANSP:TRANSPARENT\r\n';
       } else if (key === 'DTSTAMP' || key === 'LAST-MODIFIED') {
         cancellationIcs += `${key}:${timestamp}\r\n`;
+      } else if (key === 'SUMMARY' && value) {
+        // Per RFC 5546, prefix CANCELLED to the summary for better client compatibility
+        if (value.startsWith('CANCELLED:') || value.startsWith('CANCELLED: ')) {
+          cancellationIcs += `${key}:${value}\r\n`;
+        } else {
+          cancellationIcs += `${key}:CANCELLED: ${value}\r\n`;
+        }
       } else {
         // Preserve all other properties exactly as they were
         cancellationIcs += `${key}:${value}\r\n`;
@@ -274,7 +281,18 @@ function generateFallbackCancellationIcs(eventData: EventInvitationData): string
   icsLines.push(`DTSTAMP:${now}`);
   icsLines.push(`DTSTART:${formatIcsDate(eventData.startDate)}`);
   icsLines.push(`DTEND:${formatIcsDate(eventData.endDate)}`);
-  icsLines.push(`SUMMARY:${eventData.title}`);
+  
+  // Format the summary with CANCELLED prefix for better client compatibility
+  if (eventData.title) {
+    if (eventData.title.startsWith('CANCELLED:') || eventData.title.startsWith('CANCELLED: ')) {
+      icsLines.push(`SUMMARY:${eventData.title}`);
+    } else {
+      icsLines.push(`SUMMARY:CANCELLED: ${eventData.title}`);
+    }
+  } else {
+    icsLines.push('SUMMARY:CANCELLED: Event');
+  }
+  
   icsLines.push('STATUS:CANCELLED');
   icsLines.push('TRANSP:TRANSPARENT');
   icsLines.push(`SEQUENCE:${eventData.sequence ? eventData.sequence + 1 : 1}`);
