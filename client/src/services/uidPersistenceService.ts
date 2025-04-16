@@ -1,171 +1,232 @@
 /**
  * UID Persistence Service
  * 
- * This service manages the storage and retrieval of event UIDs using IndexedDB.
- * It ensures that event UIDs are consistently maintained across the application
- * lifecycle, including across browser sessions and syncs.
+ * This service implements client-side persistence of event UIDs using IndexedDB.
+ * It ensures UIDs remain consistent throughout the event lifecycle by:
+ * 
+ * 1. Storing UIDs when events are created
+ * 2. Retrieving the correct UID when events are updated or cancelled
+ * 3. Persisting UIDs across browser refreshes and sessions
+ * 4. Syncing with server-stored UIDs when available
  */
 
 import { openDB, IDBPDatabase } from 'idb';
 
 interface UIDMapping {
-  id: number; // Using eventId as the key
+  eventId: number;
   uid: string;
-  calendarId: number;
-  created: Date;
-  lastUpdated: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 // Database configuration
-const DB_NAME = 'calDAV_client_db';
-const STORE_NAME = 'event_uids';
+const DB_NAME = 'caldav-client-uids';
 const DB_VERSION = 1;
+const UID_STORE = 'uid-mappings';
 
 class UIDPersistenceService {
-  private dbPromise: Promise<IDBPDatabase> | null = null;
-
+  private db: Promise<IDBPDatabase>;
+  private isInitialized = false;
+  
+  constructor() {
+    this.db = this.initDatabase();
+  }
+  
   /**
-   * Initialize the database connection
+   * Initialize the IndexedDB database
    */
-  async init(): Promise<void> {
-    if (this.dbPromise) {
-      return; // Database already initialized
-    }
-
-    this.dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        // Create object store if it doesn't exist
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          store.createIndex('uid', 'uid', { unique: true });
-          store.createIndex('calendarId', 'calendarId', { unique: false });
-          console.log('Created event_uids store in IndexedDB');
+  private async initDatabase(): Promise<IDBPDatabase> {
+    try {
+      const db = await openDB(DB_NAME, DB_VERSION, {
+        upgrade(db) {
+          // Create the object store for UID mappings if it doesn't exist
+          if (!db.objectStoreNames.contains(UID_STORE)) {
+            const store = db.createObjectStore(UID_STORE, { keyPath: 'eventId' });
+            // Create index on UID for lookups by UID
+            store.createIndex('uid', 'uid', { unique: true });
+            console.log('UID persistence database created successfully');
+          }
         }
-      },
-    });
-
-    await this.dbPromise;
-    console.log('UID persistence service initialized');
-  }
-
-  /**
-   * Store a mapping between event ID and UID
-   */
-  async storeUID(eventId: number, uid: string, calendarId: number): Promise<void> {
-    await this.init();
-    const db = await this.dbPromise;
-    if (!db) {
-      throw new Error('Database not initialized');
+      });
+      
+      this.isInitialized = true;
+      console.log('UID persistence service initialized');
+      return db;
+    } catch (error) {
+      console.error('Failed to initialize UID persistence database:', error);
+      throw error;
     }
-
-    const now = new Date();
-    const mapping: UIDMapping = {
-      id: eventId,
-      uid,
-      calendarId,
-      created: now,
-      lastUpdated: now,
-    };
-
-    await db.put(STORE_NAME, mapping);
-    console.log(`Stored UID mapping: Event ID ${eventId} → UID ${uid}`);
   }
-
+  
   /**
-   * Retrieve UID for a given event ID
+   * Store a mapping between an event ID and its UID
    */
-  async getUID(eventId: number): Promise<string | null> {
-    await this.init();
-    const db = await this.dbPromise;
-    if (!db) {
-      throw new Error('Database not initialized');
-    }
-
+  public async storeUID(eventId: number, uid: string): Promise<void> {
     try {
-      const mapping = await db.get(STORE_NAME, eventId);
-      return mapping ? mapping.uid : null;
-    } catch (err) {
-      console.error('Error retrieving UID:', err);
+      const dbInstance = await this.db;
+      const now = new Date();
+      
+      // Check if mapping already exists
+      const existingMapping = await dbInstance.get(UID_STORE, eventId);
+      
+      if (existingMapping) {
+        // Update existing mapping with the new UID
+        await dbInstance.put(UID_STORE, {
+          ...existingMapping,
+          uid,
+          updatedAt: now
+        });
+        console.log(`Updated UID mapping for event ID ${eventId}: ${uid}`);
+      } else {
+        // Create new mapping
+        await dbInstance.add(UID_STORE, {
+          eventId,
+          uid,
+          createdAt: now,
+          updatedAt: now
+        });
+        console.log(`Stored new UID mapping for event ID ${eventId}: ${uid}`);
+      }
+    } catch (error) {
+      console.error(`Failed to store UID mapping for event ${eventId}:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Retrieve the UID for a given event ID
+   */
+  public async getUID(eventId: number): Promise<string | null> {
+    try {
+      const dbInstance = await this.db;
+      const mapping = await dbInstance.get(UID_STORE, eventId);
+      
+      if (mapping) {
+        return mapping.uid;
+      }
+      
+      console.log(`No stored UID found for event ID ${eventId}`);
+      return null;
+    } catch (error) {
+      console.error(`Failed to retrieve UID for event ${eventId}:`, error);
       return null;
     }
   }
-
+  
   /**
-   * Find event ID for a given UID
-   * This is useful during syncs to match incoming UIDs to existing events
+   * Find an event ID by its UID
    */
-  async findEventIdByUID(uid: string): Promise<number | null> {
-    await this.init();
-    const db = await this.dbPromise;
-    if (!db) {
-      throw new Error('Database not initialized');
-    }
-
+  public async getEventIdByUID(uid: string): Promise<number | null> {
     try {
-      const index = db.transaction(STORE_NAME).store.index('uid');
-      const mapping = await index.get(uid);
-      return mapping ? mapping.id : null;
-    } catch (err) {
-      console.error('Error finding event ID by UID:', err);
+      const dbInstance = await this.db;
+      const mapping = await dbInstance.getFromIndex(UID_STORE, 'uid', uid);
+      
+      if (mapping) {
+        return mapping.eventId;
+      }
+      
+      console.log(`No event ID found for UID ${uid}`);
+      return null;
+    } catch (error) {
+      console.error(`Failed to find event ID for UID ${uid}:`, error);
       return null;
     }
   }
-
+  
   /**
-   * Get all stored UID mappings
-   * Useful for debugging and maintenance
+   * Delete a UID mapping for a given event ID
    */
-  async getAllMappings(): Promise<UIDMapping[]> {
-    await this.init();
-    const db = await this.dbPromise;
-    if (!db) {
-      throw new Error('Database not initialized');
+  public async deleteUIDMapping(eventId: number): Promise<void> {
+    try {
+      const dbInstance = await this.db;
+      await dbInstance.delete(UID_STORE, eventId);
+      console.log(`Deleted UID mapping for event ID ${eventId}`);
+    } catch (error) {
+      console.error(`Failed to delete UID mapping for event ${eventId}:`, error);
+      throw error;
     }
-
-    return db.getAll(STORE_NAME);
   }
-
+  
   /**
-   * Delete a UID mapping
+   * List all stored UID mappings (for debugging)
    */
-  async deleteMapping(eventId: number): Promise<void> {
-    await this.init();
-    const db = await this.dbPromise;
-    if (!db) {
-      throw new Error('Database not initialized');
+  public async listAllMappings(): Promise<UIDMapping[]> {
+    try {
+      const dbInstance = await this.db;
+      return await dbInstance.getAll(UID_STORE);
+    } catch (error) {
+      console.error('Failed to list UID mappings:', error);
+      return [];
     }
-
-    await db.delete(STORE_NAME, eventId);
-    console.log(`Deleted UID mapping for event ID ${eventId}`);
   }
-
+  
   /**
-   * Generate a new UID
-   * Following RFC 5545 guidelines for globally unique identifiers
+   * Bulk import mappings from server or sync
    */
-  generateUID(): string {
-    // Format: uniqueIdentifier@domain
-    const domain = 'caldavclient.local';
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substring(2, 10);
-    return `event-${timestamp}-${randomStr}@${domain}`;
-  }
-
-  /**
-   * Check if a UID already exists
-   */
-  async uidExists(uid: string): Promise<boolean> {
-    await this.init();
-    const db = await this.dbPromise;
-    if (!db) {
-      throw new Error('Database not initialized');
+  public async bulkImportMappings(mappings: { eventId: number; uid: string }[]): Promise<void> {
+    try {
+      const dbInstance = await this.db;
+      const tx = dbInstance.transaction(UID_STORE, 'readwrite');
+      const now = new Date();
+      
+      for (const mapping of mappings) {
+        const existingMapping = await tx.store.get(mapping.eventId);
+        
+        if (existingMapping) {
+          // Update existing mapping
+          await tx.store.put({
+            ...existingMapping,
+            uid: mapping.uid,
+            updatedAt: now
+          });
+        } else {
+          // Create new mapping
+          await tx.store.add({
+            eventId: mapping.eventId,
+            uid: mapping.uid,
+            createdAt: now,
+            updatedAt: now
+          });
+        }
+      }
+      
+      await tx.done;
+      console.log(`Bulk imported ${mappings.length} UID mappings`);
+    } catch (error) {
+      console.error('Failed to bulk import UID mappings:', error);
+      throw error;
     }
-
-    const index = db.transaction(STORE_NAME).store.index('uid');
-    const count = await index.count(uid);
-    return count > 0;
+  }
+  
+  /**
+   * Generate a unique UID for a new event
+   * This follows the RFC 4122 v4 UUID format which is compatible with iCalendar UID requirements
+   */
+  public generateUID(): string {
+    return crypto.randomUUID();
+  }
+  
+  /**
+   * Check if UID persistence service is initialized
+   */
+  public isReady(): boolean {
+    return this.isInitialized;
+  }
+  
+  /**
+   * Clear all stored UID mappings (use with caution!)
+   */
+  public async clearAllMappings(): Promise<void> {
+    try {
+      const dbInstance = await this.db;
+      await dbInstance.clear(UID_STORE);
+      console.log('Cleared all UID mappings');
+    } catch (error) {
+      console.error('Failed to clear UID mappings:', error);
+      throw error;
+    }
   }
 }
 
-// Create and export singleton instance
+// Export singleton instance
 export const uidPersistenceService = new UIDPersistenceService();

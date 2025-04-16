@@ -1,118 +1,131 @@
 /**
- * useEventUID Hook
+ * Event UID Hook
  * 
- * A React hook that provides access to the UID persistence service.
- * This hook allows components to easily manage event UIDs without
- * directly interacting with IndexedDB.
+ * This hook provides an easy way for components to interact with the UID persistence service.
+ * It offers methods to get, store, and generate UIDs for events throughout their lifecycle.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { uidPersistenceService } from '@/services/uidPersistenceService';
+import { useState, useCallback, useEffect } from 'react';
+import { uidPersistenceService } from '../services/uidPersistenceService';
 
 interface UseEventUIDOptions {
-  eventId?: number;  // Optional if generating a new UID
-  calendarId?: number; // Required when storing a new UID
+  eventId?: number;
+  uid?: string;
+  autoLoad?: boolean;
 }
 
-interface UseEventUIDResult {
-  uid: string | null;
-  loading: boolean;
-  error: Error | null;
-  storeUID: (uid: string, eventId: number, calendarId: number) => Promise<void>;
-  generateUID: () => string;
-  getOrCreateUID: (eventId: number, calendarId: number) => Promise<string>;
-}
-
-export function useEventUID(options: UseEventUIDOptions = {}): UseEventUIDResult {
-  const { eventId, calendarId } = options;
-  const [uid, setUid] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(!!eventId);
+export function useEventUID({ eventId, uid: initialUid, autoLoad = true }: UseEventUIDOptions = {}) {
+  const [uid, setUid] = useState<string | null>(initialUid || null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
-
-  // Fetch UID for a given event ID
+  
+  // Load UID for an event ID if specified
+  const loadUID = useCallback(async (id?: number) => {
+    if (!id) return null;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const storedUid = await uidPersistenceService.getUID(id);
+      setUid(storedUid);
+      return storedUid;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to load UID');
+      setError(error);
+      console.error('Error loading UID:', error);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+  
+  // Store a UID for an event ID
+  const storeUID = useCallback(async (id: number, eventUid: string) => {
+    if (!id || !eventUid) return false;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      await uidPersistenceService.storeUID(id, eventUid);
+      setUid(eventUid);
+      return true;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to store UID');
+      setError(error);
+      console.error('Error storing UID:', error);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+  
+  // Generate a new UID (but don't store it yet)
+  const generateUID = useCallback(() => {
+    const newUid = uidPersistenceService.generateUID();
+    setUid(newUid);
+    return newUid;
+  }, []);
+  
+  // Handle auto-loading on mount or when eventId changes
   useEffect(() => {
-    if (!eventId) {
-      setLoading(false);
-      return;
+    if (autoLoad && eventId && !uid) {
+      loadUID(eventId);
     }
-
-    setLoading(true);
-    uidPersistenceService.getUID(eventId)
-      .then((fetchedUid) => {
-        setUid(fetchedUid);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Error fetching UID:', err);
-        setError(err instanceof Error ? err : new Error(String(err)));
-        setLoading(false);
-      });
-  }, [eventId]);
-
-  // Store a UID for an event
-  const storeUID = useCallback(async (
-    uidToStore: string, 
-    eventIdToStore: number, 
-    calendarIdToStore: number
-  ): Promise<void> => {
-    if (!uidToStore || !eventIdToStore || !calendarIdToStore) {
-      throw new Error('Missing required parameters for storing UID');
-    }
-
+  }, [autoLoad, eventId, uid, loadUID]);
+  
+  // Get event ID by UID
+  const getEventIdByUID = useCallback(async (uidToFind: string) => {
+    if (!uidToFind) return null;
+    
     try {
-      await uidPersistenceService.storeUID(eventIdToStore, uidToStore, calendarIdToStore);
-      if (eventId === eventIdToStore) {
-        setUid(uidToStore);
-      }
+      setIsLoading(true);
+      setError(null);
+      
+      return await uidPersistenceService.getEventIdByUID(uidToFind);
     } catch (err) {
-      console.error('Error storing UID:', err);
-      setError(err instanceof Error ? err : new Error(String(err)));
-      throw err;
-    }
-  }, [eventId]);
-
-  // Generate a new UID
-  const generateUID = useCallback((): string => {
-    return uidPersistenceService.generateUID();
-  }, []);
-
-  // Get existing UID or create and store a new one
-  const getOrCreateUID = useCallback(async (
-    eventIdToUse: number, 
-    calendarIdToUse: number
-  ): Promise<string> => {
-    if (!eventIdToUse || !calendarIdToUse) {
-      throw new Error('Event ID and Calendar ID are required');
-    }
-
-    try {
-      // Try to get existing UID
-      const existingUid = await uidPersistenceService.getUID(eventIdToUse);
-      
-      if (existingUid) {
-        return existingUid;
-      }
-      
-      // Generate and store a new UID
-      const newUid = uidPersistenceService.generateUID();
-      await uidPersistenceService.storeUID(eventIdToUse, newUid, calendarIdToUse);
-      
-      return newUid;
-    } catch (err) {
-      console.error('Error in getOrCreateUID:', err);
-      setError(err instanceof Error ? err : new Error(String(err)));
-      throw err;
+      const error = err instanceof Error ? err : new Error('Failed to find event ID by UID');
+      setError(error);
+      console.error('Error finding event ID by UID:', error);
+      return null;
+    } finally {
+      setIsLoading(false);
     }
   }, []);
-
+  
+  // Delete a UID mapping
+  const deleteUIDMapping = useCallback(async (id: number) => {
+    if (!id) return false;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      await uidPersistenceService.deleteUIDMapping(id);
+      if (eventId === id) {
+        setUid(null);
+      }
+      return true;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Failed to delete UID mapping');
+      setError(error);
+      console.error('Error deleting UID mapping:', error);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [eventId]);
+  
   return {
     uid,
-    loading,
+    isLoading,
     error,
+    loadUID,
     storeUID,
     generateUID,
-    getOrCreateUID
+    getEventIdByUID,
+    deleteUIDMapping,
+    isServiceReady: uidPersistenceService.isReady()
   };
 }
-
-export default useEventUID;

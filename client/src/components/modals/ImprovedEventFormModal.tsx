@@ -12,6 +12,7 @@ import { getTimezones } from '@/lib/date-utils';
 import { apiRequest } from '@/lib/queryClient';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { useSharedCalendars } from '@/hooks/useSharedCalendars';
+import { useEventUID } from '@/hooks/useEventUID';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
@@ -60,8 +61,7 @@ import {
   type DescriptionTemplate 
 } from '@/components/description/templates';
 import SavedTemplateManager from '@/components/description/SavedTemplateManager';
-// Import the UID persistence hook for consistent UIDs across event lifecycle
-import { useEventUID } from '@/hooks/useEventUID';
+// UID persistence hook is already imported above
 
 interface EventFormModalProps {
   open: boolean;
@@ -110,14 +110,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   // This will either retrieve an existing UID or generate a new one if not found
   const { 
     uid: persistedUID, 
-    loading: uidLoading, 
+    isLoading: uidLoading, 
     error: uidError, 
     storeUID,
     generateUID,
-    getOrCreateUID
+    loadUID
   } = useEventUID({
     eventId: event?.id,
-    calendarId: event?.calendarId
+    uid: event?.uid
   });
   
   // Debug log for UID persistence
