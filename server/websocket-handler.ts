@@ -385,19 +385,36 @@ export function notifyCalendarChanged(
 export function notifyEventChanged(
   userId: number,
   eventId: number,
-  calendarId: number,
   changeType: 'created' | 'updated' | 'deleted',
   details?: any
 ) {
   try {
-    broadcastToUser(userId, {
-      type: 'event_changed',
-      eventId,
-      calendarId,
-      changeType,
-      details,
-      timestamp: Date.now()
-    });
+    // Backward compatibility with existing code
+    if (typeof eventId === 'number' && typeof changeType === 'string') {
+      broadcastToUser(userId, {
+        type: 'event_changed',
+        eventId,
+        changeType,
+        details,
+        timestamp: Date.now()
+      });
+    } 
+    // Support for enhanced sync service format
+    else if (eventId && typeof eventId === 'object') {
+      const event = eventId as { id: number; calendarId: number; uid: string; title?: string };
+      const action = changeType as 'created' | 'updated' | 'deleted';
+      
+      broadcastToUser(userId, {
+        type: 'event_changed',
+        eventId: event.id,
+        calendarId: event.calendarId,
+        uid: event.uid,
+        title: event.title,
+        changeType: action,
+        details,
+        timestamp: Date.now()
+      });
+    }
   } catch (error) {
     console.error(`Error sending event change notification to user ${userId}:`, error);
   }

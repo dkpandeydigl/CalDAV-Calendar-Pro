@@ -10,8 +10,8 @@ import { storage } from './memory-storage';
 import { syncService } from './sync-service';
 import { preserveOrGenerateUID, registerUIDMapping } from './uid-management';
 import { Event, InsertEvent, ServerConnection } from '../shared/schema';
-import { generateEventICalString, prepareAttendeeForIcal } from './ical-utils';
-import { broadcastToUser } from './websocket-handler';
+import { generateEventICalString, prepareAttendeeForIcal, prepareResourceForIcal } from './ical-helpers';
+import { notifyEventChanged } from './websocket-handler';
 
 /**
  * Enhanced synchronization service for handling event operations
@@ -445,14 +445,7 @@ export class EnhancedSyncService {
    */
   private notifyEventChange(userId: number, action: 'created' | 'updated' | 'deleted', event: Event): void {
     try {
-      broadcastToUser(userId, {
-        type: 'event_changed',
-        action,
-        eventId: event.id,
-        uid: event.uid,
-        calendarId: event.calendarId,
-        timestamp: Date.now()
-      });
+      notifyEventChanged(userId, event, action);
       
       console.log(`[Enhanced Sync] Sent WebSocket notification for event ${event.id}: ${action}`);
     } catch (error) {

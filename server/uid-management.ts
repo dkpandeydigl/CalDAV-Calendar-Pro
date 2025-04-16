@@ -7,7 +7,8 @@
  * - Follows RFC 5545/5546 requirements for iCalendar identifiers
  */
 
-import { Event } from '../shared/schema';
+// Mapping for external -> internal UIDs
+const uidMappings: Record<string, string> = {};
 
 /**
  * Generate a new unique identifier for a calendar event
@@ -17,9 +18,10 @@ import { Event } from '../shared/schema';
  */
 export function generateEventUID(): string {
   const timestamp = Date.now();
-  const randomPart = Math.random().toString(36).substring(2, 10);
-  // Format: event-{timestamp}-{random string}@{hostname/domain}
-  return `event-${timestamp}-${randomPart}@caldavclient.local`;
+  const random = Math.random().toString(36).substring(2, 10);
+  const hostname = 'caldavclient.local';
+  
+  return `event-${timestamp}-${random}@${hostname}`;
 }
 
 /**
@@ -30,36 +32,27 @@ export function generateEventUID(): string {
  * @returns The extracted UID or null if not found
  */
 export function extractUIDFromRawData(rawData: string | object | null): string | null {
-  if (!rawData) return null;
-  
-  let rawDataString: string;
-  
-  if (typeof rawData === 'string') {
-    rawDataString = rawData;
-  } else {
-    try {
-      rawDataString = JSON.stringify(rawData);
-    } catch (err) {
-      console.error('Error converting raw data to string:', err);
-      return null;
-    }
+  if (!rawData) {
+    return null;
   }
   
-  // Use multiple patterns to extract UID
-  const uidPatterns = [
-    /UID:([^\r\n]+)/i,     // Standard UID line
-    /"UID":"([^"]+)"/i,    // JSON format
-    /UID=([^&]+)/i,        // URL parameter format
-    /"uid":"([^"]+)"/i     // Lowercase JSON format
-  ];
-  
-  for (const pattern of uidPatterns) {
-    const match = rawDataString.match(pattern);
-    if (match && match[1]) {
-      const extractedUid = match[1].trim();
-      console.log(`[UID Manager] Successfully extracted UID from raw data: ${extractedUid}`);
-      return extractedUid;
+  try {
+    // If rawData is an object, stringify it
+    const rawString = typeof rawData === 'string' ? rawData : JSON.stringify(rawData);
+    
+    // Extract UID using regex
+    const uidMatch = rawString.match(/UID:([^\r\n]+)/i);
+    if (uidMatch && uidMatch[1]) {
+      return uidMatch[1].trim();
     }
+    
+    // Try alternate pattern for JSON-encoded data
+    const jsonUidMatch = rawString.match(/"UID"\s*:\s*"([^"]+)"/i);
+    if (jsonUidMatch && jsonUidMatch[1]) {
+      return jsonUidMatch[1].trim();
+    }
+  } catch (error) {
+    console.error('Error extracting UID from raw data:', error);
   }
   
   return null;
@@ -78,36 +71,35 @@ export function extractUIDFromRawData(rawData: string | object | null): string |
  * @returns The UID to use
  */
 export function preserveOrGenerateUID(
-  event: Event | null | undefined,
+  event: { uid?: string; rawData?: string | object | null } | null,
   rawData?: string | object | null
 ): string {
-  // Case 1: Extract from provided raw data first (highest priority)
-  if (rawData) {
-    const extractedUID = extractUIDFromRawData(rawData);
-    if (extractedUID) {
-      console.log(`[UID Manager] Using UID from provided raw data: ${extractedUID}`);
-      return extractedUID;
+  // Case 1: Check raw data from parameters first (has highest priority)
+  const rawDataUID = extractUIDFromRawData(rawData);
+  if (rawDataUID) {
+    console.log(`[UID Management] Using UID from provided raw data: ${rawDataUID}`);
+    return rawDataUID;
+  }
+  
+  // Case 2: Check if we have an existing event
+  if (event) {
+    // Case 2a: Check raw data in existing event
+    const existingRawDataUID = extractUIDFromRawData(event.rawData);
+    if (existingRawDataUID) {
+      console.log(`[UID Management] Using UID from existing event's raw data: ${existingRawDataUID}`);
+      return existingRawDataUID;
+    }
+    
+    // Case 2b: Use existing event's UID property
+    if (event.uid) {
+      console.log(`[UID Management] Using existing event's UID property: ${event.uid}`);
+      return event.uid;
     }
   }
   
-  // Case 2: Extract from event's raw data
-  if (event?.rawData) {
-    const extractedUID = extractUIDFromRawData(event.rawData);
-    if (extractedUID) {
-      console.log(`[UID Manager] Using UID from event's raw data: ${extractedUID}`);
-      return extractedUID;
-    }
-  }
-  
-  // Case 3: Use event's UID property
-  if (event?.uid) {
-    console.log(`[UID Manager] Using UID from event object: ${event.uid}`);
-    return event.uid;
-  }
-  
-  // Case 4: Generate a new UID (only for creation)
+  // Case 3: Generate a new UID (only when creating a new event)
   const newUID = generateEventUID();
-  console.log(`[UID Manager] Generated new UID for event creation: ${newUID}`);
+  console.log(`[UID Management] Generated new UID: ${newUID}`);
   return newUID;
 }
 
@@ -115,7 +107,6 @@ export function preserveOrGenerateUID(
  * Record the mapping between server-generated UIDs and our internal UIDs
  * This helps maintain consistent identifiers across different calendar clients
  */
-const uidMappings = new Map<string, string>();
 
 /**
  * Register a mapping between an external UID and our internal UID
@@ -125,8 +116,8 @@ const uidMappings = new Map<string, string>();
  */
 export function registerUIDMapping(externalUID: string, internalUID: string): void {
   if (externalUID && internalUID && externalUID !== internalUID) {
-    console.log(`[UID Manager] Registering UID mapping: ${externalUID} → ${internalUID}`);
-    uidMappings.set(externalUID, internalUID);
+    console.log(`[UID Management] Mapping external UID "${externalUID}" to internal UID "${internalUID}"`);
+    uidMappings[externalUID] = internalUID;
   }
 }
 
@@ -137,10 +128,5 @@ export function registerUIDMapping(externalUID: string, internalUID: string): vo
  * @returns Our internal UID or the external UID if no mapping exists
  */
 export function getInternalUID(externalUID: string): string {
-  const internalUID = uidMappings.get(externalUID);
-  if (internalUID) {
-    console.log(`[UID Manager] Resolved external UID ${externalUID} to internal UID ${internalUID}`);
-    return internalUID;
-  }
-  return externalUID;
+  return uidMappings[externalUID] || externalUID;
 }
