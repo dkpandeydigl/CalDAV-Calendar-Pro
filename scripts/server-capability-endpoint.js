@@ -8,6 +8,34 @@
 const express = require('express');
 const { DAVClient } = require('tsdav');
 
+// Type definitions to make TypeScript happy
+/**
+ * @typedef {Object} ServerConnection
+ * @property {string} url
+ * @property {string} username
+ * @property {string} password
+ */
+
+/**
+ * @typedef {Object} User
+ * @property {number} id
+ * @property {string} username
+ * @property {string} [email]
+ * @property {string} [fullName]
+ */
+
+/**
+ * @typedef {Object} Storage
+ * @property {function(number): Promise<ServerConnection|null>} getServerConnection
+ */
+
+/**
+ * @typedef {Object} AuthenticatedRequest
+ * @property {User} user
+ * @property {Storage} storage
+ * @property {function(): boolean} isAuthenticated
+ */
+
 /**
  * Register the server capability check endpoint
  * 

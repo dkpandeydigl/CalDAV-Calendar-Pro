@@ -30,6 +30,7 @@ import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./memory-notification-service";
 import { initializeWebSocketServer, broadcastToUser, sendNotification, createAndSendNotification } from "./websocket-handler";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
+import { registerServerCapabilityEndpoint } from '../scripts/server-capability-endpoint';
 
 // Using directly imported syncService
 import type { SyncService as SyncServiceType } from "./sync-service";
@@ -4711,6 +4712,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Create HTTP server
   // Our WebSocket server is already initialized in an import higher up
+  
+  // Register server capability check endpoint
+  registerServerCapabilityEndpoint(app);
+  console.log('Registered server capability check endpoint: /api/check-server-capabilities');
   
   return httpServer;
 }
