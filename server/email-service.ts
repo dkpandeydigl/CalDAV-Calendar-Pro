@@ -729,7 +729,12 @@ RRULE:${rrule}`;
 END:VEVENT
 END:VCALENDAR`;
 
-    return icsContent;
+    // Process through our improved formatter to ensure proper formatting
+    return sanitizeAndFormatICS(icsContent, {
+      method: method,
+      status: status,
+      sequence: sequence
+    });
   }
 }
 
