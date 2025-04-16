@@ -22,8 +22,12 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
   isPreview = true,
   fallbackEmail = ""
 }) => {
-  console.log('ATTENDEE DEBUG: DirectAttendeeExtractor component rendering with rawData:', 
-              rawData ? `string of length ${rawData.length}` : 'null/undefined');
+  console.log('ATTENDEE DEBUG: DirectAttendeeExtractor component rendering with:', {
+    rawData: rawData ? `string of length ${rawData.length}` : 'null/undefined',
+    fallbackEmail: fallbackEmail || 'none provided',
+    isPreview,
+    showMoreCount
+  });
   
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   

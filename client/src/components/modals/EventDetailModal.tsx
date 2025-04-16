@@ -899,10 +899,16 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                   <h3 className="font-medium">Attendee List</h3>
                                 </div>
                                 <DirectAttendeeExtractor 
-                                  rawData={typeof event.rawData === 'string' ? event.rawData : null} 
+                                  rawData={
+                                    typeof event.rawData === 'string' 
+                                      ? event.rawData 
+                                      : event.rawData 
+                                        ? JSON.stringify(event.rawData) 
+                                        : null
+                                  } 
                                   showMoreCount={10}
                                   isPreview={false}
-                                  fallbackEmail={event.organizer ? event.organizer.email : (user?.username || "")}
+                                  fallbackEmail={user?.username || ""}
                                 />
                               </div>
                             </>
