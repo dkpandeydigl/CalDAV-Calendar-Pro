@@ -134,8 +134,36 @@ export function registerExportRoutes(app: Express) {
           return line;
         });
         
+        // Apply proper line folding for RFC 5545 compliance
+        const foldedLines = [];
+        for (let i = 0; i < processedLines.length; i++) {
+          const line = processedLines[i];
+          
+          // Skip empty lines
+          if (!line.trim()) continue;
+          
+          // If the line is longer than 75 characters, fold it according to RFC 5545
+          if (line.length > 75) {
+            let currentPos = 0;
+            const lineLength = line.length;
+            
+            // Add the first line
+            foldedLines.push(line.substring(0, 75));
+            currentPos = 75;
+            
+            // Add continuation lines with a space at the beginning
+            while (currentPos < lineLength) {
+              const chunk = line.substring(currentPos, Math.min(currentPos + 74, lineLength));
+              foldedLines.push(' ' + chunk); // Continuation lines must start with a space
+              currentPos += 74;
+            }
+          } else {
+            foldedLines.push(line);
+          }
+        }
+        
         // Rejoin with proper CRLF line endings
-        icsContent = processedLines.join('\r\n');
+        icsContent = foldedLines.join('\r\n');
       } else {
         // Create basic iCalendar format
         const startDate = new Date(event.startDate);
@@ -206,14 +234,15 @@ export function registerExportRoutes(app: Express) {
       
       // Generate simple iCalendar file
       const now = formatICALDate(new Date());
-      let icalContent = 
-        `BEGIN:VCALENDAR\r\n` +
-        `VERSION:2.0\r\n` +
-        `PRODID:-//CalDAV Client//NONSGML v1.0//EN\r\n` +
-        `CALSCALE:GREGORIAN\r\n` +
-        `METHOD:PUBLISH\r\n` +
-        `X-WR-CALNAME:All Calendars\r\n` +
-        `X-WR-CALDESC:Exported Calendar\r\n`;
+      let lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'X-WR-CALNAME:All Calendars',
+        'X-WR-CALDESC:Exported Calendar'
+      ];
       
       // Add each event
       for (const event of allEvents) {
@@ -221,34 +250,64 @@ export function registerExportRoutes(app: Express) {
         const startDate = formatICALDate(new Date(event.startDate));
         const endDate = formatICALDate(new Date(event.endDate));
         
-        icalContent += 
-          `BEGIN:VEVENT\r\n` +
-          `UID:${safeUid}\r\n` +
-          `DTSTAMP:${now}\r\n` +
-          `DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}\r\n` +
-          `DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}\r\n` +
-          `SUMMARY:${event.title}\r\n`;
+        lines.push('BEGIN:VEVENT');
+        lines.push(`UID:${safeUid}`);
+        lines.push(`DTSTAMP:${now}`);
+        lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
+        lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
+        lines.push(`SUMMARY:${event.title}`);
         
         if (event.calendarName) {
-          icalContent += `CATEGORIES:${event.calendarName}\r\n`;
+          lines.push(`CATEGORIES:${event.calendarName}`);
         }
         
         if (event.description) {
-          icalContent += `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\r\n`;
+          lines.push(`DESCRIPTION:${event.description.replace(/\n/g, '\\n')}`);
         }
         
         if (event.location) {
-          icalContent += `LOCATION:${event.location}\r\n`;
+          lines.push(`LOCATION:${event.location}`);
         }
         
         if (event.allDay) {
-          icalContent += `X-MICROSOFT-CDO-ALLDAYEVENT:TRUE\r\n`;
+          lines.push(`X-MICROSOFT-CDO-ALLDAYEVENT:TRUE`);
         }
         
-        icalContent += `END:VEVENT\r\n`;
+        lines.push('END:VEVENT');
       }
       
-      icalContent += `END:VCALENDAR`;
+      lines.push('END:VCALENDAR');
+      
+      // Apply proper line folding for RFC 5545 compliance
+      const foldedLines = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Skip empty lines
+        if (!line.trim()) continue;
+        
+        // If the line is longer than 75 characters, fold it according to RFC 5545
+        if (line.length > 75) {
+          let currentPos = 0;
+          const lineLength = line.length;
+          
+          // Add the first line
+          foldedLines.push(line.substring(0, 75));
+          currentPos = 75;
+          
+          // Add continuation lines with a space at the beginning
+          while (currentPos < lineLength) {
+            const chunk = line.substring(currentPos, Math.min(currentPos + 74, lineLength));
+            foldedLines.push(' ' + chunk); // Continuation lines must start with a space
+            currentPos += 74;
+          }
+        } else {
+          foldedLines.push(line);
+        }
+      }
+      
+      // Convert to string with CRLF line endings
+      const icalContent = foldedLines.join('\r\n');
       
       // Set the appropriate headers for file download
       res.setHeader('Content-Type', 'text/calendar');
@@ -367,14 +426,17 @@ export function registerExportRoutes(app: Express) {
       
       // Generate iCalendar content
       const now = formatICALDate(new Date());
-      let icalContent = 
-        `BEGIN:VCALENDAR\r\n` +
-        `VERSION:2.0\r\n` +
-        `PRODID:-//CalDAV Client//NONSGML v1.0//EN\r\n` +
-        `CALSCALE:GREGORIAN\r\n` +
-        `METHOD:PUBLISH\r\n` +
-        `X-WR-CALNAME:${calendarName}\r\n` +
-        `X-WR-CALDESC:Exported Calendar\r\n`;
+      
+      // Create the initial lines array
+      let lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        `X-WR-CALNAME:${calendarName}`,
+        'X-WR-CALDESC:Exported Calendar'
+      ];
       
       // Add each event
       for (const event of mergedEvents) {
@@ -382,34 +444,64 @@ export function registerExportRoutes(app: Express) {
         const startDate = formatICALDate(event.startDate);
         const endDate = formatICALDate(event.endDate);
         
-        icalContent += 
-          `BEGIN:VEVENT\r\n` +
-          `UID:${safeUid}\r\n` +
-          `DTSTAMP:${now}\r\n` +
-          `DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}\r\n` +
-          `DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}\r\n` +
-          `SUMMARY:${event.summary}\r\n`;
+        lines.push('BEGIN:VEVENT');
+        lines.push(`UID:${safeUid}`);
+        lines.push(`DTSTAMP:${now}`);
+        lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
+        lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
+        lines.push(`SUMMARY:${event.summary}`);
         
         if (event.calendarName) {
-          icalContent += `CATEGORIES:${event.calendarName}\r\n`;
+          lines.push(`CATEGORIES:${event.calendarName}`);
         }
         
         if (event.description) {
-          icalContent += `DESCRIPTION:${event.description.replace(/\n/g, '\\n')}\r\n`;
+          lines.push(`DESCRIPTION:${event.description.replace(/\n/g, '\\n')}`);
         }
         
         if (event.location) {
-          icalContent += `LOCATION:${event.location}\r\n`;
+          lines.push(`LOCATION:${event.location}`);
         }
         
         if (event.allDay) {
-          icalContent += `X-MICROSOFT-CDO-ALLDAYEVENT:TRUE\r\n`;
+          lines.push(`X-MICROSOFT-CDO-ALLDAYEVENT:TRUE`);
         }
         
-        icalContent += `END:VEVENT\r\n`;
+        lines.push('END:VEVENT');
       }
       
-      icalContent += `END:VCALENDAR`;
+      lines.push('END:VCALENDAR');
+      
+      // Apply proper line folding for RFC 5545 compliance
+      const foldedLines = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        
+        // Skip empty lines
+        if (!line.trim()) continue;
+        
+        // If the line is longer than 75 characters, fold it according to RFC 5545
+        if (line.length > 75) {
+          let currentPos = 0;
+          const lineLength = line.length;
+          
+          // Add the first line
+          foldedLines.push(line.substring(0, 75));
+          currentPos = 75;
+          
+          // Add continuation lines with a space at the beginning
+          while (currentPos < lineLength) {
+            const chunk = line.substring(currentPos, Math.min(currentPos + 74, lineLength));
+            foldedLines.push(' ' + chunk); // Continuation lines must start with a space
+            currentPos += 74;
+          }
+        } else {
+          foldedLines.push(line);
+        }
+      }
+      
+      // Convert to string with CRLF line endings
+      const icalContent = foldedLines.join('\r\n');
       
       // Set the appropriate headers for file download
       let filename = 'calendars_export.ics';
