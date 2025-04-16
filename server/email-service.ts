@@ -1207,6 +1207,12 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         _originalResourceAttendees: resourceAttendeeLines.length > 0 ? resourceAttendeeLines : undefined
       };
       
+      // Modify the title to have CANCELLED prefix per RFC 5546 if needed
+      if (completeEventData.title && !completeEventData.title.startsWith('CANCELLED:') && !completeEventData.title.startsWith('CANCELLED: ')) {
+        console.log(`Adding 'CANCELLED: ' prefix to title: ${completeEventData.title}`);
+        completeEventData.title = `CANCELLED: ${completeEventData.title}`;
+      }
+      
       // Try to extract resources as structured objects if we don't have original lines
       if (resourceAttendeeLines.length === 0) {
         console.log('Attempting to extract resources from raw ICS data in alternative ways');
@@ -1278,6 +1284,12 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         uid: originalUid,  // Ensure original UID is preserved in fallback
         _originalResourceAttendees: resourceAttendeeLines.length > 0 ? resourceAttendeeLines : undefined
       };
+      
+      // Ensure title has CANCELLED prefix per RFC 5546
+      if (cancellationData.title && !cancellationData.title.startsWith('CANCELLED:') && !cancellationData.title.startsWith('CANCELLED: ')) {
+        console.log(`Fallback: Adding 'CANCELLED: ' prefix to title: ${cancellationData.title}`);
+        cancellationData.title = `CANCELLED: ${cancellationData.title}`;
+      }
       
       return this.generateICSData(cancellationData);
     }
