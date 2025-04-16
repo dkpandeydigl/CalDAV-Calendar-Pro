@@ -2842,11 +2842,16 @@ export class SyncService {
         const pendingEvents = events.filter(event => event.syncStatus === 'pending');
         const localEvents = events.filter(event => event.syncStatus === 'local');
         
+        // Combine pending and local events for processing
+        // This ensures both explicitly marked 'pending' events and default 'local' events will be synced
+        const eventsToSync = [...pendingEvents, ...localEvents];
+        
         // Log what we're doing
         console.log(`Found ${pendingEvents.length} pending events and ${localEvents.length} local events to push for calendar ${calendar.name}`);
+        console.log(`Total events to sync: ${eventsToSync.length}`);
         
-        // Process pending updates first
-        for (const event of pendingEvents) {
+        // Process all events that need syncing
+        for (const event of eventsToSync) {
           try {
             console.log(`Pushing update for event "${event.title}" (ID: ${event.id}) to server`);
             
