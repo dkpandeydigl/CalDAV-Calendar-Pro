@@ -2,6 +2,7 @@ import { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import { storage } from "./memory-storage"; // Using in-memory storage instead of database storage
+import { registerCancellationTestEndpoint } from './cancellation/test-endpoint';
 import { 
   insertEventSchema, 
   insertCalendarSchema,
@@ -3699,115 +3700,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // EMAIL SENDING API  
-  // Test endpoint for cancellation ICS generation
-  app.get("/api/test-cancellation", async (req, res) => {
-    try {
-      console.log("TEST: Generating sample event cancellation");
-      
-      // Create a sample event data
-      const eventData = {
-        eventId: 12345,
-        uid: "manual-send-1744791870199@caldavclient.local",
-        title: "eeee",
-        description: "<p>eeeee</p>",
-        location: "DIGL Durgapura, Jaipur , Rajasthan",
-        startDate: new Date("2025-05-02T03:30:00Z"),
-        endDate: new Date("2025-05-02T04:30:00Z"),
-        organizer: {
-          email: "dk.pandey@xgenplus.com",
-          name: "dk.pandey@xgenplus.com"
-        },
-        attendees: [
-          {
-            email: "dktest32@gmail.com",
-            name: "dktest32@gmail.com",
-            role: "Member",
-            status: "NEEDS-ACTION"
-          }
-        ],
-        resources: [
-          {
-            id: "dktest@dil.in",
-            email: "dktest@dil.in",
-            name: "res name",
-            subType: "chairs",
-            type: "chairs",
-            capacity: 4,
-            adminEmail: "dktest@dil.in",
-            adminName: "DK Pandey",
-            remarks: "rrrrr",
-            displayName: "res name"
-          }
-        ],
-        recurrenceRule: "FREQ=DAILY;COUNT=2",
-        rawData: `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//CalDAV Calendar Application//EN
-CALSCALE:GREGORIAN
-METHOD:REQUEST
-BEGIN:VEVENT
-UID:manual-send-1744791870199@caldavclient.local
-DTSTAMP:20250416T082430Z
-DTSTART:20250502T033000Z
-DTEND:20250502T043000Z
-SUMMARY:eeee
-DESCRIPTION:<p>eeeee</p>
-LOCATION:DIGL Durgapura, Jaipur , Rajasthan
-ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
-RRULE:FREQ=DAILY;COUNT=2
-ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=Member;PARTSTAT=NEEDS-ACTION;CN=dktest32@gmail.com:mailto:dktest32@gmail.com
-ATTENDEE;CN=res name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=chairs;X-RESOURCE-CAPACITY=4;X-ADMIN-NAME=DK Pandey;X-NOTES-REMARKS=rrrrr:mailto:dktest@dil.in
-END:VEVENT
-END:VCALENDAR`
-      };
-      
-      // Initialize email service with a test user ID
-      const emailService = require('./email-service').emailService;
-      try {
-        await emailService.initialize(4); // Using user ID 4 for testing
-      } catch (initError) {
-        console.warn("Test initialization error (non-fatal):", initError);
-        // Continue anyway to test the ICS transformation
-      }
-      
-      // Generate cancellation
-      console.log("TEST: Generating cancellation ICS");
-      const cancellationEventData = { ...eventData, status: 'CANCELLED' };
-      const icsData = emailService.transformIcsForCancellation(eventData.rawData, cancellationEventData);
-      
-      // Display the generated ICS
-      console.log("GENERATED CANCELLATION ICS:");
-      console.log(icsData);
-      
-      // Check for key elements in the generated ICS
-      const hasMethod = icsData.includes('METHOD:CANCEL');
-      const hasStatus = icsData.includes('STATUS:CANCELLED');
-      const hasOriginalUid = icsData.includes(`UID:${eventData.uid}`);
-      const hasCancelledPrefix = icsData.includes('SUMMARY:CANCELLED:') || icsData.includes('SUMMARY:CANCELLED: ');
-      const hasResourceAttendee = icsData.includes('CUTYPE=RESOURCE') && icsData.includes('dktest@dil.in');
-      
-      // Return the validation results and the generated ICS
-      res.json({
-        success: true,
-        message: "Generated cancellation ICS for testing",
-        validation: {
-          hasMethod,
-          hasStatus,
-          hasOriginalUid,
-          hasCancelledPrefix,
-          hasResourceAttendee
-        },
-        icsData
-      });
-    } catch (error) {
-      console.error("Error in test-cancellation endpoint:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error generating cancellation ICS",
-        error: String(error)
-      });
-    }
-  });
+  // Register enhanced cancellation test endpoints
+  registerCancellationTestEndpoint(app);
 
   app.post("/api/send-email", isAuthenticated, async (req, res) => {
     try {
