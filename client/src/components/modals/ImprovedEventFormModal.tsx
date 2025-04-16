@@ -1391,11 +1391,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           // After successful creation, store the UID mapping in IndexedDB for future reference
           if (createdEvent?.id) {
             try {
-              await storeUID(createdEvent.id, eventUID, parseInt(calendarId));
+              // Use the storeUID function from our enhanced useEventUID hook
+              // which only requires eventId and uid (calendarId is not needed)
+              await storeUID(createdEvent.id, eventUID);
               console.log(`Stored UID mapping for new event:`, {
                 eventId: createdEvent.id,
-                uid: eventUID,
-                calendarId: parseInt(calendarId)
+                uid: eventUID
               });
             } catch (storageError) {
               // Log the error but don't block the event creation
