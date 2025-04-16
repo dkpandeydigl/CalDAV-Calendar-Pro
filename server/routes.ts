@@ -18,6 +18,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { setupAuth } from "./auth";
 import { DAVClient } from "tsdav";
 import { emailService } from "./email-service";
+import { enhancedEmailService } from "./enhanced-email-service";
 import { syncSmtpPasswordWithCalDAV } from "./smtp-sync-utility";
 import { z } from "zod";
 import { registerExportRoutes } from "./export-routes";
