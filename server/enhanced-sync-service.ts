@@ -3,6 +3,9 @@
  * 
  * This service extends the base sync service with improved UID handling and
  * instant synchronization capabilities for event creation, updates, and cancellations.
+ * 
+ * It provides real-time WebSocket notifications to clients when events are created,
+ * updated, or deleted, ensuring consistent UID handling across event lifecycles.
  */
 
 import { DAVClient } from 'tsdav';
@@ -11,7 +14,21 @@ import { syncService } from './sync-service';
 import { preserveOrGenerateUID, registerUIDMapping } from './uid-management';
 import { Event, InsertEvent, ServerConnection } from '../shared/schema';
 import { generateEventICalString, prepareAttendeeForIcal, prepareResourceForIcal } from './ical-helpers';
-import { notifyEventChanged } from './websocket-handler';
+import { notifyEventChanged, broadcastMessage, getActiveConnections } from './websocket-handler';
+import { WebSocket } from 'ws';
+
+// Define relevant message types for WebSocket notifications
+export type SyncOperationType = 'create' | 'update' | 'delete' | 'sync';
+
+export interface EnhancedSyncMessage {
+  type: string;
+  operation: SyncOperationType;
+  userId: number;
+  data?: any;
+  timestamp: string;
+  success: boolean;
+  error?: string;
+}
 
 /**
  * Enhanced synchronization service for handling event operations

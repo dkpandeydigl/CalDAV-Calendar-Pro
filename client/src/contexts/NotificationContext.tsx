@@ -420,7 +420,8 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         clearTimeout(reconnectTimer);
       }
     };
-  }, [isAuthenticated, user, toast, webSocket]);
+  // Removed webSocket from dependency array to prevent infinite re-renders
+  }, [isAuthenticated, user, toast]);
 
   // Fetch notifications when user logs in
   useEffect(() => {
