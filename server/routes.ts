@@ -426,7 +426,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Send a test email
       console.log(`Sending test email to ${recipient}`);
-      const result = await emailService.sendTestEmail(recipient);
+      const result = await emailService.sendTestEmail(
+        userId,
+        recipient,
+        'CalDAV Calendar - Test Email',
+        'This is a test email from your CalDAV Calendar application. If you received this, email sending is working correctly.'
+      );
       
       return res.json({
         success: result.success,
