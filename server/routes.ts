@@ -2598,12 +2598,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check if this is a client-side temporary UID (like "event-23@caldavclient.local")
       // or if it's missing entirely (then we need to generate a proper one)
-      if (!uid || uid.match(/^event-\d+@caldavclient\.local$/)) {
+      if (!uid || uid.match(/^event-\d+(@caldavclient\.local)?$/) || !uid.includes('@')) {
         // Generate a proper CalDAV standard-compliant UID that will be preserved throughout the event lifecycle
+        // RFC 5545 requires UIDs to have a domain-part (after @) to ensure global uniqueness
         uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
-        console.log(`Generated new standard UID: ${uid} for event (replacing ${req.body.uid || 'missing uid'})`);
+        console.log(`[UID GENERATION] New RFC5545-compliant UID: ${uid} for event creation (replacing ${req.body.uid || 'missing uid'})`);
       } else {
-        console.log(`Using provided UID: ${uid} for event creation`);
+        console.log(`[UID PRESERVATION] Using provided RFC5545-compliant UID: ${uid} for event creation`);
       }
       
       // Set syncStatus to pending to mark it for pushing to the server
@@ -3372,8 +3373,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Event not found" });
       }
       
-      // Process the update data
-      const updateData = { ...req.body };
+      // Process the update data - CRITICAL: Always preserve the UID
+      const updateData = { 
+        ...req.body,
+        // CRITICAL FIX: Always preserve the original UID to maintain event identity
+        uid: existingEvent.uid 
+      };
+      
+      // Log UID preservation for debugging
+      if (req.body.uid && req.body.uid !== existingEvent.uid) {
+        console.log(`[UID PRESERVATION] Request attempted to change UID from ${existingEvent.uid} to ${req.body.uid}`);
+        console.log(`[UID PRESERVATION] Enforcing original UID ${existingEvent.uid} for event continuity`);
+      }
       
       // Handle date conversions
       if (typeof updateData.startDate === 'string') {

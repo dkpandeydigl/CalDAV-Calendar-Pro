@@ -1304,10 +1304,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       } 
       // Handle new event creation
       else {
-        // For new events, we need to generate a unique ID and include all required fields
+        // For new events, include all required fields but DO NOT generate UID (server will do it properly)
+        // IMPORTANT: Let the server handle UID generation for new events to ensure proper format and uniqueness
         const newEventData = {
           ...eventData,
-          uid: `event-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          // The server will generate a proper UID if not provided
+          // Do not set uid field here to let the server handle it
           // Include mandatory fields with null/default values to match schema requirements
           etag: null,
           url: null,
