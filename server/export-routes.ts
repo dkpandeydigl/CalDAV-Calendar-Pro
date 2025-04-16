@@ -127,6 +127,9 @@ export function registerExportRoutes(app: Express) {
         icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//XGenCal//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nBEGIN:VEVENT\r\nSUMMARY:${event.title}\r\nDTSTART:${formatICALDate(startDate)}\r\nDTEND:${formatICALDate(endDate)}\r\nDESCRIPTION:${event.description || ''}\r\nLOCATION:${event.location || ''}\r\nUID:${event.uid || `event-${Date.now()}`}\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR`;
       }
       
+      // Log the successful preparation of ICS content
+      console.log(`Successfully prepared ICS file for event ID ${eventId} with title: ${event.title}`);
+
       // Set appropriate headers
       res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics"`);

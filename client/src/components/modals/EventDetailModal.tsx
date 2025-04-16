@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
 import { MailCheck, AlertTriangle, User as UserIcon, UserRound, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle, Trash2, Calendar, History, ChevronUp, ChevronDown } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 import DirectResourceExtractor from './DirectResourceExtractor';
 import ResourceManager from '@/components/resources/ResourceManager';
 import DirectAttendeeExtractor from './DirectAttendeeExtractor';
@@ -216,6 +217,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [resourcesDialogOpen, setResourcesDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // For download operations
   const [isUserLoading, setIsUserLoading] = useState(isUserLoadingFromAuth);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -223,6 +225,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const [showAllResources, setShowAllResources] = useState(false); // For resource display limit (unused now - using dialog instead)
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null); // For attendee status dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false); // For attendee status dialog
+  const { toast } = useToast(); // Import toast from useToast hook
   // Section expansion has been removed in favor of always showing scrollable content
   
   // Add a timeout to prevent infinite loading state
@@ -1182,11 +1185,59 @@ END:VCALENDAR`;
                       // This is more reliable and handles all formatting issues on the server
                       console.log('Using server-side ICS download endpoint for event ID:', event.id);
                       
-                      // Open the download in a new window/tab to trigger the file download
-                      window.open(`/api/download-ics/${event.id}`, '_blank');
-                      
-                      // No need for browser-side Blob handling anymore, the server handles everything
-                      // including line breaks, MIME types, and character encoding
+                      try {
+                        // Instead of opening in a new window, use fetch with credentials
+                        // This ensures our session cookie is sent with the request
+                        setIsLoading(true);
+                        
+                        fetch(`/api/download-ics/${event.id}`, {
+                          method: 'GET',
+                          credentials: 'include' // Important for session cookies
+                        })
+                          .then(response => {
+                            setIsLoading(false);
+                            if (!response.ok) {
+                              // If response isn't successful, parse the error message
+                              return response.json().then(data => {
+                                throw new Error(data.message || 'Failed to download ICS file');
+                              });
+                            }
+                            // For successful response, get the blob data
+                            return response.blob();
+                          })
+                          .then(blob => {
+                            // Create a local URL for the blob
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            
+                            // Set up download attributes
+                            link.href = url;
+                            link.download = `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
+                            document.body.appendChild(link);
+                            
+                            // Trigger download and clean up
+                            link.click();
+                            document.body.removeChild(link);
+                            URL.revokeObjectURL(url);
+                          })
+                          .catch(error => {
+                            setIsLoading(false);
+                            console.error('Error downloading ICS file:', error);
+                            toast({
+                              title: 'Download Failed',
+                              description: error.message || 'Could not download ICS file. Please try again.',
+                              variant: 'destructive'
+                            });
+                          });
+                      } catch (error) {
+                        setIsLoading(false);
+                        console.error('Error setting up ICS download:', error);
+                        toast({
+                          title: 'Download Failed',
+                          description: 'Could not download ICS file. Please try again.',
+                          variant: 'destructive'
+                        });
+                      }
                     }}
                   >
                     <Clock className="h-4 w-4" />
