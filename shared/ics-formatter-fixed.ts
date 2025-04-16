@@ -6,11 +6,17 @@
  */
 
 export type ICSFormattingOptions = {
+  uid?: string;
   method?: 'REQUEST' | 'CANCEL' | 'REPLY' | string;
   status?: 'CONFIRMED' | 'CANCELLED' | 'TENTATIVE' | string;
   sequence?: number;
   forceNewUID?: boolean;
   preserveAttendees?: boolean;
+  preserveResources?: boolean;
+  organizer?: {
+    email: string;
+    name?: string;
+  };
 };
 
 /**

@@ -314,7 +314,34 @@ export class EmailService {
         };
       }
       
-      // Build the email
+      // Generate PDF attachment
+      let pdfBuffer: Buffer | undefined;
+      try {
+        pdfBuffer = await generateEventAgendaPDF(data);
+      } catch (pdfError) {
+        console.error("Error generating PDF agenda:", pdfError);
+        // Continue without PDF if generation fails
+      }
+      
+      // Build the email with attachments
+      const attachments = [
+        {
+          filename: `${data.uid || `event-${Date.now()}`}.ics`,
+          content: icsData,
+          contentType: 'text/calendar'
+        }
+      ];
+      
+      // Add PDF attachment if successfully generated
+      if (pdfBuffer) {
+        attachments.push({
+          filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_agenda.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+          encoding: 'base64' // Tell nodemailer this is a binary buffer
+        });
+      }
+      
       const mailOptions = {
         from: this.config?.fromName 
           ? `"${this.config.fromName}" <${this.config.fromEmail}>` 
@@ -323,13 +350,7 @@ export class EmailService {
         subject: `Calendar Invitation: ${data.title}`,
         text: textBody,
         html: htmlBody,
-        attachments: [
-          {
-            filename: `${data.uid || `event-${Date.now()}`}.ics`,
-            content: icsData,
-            contentType: 'text/calendar'
-          }
-        ]
+        attachments
       };
       
       // Send the email
@@ -487,7 +508,37 @@ export class EmailService {
         };
       }
       
-      // Build the email
+      // Generate PDF attachment for cancellation
+      let pdfBuffer: Buffer | undefined;
+      try {
+        pdfBuffer = await generateEventAgendaPDF({
+          ...data,
+          title: `CANCELLED: ${data.title}`
+        });
+      } catch (pdfError) {
+        console.error("Error generating cancellation PDF:", pdfError);
+        // Continue without PDF if generation fails
+      }
+      
+      // Build the email with attachments
+      const attachments = [
+        {
+          filename: `${data.uid || `event-${Date.now()}`}.ics`,
+          content: icsData,
+          contentType: 'text/calendar'
+        }
+      ];
+      
+      // Add PDF attachment if successfully generated
+      if (pdfBuffer) {
+        attachments.push({
+          filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_cancellation.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+          encoding: 'base64' // Tell nodemailer this is a binary buffer
+        });
+      }
+      
       const mailOptions = {
         from: this.config?.fromName 
           ? `"${this.config.fromName}" <${this.config.fromEmail}>` 
@@ -496,13 +547,7 @@ export class EmailService {
         subject: `Event Cancelled: ${data.title}`,
         text: textBody,
         html: htmlBody,
-        attachments: [
-          {
-            filename: `${data.uid || `event-${Date.now()}`}.ics`,
-            content: icsData,
-            contentType: 'text/calendar'
-          }
-        ]
+        attachments
       };
       
       // Send the email
