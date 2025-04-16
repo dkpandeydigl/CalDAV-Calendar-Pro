@@ -36,12 +36,23 @@ export function generateCancellationIcs(originalIcs: string, eventData: EventInv
   
   try {
     // Extract the original UID to ensure we keep it exactly the same
-    const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
-    const originalUid = uidMatch && uidMatch[1] ? uidMatch[1] : eventData.uid;
+    // First, attempt to find a clean UID (should be on its own line)
+    const cleanUidMatch = originalIcs.match(/\r?\nUID:([^\r\n]+)/i);
+    let originalUid = cleanUidMatch && cleanUidMatch[1] ? cleanUidMatch[1] : null;
+    
+    // If no clean UID was found, try a fallback approach for malformed ICS
+    if (!originalUid) {
+      const uidMatch = originalIcs.match(/UID:([^\\]+)/i);
+      originalUid = uidMatch && uidMatch[1] ? uidMatch[1] : eventData.uid;
+    }
     
     if (!originalUid) {
       throw new Error('No UID found in original ICS or event data');
     }
+    
+    // Clean the UID in case it contains embedded newlines or other invalid characters
+    // This handles cases where malformed ICS files have UID: followed by newlines and other fields
+    originalUid = originalUid.trim().split(/\r?\n/)[0];
     
     console.log(`Using original UID for cancellation: ${originalUid}`);
     
@@ -145,6 +156,13 @@ export function generateCancellationIcs(originalIcs: string, eventData: EventInv
         );
       }
     }
+    
+    // Clean up common embedded errors found in some ICS files
+    // 1. Fix case where embedded END:VEVENT or END:VCALENDAR appears in property values
+    cancellationIcs = removeEmbeddedCalendarMarkers(cancellationIcs);
+    
+    // 2. Fix duplicate ATTENDEE entries
+    cancellationIcs = deduplicateAttendees(cancellationIcs);
     
     console.log('Successfully generated RFC 5546 compliant cancellation ICS');
     return cancellationIcs;
@@ -288,4 +306,144 @@ export async function deleteEventAfterCancellation(
     console.error('Unexpected error during event deletion:', error);
     return false;
   }
+}
+
+/**
+ * Removes any embedded calendar markers (like END:VEVENT) that might
+ * be incorrectly embedded in property values
+ */
+function removeEmbeddedCalendarMarkers(icsData: string): string {
+  // Check if there are embedded END:VEVENT or END:VCALENDAR markers
+  // These typically happen when a property value contains these markers by accident
+  
+  // First, split the ICS into lines for processing
+  const lines = icsData.split(/\r?\n/);
+  const cleanedLines: string[] = [];
+  
+  // Process each line
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // Skip completely empty lines
+    if (!line.trim()) continue;
+    
+    // Check if this is a property line (not a BEGIN or END marker)
+    if (!line.startsWith('BEGIN:') && !line.startsWith('END:')) {
+      // Check if this property value contains embedded calendar markers
+      if (line.includes('\\r\\nEND:VEVENT') || 
+          line.includes('\\r\\nEND:VCALENDAR') ||
+          line.includes('\r\nEND:VEVENT') || 
+          line.includes('\r\nEND:VCALENDAR')) {
+        
+        console.log(`Found embedded calendar markers in line: ${line}`);
+        
+        // Extract the property name and clean up the value
+        const colonPos = line.indexOf(':');
+        if (colonPos > 0) {
+          const propName = line.substring(0, colonPos);
+          let propValue = line.substring(colonPos + 1);
+          
+          // Clean up embedded markers
+          propValue = propValue.replace(/\\r\\nEND:VEVENT\\r\\nEND:VCALENDAR"?/g, '');
+          propValue = propValue.replace(/\r\nEND:VEVENT\r\nEND:VCALENDAR"?/g, '');
+          propValue = propValue.replace(/\\r\\nEND:VEVENT/g, '');
+          propValue = propValue.replace(/\r\nEND:VEVENT/g, '');
+          propValue = propValue.replace(/\\r\\nEND:VCALENDAR/g, '');
+          propValue = propValue.replace(/\r\nEND:VCALENDAR/g, '');
+          propValue = propValue.replace(/(?:"|\s)+$/, '');  // Remove trailing quotes and whitespace
+          
+          // Add the cleaned property
+          cleanedLines.push(`${propName}:${propValue}`);
+          console.log(`Cleaned to: ${propName}:${propValue}`);
+          continue;
+        }
+      }
+    }
+    
+    // Add normal lines unchanged
+    cleanedLines.push(line);
+  }
+  
+  // Always ensure we have exactly one BEGIN:VCALENDAR, BEGIN:VEVENT, END:VEVENT, and END:VCALENDAR
+  // Count how many we have
+  const beginVCal = cleanedLines.filter(l => l === 'BEGIN:VCALENDAR').length;
+  const endVCal = cleanedLines.filter(l => l === 'END:VCALENDAR').length;
+  const beginVEv = cleanedLines.filter(l => l === 'BEGIN:VEVENT').length;
+  const endVEv = cleanedLines.filter(l => l === 'END:VEVENT').length;
+  
+  // If we don't have exactly one of each, rebuild the ICS structure
+  if (beginVCal !== 1 || endVCal !== 1 || beginVEv !== 1 || endVEv !== 1) {
+    console.log(`Invalid ICS structure detected. Rebuilding... (BEGIN:VCALENDAR=${beginVCal}, END:VCALENDAR=${endVCal}, BEGIN:VEVENT=${beginVEv}, END:VEVENT=${endVEv})`);
+    
+    // Extract all the properties except BEGIN/END markers
+    const properties = cleanedLines.filter(l => 
+      !l.startsWith('BEGIN:') && !l.startsWith('END:')
+    );
+    
+    // Rebuild with proper structure
+    return [
+      'BEGIN:VCALENDAR',
+      ...cleanedLines.filter(l => l.startsWith('VERSION:') || l.startsWith('PRODID:') || l.startsWith('CALSCALE:') || l.startsWith('METHOD:')),
+      'BEGIN:VEVENT',
+      ...properties.filter(l => !l.startsWith('VERSION:') && !l.startsWith('PRODID:') && !l.startsWith('CALSCALE:') && !l.startsWith('METHOD:')),
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+  }
+  
+  return cleanedLines.join('\r\n');
+}
+
+/**
+ * Removes duplicate ATTENDEE entries that might be present in the ICS data
+ */
+function deduplicateAttendees(icsData: string): string {
+  // Extract all ATTENDEE lines
+  const attendeeRegex = /ATTENDEE[^:\r\n]*:[^\r\n]+/g;
+  const attendeeLines = icsData.match(attendeeRegex) || [];
+  
+  if (attendeeLines.length === 0) {
+    return icsData; // No attendees to process
+  }
+  
+  // Extract email from each attendee line for deduplication
+  const uniqueAttendees = new Map<string, string>();
+  
+  attendeeLines.forEach(line => {
+    const emailMatch = line.match(/mailto:([^>\r\n]+)/i);
+    const email = emailMatch && emailMatch[1] ? emailMatch[1].toLowerCase() : null;
+    
+    if (email) {
+      // Only keep the last occurrence of each email (which should be the most complete)
+      // or keep the one without embedded newlines if present
+      if (!uniqueAttendees.has(email) || 
+          (line.indexOf('\r\n') === -1 && uniqueAttendees.get(email)?.indexOf('\r\n') !== -1)) {
+        uniqueAttendees.set(email, line);
+      }
+    }
+  });
+  
+  // If we found and removed duplicates
+  if (uniqueAttendees.size < attendeeLines.length) {
+    console.log(`Removed ${attendeeLines.length - uniqueAttendees.size} duplicate ATTENDEE entries`);
+    
+    // Replace all attendee lines with unique ones
+    let result = icsData;
+    
+    // First remove all attendee lines
+    attendeeLines.forEach(line => {
+      result = result.replace(line, '');
+    });
+    
+    // Clean up any empty lines created
+    result = result.replace(/\r\n\r\n+/g, '\r\n');
+    
+    // Add unique attendees before END:VEVENT
+    const uniqueAttendeeLines = Array.from(uniqueAttendees.values()).join('\r\n');
+    result = result.replace('END:VEVENT', `${uniqueAttendeeLines}\r\nEND:VEVENT`);
+    
+    return result;
+  }
+  
+  return icsData;
 }
