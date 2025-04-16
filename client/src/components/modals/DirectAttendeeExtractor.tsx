@@ -10,7 +10,7 @@ interface Attendee {
 }
 
 interface DirectAttendeeExtractorProps {
-  rawData: string | object | null | undefined;
+  rawData?: string | object | null | undefined;
   attendees?: any[]; // Direct attendees array if available
   showMoreCount?: number; // Number of attendees to show before "more"
   isPreview?: boolean; // If true, only show limited attendees with count indicator

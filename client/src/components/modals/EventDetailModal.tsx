@@ -87,6 +87,24 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   onClose,
   onEdit
 }) => {
+  // Defensive check: ensure we have a valid event object
+  if (!event) {
+    return (
+      <Dialog open={open} onOpenChange={open => !open && onClose()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Error</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p>Event details not available. Please try refreshing the page.</p>
+          </div>
+          <DialogFooter>
+            <Button onClick={onClose}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
   // Hook calls - all must be at the top level
   const { calendars } = useCalendars();
   const { deleteEvent, cancelEvent } = useCalendarEvents();
