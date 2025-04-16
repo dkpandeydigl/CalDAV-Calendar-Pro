@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { WebSocketHandler } from './websocket-handler';
+import { broadcastToUser, broadcastMessage } from './websocket-handler';
 
 // Types for notification messages
 export interface WebSocketNotification {
@@ -18,19 +18,17 @@ export interface WebSocketNotification {
  */
 export class WebSocketNotificationService {
   private static instance: WebSocketNotificationService;
-  private wsHandler: WebSocketHandler;
 
-  private constructor(wsHandler: WebSocketHandler) {
-    this.wsHandler = wsHandler;
+  private constructor() {
     console.log('WebSocket notification service initialized');
   }
 
   /**
    * Get the singleton instance of the notification service
    */
-  public static getInstance(wsHandler: WebSocketHandler): WebSocketNotificationService {
+  public static getInstance(): WebSocketNotificationService {
     if (!WebSocketNotificationService.instance) {
-      WebSocketNotificationService.instance = new WebSocketNotificationService(wsHandler);
+      WebSocketNotificationService.instance = new WebSocketNotificationService();
     }
     return WebSocketNotificationService.instance;
   }
@@ -52,7 +50,7 @@ export class WebSocketNotificationService {
         const notificationJson = JSON.stringify(notification);
         
         for (const userId of notification.targetUserIds) {
-          this.wsHandler.sendToUser(userId, notificationJson);
+          broadcastToUser(userId, notificationJson);
         }
         
         console.log(`Notification sent to ${notification.targetUserIds.length} specific users`);
@@ -65,7 +63,7 @@ export class WebSocketNotificationService {
         notification.data.uid = notification.uid;
       }
       
-      this.wsHandler.broadcast(JSON.stringify(notification));
+      broadcastMessage(notification);
       console.log('Notification broadcast to all connected users');
     } catch (error) {
       console.error('Error sending WebSocket notification:', error);
@@ -159,6 +157,6 @@ export class WebSocketNotificationService {
 }
 
 // Create and export a convenience function to get the notification service
-export function getWebSocketNotificationService(wsHandler: WebSocketHandler): WebSocketNotificationService {
-  return WebSocketNotificationService.getInstance(wsHandler);
+export function getWebSocketNotificationService(): WebSocketNotificationService {
+  return WebSocketNotificationService.getInstance();
 }

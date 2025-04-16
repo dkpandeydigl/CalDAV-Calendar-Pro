@@ -9,6 +9,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 import { storage } from './memory-storage'; // Using in-memory storage instead of database storage
 import { notificationService } from './memory-notification-service'; // Using in-memory notification service
+import { getWebSocketNotificationService } from './websocket-notifications';
 import { Notification } from '@shared/schema';
 
 // Track active WebSocket connections by user ID
@@ -600,5 +601,21 @@ function checkStaleConnections() {
     });
   } catch (error) {
     console.error('Error checking for stale WebSocket connections:', error);
+  }
+}
+
+// Initialize the WebSocket notification service
+// This must be called once the WebSocket server is set up
+export function initializeWebSocketNotificationService() {
+  try {
+    // Get the notification service singleton
+    const notificationService = getWebSocketNotificationService();
+    
+    console.log('WebSocket notification service initialized');
+    
+    return notificationService;
+  } catch (error) {
+    console.error('Error initializing WebSocket notification service:', error);
+    return null;
   }
 }
