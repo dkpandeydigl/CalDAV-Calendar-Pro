@@ -1029,12 +1029,17 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       // First, extract the original UID to make absolutely sure we preserve it
       const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
       if (!uidMatch || !uidMatch[1]) {
-        console.warn('Could not find UID in original ICS data, falling back to generation');
-        const cancellationData = { ...data, status: 'CANCELLED' };
-        return this.generateICSData(cancellationData);
+        console.warn('Could not find UID in original ICS data, checking data.uid');
+        // If there's no UID in the ICS, use the UID from the data or generate a warning
+        if (!data.uid) {
+          console.error('No UID available in data object either! This will cause RFC compliance issues.');
+        } else {
+          console.log(`Using UID from data object: ${data.uid}`);
+        }
       }
       
-      const originalUid = uidMatch[1];
+      // Always prioritize UID from the original ICS over any other source
+      const originalUid = uidMatch && uidMatch[1] ? uidMatch[1] : data.uid;
       console.log(`PRESERVING EXACT ORIGINAL UID FOR CANCELLATION: ${originalUid}`);
       
       // Extract the original sequence number
@@ -1100,12 +1105,57 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       const resultResourceCount = (result.match(/CUTYPE=RESOURCE/g) || []).length;
       console.log(`Original resource count: ${resourceAttendeeLines.length}, Result resource count: ${resultResourceCount}`);
       
+      // Final verification - if we lost resources or UID, fix it manually
+      if (!resultHasUid || (resourceAttendeeLines.length > 0 && resultResourceCount === 0)) {
+        console.warn('Critical data lost in cancellation ICS generation!');
+        console.warn(`UID preserved: ${resultHasUid}, Resources preserved: ${resultResourceCount > 0}`);
+        
+        // Attempt emergency repair
+        let repairedResult = result;
+        
+        // Fix UID if missing
+        if (!resultHasUid && originalUid) {
+          console.log('Emergency repair: Adding missing UID');
+          const uidLine = `UID:${originalUid}`;
+          repairedResult = repairedResult.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\n${uidLine}`);
+        }
+        
+        // Fix missing resources if needed
+        if (resourceAttendeeLines.length > 0 && resultResourceCount === 0) {
+          console.log('Emergency repair: Adding missing resource attendees');
+          let resourceLines = resourceAttendeeLines.join('\r\n');
+          repairedResult = repairedResult.replace('END:VEVENT', `${resourceLines}\r\nEND:VEVENT`);
+        }
+        
+        return repairedResult;
+      }
+      
       return result;
     } catch (error) {
       console.error('Error transforming ICS for cancellation:', error);
-      // Fall back to generating new ICS if transformation fails
-      console.log('Falling back to generating new cancellation ICS');
-      const cancellationData = { ...data, status: 'CANCELLED' };
+      // Even in fallback, preserve critical data
+      console.log('Using enhanced fallback to generate cancellation ICS');
+      
+      // Extract resource attendee lines before falling back
+      const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+      const allAttendeeLines = originalIcs ? (originalIcs.match(attendeePattern) || []) : [];
+      const resourceAttendeeLines = allAttendeeLines.filter(line => 
+        line.includes('CUTYPE=RESOURCE') || 
+        line.includes('X-RESOURCE-TYPE')
+      );
+      
+      // Extract UID from original ICS or use the one from data
+      const uidMatch = originalIcs ? originalIcs.match(/UID:([^\r\n]+)/i) : null;
+      const originalUid = uidMatch && uidMatch[1] ? uidMatch[1] : data.uid;
+      
+      // Create a complete cancellation data object
+      const cancellationData = { 
+        ...data, 
+        status: 'CANCELLED',
+        uid: originalUid,  // Ensure original UID is preserved in fallback
+        _originalResourceAttendees: resourceAttendeeLines.length > 0 ? resourceAttendeeLines : undefined
+      };
+      
       return this.generateICSData(cancellationData);
     }
   }
