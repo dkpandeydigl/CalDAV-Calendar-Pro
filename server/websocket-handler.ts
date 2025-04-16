@@ -498,7 +498,8 @@ function checkStaleConnections() {
     const now = Date.now();
     const timeout = 60000; // 60 seconds
     
-    for (const [ws, lastPong] of socketLastPong.entries()) {
+    // Use forEach instead of for...of to avoid TypeScript downlevelIteration issue
+    socketLastPong.forEach((lastPong, ws) => {
       // If we haven't received a pong in the timeout period, close the connection
       if (now - lastPong > timeout) {
         console.log(`Closing stale WebSocket connection (no pong for ${Math.floor((now - lastPong) / 1000)}s)`);
@@ -510,7 +511,7 @@ function checkStaleConnections() {
           console.error('Error closing stale WebSocket connection:', closeError);
         }
       }
-    }
+    });
   } catch (error) {
     console.error('Error checking for stale WebSocket connections:', error);
   }
