@@ -1,0 +1,1965 @@
+import nodemailer from 'nodemailer';
+import { SmtpConfig } from '@shared/schema';
+import { storage } from './memory-storage';
+import { formatICalDate } from './ical-utils';
+import { generateEventAgendaPDF } from './pdf-generator';
+import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
+
+import { sanitizeAndFormatICS } from '../shared/ics-formatter';
+export interface Attendee {
+  email: string;
+  name?: string;
+  role?: string;
+  status?: string;
+}
+
+export interface Resource {
+  id: string;
+  name?: string;         // Display name of the resource
+  subType: string;       // Resource type (Conference Room, Projector, etc.)
+  type?: string;         // Alternative type field for compatibility
+  capacity?: number;     // Optional capacity (e.g., 10 people)
+  adminEmail: string;    // Email of resource administrator
+  email?: string;        // Alternative email field for compatibility
+  adminName?: string;    // Name of resource administrator
+  remarks?: string;      // Optional remarks or notes
+  displayName?: string;  // For backward compatibility
+}
+
+export interface EventInvitationData {
+  eventId: number;
+  uid: string;
+  title: string;
+  description?: string;
+  location?: string;
+  startDate: Date;
+  endDate: Date;
+  organizer: {
+    email: string;
+    name?: string;
+  };
+  attendees: Attendee[];
+  resources?: Resource[]; // Optional resources array
+  icsData?: string; // Optional pre-generated ICS data
+  status?: string; // Optional status for events (e.g. 'CANCELLED')
+  recurrenceRule?: string | object; // Recurrence rule as string or object
+  rawData?: string; // Original raw iCalendar data
+  sequence?: number; // Sequence number for versioning events (RFC 5545)
+  _originalResourceAttendees?: string[]; // Preserved original resource attendee lines for RFC 5546 compliance
+  calendarId?: number; // Calendar ID the event belongs to
+}
+
+export class EmailService {
+  private transporter: nodemailer.Transporter | null = null;
+  private config: SmtpConfig | null = null;
+
+  /**
+   * Initialize the email service with SMTP configuration for a specific user
+   * @param userId The user ID to fetch SMTP configuration for
+   * @returns A boolean indicating whether initialization was successful
+   */
+  async initialize(userId: number): Promise<boolean> {
+    try {
+      // Try to synchronize SMTP password with CalDAV password before proceeding
+      await syncSmtpPasswordWithCalDAV(userId);
+      console.log(`SMTP password synchronized with CalDAV password for user ${userId} before sending email`);
+      
+      // Get SMTP configuration for the user
+      let smtpConfig = await storage.getSmtpConfig(userId);
+      
+      // If no SMTP config exists, try to create a default one
+      if (!smtpConfig) {
+        console.log(`No SMTP configuration found for user ${userId}, creating default config`);
+        
+        // Get user to retrieve their email
+        const user = await storage.getUser(userId);
+        if (!user?.email) {
+          console.log(`User ${userId} doesn't have an email address to use as From address`);
+          return false;
+        }
+        
+        // Get server connection to use the same credentials
+        const serverConnection = await storage.getServerConnection(userId);
+        let password = '';
+        
+        if (serverConnection) {
+          // Use the server connection password
+          password = serverConnection.password;
+          console.log(`Using CalDAV password for SMTP configuration for user ${userId}`);
+        }
+        
+        try {
+          // Create a default SMTP config
+          smtpConfig = await storage.createSmtpConfig({
+            userId,
+            host: 'smtps.xgen.in',
+            port: 465,
+            secure: true,  // SSL/TLS
+            username: user.email,
+            password: password,  // Use the CalDAV password
+            fromEmail: user.email,
+            fromName: user.fullName || user.username || undefined
+          });
+          
+          console.log(`Created default SMTP configuration for user ${userId}`);
+        } catch (error) {
+          console.error('Failed to create default SMTP configuration:', error);
+          return false;
+        }
+      }
+
+      // Store the config for later use
+      this.config = smtpConfig;
+
+      // Create the transporter
+      this.transporter = nodemailer.createTransport({
+        host: smtpConfig.host,
+        port: smtpConfig.port,
+        secure: smtpConfig.secure,
+        auth: {
+          user: smtpConfig.username,
+          pass: smtpConfig.password,
+        },
+        // Add debug option for troubleshooting
+        debug: true
+      } as nodemailer.TransportOptions);
+
+      // Verify the connection if password is set
+      if (smtpConfig.password) {
+        try {
+          await this.transporter.verify();
+          console.log('SMTP connection established successfully');
+        } catch (verifyError) {
+          console.error('SMTP connection verification failed:', verifyError);
+          // We'll still return true since the configuration exists, even if verification fails
+        }
+      } else {
+        console.log('SMTP password not set, skipping connection verification');
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize email service:', error);
+      this.transporter = null;
+      this.config = null;
+      return false;
+    }
+  }
+  
+  /**
+   * Verify the SMTP connection using the current configuration
+   * @returns A verification result object with success flag and message
+   */
+  async verifyConnection(): Promise<{ success: boolean; message: string }> {
+    try {
+      if (!this.transporter) {
+        return { 
+          success: false, 
+          message: "Email service not initialized" 
+        };
+      }
+      
+      if (!this.config?.password) {
+        return { 
+          success: false, 
+          message: "SMTP password not set. Please configure your password to send emails." 
+        };
+      }
+      
+      // Verify the SMTP connection
+      await this.transporter.verify();
+      
+      return {
+        success: true,
+        message: "SMTP connection verified successfully"
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
+
+  /**
+   * Send an event invitation to all attendees
+   * @param userId The user ID sending the invitation
+   * @param data Event invitation data
+   * @returns A result object with success status and details
+   */
+  async sendEventInvitation(
+    userId: number, 
+    data: EventInvitationData
+  ): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      // Initialize email service if not already initialized
+      if (!this.transporter || !this.config || this.config.userId !== userId) {
+        const initSuccess = await this.initialize(userId);
+        if (!initSuccess) {
+          return { 
+            success: false, 
+            message: 'Failed to initialize email service. Please check your SMTP configuration.' 
+          };
+        }
+      }
+
+      // Critical for RFC 5545/5546 compliance: Ensure we have the original event data
+      // If calendarId and eventId are provided but no rawData or icsData, try to fetch it
+      let icsData: string;
+      if (!data.icsData && !data.rawData && data.calendarId && data.eventId) {
+        try {
+          console.log(`Fetching original event data from server for event ID ${data.eventId} in calendar ${data.calendarId}`);
+          const event = await storage.getEvent(data.calendarId, data.eventId);
+          if (event && typeof event.rawData === 'string') {
+            console.log(`Successfully retrieved original event data (${event.rawData.length} bytes)`);
+            // Use the raw data from server - crucial for preserving the original UID
+            data.rawData = event.rawData;
+            // Extract UID from rawData to ensure we use the original
+            const uidMatch = event.rawData.match(/UID:([^\r\n]+)/);
+            if (uidMatch && uidMatch[1]) {
+              console.log(`Using original UID from server data: ${uidMatch[1]}`);
+              data.uid = uidMatch[1];
+            }
+          } else {
+            console.log(`No raw data found for event ID ${data.eventId} in calendar ${data.calendarId}`);
+          }
+        } catch (error) {
+          console.error('Error fetching original event data:', error);
+        }
+      }
+      
+      // Generate ICS data if not provided, ensuring UID consistency
+      icsData = data.icsData || this.generateICSData(data);
+
+      // Prepare arrays to track results
+      let allResults: PromiseSettledResult<any>[] = [];
+      let allRecipients: string[] = [];
+      
+      // Send email to each attendee
+      if (data.attendees && data.attendees.length > 0) {
+        const attendeePromises = data.attendees.map(attendee => {
+          return this.sendInvitationEmail(data, attendee, icsData);
+        });
+
+        // Wait for all attendee emails to be sent
+        const attendeeResults = await Promise.allSettled(attendeePromises);
+        allResults = [...allResults, ...attendeeResults];
+        allRecipients = [...allRecipients, ...data.attendees.map(a => a.email)];
+      }
+      
+      // Send email to each resource admin if resources are present
+      if (data.resources && data.resources.length > 0) {
+        const resourcePromises = data.resources.map(resource => {
+          return this.sendResourceBookingNotification(data, resource, icsData);
+        });
+
+        // Wait for all resource booking emails to be sent
+        const resourceResults = await Promise.allSettled(resourcePromises);
+        allResults = [...allResults, ...resourceResults];
+        allRecipients = [...allRecipients, ...data.resources.map(r => r.adminEmail)];
+      }
+      
+      // Count successful deliveries
+      const successful = allResults.filter(r => r.status === 'fulfilled').length;
+      const failed = allResults.filter(r => r.status === 'rejected').length;
+      
+      // Detailed results for debugging
+      const detailedResults = allResults.map((result, index) => {
+        return {
+          recipient: allRecipients[index],
+          success: result.status === 'fulfilled',
+          details: result.status === 'rejected' ? (result as PromiseRejectedResult).reason : undefined
+        };
+      });
+
+      if (failed > 0) {
+        return {
+          success: successful > 0, // Consider partially successful if at least one email was sent
+          message: `Sent notifications to ${successful} out of ${allRecipients.length} recipients.`,
+          details: detailedResults
+        };
+      }
+
+      return {
+        success: true,
+        message: `Successfully sent all ${successful} notifications.`,
+        details: detailedResults
+      };
+    } catch (error) {
+      console.error('Error sending event invitations:', error);
+      return {
+        success: false,
+        message: `Failed to send invitations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        details: error
+      };
+    }
+  }
+  
+  /**
+   * Send a resource booking notification to a resource administrator
+   * @param data Event data
+   * @param resource Resource information
+   * @param icsData The ICS calendar data
+   * @returns Promise resolving to the send info
+   */
+  private async sendResourceBookingNotification(
+    data: EventInvitationData,
+    resource: Resource,
+    icsData: string
+  ): Promise<nodemailer.SentMessageInfo> {
+    if (!this.transporter || !this.config) {
+      throw new Error('Email service not initialized');
+    }
+
+    const { startDate, endDate, title, description, location } = data;
+    
+    // Format the date for display in email
+    const dateFormat = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      timeZoneName: 'short'
+    });
+    
+    const formattedStart = dateFormat.format(startDate);
+    const formattedEnd = dateFormat.format(endDate);
+    
+    // Create a more readable display name for the resource admin
+    const adminName = resource.adminName || resource.adminEmail.split('@')[0];
+    
+    // Create the email content
+    const htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+          .header h2 { margin: 0; color: #333; }
+          .content { padding: 20px 15px; }
+          .event-details { margin-bottom: 20px; }
+          .detail-row { margin-bottom: 10px; }
+          .label { font-weight: bold; display: inline-block; width: 100px; vertical-align: top; }
+          /* Rich text styling */
+          .description-container { display: flex; align-items: start; }
+          .description-content { 
+            display: inline-block; 
+            margin-left: 10px; 
+            max-width: 450px; 
+          }
+          .description-content p { margin-top: 0; margin-bottom: 0.5rem; }
+          .description-content strong, .description-content b { font-weight: bold; }
+          .description-content em, .description-content i { font-style: italic; }
+          .description-content ul { list-style-type: disc; margin-left: 20px; padding-left: 0; }
+          .description-content ol { list-style-type: decimal; margin-left: 20px; padding-left: 0; }
+          .description-content a { color: #0066cc; text-decoration: underline; }
+          .description-content h1, .description-content h2, .description-content h3 { 
+            font-weight: bold; 
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem; 
+          }
+          .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+          .resource-details { background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin-top: 15px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Resource Booking Notification</h2>
+          </div>
+          <div class="content">
+            <p>Hello ${adminName},</p>
+            <p>The following event has reserved your resource:</p>
+            
+            <div class="event-details">
+              <div class="detail-row">
+                <span class="label">Event:</span> ${title}
+              </div>
+              ${description ? `
+              <div class="detail-row">
+                <span class="label">Description:</span>
+                <div class="description-content">${description}</div>
+              </div>` : ''}
+              ${location ? `
+              <div class="detail-row">
+                <span class="label">Location:</span> ${location}
+              </div>` : ''}
+              <div class="detail-row">
+                <span class="label">Start:</span> ${formattedStart}
+              </div>
+              <div class="detail-row">
+                <span class="label">End:</span> ${formattedEnd}
+              </div>
+              <div class="detail-row">
+                <span class="label">Organizer:</span> ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
+              </div>
+            </div>
+            
+            <div class="resource-details">
+              <h3>Resource Information</h3>
+              <div class="detail-row">
+                <span class="label">Resource:</span> ${resource.subType}
+              </div>
+              <div class="detail-row">
+                <span class="label">Capacity:</span> ${resource.capacity !== undefined ? resource.capacity : 'Not specified'}
+              </div>
+              ${resource.remarks ? `
+              <div class="detail-row">
+                <span class="label">Remarks:</span> ${resource.remarks}
+              </div>` : ''}
+            </div>
+            
+            <p>The event details are attached in an iCalendar file that you can import into your calendar application.</p>
+          </div>
+          <div class="footer">
+            <p>This notification was sent using CalDAV Calendar Application.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `;
+
+    const plainText = `Hello ${adminName},
+
+The following event has reserved your resource:
+
+Event: ${title}
+${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}
+Start: ${formattedStart}
+End: ${formattedEnd}
+Organizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
+
+Resource Information:
+Resource: ${resource.subType}
+Capacity: ${resource.capacity !== undefined ? resource.capacity : 'Not specified'}\n${resource.remarks ? `Remarks: ${resource.remarks}\n` : ''}
+
+The event details are attached in an iCalendar file that you can import into your calendar application.
+
+This notification was sent using CalDAV Calendar Application.`;
+
+    // Prepare the email
+    const mailOptions = {
+      from: {
+        name: this.config.fromName || 'Calendar Application',
+        address: this.config.fromEmail
+      },
+      to: resource.adminName 
+        ? `"${resource.adminName}" <${resource.adminEmail}>`
+        : resource.adminEmail,
+      subject: `Resource Booking Notification: ${title}`,
+      html: htmlContent,
+      text: plainText,
+      attachments: [
+        {
+          filename: `resource-booking-${data.uid}.ics`,
+          content: icsData,
+          contentType: 'text/calendar; method=REQUEST'
+        }
+      ]
+    };
+
+    // Send the email
+    return this.transporter.sendMail(mailOptions);
+  }
+
+  /**
+   * Send a single invitation email to an attendee
+   * @param data Event data
+   * @param attendee Attendee information
+   * @param icsData The ICS calendar data
+   * @returns Promise resolving to the send info
+   */
+  private async sendInvitationEmail(
+    data: EventInvitationData,
+    attendee: Attendee,
+    icsData: string
+  ): Promise<nodemailer.SentMessageInfo> {
+    // Generate the meeting agenda PDF
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = await generateEventAgendaPDF(data);
+      console.log(`Successfully generated PDF agenda for event ${data.uid}`);
+    } catch (error) {
+      console.error(`Failed to generate PDF agenda for event ${data.uid}:`, error);
+      // If PDF generation fails, continue with the invite but without the PDF attachment
+      pdfBuffer = Buffer.from(''); 
+    }
+    if (!this.transporter || !this.config) {
+      throw new Error('Email service not initialized');
+    }
+
+    const { startDate, endDate, title, description, location } = data;
+    
+    // Format the date for display in email
+    const dateFormat = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      timeZoneName: 'short'
+    });
+    
+    const formattedStart = dateFormat.format(startDate);
+    const formattedEnd = dateFormat.format(endDate);
+    
+    // Create a more readable display name for the attendee
+    const attendeeName = attendee.name || attendee.email.split('@')[0];
+    
+    // Create the email content
+    const htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+          .header h2 { margin: 0; color: #333; }
+          .content { padding: 20px 15px; }
+          .event-details { margin-bottom: 20px; }
+          .detail-row { margin-bottom: 10px; }
+          .label { font-weight: bold; display: inline-block; width: 100px; }
+          .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+          /* Rich text styling */
+          .description-container { display: flex; align-items: start; }
+          .description-content { 
+            display: inline-block; 
+            margin-left: 10px; 
+            max-width: 450px; 
+          }
+          .description-content p { margin-top: 0; margin-bottom: 0.5rem; }
+          .description-content strong, .description-content b { font-weight: bold; }
+          .description-content em, .description-content i { font-style: italic; }
+          .description-content ul { list-style-type: disc; margin-left: 20px; padding-left: 0; }
+          .description-content ol { list-style-type: decimal; margin-left: 20px; padding-left: 0; }
+          .description-content a { color: #0066cc; text-decoration: underline; }
+          .description-content h1, .description-content h2, .description-content h3 { 
+            font-weight: bold; 
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem; 
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Calendar Invitation</h2>
+          </div>
+          <div class="content">
+            <p>Hello ${attendeeName},</p>
+            <p>You have been invited to the following event:</p>
+            
+            <div class="event-details">
+              <div class="detail-row">
+                <span class="label">Event:</span> ${title}
+              </div>
+              ${description ? `
+              <div class="detail-row">
+                <span class="label">Description:</span> ${description}
+              </div>` : ''}
+              ${location ? `
+              <div class="detail-row">
+                <span class="label">Location:</span> ${location}
+              </div>` : ''}
+              <div class="detail-row">
+                <span class="label">Start:</span> ${formattedStart}
+              </div>
+              <div class="detail-row">
+                <span class="label">End:</span> ${formattedEnd}
+              </div>
+              <div class="detail-row">
+                <span class="label">Organizer:</span> ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
+              </div>
+              
+              ${data.resources && data.resources.length > 0 ? `
+              <div class="detail-row" style="margin-top: 15px;">
+                <span class="label" style="display: block; margin-bottom: 5px;">Resources:</span>
+                <div style="margin-left: 15px; padding: 10px; background-color: #f9f9f9; border-radius: 5px;">
+                  ${data.resources.map((resource, index) => `
+                    <div style="margin-bottom: ${index < data.resources.length - 1 ? '10px' : '0px'}; padding-bottom: ${index < data.resources.length - 1 ? '10px' : '0px'}; ${index < data.resources.length - 1 ? 'border-bottom: 1px solid #eee;' : ''}">
+                      <div><strong>${resource.name || resource.subType}</strong> ${(resource.name && resource.name !== resource.subType) ? `(${resource.subType})` : ''}</div>
+                      ${resource.capacity ? `<div>Capacity: ${resource.capacity}</div>` : ''}
+                      ${resource.adminName ? `<div>Administrator: ${resource.adminName}</div>` : ''}
+                      ${resource.remarks ? `<div>Notes: ${resource.remarks}</div>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+              ` : ''}
+            </div>
+            
+            <p>This email includes two attachments:</p>
+            <ol>
+              <li>An iCalendar (.ics) file that you can import into your calendar application</li>
+              <li>A meeting agenda PDF with complete event details</li>
+            </ol>
+          </div>
+          <div class="footer">
+            <p>This invitation was sent using CalDAV Calendar Application.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `;
+
+    // Prepare the email
+    const mailOptions = {
+      from: {
+        name: this.config.fromName || 'Calendar Application',
+        address: this.config.fromEmail
+      },
+      to: attendee.name 
+        ? `"${attendee.name}" <${attendee.email}>`
+        : attendee.email,
+      subject: `Invitation: ${title}`,
+      html: htmlContent,
+      text: `Hello ${attendeeName},\n\nYou have been invited to the following event:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n${data.resources && data.resources.length > 0 ? `\nResources:\n${data.resources.map(resource => `- ${resource.name || resource.subType}${(resource.name && resource.subType && resource.name !== resource.subType) ? ` (${resource.subType})` : ''}\n  ${resource.capacity ? `Capacity: ${resource.capacity}\n  ` : ''}${resource.adminName ? `Administrator: ${resource.adminName}\n  ` : ''}${resource.remarks ? `Notes: ${resource.remarks}` : ''}`).join('\n\n')}\n` : ''}\n\nThis email includes two attachments:\n1. An iCalendar (.ics) file that you can import into your calendar application\n2. A meeting agenda PDF with complete event details\n\nThis invitation was sent using CalDAV Calendar Application.`,
+      attachments: [
+        {
+          filename: `invitation-${data.uid}.ics`,
+          content: icsData,
+          contentType: 'text/calendar; method=REQUEST'
+        },
+        ...(pdfBuffer.length > 0 ? [{
+          filename: `meeting-agenda-${data.uid}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        }] : [])
+      ]
+      // Removed the global headers that were causing the whole email to be treated as calendar data
+    };
+
+    // Send the email
+    return this.transporter.sendMail(mailOptions);
+  }
+
+  /**
+   * Send a test email to verify SMTP configuration
+   * @param recipientEmail The email address to send the test to
+   * @returns Promise resolving to the send info
+   */
+  async sendTestEmail(recipientEmail: string): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      if (!this.transporter || !this.config) {
+        throw new Error('Email service not initialized');
+      }
+
+      // Create the email content
+      const htmlContent = `
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+            .header h2 { margin: 0; color: #333; }
+            .content { padding: 20px 15px; }
+            .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h2>SMTP Test Email</h2>
+            </div>
+            <div class="content">
+              <p>This is a test email to verify your SMTP configuration.</p>
+              <p>If you're receiving this email, your SMTP settings are working correctly!</p>
+              <p>You can now use email notifications and calendar invitations in the CalDAV Calendar Application.</p>
+            </div>
+            <div class="footer">
+              <p>Sent from CalDAV Calendar Application</p>
+              <p>Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? 'Secure' : 'Unsecure'})</p>
+            </div>
+          </div>
+        </body>
+      </html>
+      `;
+
+      const plainText = `This is a test email to verify your SMTP configuration.
+If you're receiving this email, your SMTP settings are working correctly!
+You can now use email notifications and calendar invitations in the CalDAV Calendar Application.
+
+Sent from CalDAV Calendar Application
+Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? 'Secure' : 'Unsecure'})`;
+
+      // Prepare the email
+      const mailOptions = {
+        from: {
+          name: this.config.fromName || 'Calendar Application',
+          address: this.config.fromEmail
+        },
+        to: recipientEmail,
+        subject: 'SMTP Configuration Test',
+        html: htmlContent,
+        text: plainText
+      };
+
+      // Send the email
+      const info = await this.transporter.sendMail(mailOptions);
+      
+      return {
+        success: true,
+        message: 'Test email sent successfully',
+        details: {
+          messageId: info.messageId,
+          response: info.response
+        }
+      };
+    } catch (error) {
+      console.error('Error sending test email:', error);
+      return {
+        success: false,
+        message: `Failed to send test email: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        details: error
+      };
+    }
+  }
+
+  /**
+   * Generate an email preview for an event invitation
+   * @param data Event invitation data
+   * @returns HTML content for the email preview
+   */
+  public generateEmailPreview(data: EventInvitationData): string {
+    const { title, description, location, startDate, endDate, organizer, attendees, resources } = data;
+    
+    // Get valid date objects for handling edge cases
+    let validStartDate: Date;
+    let validEndDate: Date;
+    
+    try {
+      validStartDate = startDate instanceof Date ? startDate : new Date(startDate);
+      validEndDate = endDate instanceof Date ? endDate : new Date(endDate);
+      
+      // Check for invalid dates and use fallbacks
+      if (isNaN(validStartDate.getTime())) {
+        console.warn("Invalid start date in email preview, using current time");
+        validStartDate = new Date();
+      }
+      
+      if (isNaN(validEndDate.getTime())) {
+        console.warn("Invalid end date in email preview, using start time + 1 hour");
+        validEndDate = new Date(validStartDate);
+        validEndDate.setHours(validEndDate.getHours() + 1);
+      }
+    } catch (error) {
+      console.warn("Error parsing dates for email preview:", error);
+      validStartDate = new Date();
+      validEndDate = new Date();
+      validEndDate.setHours(validEndDate.getHours() + 1);
+    }
+    
+    // Format the date for display in email
+    const dateFormat = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      timeZoneName: 'short'
+    });
+    
+    const formattedStart = dateFormat.format(validStartDate);
+    const formattedEnd = dateFormat.format(validEndDate);
+    
+    // Create the email content similar to what we'd send
+    const htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+          .header h2 { margin: 0; color: #333; }
+          .content { padding: 20px 15px; }
+          .event-details { margin-bottom: 20px; }
+          .detail-row { margin-bottom: 10px; }
+          .label { font-weight: bold; display: inline-block; width: 100px; vertical-align: top; }
+          .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+          .preview-note { background-color: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ffeeba; }
+          .attendees-list { margin-top: 15px; }
+          .attendee-item { margin-bottom: 5px; }
+          
+          /* Rich text styling */
+          .description-container { display: flex; align-items: start; }
+          .description-content { 
+            display: inline-block; 
+            margin-left: 10px; 
+            max-width: 450px; 
+          }
+          .description-content p { margin-top: 0; margin-bottom: 0.5rem; }
+          .description-content strong, .description-content b { font-weight: bold; }
+          .description-content em, .description-content i { font-style: italic; }
+          .description-content ul { list-style-type: disc; margin-left: 20px; padding-left: 0; }
+          .description-content ol { list-style-type: decimal; margin-left: 20px; padding-left: 0; }
+          .description-content a { color: #0066cc; text-decoration: underline; }
+          .description-content h1, .description-content h2, .description-content h3 { 
+            font-weight: bold; 
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem; 
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="preview-note">
+            <strong>Email Preview:</strong> This is how your invitation will appear to recipients. No emails have been sent yet.
+          </div>
+          
+          <div class="header">
+            <h2>Calendar Invitation</h2>
+          </div>
+          
+          <div class="content">
+            <p>Hello [Recipient],</p>
+            <p>You have been invited to the following event:</p>
+            
+            <div class="event-details">
+              <div class="detail-row">
+                <span class="label">Event:</span> ${title}
+              </div>
+              ${description ? `
+              <div class="detail-row">
+                <span class="label">Description:</span>
+                <div class="description-content">${description}</div>
+              </div>` : ''}
+              ${location ? `
+              <div class="detail-row">
+                <span class="label">Location:</span> ${location}
+              </div>` : ''}
+              <div class="detail-row">
+                <span class="label">Start:</span> ${formattedStart}
+              </div>
+              <div class="detail-row">
+                <span class="label">End:</span> ${formattedEnd}
+              </div>
+              <div class="detail-row">
+                <span class="label">Organizer:</span> ${organizer ? (organizer.name || organizer.email) : 'Unknown'}
+              </div>
+              
+              <div class="detail-row">
+                <span class="label">Attendees:</span> 
+                <div class="attendees-list">
+                  ${attendees && attendees.length > 0 ? attendees.map(attendee => `
+                    <div class="attendee-item">
+                      ${attendee.name ? `${attendee.name} (${attendee.email})` : attendee.email} 
+                      - Role: ${attendee.role || 'Participant'}
+                    </div>
+                  `).join('') : '<div class="attendee-item">No attendees</div>'}
+                </div>
+              </div>
+              
+              ${resources && resources.length > 0 ? `
+              <div class="detail-row">
+                <span class="label">Resources:</span> 
+                <div class="resources-list">
+                  ${resources.map((resource: Resource) => `
+                    <div class="resource-item">
+                      ${resource.subType} (Capacity: ${resource.capacity !== undefined ? resource.capacity : 'Not specified'}) 
+                      ${resource.remarks ? `<br><em>Notes: ${resource.remarks}</em>` : ''}
+                      <br>Admin: ${resource.adminName || resource.adminEmail}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+              ` : ''}
+            </div>
+            
+            <p>This email will include two attachments:</p>
+            <ol>
+              <li>An iCalendar (.ics) file that recipients can import into their calendar applications</li>
+              <li>A meeting agenda PDF with complete event details</li>
+            </ol>
+          </div>
+          
+          <div class="footer">
+            <p>This invitation will be sent using CalDAV Calendar Application.</p>
+            <p>SMTP Server: ${this.config?.host || 'No SMTP server configured'}</p>
+            <p>From: ${this.config?.fromName ? `${this.config.fromName} <${this.config.fromEmail}>` : this.config?.fromEmail || 'Email not configured'}</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `;
+    
+    return htmlContent;
+  }
+
+  /**
+   * Generate ICS data for calendar invitations
+   * @param data Event data
+   * @returns ICS formatted string
+   */
+  /**
+   * Send cancellation notices to all attendees for a cancelled event
+   * @param userId The user ID sending the cancellation
+   * @param data Event data with cancellation status
+   * @returns A result object with success status and details
+   */
+  async sendEventCancellation(
+    userId: number,
+    data: EventInvitationData
+  ): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      console.log('=== BEGINNING EVENT CANCELLATION PROCESS ===');
+      console.log(`Event title: "${data.title}" (UID: ${data.uid})`);
+      
+      // Initialize email service if not already initialized
+      if (!this.transporter || !this.config || this.config.userId !== userId) {
+        console.log(`Initializing email service for user ID ${userId}`);
+        const initSuccess = await this.initialize(userId);
+        if (!initSuccess) {
+          console.error('Email service initialization failed');
+          return {
+            success: false,
+            message: 'Failed to initialize email service. Please check your SMTP configuration.'
+          };
+        }
+        console.log('Email service initialization successful');
+      }
+
+      // Per RFC 5546, we MUST use the original ICS data when cancelling events
+      // and only make the necessary modifications to convert it to a cancellation
+      let cancellationIcsData: string;
+      
+      // Variables to track original and preserved resource lines for WebSocket notification
+      let originalResourceLines: string[] = [];
+      let cancelledResourceLines: string[] = [];
+      
+      // Validate the raw data first
+      if (!data.rawData || typeof data.rawData !== 'string' || data.rawData.length < 50) {
+        console.warn(`Raw ICS data is missing or invalid (length: ${data.rawData ? data.rawData.length : 0})`);
+        
+        // Check if we have preserved original resource attendees before giving up on raw data
+        if (data._originalResourceAttendees && data._originalResourceAttendees.length > 0) {
+          console.log(`We have ${data._originalResourceAttendees.length} preserved original resource attendees, using those despite missing raw data`);
+          
+          // Store for WebSocket notification later
+          originalResourceLines = data._originalResourceAttendees;
+          
+          // Extract any UID from original resource attendees if possible for extra RFC compliance
+          let foundOriginalUid = data.uid;
+          const originalResourceText = data._originalResourceAttendees.join('\n');
+          const uidMatch = originalResourceText.match(/UID:([^\r\n]+)/i);
+          if (uidMatch && uidMatch[1]) {
+            foundOriginalUid = uidMatch[1];
+            console.log(`Extracted original UID from resource attendees: ${foundOriginalUid}`);
+            // Update the data object with this UID for maximum compliance
+            data.uid = foundOriginalUid;
+          }
+        }
+        
+        console.log('Generating cancellation ICS as a fallback, will try to preserve original data');
+        
+        // Mark the status as CANCELLED for ICS generation
+        const cancellationData = { ...data, status: 'CANCELLED' };
+        cancellationIcsData = this.generateICSData(cancellationData);
+        
+        // Extract resource lines from generated cancellation ICS for comparison
+        const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+        const allGeneratedAttendeeLines = cancellationIcsData.match(attendeePattern) || [];
+        cancelledResourceLines = allGeneratedAttendeeLines.filter(line => 
+          line.includes('CUTYPE=RESOURCE') || 
+          line.includes('X-RESOURCE-TYPE') || 
+          line.includes('RESOURCE-TYPE')
+        );
+      } else {
+        // We have valid raw data, use our specialized transformer for maximum RFC 5546 compliance
+        console.log(`Raw ICS data available (${data.rawData.length} chars), using direct modification for cancellation`);
+        console.log('This preserves the exact UID and all original resource attendees');
+        
+        try {
+          cancellationIcsData = this.transformIcsForCancellation(data.rawData, data);
+          
+          // Extract original resource attendee lines from raw data for comparison later
+          const originalAttendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const allOriginalAttendeeLines = data.rawData.match(originalAttendeePattern) || [];
+          originalResourceLines = allOriginalAttendeeLines.filter(line => 
+            line.includes('CUTYPE=RESOURCE') || 
+            line.includes('X-RESOURCE-TYPE') || 
+            line.includes('RESOURCE-TYPE')
+          );
+          
+          // Extract resource lines from the cancellation ICS for comparison
+          const cancelledAttendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const allCancelledAttendeeLines = cancellationIcsData.match(cancelledAttendeePattern) || [];
+          cancelledResourceLines = allCancelledAttendeeLines.filter(line => 
+            line.includes('CUTYPE=RESOURCE') || 
+            line.includes('X-RESOURCE-TYPE') || 
+            line.includes('RESOURCE-TYPE')
+          );
+          
+          console.log(`Original resource lines: ${originalResourceLines.length}, Cancelled resource lines: ${cancelledResourceLines.length}`);
+          
+          // Validate the generated ICS
+          const hasMethod = cancellationIcsData.includes('METHOD:CANCEL');
+          const hasStatus = cancellationIcsData.includes('STATUS:CANCELLED');
+          const hasValidStructure = cancellationIcsData.includes('BEGIN:VCALENDAR') && 
+                                   cancellationIcsData.includes('END:VCALENDAR') &&
+                                   cancellationIcsData.includes('BEGIN:VEVENT') &&
+                                   cancellationIcsData.includes('END:VEVENT');
+          
+          console.log(`Validation - METHOD:CANCEL: ${hasMethod}, STATUS:CANCELLED: ${hasStatus}, Valid structure: ${hasValidStructure}`);
+          
+          if (!hasMethod || !hasStatus || !hasValidStructure) {
+            throw new Error('Generated cancellation ICS failed validation');
+          }
+        } catch (transformError) {
+          console.error('Error in ICS transformation:', transformError);
+          console.log('Falling back to standard cancellation ICS generation');
+          
+          // Even when falling back, try to extract and preserve resource attendees and UID
+          const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const allAttendeeLines = data.rawData ? (data.rawData.match(attendeePattern) || []) : [];
+          const resourceAttendeeLines = allAttendeeLines.filter(line => 
+            line.includes('CUTYPE=RESOURCE') || 
+            line.includes('X-RESOURCE-TYPE') ||
+            line.includes('RESOURCE-TYPE')
+          );
+          
+          if (resourceAttendeeLines.length > 0) {
+            console.log(`Extracted ${resourceAttendeeLines.length} resource attendees from raw data for fallback`);
+            data._originalResourceAttendees = resourceAttendeeLines;
+          }
+          
+          // Extract UID from raw data if possible
+          if (data.rawData) {
+            const uidMatch = data.rawData.match(/UID:([^\r\n]+)/i);
+            if (uidMatch && uidMatch[1]) {
+              console.log(`Using original UID from raw data for fallback: ${uidMatch[1]}`);
+              data.uid = uidMatch[1];
+            }
+          }
+          
+          const cancellationData = { ...data, status: 'CANCELLED' };
+          cancellationIcsData = this.generateICSData(cancellationData);
+        }
+      }
+      
+      // Log the number of recipients
+      const attendeeCount = data.attendees?.length || 0;
+      const resourceCount = data.resources?.length || 0;
+      console.log(`Sending cancellation to ${attendeeCount} attendees and ${resourceCount} resources`);
+      
+      // Create arrays to track results for both attendees and resources
+      let allResults: PromiseSettledResult<any>[] = [];
+      let allRecipients: string[] = [];
+      
+      // Send cancellation to each attendee
+      if (data.attendees && data.attendees.length > 0) {
+        console.log(`Processing ${data.attendees.length} attendees for cancellation emails`);
+        const attendeePromises = data.attendees.map(attendee => {
+          console.log(`Sending cancellation to attendee: ${attendee.email}`);
+          return this.sendCancellationEmail(data, attendee, cancellationIcsData);
+        });
+        
+        // Wait for all attendee emails to be sent
+        const attendeeResults = await Promise.allSettled(attendeePromises);
+        allResults = [...allResults, ...attendeeResults];
+        allRecipients = [...allRecipients, ...data.attendees.map(a => a.email)];
+      }
+      
+      // Send cancellation to each resource admin if resources are present
+      if (data.resources && data.resources.length > 0) {
+        const resourcePromises = data.resources.map(resource => {
+          return this.sendResourceBookingNotification(
+            { ...data, status: 'CANCELLED' },
+            resource,
+            cancellationIcsData
+          );
+        });
+        
+        // Wait for all resource booking emails to be sent
+        const resourceResults = await Promise.allSettled(resourcePromises);
+        allResults = [...allResults, ...resourceResults];
+        allRecipients = [...allRecipients, ...data.resources.map(r => r.adminEmail)];
+      }
+      
+      // Count successful deliveries
+      const successful = allResults.filter(r => r.status === 'fulfilled').length;
+      const failed = allResults.filter(r => r.status === 'rejected').length;
+      
+      // Detailed results for debugging
+      const detailedResults = allResults.map((result, index) => {
+        return {
+          recipient: allRecipients[index],
+          success: result.status === 'fulfilled',
+          details: result.status === 'rejected' ? (result as PromiseRejectedResult).reason : undefined
+        };
+      });
+
+      if (failed > 0) {
+        return {
+          success: successful > 0, // Consider partially successful if at least one email was sent
+          message: `Sent cancellation notices to ${successful} out of ${allRecipients.length} recipients.`,
+          details: detailedResults
+        };
+      }
+
+      // Send notification through WebSocket for real-time updates
+      try {
+        // Import WebSocket notification handler
+        const { notifyEventCancelled } = require('./websocket-handler');
+        
+        // Get important details for the notification
+        const eventId = data.eventId || 0;
+        const calendarId = data.calendarId || 0;
+        const eventTitle = data.title || 'Untitled Event';
+        
+        // Analyze preservation status
+        const originalResourceCount = data.resources?.length || 0;
+        let preservedUid = data.uid || '';
+        
+        // Check for UID in cancellation ICS to verify preservation
+        if (cancellationIcsData) {
+          const uidMatch = cancellationIcsData.match(/UID:([^\r\n]+)/i);
+          if (uidMatch && uidMatch[1]) {
+            preservedUid = uidMatch[1];
+          }
+        }
+        
+        // Check if resources were preserved in the cancellation
+        const resourcesPreserved = cancelledResourceLines && originalResourceLines && 
+          (cancelledResourceLines.length === originalResourceLines.length);
+        
+        console.log(`Sending WebSocket notification for cancelled event: "${eventTitle}" (${preservedUid})`);
+        console.log(`Resource preservation status: ${resourcesPreserved ? 'Success' : 'Incomplete'} - ${cancelledResourceLines?.length || 0} of ${originalResourceLines?.length || 0}`);
+        
+        // Send the real-time notification
+        notifyEventCancelled(
+          userId,
+          eventId,
+          calendarId,
+          eventTitle,
+          preservedUid,
+          resourcesPreserved,
+          originalResourceCount,
+          { emailResults: detailedResults }
+        );
+      } catch (wsError) {
+        console.error('Error sending WebSocket cancellation notification:', wsError);
+        // Continue anyway - email notifications are the primary mechanism
+      }
+
+      return {
+        success: true,
+        message: `Successfully sent all ${successful} cancellation notifications.`,
+        details: detailedResults
+      };
+    } catch (error) {
+      console.error('Error sending event cancellations:', error);
+      return {
+        success: false,
+        message: `Failed to send cancellations: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        details: error
+      };
+    }
+  }
+  
+  /**
+   * Transform original ICS data for cancellation (RFC 5546 compliant)
+   * Uses the specialized ICS cancellation generator to ensure full compliance
+   * @param originalIcs The original ICS data string
+   * @param data Additional event data for the cancellation
+   * @returns Modified ICS data for cancellation
+   */
+  public transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
+    try {
+      // Add detailed logging to help with debugging
+      console.log('=== TRANSFORMING ICS FOR CANCELLATION (RFC 5546 COMPLIANT) ===');
+      console.log(`Original ICS length: ${originalIcs.length} characters`);
+      
+      // First, extract the original UID to make absolutely sure we preserve it
+      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+      if (!uidMatch || !uidMatch[1]) {
+        console.warn('Could not find UID in original ICS data, checking data.uid');
+        // If there's no UID in the ICS, use the UID from the data or generate a warning
+        if (!data.uid) {
+          console.error('No UID available in data object either! This will cause RFC compliance issues.');
+        } else {
+          console.log(`Using UID from data object: ${data.uid}`);
+        }
+      }
+      
+      // Always prioritize UID from the original ICS over any other source
+      const originalUid = uidMatch && uidMatch[1] ? uidMatch[1] : data.uid;
+      console.log(`PRESERVING EXACT ORIGINAL UID FOR CANCELLATION: ${originalUid}`);
+      
+      // Extract the original sequence number
+      const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
+      const originalSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
+      console.log(`Original sequence number: ${originalSequence}, will increment to ${originalSequence + 1}`);
+      
+      // Import the dedicated cancellation generator
+      const { generateCancellationIcs } = require('./ics-cancellation-generator');
+      
+      // Extract ALL attendee lines for comprehensive preservation
+      const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+      const allAttendeeLines = originalIcs.match(attendeePattern) || [];
+      
+      // Specifically identify resource attendee lines using multiple patterns
+      const resourceAttendeeLines = allAttendeeLines.filter(line => 
+        line.includes('CUTYPE=RESOURCE') || 
+        line.includes('X-RESOURCE-TYPE') || 
+        line.includes('RESOURCE-TYPE') ||
+        line.includes('X-RESOURCE-CAPACITY') || 
+        line.includes('RESOURCE-CAPACITY')
+      );
+      
+      console.log(`Found ${allAttendeeLines.length} total attendee lines`);
+      console.log(`Identified ${resourceAttendeeLines.length} resource attendee lines to preserve`);
+      
+      // Log the actual resource attendee lines for debugging
+      if (resourceAttendeeLines.length > 0) {
+        console.log('Resource attendee lines to preserve:');
+        resourceAttendeeLines.forEach((line, idx) => {
+          console.log(`#${idx+1}: ${line}`);
+        });
+      } else {
+        console.log('No resource attendee lines found in original ICS');
+      }
+      
+      // Create a complete event data object with all available data
+      const completeEventData = { 
+        ...data,
+        uid: originalUid,  // Always use the extracted original UID
+        sequence: originalSequence,  // Use the original sequence (will be incremented)
+        _originalResourceAttendees: resourceAttendeeLines.length > 0 ? resourceAttendeeLines : undefined
+      };
+      
+      // Modify the title to have CANCELLED prefix per RFC 5546 if needed
+      if (completeEventData.title && !completeEventData.title.startsWith('CANCELLED:') && !completeEventData.title.startsWith('CANCELLED: ')) {
+        console.log(`Adding 'CANCELLED: ' prefix to title: ${completeEventData.title}`);
+        completeEventData.title = `CANCELLED: ${completeEventData.title}`;
+      }
+      
+      // Try to extract resources as structured objects if we don't have original lines
+      if (resourceAttendeeLines.length === 0) {
+        console.log('Attempting to extract resources from raw ICS data in alternative ways');
+        this.extractResourcesFromRawIcs(originalIcs, completeEventData);
+      }
+      
+      // Generate the cancellation ICS with our specialized generator
+      console.log('Generating cancellation ICS with specialized generator');
+      const result = generateCancellationIcs(originalIcs, completeEventData);
+      
+      // Verify the result has the necessary components
+      const resultHasMethod = result.includes('METHOD:CANCEL');
+      const resultHasStatus = result.includes('STATUS:CANCELLED');
+      const resultHasUid = result.includes(`UID:${originalUid}`);
+      
+      console.log(`Verification - METHOD:CANCEL: ${resultHasMethod}, STATUS:CANCELLED: ${resultHasStatus}, Original UID preserved: ${resultHasUid}`);
+      
+      // Count resource attendees in result
+      const resultResourceCount = (result.match(/CUTYPE=RESOURCE/g) || []).length;
+      console.log(`Original resource count: ${resourceAttendeeLines.length}, Result resource count: ${resultResourceCount}`);
+      
+      // Final verification - if we lost resources or UID, fix it manually
+      if (!resultHasUid || (resourceAttendeeLines.length > 0 && resultResourceCount === 0)) {
+        console.warn('Critical data lost in cancellation ICS generation!');
+        console.warn(`UID preserved: ${resultHasUid}, Resources preserved: ${resultResourceCount > 0}`);
+        
+        // Attempt emergency repair
+        let repairedResult = result;
+        
+        // Fix UID if missing
+        if (!resultHasUid && originalUid) {
+          console.log('Emergency repair: Adding missing UID');
+          const uidLine = `UID:${originalUid}`;
+          repairedResult = repairedResult.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\n${uidLine}`);
+        }
+        
+        // Fix missing resources if needed
+        if (resourceAttendeeLines.length > 0 && resultResourceCount === 0) {
+          console.log('Emergency repair: Adding missing resource attendees');
+          let resourceLines = resourceAttendeeLines.join('\r\n');
+          repairedResult = repairedResult.replace('END:VEVENT', `${resourceLines}\r\nEND:VEVENT`);
+        }
+        
+        return repairedResult;
+      }
+      
+      return result;
+    } catch (error) {
+      console.error('Error transforming ICS for cancellation:', error);
+      // Even in fallback, preserve critical data
+      console.log('Using enhanced fallback to generate cancellation ICS');
+      
+      // Extract resource attendee lines before falling back
+      const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+      const allAttendeeLines = originalIcs ? (originalIcs.match(attendeePattern) || []) : [];
+      const resourceAttendeeLines = allAttendeeLines.filter(line => 
+        line.includes('CUTYPE=RESOURCE') || 
+        line.includes('X-RESOURCE-TYPE')
+      );
+      
+      // Extract UID from original ICS or use the one from data
+      const uidMatch = originalIcs ? originalIcs.match(/UID:([^\r\n]+)/i) : null;
+      const originalUid = uidMatch && uidMatch[1] ? uidMatch[1] : data.uid;
+      
+      // Create a complete cancellation data object
+      const cancellationData = { 
+        ...data, 
+        status: 'CANCELLED',
+        uid: originalUid,  // Ensure original UID is preserved in fallback
+        _originalResourceAttendees: resourceAttendeeLines.length > 0 ? resourceAttendeeLines : undefined
+      };
+      
+      // Ensure title has CANCELLED prefix per RFC 5546
+      if (cancellationData.title && !cancellationData.title.startsWith('CANCELLED:') && !cancellationData.title.startsWith('CANCELLED: ')) {
+        console.log(`Fallback: Adding 'CANCELLED: ' prefix to title: ${cancellationData.title}`);
+        cancellationData.title = `CANCELLED: ${cancellationData.title}`;
+      }
+      
+      return this.generateICSData(cancellationData);
+    }
+  }
+  
+  /**
+   * Extract resources from raw ICS data and add them to the event data
+   * This is a fallback method if we can't extract resource attendees directly
+   */
+  private extractResourcesFromRawIcs(rawIcs: string, eventData: any): void {
+    try {
+      if (!rawIcs) return;
+      
+      console.log('Attempting to extract resources from raw ICS data as a fallback');
+      
+      // Try to extract resource attendees from the raw data with multiple patterns
+      const resourcePatterns = [
+        /ATTENDEE;[^:]*CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/gi,
+        /ATTENDEE;[^:]*CN=([^;:]+)[^:]*CUTYPE=RESOURCE[^:]*:mailto:([^\r\n]+)/gi,
+        /ATTENDEE;[^:]*X-RESOURCE-TYPE=[^:]*:mailto:([^\r\n]+)/gi
+      ];
+      
+      let extractedResources: any[] = [];
+      
+      for (const pattern of resourcePatterns) {
+        const matches = Array.from(rawIcs.matchAll(pattern));
+        if (matches && matches.length > 0) {
+          console.log(`Found ${matches.length} resource attendees in raw data using pattern: ${pattern}`);
+          
+          // Parse each resource attendee into our format
+          const resources = matches.map((match: RegExpMatchArray) => {
+            const resourceStr = match[0];
+            
+            // Extract email
+            const emailMatch = resourceStr.match(/:mailto:([^\r\n]+)/);
+            const email = emailMatch ? emailMatch[1] : '';
+            
+            // Extract name/subType
+            const nameMatch = resourceStr.match(/CN=([^;:]+)/);
+            const subType = nameMatch ? nameMatch[1] : 'Resource';
+            
+            // Extract type from X-RESOURCE-TYPE or fallback to standard parameters
+            const typeMatches = [
+              resourceStr.match(/X-RESOURCE-TYPE=([^;:]+)/),
+              resourceStr.match(/RESOURCE-TYPE=([^;:]+)/),
+              resourceStr.match(/X-TYPE=([^;:]+)/)
+            ];
+            const typeMatch = typeMatches.find(match => match !== null);
+            const resourceType = typeMatch ? typeMatch[1] : 'Resource';
+            
+            // Extract capacity with multiple patterns
+            const capacityMatches = [
+              resourceStr.match(/X-RESOURCE-CAPACITY=(\d+)/),
+              resourceStr.match(/RESOURCE-CAPACITY=(\d+)/),
+              resourceStr.match(/X-CAPACITY=(\d+)/),
+              resourceStr.match(/CAPACITY=(\d+)/)
+            ];
+            const capacityMatch = capacityMatches.find(match => match !== null);
+            const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : undefined;
+            
+            // Extract admin name
+            const adminNameMatches = [
+              resourceStr.match(/X-ADMIN-NAME=([^;:]+)/),
+              resourceStr.match(/ADMIN-NAME=([^;:]+)/),
+              resourceStr.match(/X-ADMIN=([^;:]+)/)
+            ];
+            const adminNameMatch = adminNameMatches.find(match => match !== null);
+            const adminName = adminNameMatch ? adminNameMatch[1] : undefined;
+            
+            return {
+              id: email,
+              name: subType,
+              adminEmail: email,
+              adminName: adminName || subType,
+              type: resourceType,
+              subType,
+              capacity,
+              displayName: subType,
+              email: email
+            };
+          });
+          
+          if (resources.length > 0) {
+            extractedResources = resources;
+            break; // Once we have resources, stop trying patterns
+          }
+        }
+      }
+      
+      if (extractedResources.length > 0) {
+        console.log(`Successfully extracted ${extractedResources.length} resources from raw ICS`);
+        eventData.resources = extractedResources;
+        
+        // Also save the original resource attendee lines for direct use
+        const attendeeLines = rawIcs.match(/ATTENDEE[^:\r\n]+:[^\r\n]+/g) || [];
+        const resourceAttendeeLines = attendeeLines.filter(line => 
+          line.includes('CUTYPE=RESOURCE') || 
+          line.includes('X-RESOURCE-TYPE')
+        );
+        
+        if (resourceAttendeeLines.length > 0) {
+          eventData._originalResourceAttendees = resourceAttendeeLines;
+          console.log(`Preserved ${resourceAttendeeLines.length} complete resource attendee lines`);
+        }
+      } else {
+        console.warn('No resources could be extracted from raw ICS data');
+      }
+    } catch (e) {
+      console.error('Error extracting resources from raw ICS:', e);
+    }
+  }
+
+  /**
+   * Send a cancellation email to an attendee
+   * @param data Event data
+   * @param attendee Attendee information
+   * @param icsData The ICS calendar data with CANCEL method
+   * @returns Promise resolving to the send info
+   */
+  private async sendCancellationEmail(
+    data: EventInvitationData,
+    attendee: Attendee,
+    icsData: string
+  ): Promise<nodemailer.SentMessageInfo> {
+    if (!this.transporter || !this.config) {
+      throw new Error('Email service not initialized');
+    }
+
+    const { startDate, endDate, title, description, location, resources } = data;
+    
+    // Format the date for display in email
+    const dateFormat = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      timeZoneName: 'short'
+    });
+    
+    const formattedStart = dateFormat.format(startDate);
+    const formattedEnd = dateFormat.format(endDate);
+    
+    // Create a more readable display name for the attendee
+    const attendeeName = attendee.name || attendee.email.split('@')[0];
+    
+    // Create the email content for cancellation
+    const htmlContent = `
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px 5px 0 0; }
+          .header h2 { margin: 0; color: #333; }
+          .content { padding: 20px 15px; }
+          .cancelled-banner { background-color: #ffeeee; color: #990000; padding: 10px; border-radius: 5px; margin-bottom: 20px; text-align: center; font-weight: bold; }
+          .event-details { margin-bottom: 20px; }
+          .detail-row { margin-bottom: 10px; }
+          .label { font-weight: bold; display: inline-block; width: 100px; vertical-align: top; }
+          .footer { font-size: 12px; color: #666; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px; }
+          
+          /* Rich text styling */
+          .description-container { display: flex; align-items: start; }
+          .description-content { 
+            display: inline-block; 
+            margin-left: 10px; 
+            max-width: 450px; 
+          }
+          .description-content p { margin-top: 0; margin-bottom: 0.5rem; }
+          .description-content strong, .description-content b { font-weight: bold; }
+          .description-content em, .description-content i { font-style: italic; }
+          .description-content ul { list-style-type: disc; margin-left: 20px; padding-left: 0; }
+          .description-content ol { list-style-type: decimal; margin-left: 20px; padding-left: 0; }
+          .description-content a { color: #0066cc; text-decoration: underline; }
+          .description-content h1, .description-content h2, .description-content h3 { 
+            font-weight: bold; 
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem; 
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>Event Cancellation</h2>
+          </div>
+          <div class="content">
+            <div class="cancelled-banner">THIS EVENT HAS BEEN CANCELLED</div>
+            
+            <p>Hello ${attendeeName},</p>
+            <p>The following event has been <strong>cancelled</strong>:</p>
+            
+            <div class="event-details">
+              <div class="detail-row">
+                <span class="label">Event:</span> ${title}
+              </div>
+              ${description ? `
+              <div class="detail-row">
+                <span class="label">Description:</span>
+                <div class="description-content">${description}</div>
+              </div>` : ''}
+              ${location ? `
+              <div class="detail-row">
+                <span class="label">Location:</span> ${location}
+              </div>` : ''}
+              <div class="detail-row">
+                <span class="label">Start:</span> ${formattedStart}
+              </div>
+              <div class="detail-row">
+                <span class="label">End:</span> ${formattedEnd}
+              </div>
+              <div class="detail-row">
+                <span class="label">Organizer:</span> ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}
+              </div>
+              
+              ${resources && resources.length > 0 ? `
+              <div class="detail-row" style="margin-top: 15px;">
+                <span class="label" style="display: block; margin-bottom: 5px;">Resources:</span>
+                <div style="margin-left: 15px; padding: 10px; background-color: #f9f9f9; border-radius: 5px;">
+                  ${resources.map((resource, index) => `
+                    <div style="margin-bottom: ${index < resources.length - 1 ? '10px' : '0px'}; padding-bottom: ${index < resources.length - 1 ? '10px' : '0px'}; ${index < resources.length - 1 ? 'border-bottom: 1px solid #eee;' : ''}">
+                      <div><strong>${resource.name || resource.subType}</strong> ${(resource.name && resource.name !== resource.subType) ? `(${resource.subType})` : ''}</div>
+                      ${resource.capacity ? `<div>Capacity: ${resource.capacity}</div>` : ''}
+                      ${resource.adminName ? `<div>Administrator: ${resource.adminName}</div>` : ''}
+                      ${resource.remarks ? `<div>Notes: ${resource.remarks}</div>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+              ` : ''}
+            </div>
+            
+            <p>Your calendar will be updated automatically if you previously accepted this invitation.</p>
+          </div>
+          <div class="footer">
+            <p>This cancellation notice was sent using CalDAV Calendar Application.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `;
+
+    // Prepare the cancellation email
+    const mailOptions = {
+      from: {
+        name: this.config.fromName || 'Calendar Application',
+        address: this.config.fromEmail
+      },
+      to: attendee.name
+        ? `"${attendee.name}" <${attendee.email}>`
+        : attendee.email,
+      subject: `Cancelled: ${title}`,
+      html: htmlContent,
+      text: `CANCELLED EVENT\n\nHello ${attendeeName},\n\nThe following event has been CANCELLED:\n\nEvent: ${title}\n${description ? `Description: ${description}\n` : ''}${location ? `Location: ${location}\n` : ''}Start: ${formattedStart}\nEnd: ${formattedEnd}\nOrganizer: ${data.organizer ? (data.organizer.name || data.organizer.email) : "Unknown"}\n${resources && resources.length > 0 ? `\nResources:\n${resources.map(resource => `- ${resource.name || resource.subType}${(resource.name && resource.name !== resource.subType) ? ` (${resource.subType})` : ''}${resource.capacity ? `\n  Capacity: ${resource.capacity}` : ''}${resource.adminName ? `\n  Administrator: ${resource.adminName}` : ''}${resource.remarks ? `\n  Notes: ${resource.remarks}` : ''}`).join('\n\n')}\n` : ''}\nYour calendar will be updated automatically if you previously accepted this invitation.\n\nThis cancellation notice was sent using CalDAV Calendar Application.`,
+      attachments: [
+        {
+          filename: `cancellation-${data.uid}.ics`,
+          content: icsData,
+          contentType: 'text/calendar; method=CANCEL'
+        }
+      ]
+    };
+
+    // Send the email
+    return this.transporter.sendMail(mailOptions);
+  }
+
+  public generateICSData(data: EventInvitationData): string {
+    const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status, rawData, sequence, _originalResourceAttendees } = data;
+    
+    // CRITICAL FIX: If raw server data is available, use it as the source of truth for proper RFC compliance
+    // This ensures we preserve the exact same UID throughout the event lifecycle
+    if (rawData && typeof rawData === 'string') {
+      console.log(`Using original raw server data for ICS generation (${rawData.length} bytes)`);
+      
+      try {
+        // First, extract original UID to log it for debugging purposes
+        const uidMatch = rawData.match(/UID:([^\r\n]+)/);
+        if (uidMatch && uidMatch[1]) {
+          const originalUid = uidMatch[1];
+          console.log(`Preserving original UID from raw data: ${originalUid}`);
+        } else {
+          console.log(`No UID found in raw data - will preserve provided UID: ${uid}`);
+        }
+        
+        // For regular updates (not cancellations), we can use the shared sanitizer
+        if (status !== 'CANCELLED') {
+          // Import our shared ICS formatter
+          const { sanitizeAndFormatICS } = require('../shared/ics-formatter');
+          console.log('Using shared ICS formatter for email attachment generation');
+          
+          // The sanitizeAndFormatICS will preserve the UID while fixing formatting issues
+          return sanitizeAndFormatICS(rawData);
+        }
+        
+        // If we get here, it's a cancellation - continue to next section
+      } catch (error) {
+        console.error('Error processing raw data for ICS generation:', error);
+        // Fall through to standard method if there was an error
+      }
+      // For cancellations, use the specialized cancellation generator
+      if (status === 'CANCELLED') {
+        console.log('=== GENERATING CANCELLATION ICS FILE FROM RAW DATA ===');
+        
+        // IMPORTANT: If we have raw ICS data, always use our dedicated cancellation generator
+        // which preserves the exact original format including all resource attendees
+        try {
+          // Import our specialized generator that properly preserves ALL original data
+          const { generateCancellationIcs } = require('./ics-cancellation-generator');
+          
+          // First extract and log resource attendees for diagnostics
+          const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const allAttendeeLines = rawData.match(attendeePattern) || [];
+          const resourceAttendeeLines = allAttendeeLines.filter(line => 
+            line.includes('CUTYPE=RESOURCE') || 
+            line.includes('X-RESOURCE-TYPE') || 
+            line.includes('RESOURCE-TYPE') ||
+            line.includes('X-RESOURCE-CAPACITY') || 
+            line.includes('RESOURCE-CAPACITY')
+          );
+          
+          console.log(`Original ICS contains ${allAttendeeLines.length} attendees and ${resourceAttendeeLines.length} resources`);
+          
+          // Create a copy with all the original data plus the extracted resource lines
+          const completeEventData = { ...data };
+          
+          // Store original resource attendee lines for direct preservation
+          // First use any already preserved lines, then fall back to extracting from raw data
+          if (_originalResourceAttendees && _originalResourceAttendees.length > 0) {
+            console.log(`Using ${_originalResourceAttendees.length} previously preserved resource attendee lines`);
+          } else if (resourceAttendeeLines.length > 0) {
+            completeEventData._originalResourceAttendees = resourceAttendeeLines;
+            console.log(`Added ${resourceAttendeeLines.length} newly extracted resource attendee lines for preservation`);
+          }
+          
+          // Extract original UID from raw data - CRUCIAL for RFC compliance
+          const uidMatch = rawData.match(/UID:([^\r\n]+)/);
+          if (uidMatch && uidMatch[1]) {
+            const originalUid = uidMatch[1];
+            console.log(`Using original UID from raw data: ${originalUid}`);
+            completeEventData.uid = originalUid;
+          }
+          
+          // Use our specialized cancellation generator with proper UID preservation
+          return generateCancellationIcs(rawData, completeEventData);
+        } catch (error) {
+          console.error('Error using specialized cancellation generator:', error);
+        }
+      } else {
+        // For regular events, use the raw data but modify METHOD to REQUEST
+        try {
+          console.log('Using raw server data for standard ICS generation');
+          
+          // Import the shared ICS formatter that handles all RFC requirements properly
+          const { sanitizeAndFormatICS } = require('@shared/ics-formatter');
+          
+          // Extract original UID from raw data - CRUCIAL for RFC compliance
+          const uidMatch = rawData.match(/UID:([^\r\n]+)/);
+          if (uidMatch && uidMatch[1]) {
+            const originalUid = uidMatch[1];
+            console.log(`Using original UID from raw data: ${originalUid}`);
+          }
+          
+          // Change METHOD to REQUEST for invitations while preserving everything else
+          let processedIcs = rawData;
+          
+          // If raw data doesn't have METHOD, add it
+          if (!processedIcs.includes('METHOD:')) {
+            processedIcs = processedIcs.replace('PRODID:', 'METHOD:REQUEST\r\nPRODID:');
+          } else {
+            // Replace existing METHOD with REQUEST
+            processedIcs = processedIcs.replace(/METHOD:[^\r\n]+/g, 'METHOD:REQUEST');
+          }
+          
+          // Sanitize and format properly
+          return sanitizeAndFormatICS(processedIcs);
+        } catch (error) {
+          console.error('Error processing raw ICS data:', error);
+        }
+      }
+    }
+    
+    // If we don't have raw data or the above methods failed, fall back to generating from scratch
+    console.log('No raw data available or processing failed - generating ICS from structured data');
+    
+    // For cancellations without raw data, use our fallback cancellation generator
+    if (status === 'CANCELLED') {
+      try {
+        console.log('Using fallback cancellation generator');
+        
+        // Use our proper cancellation function from ical-utils as a fallback
+        const { generateCancellationICalEvent } = require('./ical-utils');
+        
+        // Prepare the event object for the cancellation function
+        const eventData = {
+          uid: uid, // Use provided UID
+          title,
+          description,
+          location,
+          startDate,
+          endDate,
+          attendees,
+          resources
+        };
+        
+        // Current timestamp formatted for iCalendar
+        const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+        
+        // Generate proper cancellation ICS with organizer
+        return generateCancellationICalEvent(eventData, {
+          organizer: organizer?.email || 'unknown@example.com',
+          organizerName: organizer?.name,
+          sequence: sequence || 0,
+          timestamp
+        });
+      } catch (error) {
+        console.error('Error generating cancellation ICS, falling back to basic format:', error);
+      }
+    }
+    
+    // Last resort - generate from scratch using our shared ICS formatter
+    try {
+      console.log('Using shared ICS formatter to generate standard ICS');
+      const { createBasicICS, sanitizeAndFormatICS } = require('@shared/ics-formatter');
+      
+      // Format dates for iCalendar
+      const startDateStr = formatICalDate(startDate);
+      const endDateStr = formatICalDate(endDate);
+      const now = formatICalDate(new Date());
+      
+      // Always use the original event ID if provided, or generate a compliant one
+      const eventId = uid || `event-${Date.now()}@caldavclient.local`;
+      
+      // Start building the ICS content
+      let icsContent = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CalDAV Calendar Application//EN',
+        'CALSCALE:GREGORIAN',
+        // Use REQUEST method for invitations
+        'METHOD:REQUEST',
+        'BEGIN:VEVENT',
+        `UID:${eventId}`,
+        `DTSTAMP:${now}`,
+        `DTSTART:${startDateStr}`,
+        `DTEND:${endDateStr}`,
+        `SUMMARY:${title}`,
+      ];
+      
+      // Add optional fields if they exist
+      if (description) icsContent.push(`DESCRIPTION:${description.replace(/\\n/g, '\\n')}`);
+      if (location) icsContent.push(`LOCATION:${location}`);
+    
+    // Add organizer if exists
+    if (organizer && organizer.email) {
+      icsContent.push(`ORGANIZER;CN=${organizer.name || organizer.email}:mailto:${organizer.email}`);
+    }
+    
+    // Handle recurrence rules if present
+    interface RecurrenceRule {
+      pattern: string;
+      interval?: number;
+      weekdays?: string[];
+      endType?: string;
+      occurrences?: number;
+      untilDate?: string;
+    }
+    
+    if (data.recurrenceRule) {
+      console.log('Adding recurrence rule to ICS:', data.recurrenceRule);
+      
+      try {
+        let rule: RecurrenceRule | null = null;
+        
+        // If recurrenceRule is a string, try to parse it
+        if (typeof data.recurrenceRule === 'string') {
+          // Check if it's already a formatted RRULE string
+          if (data.recurrenceRule.startsWith('RRULE:')) {
+            icsContent.push(data.recurrenceRule);
+          } else {
+            try {
+              // Try to parse as JSON
+              rule = JSON.parse(data.recurrenceRule);
+            } catch (e) {
+              // If not valid JSON, just use as plain text with RRULE: prefix
+              icsContent.push(`RRULE:${data.recurrenceRule}`);
+            }
+          }
+        } else if (data.recurrenceRule && typeof data.recurrenceRule === 'object') {
+          // It's already an object
+          rule = data.recurrenceRule as unknown as RecurrenceRule;
+        }
+        
+        // If we have a valid rule object, convert it to RRULE format
+        if (rule && rule.pattern) {
+          let rruleString = 'RRULE:';
+          
+          // Convert pattern to FREQ
+          switch (rule.pattern.toLowerCase()) {
+            case 'daily':
+              rruleString += 'FREQ=DAILY';
+              break;
+            case 'weekly':
+              rruleString += 'FREQ=WEEKLY';
+              break;
+            case 'monthly':
+              rruleString += 'FREQ=MONTHLY';
+              break;
+            case 'yearly':
+              rruleString += 'FREQ=YEARLY';
+              break;
+            default:
+              rruleString += `FREQ=${rule.pattern.toUpperCase()}`;
+          }
+          
+          // Add interval if specified
+          if (rule.interval && rule.interval > 1) {
+            rruleString += `;INTERVAL=${rule.interval}`;
+          }
+          
+          // Add weekdays for weekly recurrence
+          if (rule.weekdays && rule.weekdays.length > 0 && rule.pattern.toLowerCase() === 'weekly') {
+            const dayMap: Record<string, string> = {
+              'sunday': 'SU', 'monday': 'MO', 'tuesday': 'TU', 'wednesday': 'WE',
+              'thursday': 'TH', 'friday': 'FR', 'saturday': 'SA'
+            };
+            
+            const byDays = rule.weekdays
+              .map(day => dayMap[day.toLowerCase()] || day)
+              .join(',');
+            
+            if (byDays) {
+              rruleString += `;BYDAY=${byDays}`;
+            }
+          }
+          
+          // Add count or until based on end type
+          if (rule.endType === 'After' && rule.occurrences) {
+            rruleString += `;COUNT=${rule.occurrences}`;
+          } else if (rule.endType === 'Until' && rule.untilDate) {
+            try {
+              // Format the date as required for UNTIL (YYYYMMDDTHHMMSSZ)
+              const untilDate = new Date(rule.untilDate);
+              const formattedUntil = untilDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+              rruleString += `;UNTIL=${formattedUntil}`;
+            } catch (e) {
+              console.error("Error formatting UNTIL date:", e);
+            }
+          }
+          
+          console.log("Adding RRULE to ICS:", rruleString);
+          icsContent.push(rruleString);
+        }
+      } catch (error) {
+        console.error('Error processing recurrence rule for ICS:', error);
+      }
+    }
+    
+    // Add human attendees if they exist
+    if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+      attendees.forEach(attendee => {
+        if (attendee && attendee.email) {
+          let attendeeStr = `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=${attendee.role || 'REQ-PARTICIPANT'};PARTSTAT=${attendee.status || 'NEEDS-ACTION'};CN=${attendee.name || attendee.email}:mailto:${attendee.email}`;
+          icsContent.push(attendeeStr);
+        }
+      });
+    }
+    
+    // First check if we have preserved original resource attendee lines
+    // This is critical for cancellations to maintain exact RFC 5546 compliance
+    if (Array.isArray(data._originalResourceAttendees) && data._originalResourceAttendees.length > 0 && status === 'CANCELLED') {
+      console.log(`Using ${data._originalResourceAttendees.length} preserved original resource attendee lines`);
+      
+      // Add the original resource attendee lines exactly as they were
+      data._originalResourceAttendees.forEach(line => {
+        icsContent.push(line);
+      });
+      
+      // If we have preserved original resource lines, we'll skip the regular resource processing
+      console.log('Skipping regular resource processing since we have preserved original resource lines');
+    }
+    // Otherwise add resource attendees if they exist (standard processing)
+    else if (resources && Array.isArray(resources) && resources.length > 0) {
+      console.log(`Processing ${resources.length} resources using standard method`);
+      
+      resources.forEach(resource => {
+        // Format: ATTENDEE;CN=res name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE=res type;X-RESOURCE-CAPACITY=5;X-ADMIN-NAME=Dharmendra Pandey;X-NOTES-REMARKS=remarks:mailto:dk.pandey@xgenplus.com
+        
+        // Start with CN (name) and basic resource properties
+        let resourceStr = `ATTENDEE;CN=${resource.name || resource.subType || 'Resource'};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT`;
+        
+        // Add resource type as X-RESOURCE-TYPE
+        if (resource.type || resource.subType) {
+          resourceStr += `;X-RESOURCE-TYPE=${resource.type || resource.subType}`;
+        }
+        
+        // Add capacity as X-RESOURCE-CAPACITY
+        if (resource.capacity !== undefined) {
+          resourceStr += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
+        }
+        
+        // Add admin name as X-ADMIN-NAME
+        if (resource.adminName) {
+          resourceStr += `;X-ADMIN-NAME=${resource.adminName}`;
+        }
+        
+        // Add remarks as X-NOTES-REMARKS (properly escape for iCalendar format)
+        if (resource.remarks) {
+          // Escape special characters according to iCalendar spec
+          const escapedRemarks = resource.remarks
+            .replace(/\\/g, '\\\\')
+            .replace(/;/g, '\\;')
+            .replace(/,/g, '\\,')
+            .replace(/\n/g, '\\n');
+          
+          resourceStr += `;X-NOTES-REMARKS=${escapedRemarks}`;
+        }
+        
+        // Use the appropriate email field for the resource
+        const email = resource.adminEmail || resource.email || (resource as any).id;
+        
+        // Add the email as mailto
+        resourceStr += `:mailto:${email}`;
+        
+        icsContent.push(resourceStr);
+      });
+    }
+    
+    // Close the event and calendar
+    icsContent.push(
+      'END:VEVENT',
+      'END:VCALENDAR'
+    );
+    
+    try {
+      return icsContent.join('\r\n');
+    } catch (error) {
+      console.error('Error joining ICS content:', error);
+      return ''; // Return empty string in case of error
+    }
+  }
+}
+
+// Create a singleton instance of the email service
+export const emailService = new EmailService();
