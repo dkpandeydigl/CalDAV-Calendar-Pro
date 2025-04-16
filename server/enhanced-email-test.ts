@@ -2,311 +2,356 @@
  * Enhanced Email Test Endpoints
  * 
  * This module provides test endpoints for the enhanced email service
- * with RFC 5545 compliant ICS formatting.
+ * that enforces UID requirements for RFC 5545 compliance.
  */
 
-import { Express, Request, Response, NextFunction } from 'express';
-import { storage } from './memory-storage';
+import express from 'express';
 import { enhancedEmailService } from './enhanced-email-service';
 
-// Authentication middleware
-function isAuthenticated(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  res.status(401).json({ message: "Unauthorized" });
-}
-
-function isValidEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
-export function registerEnhancedEmailTestEndpoints(app: Express): void {
-  // Test endpoint for enhanced email service
-  app.post('/api/enhanced-test-email', isAuthenticated, async (req, res) => {
+export function registerEnhancedEmailTestEndpoints(app: express.Express) {
+  // Configuration endpoint
+  app.post('/api/enhanced-email-config', async (req, res) => {
     try {
-      const userId = req.user!.id;
-      const { recipient, subject = "Test Email", body = "This is a test email from the enhanced email service." } = req.body;
+      const config = req.body;
       
-      if (!recipient) {
+      if (!config.host || !config.port || !config.auth || !config.from) {
         return res.status(400).json({
           success: false,
-          message: "Recipient email address is required"
+          message: 'Invalid SMTP configuration'
         });
       }
       
-      if (!isValidEmail(recipient)) {
-        return res.status(400).json({
-          success: false, 
-          message: "Invalid recipient email address format"
+      const result = enhancedEmailService.updateConfig(config);
+      
+      if (result) {
+        return res.json({
+          success: true,
+          message: 'Enhanced email configuration updated successfully'
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to update enhanced email configuration'
         });
       }
+    } catch (error) {
+      console.error('Error updating enhanced email config:', error);
+      return res.status(500).json({
+        success: false,
+        message: `Error updating enhanced email config: ${error instanceof Error ? error.message : 'Unknown error'}`
+      });
+    }
+  });
+  
+  // Get configuration endpoint
+  app.get('/api/enhanced-email-config', (req, res) => {
+    try {
+      const config = enhancedEmailService.getConfig();
       
-      console.log(`=== TESTING ENHANCED EMAIL SERVICE FOR USER ${userId} ===`);
-      
-      // Initialize the email service
-      const initialized = await enhancedEmailService.initialize(userId);
-      
-      if (!initialized) {
-        // Try to fetch the SMTP config to provide more details about the failure
-        const config = await storage.getSmtpConfig(userId);
-        
-        let configDetails = 'No SMTP configuration found';
-        if (config) {
-          configDetails = `SMTP Config: ${config.host}:${config.port}, From: ${config.fromEmail}`;
-          if (config.fromName) {
-            configDetails += ` (${config.fromName})`;
+      if (config) {
+        // For security, return a version without the password
+        const safeConfig = {
+          ...config,
+          auth: {
+            ...config.auth,
+            pass: '********' // Mask the password
           }
-        }
+        };
         
+        return res.json({
+          success: true,
+          config: safeConfig
+        });
+      } else {
+        return res.json({
+          success: false,
+          message: 'No enhanced email configuration found'
+        });
+      }
+    } catch (error) {
+      console.error('Error getting enhanced email config:', error);
+      return res.status(500).json({
+        success: false,
+        message: `Error getting enhanced email config: ${error instanceof Error ? error.message : 'Unknown error'}`
+      });
+    }
+  });
+
+  // Test invitation email endpoint
+  app.post('/api/enhanced-test-invitation', async (req, res) => {
+    try {
+      if (!enhancedEmailService.isInitialized()) {
         return res.status(400).json({
           success: false,
-          message: `Failed to initialize enhanced email service. Check SMTP configuration.`,
-          details: { configDetails }
+          message: 'Enhanced email service is not initialized. Please configure SMTP settings first.'
         });
       }
       
-      // Send a test email
-      const result = await enhancedEmailService.sendTestEmail(
-        userId,
-        recipient,
-        subject,
-        body
+      const testData = req.body;
+      
+      // Validate essential fields
+      if (!testData.uid) {
+        return res.status(400).json({
+          success: false,
+          message: 'UID is required for RFC 5545 compliance'
+        });
+      }
+      
+      if (!testData.title || !testData.startDate || !testData.endDate || !testData.organizer) {
+        return res.status(400).json({
+          success: false,
+          message: 'Required fields missing: title, startDate, endDate, and organizer are required'
+        });
+      }
+      
+      if (!testData.attendees || testData.attendees.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one attendee is required for sending an invitation'
+        });
+      }
+      
+      // Convert date strings to Date objects
+      const startDate = new Date(testData.startDate);
+      const endDate = new Date(testData.endDate);
+      
+      // Create invitation data
+      const invitationData = {
+        eventId: testData.eventId || 12345, // Use provided ID or fallback to a test ID
+        uid: testData.uid,
+        title: testData.title,
+        description: testData.description || 'Test event description',
+        location: testData.location || 'Test location',
+        startDate,
+        endDate,
+        organizer: testData.organizer,
+        attendees: testData.attendees,
+        resources: testData.resources || [],
+        recurrenceRule: testData.recurrenceRule,
+        method: 'REQUEST'
+      };
+      
+      // If this is just a preview, don't actually send emails
+      if (testData.previewOnly) {
+        const previewResult = await enhancedEmailService.generateEmailPreview(
+          req.session.userId || 1, // Use session user ID or fallback to 1
+          invitationData,
+          'invitation'
+        );
+        
+        return res.json({
+          success: true,
+          message: 'Invitation email preview generated',
+          icsData: previewResult.icsData,
+          htmlContent: previewResult.htmlContent
+        });
+      }
+      
+      // Send the actual invitation emails
+      const result = await enhancedEmailService.sendEventInvitation(
+        req.session.userId || 1, // Use session user ID or fallback to 1
+        invitationData
       );
       
       return res.json({
         success: result.success,
         message: result.message,
-        details: result.details
+        icsData: result.icsData,
+        htmlContent: result.htmlContent
       });
     } catch (error) {
-      console.error("Error in enhanced test email endpoint:", error);
+      console.error('Error testing enhanced invitation email:', error);
       return res.status(500).json({
         success: false,
-        message: `Error sending test email: ${error instanceof Error ? error.message : String(error)}`
+        message: `Error testing enhanced invitation email: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
   });
   
-  // Test endpoint for RFC 5545 compliant event invitations
-  app.post('/api/enhanced-test-invitation', isAuthenticated, async (req, res) => {
+  // Test update email endpoint
+  app.post('/api/enhanced-test-update', async (req, res) => {
     try {
-      const userId = req.user!.id;
-      const { eventId, useEnhancedService = true } = req.body;
-      
-      if (!eventId) {
+      if (!enhancedEmailService.isInitialized()) {
         return res.status(400).json({
           success: false,
-          message: "Event ID is required"
+          message: 'Enhanced email service is not initialized. Please configure SMTP settings first.'
         });
       }
       
-      console.log(`=== TESTING ENHANCED INVITATION EMAIL FOR EVENT ID ${eventId} ===`);
+      const testData = req.body;
       
-      // Get the event from storage
-      const event = await storage.getEvent(eventId);
-      if (!event) {
-        return res.status(404).json({
-          success: false,
-          message: "Event not found"
-        });
-      }
-      
-      // Parse attendees and resources
-      let attendees = [];
-      let resources = [];
-      
-      try {
-        attendees = event.attendees ? 
-          (typeof event.attendees === 'string' ? 
-            JSON.parse(event.attendees) : event.attendees) : [];
-      } catch (e) {
-        console.error('Error parsing attendees:', e);
-        attendees = [];
-      }
-      
-      try {
-        resources = event.resources ? 
-          (typeof event.resources === 'string' ? 
-            JSON.parse(event.resources) : event.resources) : [];
-      } catch (e) {
-        console.error('Error parsing resources:', e);
-        resources = [];
-      }
-      
-      // Get the user for organizer info
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: "User not found"
-        });
-      }
-      
-      const organizer = {
-        email: user.email || user.username,
-        name: user.fullName || user.username
-      };
-      
-      console.log(`Event has ${attendees.length} attendees and ${resources.length} resources`);
-      
-      // Prepare event data for invitation
-      const eventData = {
-        eventId: event.id,
-        uid: event.uid,
-        title: event.title,
-        description: event.description,
-        location: event.location,
-        startDate: event.startDate,
-        endDate: event.endDate,
-        organizer,
-        attendees,
-        resources,
-        rawData: event.rawData
-      };
-      
-      // Initialize the service
-      const initialized = await enhancedEmailService.initialize(userId);
-      
-      if (!initialized) {
+      // Validate essential fields
+      if (!testData.uid) {
         return res.status(400).json({
           success: false,
-          message: "Failed to initialize enhanced email service. Check SMTP configuration."
+          message: 'UID is required for RFC 5545 compliance'
         });
       }
       
-      // Send invitation email using our enhanced service
-      const result = await enhancedEmailService.sendEventInvitation(userId, eventData);
+      if (!testData.title || !testData.startDate || !testData.endDate || !testData.organizer) {
+        return res.status(400).json({
+          success: false,
+          message: 'Required fields missing: title, startDate, endDate, and organizer are required'
+        });
+      }
+      
+      if (!testData.attendees || testData.attendees.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one attendee is required for sending an update'
+        });
+      }
+      
+      // Convert date strings to Date objects
+      const startDate = new Date(testData.startDate);
+      const endDate = new Date(testData.endDate);
+      
+      // Create update data
+      const updateData = {
+        eventId: testData.eventId || 12345, // Use provided ID or fallback to a test ID
+        uid: testData.uid,
+        title: testData.title,
+        description: testData.description || 'Updated event description',
+        location: testData.location || 'Updated location',
+        startDate,
+        endDate,
+        organizer: testData.organizer,
+        attendees: testData.attendees,
+        resources: testData.resources || [],
+        recurrenceRule: testData.recurrenceRule,
+        sequence: testData.sequence || 1, // Sequence number for updates
+        method: 'REQUEST'
+      };
+      
+      // If this is just a preview, don't actually send emails
+      if (testData.previewOnly) {
+        const previewResult = await enhancedEmailService.generateEmailPreview(
+          req.session.userId || 1, // Use session user ID or fallback to 1
+          updateData,
+          'update'
+        );
+        
+        return res.json({
+          success: true,
+          message: 'Update email preview generated',
+          icsData: previewResult.icsData,
+          htmlContent: previewResult.htmlContent
+        });
+      }
+      
+      // Send the actual update emails
+      const result = await enhancedEmailService.sendEventUpdate(
+        req.session.userId || 1, // Use session user ID or fallback to 1
+        updateData
+      );
       
       return res.json({
         success: result.success,
         message: result.message,
-        details: result.details,
-        event: {
-          id: event.id,
-          title: event.title,
-          uid: event.uid
-        }
+        icsData: result.icsData,
+        htmlContent: result.htmlContent
       });
     } catch (error) {
-      console.error("Error in enhanced test invitation endpoint:", error);
+      console.error('Error testing enhanced update email:', error);
       return res.status(500).json({
         success: false,
-        message: `Error sending invitation: ${error instanceof Error ? error.message : String(error)}`
+        message: `Error testing enhanced update email: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
   });
   
-  // Test endpoint for RFC 5545 compliant event cancellations
-  app.post('/api/enhanced-test-cancellation', isAuthenticated, async (req, res) => {
+  // Test cancellation email endpoint
+  app.post('/api/enhanced-test-cancellation', async (req, res) => {
     try {
-      const userId = req.user!.id;
-      const { eventId } = req.body;
-      
-      if (!eventId) {
+      if (!enhancedEmailService.isInitialized()) {
         return res.status(400).json({
           success: false,
-          message: "Event ID is required"
+          message: 'Enhanced email service is not initialized. Please configure SMTP settings first.'
         });
       }
       
-      console.log(`=== TESTING ENHANCED CANCELLATION EMAIL FOR EVENT ID ${eventId} ===`);
+      const testData = req.body;
       
-      // Get the event from storage
-      const event = await storage.getEvent(eventId);
-      if (!event) {
-        return res.status(404).json({
+      // Validate essential fields
+      if (!testData.uid) {
+        return res.status(400).json({
           success: false,
-          message: "Event not found"
+          message: 'UID is required for RFC 5545 compliance'
         });
       }
       
-      // Parse attendees and resources
-      let attendees = [];
-      let resources = [];
-      
-      try {
-        attendees = event.attendees ? 
-          (typeof event.attendees === 'string' ? 
-            JSON.parse(event.attendees) : event.attendees) : [];
-      } catch (e) {
-        console.error('Error parsing attendees:', e);
-        attendees = [];
-      }
-      
-      try {
-        resources = event.resources ? 
-          (typeof event.resources === 'string' ? 
-            JSON.parse(event.resources) : event.resources) : [];
-      } catch (e) {
-        console.error('Error parsing resources:', e);
-        resources = [];
-      }
-      
-      // Get the user for organizer info
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({
+      if (!testData.title || !testData.startDate || !testData.endDate || !testData.organizer) {
+        return res.status(400).json({
           success: false,
-          message: "User not found"
+          message: 'Required fields missing: title, startDate, endDate, and organizer are required'
         });
       }
       
-      const organizer = {
-        email: user.email || user.username,
-        name: user.fullName || user.username
-      };
+      if (!testData.attendees || testData.attendees.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'At least one attendee is required for sending a cancellation'
+        });
+      }
       
-      console.log(`Event has ${attendees.length} attendees and ${resources.length} resources`);
+      // Convert date strings to Date objects
+      const startDate = new Date(testData.startDate);
+      const endDate = new Date(testData.endDate);
       
-      // Prepare event data for cancellation
-      const eventData = {
-        eventId: event.id,
-        uid: event.uid,
-        title: event.title,
-        description: event.description,
-        location: event.location,
-        startDate: event.startDate,
-        endDate: event.endDate,
-        organizer,
-        attendees,
-        resources,
-        rawData: event.rawData,
+      // Create cancellation data
+      const cancellationData = {
+        eventId: testData.eventId || 12345, // Use provided ID or fallback to a test ID
+        uid: testData.uid,
+        title: testData.title,
+        description: testData.description || 'Cancelled event description',
+        location: testData.location || 'Cancelled location',
+        startDate,
+        endDate,
+        organizer: testData.organizer,
+        attendees: testData.attendees,
+        resources: testData.resources || [],
+        recurrenceRule: testData.recurrenceRule,
+        sequence: testData.sequence || 1, // Sequence number for cancellations
+        method: 'CANCEL',
         status: 'CANCELLED'
       };
       
-      // Initialize the service
-      const initialized = await enhancedEmailService.initialize(userId);
-      
-      if (!initialized) {
-        return res.status(400).json({
-          success: false,
-          message: "Failed to initialize enhanced email service. Check SMTP configuration."
+      // If this is just a preview, don't actually send emails
+      if (testData.previewOnly) {
+        const previewResult = await enhancedEmailService.generateEmailPreview(
+          req.session.userId || 1, // Use session user ID or fallback to 1
+          cancellationData,
+          'cancellation'
+        );
+        
+        return res.json({
+          success: true,
+          message: 'Cancellation email preview generated',
+          icsData: previewResult.icsData,
+          htmlContent: previewResult.htmlContent
         });
       }
       
-      // Send cancellation email using our enhanced service
-      const result = await enhancedEmailService.sendEventCancellation(userId, eventData);
+      // Send the actual cancellation emails
+      const result = await enhancedEmailService.sendEventCancellation(
+        req.session.userId || 1, // Use session user ID or fallback to 1
+        cancellationData
+      );
       
       return res.json({
         success: result.success,
         message: result.message,
-        details: result.details,
-        event: {
-          id: event.id,
-          title: event.title,
-          uid: event.uid
-        }
+        icsData: result.icsData,
+        htmlContent: result.htmlContent
       });
     } catch (error) {
-      console.error("Error in enhanced test cancellation endpoint:", error);
+      console.error('Error testing enhanced cancellation email:', error);
       return res.status(500).json({
         success: false,
-        message: `Error sending cancellation: ${error instanceof Error ? error.message : String(error)}`
+        message: `Error testing enhanced cancellation email: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
   });
-  
+
   console.log('Registered enhanced email test endpoints: /api/enhanced-test-email, /api/enhanced-test-invitation, and /api/enhanced-test-cancellation');
 }

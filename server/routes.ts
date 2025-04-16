@@ -30,6 +30,7 @@ import { webdavSyncService } from "./webdav-sync";
 import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./memory-notification-service";
 import { registerEmailTestEndpoints } from "./email-test-endpoint";
+import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
 import { initializeWebSocketServer } from "./websocket-handler";
 import { initializeWebSocketNotificationService } from "./websocket-notifications";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
@@ -86,6 +87,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register email test endpoints
   registerEmailTestEndpoints(app);
   console.log('Registered email test endpoints');
+
+  // Register enhanced email test endpoints with RFC 5545 compliance
+  registerEnhancedEmailTestEndpoints(app);
+  console.log('Registered enhanced RFC 5545 compliant email test endpoints');
   
   // Test endpoint for verifying cancellation ICS transformation (no auth required)
   app.post('/api/test-cancellation-ics', async (req, res) => {

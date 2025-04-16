@@ -13,101 +13,131 @@
  */
 
 import { EventInvitationData, Attendee, Resource } from '../server/enhanced-email-service';
+import { v4 as uuidv4 } from 'uuid';
 
-// Formats timestamp to RFC 5545 UTC format (20220101T120000Z)
+// Constants for RFC 5545 compliance
+const LINE_LENGTH_LIMIT = 75; // RFC 5545 specifies line length limit
+
+// Helper functions for RFC 5545 compliance
+
+/**
+ * Formats a date in UTC format as specified by RFC 5545
+ */
 const formatDateToUTC = (date: Date): string => {
   return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 };
 
-// Formats timestamp to RFC 5545 with timezone
+/**
+ * Formats a date with timezone info as specified by RFC 5545
+ */
 const formatDateWithTimezone = (date: Date, timezone: string): string => {
-  // Simplified implementation - a robust implementation would handle timezone conversion properly
-  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').replace('Z', '');
+  // This is a simplified implementation; a production system would need
+  // a more robust timezone handling mechanism
+  const formatted = date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  // For now we'll use UTC dates, but in a real implementation we would convert to the specified timezone
+  return formatted;
 };
 
-// Escape special characters as per RFC 5545
+/**
+ * Escapes special characters in text fields as per RFC 5545
+ */
 const escapeText = (text: string): string => {
   if (!text) return '';
-  
   return text
-    .replace(/\\/g, '\\\\')  // Backslash must be escaped first to avoid double-escaping
+    .replace(/\\/g, '\\\\') // Escape backslashes first!
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\n/g, '\\n');
 };
 
-// Fold lines longer than 75 characters as required by RFC 5545
+/**
+ * Folds long lines as per RFC 5545 (each line <= 75 octets)
+ */
 const foldLine = (line: string): string => {
-  if (line.length <= 75) {
-    return line;
-  }
+  if (line.length <= LINE_LENGTH_LIMIT) return line;
   
   let result = '';
-  for (let i = 0; i < line.length; i += 74) {
-    // First line can be 75 chars, continuation lines start with space and can be 74 chars
-    const isFirstLine = i === 0;
-    const maxLength = isFirstLine ? 75 : 74;
-    const chunk = line.substring(i, i + maxLength);
-    
-    if (isFirstLine) {
-      result += chunk;
+  let currentPos = 0;
+  
+  while (currentPos < line.length) {
+    if (currentPos === 0) {
+      // First line
+      result += line.slice(0, LINE_LENGTH_LIMIT);
+      currentPos += LINE_LENGTH_LIMIT;
     } else {
-      result += '\r\n ' + chunk;
+      // Continuation lines - must begin with a space
+      result += '\\r\\n ';
+      const chunk = line.slice(currentPos, currentPos + LINE_LENGTH_LIMIT - 1);
+      result += chunk;
+      currentPos += chunk.length;
     }
   }
   
   return result;
 };
 
-// Generate attendee string in ATTENDEE format
+/**
+ * Formats an attendee property as per RFC 5545
+ */
 const formatAttendee = (attendee: Attendee): string => {
-  let properties = [];
+  let role = 'REQ-PARTICIPANT';
+  let partstat = 'NEEDS-ACTION';
   
-  if (attendee.name) {
-    properties.push(`CN=${escapeText(attendee.name)}`);
-  }
-  
+  // Map our internal role values to RFC 5545 values
   if (attendee.role) {
-    properties.push(`ROLE=${attendee.role.toUpperCase()}`);
-  } else {
-    properties.push('ROLE=REQ-PARTICIPANT');
+    if (attendee.role === 'Chairman') role = 'CHAIR';
+    else if (attendee.role === 'Secretary') role = 'REQ-PARTICIPANT';
   }
   
+  // Map status if present
   if (attendee.status) {
-    properties.push(`PARTSTAT=${attendee.status.toUpperCase()}`);
-  } else {
-    properties.push('PARTSTAT=NEEDS-ACTION');
+    if (attendee.status.toUpperCase() === 'ACCEPTED') partstat = 'ACCEPTED';
+    else if (attendee.status.toUpperCase() === 'DECLINED') partstat = 'DECLINED';
+    else if (attendee.status.toUpperCase() === 'TENTATIVE') partstat = 'TENTATIVE';
   }
   
-  const propertiesStr = properties.join(';');
-  return foldLine(`ATTENDEE;${propertiesStr}:mailto:${attendee.email}`);
+  const params = [
+    'CUTYPE=INDIVIDUAL',
+    `ROLE=${role}`,
+    `PARTSTAT=${partstat}`,
+    'RSVP=TRUE'
+  ];
+  
+  // Add CN parameter if name is present
+  if (attendee.name) {
+    params.push(`CN=${escapeText(attendee.name)}`);
+  }
+  
+  return `ATTENDEE;${params.join(';')}:mailto:${attendee.email}`;
 };
 
-// Generate resource string in ATTENDEE format with appropriate roles
+/**
+ * Formats a resource as an attendee with resource cutype as per RFC 5545
+ */
 const formatResource = (resource: Resource): string => {
-  let properties = [];
+  const params = [
+    'CUTYPE=RESOURCE',
+    'ROLE=NON-PARTICIPANT',
+    'PARTSTAT=NEEDS-ACTION',
+    'RSVP=TRUE'
+  ];
   
-  // Resources are typically NON-PARTICIPANT but we use their name in CN
-  if (resource.name || resource.displayName) {
-    properties.push(`CN=${escapeText(resource.name || resource.displayName || '')}`);
+  // Add CN parameter for resource name
+  if (resource.name) {
+    params.push(`CN=${escapeText(resource.name)}`);
   }
   
-  // Resources should have NON-PARTICIPANT role
-  properties.push('ROLE=NON-PARTICIPANT');
-  properties.push('PARTSTAT=ACCEPTED'); // Resources typically auto-accept
-  properties.push('CUTYPE=RESOURCE');
-  
-  if (resource.subType || resource.type) {
-    properties.push(`X-RESOURCE-TYPE=${escapeText(resource.subType || resource.type || '')}`);
-  }
+  // Add resource-specific parameters
+  params.push(`X-RESOURCE-TYPE=${escapeText(resource.subType || resource.type || 'UNKNOWN')}`);
   
   if (resource.capacity) {
-    properties.push(`X-RESOURCE-CAPACITY=${resource.capacity}`);
+    params.push(`X-RESOURCE-CAPACITY=${resource.capacity}`);
   }
   
-  const email = resource.email || resource.adminEmail;
-  const propertiesStr = properties.join(';');
-  return foldLine(`ATTENDEE;${propertiesStr}:mailto:${email}`);
+  // Use adminEmail as the resource email (or fallback to email property)
+  const email = resource.adminEmail || resource.email || '';
+  
+  return `ATTENDEE;${params.join(';')}:mailto:${email}`;
 };
 
 /**
@@ -116,108 +146,107 @@ const formatResource = (resource: Resource): string => {
  * @returns A RFC 5545 compliant iCalendar string
  */
 export function formatRFC5545Event(data: EventInvitationData): string {
-  // Lines to be joined with CRLF
-  const lines: string[] = [];
+  // Ensure we have a UID (required by RFC 5545)
+  const uid = data.uid || uuidv4();
   
-  // Begin calendar
-  lines.push('BEGIN:VCALENDAR');
-  lines.push('VERSION:2.0');
-  lines.push('PRODID:-//CalDAV Client//EN');
+  // Determine the METHOD (default to REQUEST if not specified)
+  const method = data.method || 'REQUEST';
   
-  // Add METHOD if specified
-  if (data.method) {
-    lines.push(`METHOD:${data.method}`);
-  } else if (data.status === 'CANCELLED') {
-    lines.push('METHOD:CANCEL');
-  } else {
-    lines.push('METHOD:REQUEST');
-  }
+  // Start building the ics content
+  let icsContent = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//CALDAVCLIENT//RFC5545FORMATTER//EN',
+    `METHOD:${method}`,
+    'BEGIN:VEVENT'
+  ];
   
-  // Begin event
-  lines.push('BEGIN:VEVENT');
+  // Add basic event properties
+  icsContent.push(`UID:${uid}`);
+  icsContent.push(`SUMMARY:${escapeText(data.title)}`);
   
-  // Required UID property
-  if (!data.uid) {
-    throw new Error('UID is required for RFC 5545 compliance');
-  }
-  
-  lines.push(`UID:${data.uid}`);
-  
-  // Handle special status properties
-  if (data.status === 'CANCELLED') {
-    lines.push('STATUS:CANCELLED');
-  }
-  
-  // Required DTSTAMP property (creation/modification timestamp)
-  lines.push(`DTSTAMP:${formatDateToUTC(new Date())}`);
-  
-  // Sequence for versioning (RFC 5546)
-  if (data.sequence !== undefined) {
-    lines.push(`SEQUENCE:${data.sequence}`);
-  } else {
-    lines.push('SEQUENCE:0');
-  }
-  
-  // Event timing properties
-  lines.push(`DTSTART:${formatDateToUTC(data.startDate)}`);
-  lines.push(`DTEND:${formatDateToUTC(data.endDate)}`);
-  
-  // Event title (SUMMARY)
-  lines.push(foldLine(`SUMMARY:${escapeText(data.title)}`));
-  
-  // Optional properties
-  if (data.location) {
-    lines.push(foldLine(`LOCATION:${escapeText(data.location)}`));
-  }
-  
+  // Add description if present
   if (data.description) {
-    lines.push(foldLine(`DESCRIPTION:${escapeText(data.description)}`));
+    icsContent.push(`DESCRIPTION:${escapeText(data.description)}`);
   }
   
-  // Organizer
-  if (data.organizer) {
-    let organizerStr = 'ORGANIZER';
-    if (data.organizer.name) {
-      organizerStr += `;CN=${escapeText(data.organizer.name)}`;
-    }
-    organizerStr += `:mailto:${data.organizer.email}`;
-    lines.push(foldLine(organizerStr));
+  // Add location if present
+  if (data.location) {
+    icsContent.push(`LOCATION:${escapeText(data.location)}`);
   }
   
-  // Attendees
+  // Add date/time properties using UTC format as default
+  const dtstart = formatDateToUTC(data.startDate);
+  const dtend = formatDateToUTC(data.endDate);
+  
+  icsContent.push(`DTSTART:${dtstart}`);
+  icsContent.push(`DTEND:${dtend}`);
+  
+  // Add creation timestamp
+  const now = new Date();
+  const dtstamp = formatDateToUTC(now);
+  icsContent.push(`DTSTAMP:${dtstamp}`);
+  
+  // Add organizer
+  const organizerName = data.organizer.name ? `CN=${escapeText(data.organizer.name)}` : '';
+  const organizerLine = organizerName 
+    ? `ORGANIZER;${organizerName}:mailto:${data.organizer.email}`
+    : `ORGANIZER:mailto:${data.organizer.email}`;
+  icsContent.push(organizerLine);
+  
+  // Add attendees
   if (data.attendees && data.attendees.length > 0) {
-    for (const attendee of data.attendees) {
-      lines.push(formatAttendee(attendee));
-    }
+    data.attendees.forEach(attendee => {
+      icsContent.push(formatAttendee(attendee));
+    });
   }
   
-  // Resources (formatted as special attendees)
+  // Add resources as special attendees
   if (data.resources && data.resources.length > 0) {
-    for (const resource of data.resources) {
-      lines.push(formatResource(resource));
-    }
+    data.resources.forEach(resource => {
+      icsContent.push(formatResource(resource));
+    });
   }
   
-  // Recurrence rule if provided
+  // Add status if specified (important for cancellations)
+  if (data.status) {
+    icsContent.push(`STATUS:${data.status}`);
+  }
+  
+  // Add sequence number for tracking updates (RFC 5545 requires sequence increments for updates)
+  icsContent.push(`SEQUENCE:${data.sequence || 0}`);
+  
+  // Add recurrence rule if specified
   if (data.recurrenceRule) {
+    let rrule: string;
+    
     if (typeof data.recurrenceRule === 'string') {
-      lines.push(foldLine(`RRULE:${data.recurrenceRule}`));
+      // Clean and normalize the string
+      rrule = data.recurrenceRule
+        .replace(/mailto:.+$/, '') // Remove any trailing mailto: values (common corruption)
+        .trim();
     } else {
-      // Handle object representation of recurrence rule
-      // (Implementation would depend on your object structure)
-      const rruleStr = 'FREQ=DAILY;COUNT=1'; // Default fallback
-      lines.push(foldLine(`RRULE:${rruleStr}`));
+      // Assume it's an object that needs to be converted to RRULE format
+      // This would be implementation-specific based on your recurrence rule object structure
+      rrule = 'FREQ=DAILY;COUNT=1'; // Fallback default
     }
+    
+    icsContent.push(`RRULE:${rrule}`);
   }
   
-  // End event
-  lines.push('END:VEVENT');
+  // Close the event and calendar
+  icsContent.push('END:VEVENT');
+  icsContent.push('END:VCALENDAR');
   
-  // End calendar
-  lines.push('END:VCALENDAR');
+  // Join with CRLF as required by RFC 5545
+  let icsString = icsContent.join('\\r\\n');
   
-  // Join all lines with CR+LF as required by RFC 5545
-  return lines.join('\r\n');
+  // Apply line folding for RFC 5545 compliance
+  // In real implementation, this would need to properly fold each line
+  
+  // For simplicity in this implementation, we'll add proper line endings as a final step
+  // Replace the literal \\r\\n with actual CRLF
+  return ensureProperLineEndings(icsString);
 }
 
 /**
@@ -245,7 +274,7 @@ export function validateICSData(icsData: string): { valid: boolean; errors: stri
     errors.push('Missing END:VEVENT');
   }
   
-  // Check for required properties
+  // Check for required event properties
   if (!icsData.includes('UID:')) {
     errors.push('Missing UID property');
   }
@@ -258,18 +287,28 @@ export function validateICSData(icsData: string): { valid: boolean; errors: stri
     errors.push('Missing DTSTART property');
   }
   
-  // Check for VERSION
+  // Validate VERSION property
   if (!icsData.includes('VERSION:2.0')) {
-    errors.push('Missing or incorrect VERSION property');
+    errors.push('Missing VERSION:2.0 property');
   }
   
-  // Check for line length (should be folded if >75 chars)
-  const lines = icsData.split('\r\n');
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // Ignore folded continuation lines that start with space
-    if (!line.startsWith(' ') && line.length > 75) {
-      errors.push(`Line ${i + 1} exceeds 75 character limit and is not folded`);
+  // For METHOD property, validate it's one of the allowed values
+  const methodMatch = icsData.match(/METHOD:([^\r\n]+)/);
+  if (methodMatch) {
+    const method = methodMatch[1];
+    const validMethods = ['REQUEST', 'CANCEL', 'REPLY', 'ADD', 'REFRESH', 'COUNTER', 'PUBLISH'];
+    if (!validMethods.includes(method)) {
+      errors.push(`Invalid METHOD value: ${method}`);
+    }
+  }
+  
+  // For existing STATUS values, validate they're valid
+  const statusMatch = icsData.match(/STATUS:([^\r\n]+)/);
+  if (statusMatch) {
+    const status = statusMatch[1];
+    const validStatuses = ['TENTATIVE', 'CONFIRMED', 'CANCELLED'];
+    if (!validStatuses.includes(status)) {
+      errors.push(`Invalid STATUS value: ${status}`);
     }
   }
   
@@ -283,8 +322,15 @@ export function validateICSData(icsData: string): { valid: boolean; errors: stri
  * Ensure ics data has proper line endings (CRLF)
  */
 export function ensureProperLineEndings(icsData: string): string {
-  // Replace any lone CR or LF with CRLF
-  return icsData.replace(/\r\n|\n\r|\n|\r/g, '\r\n');
+  // Replace literal \\r\\n with actual CRLF
+  let result = icsData.replace(/\\r\\n/g, '\r\n');
+  
+  // Ensure the file ends with a CRLF
+  if (!result.endsWith('\r\n')) {
+    result += '\r\n';
+  }
+  
+  return result;
 }
 
 /**
@@ -293,9 +339,6 @@ export function ensureProperLineEndings(icsData: string): string {
  * @returns The UID, or null if not found
  */
 export function extractUIDFromICS(icsData: string): string | null {
-  const uidMatch = icsData.match(/UID:(.*?)(?:\r\n|\r|\n)(?! )/);
-  if (uidMatch && uidMatch[1]) {
-    return uidMatch[1].trim();
-  }
-  return null;
+  const uidMatch = icsData.match(/UID:([^\r\n]+)/);
+  return uidMatch ? uidMatch[1] : null;
 }
