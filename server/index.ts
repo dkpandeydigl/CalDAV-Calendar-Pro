@@ -47,9 +47,8 @@ app.use((req, res, next) => {
   // Register API routes
   const server = await registerRoutes(app);
   
-  // Initialize the WebSocket server for real-time communication
-  initializeWebSocketServer(server);
-  log("WebSocket server initialized with dual paths: /api/ws and /ws");
+  // WebSocket server is initialized in routes.ts
+  log("WebSocket server initialization handled in routes.ts");
   
   // Register test endpoints for debugging cancellation functionality
   log("Registered cancellation test endpoints for event management");
