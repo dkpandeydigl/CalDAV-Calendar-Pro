@@ -156,10 +156,7 @@ export function useEnhancedSync() {
       const response = await apiRequest(
         'POST',
         '/api/events/create-with-sync',
-        {
-          userId: user.id,
-          eventData
-        }
+        eventData
       );
       
       const result = await response.json();
@@ -231,13 +228,9 @@ export function useEnhancedSync() {
 
     try {
       const response = await apiRequest(
-        'PUT',
-        '/api/events/update-with-sync',
-        {
-          userId: user.id,
-          eventId,
-          eventData
-        }
+        'POST',
+        `/api/events/${eventId}/update-with-sync`,
+        eventData
       );
       
       const result = await response.json();
@@ -309,12 +302,8 @@ export function useEnhancedSync() {
 
     try {
       const response = await apiRequest(
-        'DELETE',
-        '/api/events/cancel-with-sync',
-        {
-          userId: user.id,
-          eventId
-        }
+        'POST',
+        `/api/events/${eventId}/cancel-with-sync`
       );
       
       const result = await response.json();

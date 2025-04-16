@@ -2468,6 +2468,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Create event with enhanced synchronization
+  app.post("/api/events/create-with-sync", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const eventData = req.body;
+      
+      // Convert arrays to JSON strings if needed
+      if (eventData.attendees && Array.isArray(eventData.attendees)) {
+        eventData.attendees = JSON.stringify(eventData.attendees);
+      }
+      
+      if (eventData.resources && Array.isArray(eventData.resources)) {
+        eventData.resources = JSON.stringify(eventData.resources);
+      }
+      
+      // Use enhanced sync service for creation with immediate sync
+      const result = await enhancedSyncService.createEventWithSync(userId, eventData);
+      
+      // Return the created event with sync status
+      res.status(201).json({
+        event: result.event,
+        synced: result.synced,
+        syncDetails: result.syncDetails
+      });
+    } catch (err) {
+      console.error("Error creating event with sync:", err);
+      res.status(500).json({ 
+        message: "Error creating event with sync", 
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  
+  // Update event with enhanced synchronization
+  app.post("/api/events/:id/update-with-sync", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const eventId = parseInt(req.params.id);
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      const eventData = req.body;
+      
+      // Convert arrays to JSON strings if needed
+      if (eventData.attendees && Array.isArray(eventData.attendees)) {
+        eventData.attendees = JSON.stringify(eventData.attendees);
+      }
+      
+      if (eventData.resources && Array.isArray(eventData.resources)) {
+        eventData.resources = JSON.stringify(eventData.resources);
+      }
+      
+      // Use enhanced sync service for update with immediate sync
+      const result = await enhancedSyncService.updateEventWithSync(userId, eventId, eventData);
+      
+      // Return the updated event with sync status
+      res.status(200).json({
+        event: result.event,
+        synced: result.synced,
+        syncDetails: result.syncDetails
+      });
+    } catch (err) {
+      console.error("Error updating event with sync:", err);
+      res.status(500).json({ 
+        message: "Error updating event with sync", 
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  
+  // Cancel/delete event with enhanced synchronization
+  app.post("/api/events/:id/cancel-with-sync", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const eventId = parseInt(req.params.id);
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Use enhanced sync service for cancellation with immediate sync
+      const result = await enhancedSyncService.cancelEventWithSync(userId, eventId);
+      
+      // Return the result of the cancellation
+      res.status(200).json(result);
+    } catch (err) {
+      console.error("Error cancelling event with sync:", err);
+      res.status(500).json({ 
+        message: "Error cancelling event with sync", 
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  
+  // Force bidirectional sync for calendars and events
+  app.post("/api/sync/force-bidirectional", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { calendarId } = req.body;
+      
+      // Use enhanced sync service for forced bidirectional sync
+      const result = await enhancedSyncService.forceBidirectionalSync(
+        userId, 
+        calendarId ? parseInt(calendarId) : undefined
+      );
+      
+      // Return the result of the sync operation
+      res.status(200).json(result);
+    } catch (err) {
+      console.error("Error forcing bidirectional sync:", err);
+      res.status(500).json({ 
+        message: "Error forcing bidirectional sync", 
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  
+  // Regular event creation endpoint
   app.post("/api/events", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
