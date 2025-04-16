@@ -5,6 +5,7 @@ import { storage } from "./memory-storage"; // Using in-memory storage instead o
 import { initializeSyncService, syncService } from "./sync-service";
 import { initializeWebSocketServer } from "./websocket-handler";
 import { enhancedSyncService } from "./enhanced-sync-service";
+import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
 
 const app = express();
 app.use(express.json());
@@ -52,6 +53,10 @@ app.use((req, res, next) => {
   
   // Register test endpoints for debugging cancellation functionality
   log("Registered cancellation test endpoints for event management");
+  
+  // Register enhanced email test endpoints
+  registerEnhancedEmailTestEndpoints(app);
+  log("Registered enhanced RFC 5545 compliant email test endpoints");
   
   // Initialize the sync service for automatic CalDAV synchronization
   await initializeSyncService();
