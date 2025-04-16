@@ -34,7 +34,8 @@ import {
   Mail,
   RefreshCw,
   Package,
-  Info
+  Info,
+  Fingerprint
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -59,6 +60,8 @@ import {
   type DescriptionTemplate 
 } from '@/components/description/templates';
 import SavedTemplateManager from '@/components/description/SavedTemplateManager';
+// Import the UID persistence hook for consistent UIDs across event lifecycle
+import { useEventUID } from '@/hooks/useEventUID';
 
 interface EventFormModalProps {
   open: boolean;
@@ -102,6 +105,26 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const { createEvent, updateEvent, deleteEvent } = useCalendarEvents();
   const { selectedTimezone } = useCalendarContext();
   const { toast } = useToast();
+  
+  // Use the UID persistence hook with the current event ID
+  // This will either retrieve an existing UID or generate a new one if not found
+  const { 
+    uid: persistedUID, 
+    loading: uidLoading, 
+    error: uidError, 
+    storeUidForEvent 
+  } = useEventUID(event?.id);
+  
+  // Debug log for UID persistence
+  useEffect(() => {
+    if (persistedUID) {
+      console.log(`[ImprovedEventFormModal] Using persisted UID: ${persistedUID}`, {
+        eventId: event?.id,
+        eventUID: event?.uid,
+        persistedUID,
+      });
+    }
+  }, [persistedUID, event?.id, event?.uid]);
   
   // Filter shared calendars to only include those with edit permissions
   // Filter shared calendars with edit permissions
