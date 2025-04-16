@@ -27,7 +27,8 @@ interface Resource {
 }
 
 interface DirectResourceExtractorProps {
-  rawData: string | null | undefined;
+  rawData?: string | object | null | undefined;
+  resources?: Resource[]; // Direct resources array if available
   isPreview?: boolean; // If true, only show one resource with count indicator
   onDelete?: (resource: Resource) => void; // Optional callback for delete action
   onEdit?: (resource: Resource, updatedResource: Resource) => void; // Optional callback for edit action
@@ -35,6 +36,7 @@ interface DirectResourceExtractorProps {
 
 const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({ 
   rawData, 
+  resources: directResources = [],
   isPreview = true,
   onDelete,
   onEdit
@@ -44,6 +46,14 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({
   const [currentResource, setCurrentResource] = useState<Resource | null>(null);
   
   useEffect(() => {
+    // STEP 1: Check for direct resources passed as props first
+    if (directResources && Array.isArray(directResources) && directResources.length > 0) {
+      console.log('RESOURCE DEBUG: Using directly provided resources array:', directResources);
+      setResources(directResources);
+      return;
+    }
+    
+    // STEP 2: Fall back to rawData extraction if no direct resources
     if (!rawData) {
       console.log('RESOURCE DEBUG: No raw data available');
       return;
@@ -111,7 +121,7 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({
     } catch (error) {
       console.error('RESOURCE DEBUG: Error extracting resources:', error);
     }
-  }, [rawData]);
+  }, [rawData, directResources]);
   
   if (resources.length === 0) {
     return null;
