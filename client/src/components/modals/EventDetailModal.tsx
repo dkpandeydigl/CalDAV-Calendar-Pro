@@ -408,10 +408,40 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // 2. The user is the owner OR it's DK Pandey (who has special admin privileges)
   const shouldShowCancelButton = (hasAttendees || hasResources) && (isUsersOwnCalendar || effectiveCanEdit || isDKPandey);
   
-  // Process attendees from event data
-  const processedAttendees = event.attendees ? 
-    (Array.isArray(event.attendees) ? event.attendees : [event.attendees]) : 
-    [];
+  // Process attendees from event data with improved handling of different formats
+  const processedAttendees = useMemo(() => {
+    try {
+      // If no attendees data, return empty array
+      if (!event.attendees) return [];
+
+      // If it's already an array, use it directly
+      if (Array.isArray(event.attendees)) {
+        return event.attendees;
+      }
+      
+      // If it's a string that might be JSON, try to parse it
+      if (typeof event.attendees === 'string') {
+        try {
+          const parsed = JSON.parse(event.attendees);
+          return Array.isArray(parsed) ? parsed : [parsed];
+        } catch (e) {
+          console.log('Failed to parse attendees string, using as single attendee');
+          return [{ id: `attendee-${Date.now()}`, email: event.attendees }];
+        }
+      }
+      
+      // If it's an object but not an array, wrap it in array
+      if (typeof event.attendees === 'object') {
+        return [event.attendees];
+      }
+      
+      // As a last resort, convert to string and use as email
+      return [{ id: `attendee-fallback-${Date.now()}`, email: String(event.attendees) }];
+    } catch (e) {
+      console.error('Error processing attendees:', e);
+      return [];
+    }
+  }, [event.attendees]);
 
   // Handle Delete Event action with enhanced client-side removal
   const handleDelete = async () => {
@@ -899,7 +929,8 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                                   <h3 className="font-medium">Attendee List</h3>
                                 </div>
                                 <DirectAttendeeExtractor 
-                                  rawData={event.rawData}
+                                  rawData={typeof event.rawData === 'string' ? event.rawData : 
+                                           typeof event.rawData === 'object' ? event.rawData as object : null}
                                   attendees={processedAttendees}
                                   showMoreCount={10}
                                   isPreview={false}
