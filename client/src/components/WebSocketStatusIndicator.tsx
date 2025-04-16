@@ -89,7 +89,7 @@ export function WebSocketStatusIndicator() {
   // Determine indicator appearance based on connection status
   let indicatorIcon;
   let indicatorText;
-  let indicatorVariant;
+  let indicatorVariant: "default" | "destructive" | "outline" | "secondary" | null | undefined;
   
   if (connected) {
     indicatorIcon = <Wifi className="h-3 w-3 mr-1" />;

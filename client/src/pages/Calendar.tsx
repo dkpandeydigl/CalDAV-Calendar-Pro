@@ -23,6 +23,7 @@ import { format, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfM
 import { Loader2, RefreshCcw, Trash } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
+import WebSocketStatusIndicator from '@/components/WebSocketStatusIndicator';
 
 // For different calendar views
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
@@ -434,7 +435,10 @@ function CalendarContent() {
         {/* Main Calendar */}
         <main className="flex-1 overflow-auto bg-white">
           <div className="p-4 border-b bg-background flex justify-between items-center">
-            <h1 className="text-2xl font-semibold">Calendar</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-semibold">Calendar</h1>
+              <WebSocketStatusIndicator />
+            </div>
             
             <div className="flex items-center gap-4">
               <div className="flex gap-2">
