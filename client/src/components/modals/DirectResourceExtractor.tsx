@@ -50,17 +50,38 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({
     }
     
     try {
+      // Clean the raw data from potential embedded END:VEVENT/VCALENDAR tags before extraction
+      const cleanedRawData = typeof rawData === 'string' ? rawData : JSON.stringify(rawData);
+      
       // Use a pattern to directly extract resource information from raw iCalendar data
-      const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
-      const matches = Array.from(rawData.matchAll(resourceRegex));
+      // Improved regex to handle ICS formatting issues - ensures we capture only email portion
+      const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:]*?mailto:([^@\s\r\n]+@[^@\s\r\n\\\.,;]+(?:\.[^@\s\r\n\\\.,;]+)+)/g;
+      const matches = Array.from(cleanedRawData.matchAll(resourceRegex));
       
       if (matches && matches.length > 0) {
         console.log(`RESOURCE DEBUG: Found ${matches.length} resources directly in raw data`);
         
+        // Create a map to track unique resources by email to avoid duplication
+        const uniqueResourcesMap = new Map();
+        
         // Extract resource information from each match
-        const directResources = matches.map((match, index) => {
+        matches.forEach((match, index) => {
           const fullLine = match[0]; // The complete ATTENDEE line 
-          const email = match[1]; // The captured email group
+          let email = match[1]; // The captured email group
+          
+          // Clean the email from any embedded iCalendar tags
+          if (email.includes('\r\n') || email.includes('END:')) {
+            // Extract just the valid email portion
+            const emailCleanRegex = /([^@\s\r\n]+@[^@\s\r\n\\\.,;]+(?:\.[^@\s\r\n\\\.,;]+)+)/;
+            const cleanedEmail = email.match(emailCleanRegex);
+            email = cleanedEmail ? cleanedEmail[1] : email.split('\r\n')[0];
+            console.log('RESOURCE DEBUG: Cleaned malformed email -', email);
+          }
+          
+          // Skip if already processed this email to avoid duplication
+          if (uniqueResourcesMap.has(email.toLowerCase())) {
+            return;
+          }
           
           // Extract resource name from CN
           const cnMatch = fullLine.match(/CN=([^;:]+)/);
@@ -70,13 +91,17 @@ const DirectResourceExtractor: React.FC<DirectResourceExtractorProps> = ({
           const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
           const resourceType = typeMatch ? typeMatch[1].trim() : '';
           
-          return {
+          // Add to unique resources map
+          uniqueResourcesMap.set(email.toLowerCase(), {
             id: `resource-${index}-${Date.now()}`,
             email,
             name,
             type: resourceType
-          };
+          });
         });
+        
+        // Convert map values to array
+        const directResources = Array.from(uniqueResourcesMap.values());
         
         console.log('RESOURCE DEBUG: Extracted resources:', directResources);
         setResources(directResources);
