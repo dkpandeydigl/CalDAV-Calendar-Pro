@@ -153,13 +153,16 @@ export function useEnhancedSync() {
     });
 
     try {
-      const result = await apiRequest('/api/events/create-with-sync', {
-        method: 'POST',
-        body: JSON.stringify({
+      const response = await apiRequest(
+        'POST',
+        '/api/events/create-with-sync',
+        {
           userId: user.id,
           eventData
-        })
-      });
+        }
+      );
+      
+      const result = await response.json();
 
       if (result.success) {
         setCreateOperation({
@@ -227,14 +230,17 @@ export function useEnhancedSync() {
     });
 
     try {
-      const result = await apiRequest('/api/events/update-with-sync', {
-        method: 'PUT',
-        body: JSON.stringify({
+      const response = await apiRequest(
+        'PUT',
+        '/api/events/update-with-sync',
+        {
           userId: user.id,
           eventId,
           eventData
-        })
-      });
+        }
+      );
+      
+      const result = await response.json();
 
       if (result.success) {
         setUpdateOperation({
@@ -302,13 +308,16 @@ export function useEnhancedSync() {
     });
 
     try {
-      const result = await apiRequest('/api/events/cancel-with-sync', {
-        method: 'DELETE',
-        body: JSON.stringify({
+      const response = await apiRequest(
+        'DELETE',
+        '/api/events/cancel-with-sync',
+        {
           userId: user.id,
           eventId
-        })
-      });
+        }
+      );
+      
+      const result = await response.json();
 
       if (result.success) {
         setDeleteOperation({
