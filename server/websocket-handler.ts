@@ -21,11 +21,21 @@ const socketUsers: Map<WebSocket, number> = new Map();
 const socketLastPing: Map<WebSocket, number> = new Map();
 const socketLastPong: Map<WebSocket, number> = new Map();
 
+// Track if the WebSocket server has been initialized
+let websocketInitialized = false;
+
 // Initialize the WebSocket server with two paths for redundancy
 // - Main path at '/api/ws' for normal operations
 // - Fallback path at '/ws' for environments where the main path might be blocked
 export function initializeWebSocketServer(httpServer: Server) {
+  // Prevent double initialization
+  if (websocketInitialized) {
+    console.log("WebSocket server already initialized, skipping");
+    return;
+  }
+  
   console.log("Initializing WebSocket server with dual paths");
+  websocketInitialized = true;
   
   // Primary WebSocket server on /api/ws path
   const wssApiPath = new WebSocketServer({ 

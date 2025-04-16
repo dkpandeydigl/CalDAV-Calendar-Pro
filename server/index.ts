@@ -95,11 +95,9 @@ app.use((req, res, next) => {
     syncService.shutdownAll();
     log("Sync service shut down");
     
-    // Gracefully shut down enhanced sync service if needed
-    if (enhancedSyncService && typeof enhancedSyncService.shutdown === 'function') {
-      enhancedSyncService.shutdown();
-      log("Enhanced sync service shut down");
-    }
+    // Gracefully shut down enhanced sync service
+    enhancedSyncService.shutdown();
+    log("Enhanced sync service shut down");
     
     process.exit(0);
   };

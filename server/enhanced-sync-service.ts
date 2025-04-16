@@ -470,7 +470,7 @@ export class EnhancedSyncService {
     
     try {
       // First pull from server to local
-      const pullResult = await syncService.syncCalendars(userId, {
+      const pullResult = await syncService.requestSync(userId, {
         calendarId: calendarId || null,
         forceRefresh: true,
         preserveLocalDeletes: true
@@ -520,7 +520,7 @@ export class EnhancedSyncService {
       }
       
       // Perform a full discovery and sync
-      const syncResult = await syncService.syncCalendars(userId, {
+      const syncResult = await syncService.requestSync(userId, {
         forceRefresh: true,
         preserveLocalDeletes: false,
         comprehensiveDiscovery: true
