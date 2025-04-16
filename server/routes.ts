@@ -29,7 +29,8 @@ import { webdavSyncService } from "./webdav-sync";
 import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./memory-notification-service";
 import { registerEmailTestEndpoints } from "./email-test-endpoint";
-import { initializeWebSocketServer, broadcastToUser, sendNotification, createAndSendNotification, initializeWebSocketNotificationService } from "./websocket-handler";
+import { initializeWebSocketServer } from "./websocket-handler";
+import { initializeWebSocketNotificationService } from "./websocket-notifications";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 import { enhancedSyncService } from './enhanced-sync-service';
 
@@ -72,10 +73,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
   // Initialize WebSocket server for real-time notifications
+  // This internally initializes the WebSocket notification service
   initializeWebSocketServer(httpServer);
   
-  // Initialize WebSocket Notification Service
-  const notificationService = initializeWebSocketNotificationService();
   console.log('[express] WebSocket server initialization handled in routes.ts');
   
   // Register the export and import routes

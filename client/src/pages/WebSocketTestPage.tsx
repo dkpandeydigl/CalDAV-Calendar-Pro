@@ -28,7 +28,7 @@ const WebSocketTestPage: React.FC = () => {
   const { 
     connectionStatus, 
     sendMessage,
-    lastMessage
+    lastNotification
   } = useWebSocket({
     userId: user?.id || null,
     autoConnect: true,
@@ -38,12 +38,12 @@ const WebSocketTestPage: React.FC = () => {
     }
   });
 
-  // Add last message to messages when it changes
+  // Add last notification to messages when it changes
   useEffect(() => {
-    if (lastMessage) {
-      setMessages(prev => [...prev, lastMessage]);
+    if (lastNotification) {
+      setMessages(prev => [...prev, lastNotification]);
     }
-  }, [lastMessage]);
+  }, [lastNotification]);
 
   const handleBack = () => {
     setLocation('/');

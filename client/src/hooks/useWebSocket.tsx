@@ -1,120 +1,229 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import websocketService, { WebSocketNotification } from '../services/websocketService';
+import { WebSocketNotification } from '@/services/websocketService';
+
+export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected';
 
 interface UseWebSocketOptions {
-  notificationTypes?: string[];
-  eventUid?: string;
-  onMessage?: (notification: WebSocketNotification) => void;
+  userId: number | null;
   autoConnect?: boolean;
-  userId?: number | null;
+  onMessage?: (notification: WebSocketNotification) => void;
+  onStatusChange?: (status: ConnectionStatus) => void;
 }
 
-/**
- * React hook for using WebSocket notifications
- * 
- * This hook provides an easy way to:
- * 1. Connect to the WebSocket server
- * 2. Receive notifications of specific types
- * 3. Send messages to the server
- * 4. Monitor connection status
- * 
- * @param options Configuration options
- * @returns WebSocket hook utilities
- */
-function useWebSocket({
-  notificationTypes = ['all'],
-  eventUid,
-  onMessage,
+interface UseWebSocketReturn {
+  connectionStatus: ConnectionStatus;
+  lastNotification: WebSocketNotification | null;
+  connect: (id: number) => void;
+  disconnect: () => void;
+  sendMessage: (message: WebSocketNotification) => boolean;
+}
+
+const useWebSocket = ({
+  userId,
   autoConnect = true,
-  userId = null
-}: UseWebSocketOptions = {}) {
-  // Track connection status
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
-  // Track notification messages
+  onMessage,
+  onStatusChange
+}: UseWebSocketOptions): UseWebSocketReturn => {
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [lastNotification, setLastNotification] = useState<WebSocketNotification | null>(null);
-  // Reference to unsubscribe functions
-  const unsubscribeRefs = useRef<(() => void)[]>([]);
-
-  // Handle incoming notifications
-  const handleNotification = useCallback((notification: WebSocketNotification) => {
-    setLastNotification(notification);
-    // If a custom handler was provided, call it
-    if (onMessage) {
-      onMessage(notification);
+  const socketRef = useRef<WebSocket | null>(null);
+  const connectedUserIdRef = useRef<number | null>(null);
+  
+  // Helper to determine WebSocket URL based on current protocol and host
+  const getWebSocketUrl = useCallback((id: number) => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    
+    // First try the primary WebSocket endpoint
+    try {
+      // Try both potential paths, with priority to the /api/ws path
+      return `${protocol}//${window.location.host}/api/ws?userId=${id}`;
+    } catch (error) {
+      console.error('Error constructing WebSocket URL:', error);
+      // Fallback to a basic path if something went wrong
+      return `${protocol}//${window.location.host}/ws?userId=${id}`;
     }
-  }, [onMessage]);
+  }, []);
 
-  // Initialize WebSocket connection
+  // Function to establish WebSocket connection
   const connect = useCallback((id: number) => {
-    // Only initialize if we have a user ID
-    if (id) {
-      websocketService.initialize(id);
+    if (!id) {
+      console.error('Cannot connect WebSocket: No user ID provided');
+      return;
     }
-  }, []);
 
-  // Disconnect from WebSocket server
-  const disconnect = useCallback(() => {
-    websocketService.disconnect();
-  }, []);
-
-  // Send a WebSocket message
-  const sendMessage = useCallback((message: WebSocketNotification): boolean => {
-    return websocketService.sendMessage(message);
-  }, []);
-
-  // Register connection status handler
-  useEffect(() => {
-    const unsubscribe = websocketService.registerHandler('connection', (notification) => {
-      const status = notification.data?.status as 'connecting' | 'connected' | 'disconnected';
-      if (status) {
-        setConnectionStatus(status);
+    try {
+      // Close any existing connection
+      if (socketRef.current) {
+        socketRef.current.close();
+        socketRef.current = null;
       }
-    });
 
-    // Store current connection status
-    setConnectionStatus(websocketService.getConnectionStatus());
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  // Register notification handlers for each type
-  useEffect(() => {
-    // Clean up previous subscriptions
-    unsubscribeRefs.current.forEach(unsubscribe => unsubscribe());
-    unsubscribeRefs.current = [];
-
-    // Register new handlers for each notification type
-    const newUnsubscribes: (() => void)[] = [];
-    notificationTypes.forEach(type => {
-      const unsubscribe = websocketService.registerHandler(type, handleNotification);
-      newUnsubscribes.push(unsubscribe);
-    });
-
-    // If an event UID was provided, register for specific event notifications
-    if (eventUid) {
-      const unsubscribe = websocketService.registerHandler(`event:${eventUid}`, handleNotification);
-      newUnsubscribes.push(unsubscribe);
+      // Update status
+      setConnectionStatus('connecting');
+      
+      // Save the connected user ID for reconnection attempts
+      connectedUserIdRef.current = id;
+      
+      // Create new WebSocket connection
+      const wsUrl = getWebSocketUrl(id);
+      console.log(`Connecting to WebSocket at ${wsUrl}`);
+      
+      const socket = new WebSocket(wsUrl);
+      socketRef.current = socket;
+      
+      // Set up event handlers
+      socket.onopen = () => {
+        console.log('WebSocket connection established');
+        setConnectionStatus('connected');
+        if (onStatusChange) onStatusChange('connected');
+      };
+      
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('WebSocket message received:', data);
+          
+          // Handle different message types
+          switch (data.type) {
+            case 'connected':
+              console.log(`Connected to WebSocket server as user ${data.userId}`);
+              break;
+              
+            case 'pong':
+              // Handle ping response (for latency calculation)
+              const latency = Date.now() - data.originalTimestamp;
+              console.log(`WebSocket latency: ${latency}ms`);
+              break;
+              
+            case 'event':
+            case 'calendar':
+            case 'system':
+            case 'resource':
+            case 'attendee':
+            case 'email':
+              // These are notification types - process them
+              if (data.action && data.timestamp && data.data) {
+                const notification: WebSocketNotification = {
+                  type: data.type,
+                  action: data.action,
+                  timestamp: data.timestamp,
+                  data: data.data,
+                  sourceUserId: data.sourceUserId
+                };
+                
+                // Update last notification received
+                setLastNotification(notification);
+                
+                // Call onMessage handler if provided
+                if (onMessage) {
+                  onMessage(notification);
+                }
+              }
+              break;
+              
+            default:
+              console.log('Unknown WebSocket message type:', data.type);
+          }
+        } catch (error) {
+          console.error('Error processing WebSocket message:', error);
+        }
+      };
+      
+      socket.onclose = (event) => {
+        console.log('WebSocket connection closed:', event.code, event.reason);
+        setConnectionStatus('disconnected');
+        if (onStatusChange) onStatusChange('disconnected');
+        
+        // Attempt to reconnect after a delay
+        if (connectedUserIdRef.current) {
+          console.log('Scheduling WebSocket reconnection attempt...');
+          setTimeout(() => {
+            if (connectedUserIdRef.current && connectionStatus !== 'connected') {
+              console.log('Attempting to reconnect WebSocket...');
+              connect(connectedUserIdRef.current);
+            }
+          }, 5000);
+        }
+      };
+      
+      socket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('disconnected');
+        if (onStatusChange) onStatusChange('disconnected');
+      };
+      
+    } catch (error) {
+      console.error('Error establishing WebSocket connection:', error);
+      setConnectionStatus('disconnected');
+      if (onStatusChange) onStatusChange('disconnected');
     }
-
-    // Store the unsubscribe functions
-    unsubscribeRefs.current = newUnsubscribes;
-
-    // Clean up on unmount
-    return () => {
-      newUnsubscribes.forEach(unsubscribe => unsubscribe());
-    };
-  }, [notificationTypes, eventUid, handleNotification]);
-
-  // Auto-connect if enabled
+  }, [getWebSocketUrl, onMessage, onStatusChange, connectionStatus]);
+  
+  // Function to close WebSocket connection
+  const disconnect = useCallback(() => {
+    if (socketRef.current) {
+      console.log('Disconnecting WebSocket...');
+      socketRef.current.close();
+      socketRef.current = null;
+      connectedUserIdRef.current = null;
+    }
+  }, []);
+  
+  // Function to send a message through the WebSocket
+  const sendMessage = useCallback((message: WebSocketNotification): boolean => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      try {
+        socketRef.current.send(JSON.stringify(message));
+        return true;
+      } catch (error) {
+        console.error('Error sending WebSocket message:', error);
+        return false;
+      }
+    } else {
+      console.error('Cannot send WebSocket message: Socket not connected');
+      return false;
+    }
+  }, []);
+  
+  // Connect automatically if autoConnect is true and userId is provided
   useEffect(() => {
-    if (autoConnect && userId) {
+    if (autoConnect && userId && connectionStatus === 'disconnected') {
       connect(userId);
     }
-    // We don't include connect in dependencies as it would cause an infinite loop
-  }, [autoConnect, userId]); // eslint-disable-line react-hooks/exhaustive-deps
-
+    
+    // Cleanup on unmount
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+    };
+  }, [autoConnect, userId, connect, connectionStatus]);
+  
+  // Set up ping interval to keep connection alive
+  useEffect(() => {
+    if (connectionStatus !== 'connected') {
+      return;
+    }
+    
+    const pingInterval = setInterval(() => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        try {
+          // Send ping message to calculate roundtrip time
+          socketRef.current.send(JSON.stringify({
+            type: 'ping',
+            timestamp: Date.now()
+          }));
+        } catch (error) {
+          console.error('Error sending WebSocket ping:', error);
+        }
+      }
+    }, 30000); // Send ping every 30 seconds
+    
+    return () => {
+      clearInterval(pingInterval);
+    };
+  }, [connectionStatus]);
+  
   return {
     connectionStatus,
     lastNotification,
@@ -122,6 +231,6 @@ function useWebSocket({
     disconnect,
     sendMessage
   };
-}
+};
 
 export default useWebSocket;

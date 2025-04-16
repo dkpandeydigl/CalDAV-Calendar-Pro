@@ -23,9 +23,9 @@ const WebSocketStatusIndicator: React.FC<WebSocketStatusIndicatorProps> = ({
   className
 }) => {
   const { connectionStatus } = useWebSocket({
-    userId,
+    userId: userId || null,
     autoConnect: !!userId,
-    notificationTypes: ['system']
+    onMessage: () => {} // Empty handler, we're just displaying status
   });
 
   // Map connection status to visual indicators
