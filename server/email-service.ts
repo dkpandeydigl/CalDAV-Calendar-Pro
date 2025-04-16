@@ -304,7 +304,7 @@ export class EmailService {
       }
       
       // Remove duplicates and organizer's email from recipients
-      recipients = [...new Set(recipients)];
+      recipients = Array.from(new Set(recipients));
       recipients = recipients.filter(email => email !== data.organizer.email);
       
       if (recipients.length === 0) {
@@ -477,7 +477,7 @@ export class EmailService {
       }
       
       // Remove duplicates and organizer's email from recipients
-      recipients = [...new Set(recipients)];
+      recipients = Array.from(new Set(recipients));
       recipients = recipients.filter(email => email !== data.organizer.email);
       
       if (recipients.length === 0) {
@@ -493,12 +493,12 @@ export class EmailService {
           ? `"${this.config.fromName}" <${this.config.fromEmail}>` 
           : this.config?.fromEmail,
         to: recipients.join(', '),
-        subject: `Cancelled: ${data.title}`,
+        subject: `Event Cancelled: ${data.title}`,
         text: textBody,
         html: htmlBody,
         attachments: [
           {
-            filename: `${data.uid || `event-cancellation-${Date.now()}`}.ics`,
+            filename: `${data.uid || `event-${Date.now()}`}.ics`,
             content: icsData,
             contentType: 'text/calendar'
           }
@@ -534,189 +534,203 @@ export class EmailService {
    */
   transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
-      // First check if the ICS data already has a cancellation status
-      if (originalIcs.includes('STATUS:CANCELLED')) {
-        return originalIcs;
-      }
+      // Verify we have a UID to work with
+      const uid = data.uid || (() => {
+        const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+        return uidMatch ? uidMatch[1] : `event-${Date.now()}`;
+      })();
       
-      // Add or replace STATUS:CANCELLED in the VEVENT block
-      let modified = originalIcs;
+      // Parse the current sequence from the original ICS if available
+      const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
+      const currentSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
+      const newSequence = currentSequence + 1;
       
-      // Find the VEVENT block
-      const eventStart = modified.indexOf('BEGIN:VEVENT');
-      const eventEnd = modified.indexOf('END:VEVENT', eventStart);
+      // Parse the original ORGANIZER and organizer name if available
+      const organizerMatch = originalIcs.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
+      const organizerEmail = organizerMatch ? organizerMatch[1] : data.organizer.email;
       
-      if (eventStart === -1 || eventEnd === -1) {
-        // If we can't find the VEVENT block, just use our standard generator
-        return this.generateICSData(data);
-      }
+      const organizerNameMatch = originalIcs.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
+      const organizerName = organizerNameMatch ? organizerNameMatch[1] : data.organizer.name;
       
-      // Extract the VEVENT block
-      const eventBlock = modified.substring(eventStart, eventEnd);
-      
-      // Check if there's already a STATUS line
-      if (eventBlock.includes('STATUS:')) {
-        // Replace existing STATUS line
-        modified = modified.replace(/STATUS:[^\r\n]+/g, 'STATUS:CANCELLED');
-      } else {
-        // Add STATUS:CANCELLED after UID
-        modified = modified.replace(/(UID:[^\r\n]+)/g, '$1\r\nSTATUS:CANCELLED');
-      }
-      
-      // Update METHOD to CANCEL if exists
-      if (modified.includes('METHOD:')) {
-        modified = modified.replace(/METHOD:[^\r\n]+/g, 'METHOD:CANCEL');
-      } else {
-        // Add METHOD:CANCEL after PRODID
-        modified = modified.replace(/(PRODID:[^\r\n]+)/g, '$1\r\nMETHOD:CANCEL');
-      }
-      
-      // Update SEQUENCE number if it exists
-      const seqMatch = modified.match(/SEQUENCE:(\d+)/);
-      if (seqMatch) {
-        const currentSeq = parseInt(seqMatch[1], 10);
-        modified = modified.replace(/SEQUENCE:\d+/g, `SEQUENCE:${currentSeq + 1}`);
-      } else {
-        // Add SEQUENCE after UID
-        modified = modified.replace(/(UID:[^\r\n]+)/g, '$1\r\nSEQUENCE:1');
-      }
-      
-      // Update DTSTAMP to current time
-      const now = formatICalDate(new Date());
-      if (modified.includes('DTSTAMP:')) {
-        modified = modified.replace(/DTSTAMP:[^\r\n]+/g, `DTSTAMP:${now}`);
-      } else {
-        // Add DTSTAMP after UID
-        modified = modified.replace(/(UID:[^\r\n]+)/g, `$1\r\nDTSTAMP:${now}`);
-      }
-      
-      // Use the shared formatter to ensure proper formatting
-      return sanitizeAndFormatICS(modified);
+      // Create a sanitized and correctly formatted ICS for cancellation
+      // Using the utility function from shared ics-formatter to ensure consistency
+      return sanitizeAndFormatICS(originalIcs, {
+        uid,
+        method: 'CANCEL',
+        status: 'CANCELLED',
+        sequence: newSequence,
+        organizer: {
+          email: organizerEmail,
+          name: organizerName
+        },
+        preserveAttendees: true,
+        preserveResources: true
+      });
     } catch (error) {
       console.error('Error transforming ICS for cancellation:', error);
-      
-      // If transformation fails, fall back to generating new ICS
-      return this.generateICSData({...data, status: 'CANCELLED'});
+      // Fallback to generating a new ICS with CANCELLED status
+      return this.generateICSData({
+        ...data,
+        status: 'CANCELLED',
+        sequence: (data.sequence || 0) + 1
+      });
     }
   }
   
   public generateICSData(data: EventInvitationData): string {
-    const { uid, title, description, location, startDate, endDate, organizer, attendees, resources, status, rawData, sequence, _originalResourceAttendees } = data;
-    
-    // CRITICAL FIX: If raw server data is available, use it as the source of truth for proper RFC compliance
-    // This ensures we preserve the exact same UID throughout the event lifecycle
-    if (rawData && typeof rawData === 'string') {
-      console.log(`Using original raw server data for ICS generation (${rawData.length} bytes)`);
-      
-      try {
-        // First, extract original UID to log it for debugging purposes
-        const uidMatch = rawData.match(/UID:([^\r\n]+)/);
-        if (uidMatch && uidMatch[1]) {
-          const originalUid = uidMatch[1];
-          console.log(`Preserving original UID from raw data: ${originalUid}`);
-        } else {
-          console.log(`No UID found in raw data - will preserve provided UID: ${uid}`);
-        }
-        
-        // For regular events (not cancellations), use the shared formatter for proper RFC compliance
-        if (status !== 'CANCELLED') {
-          console.log('Using shared ICS formatter for email attachment generation - ensuring UID consistency');
-          
-          // Update METHOD to REQUEST if needed for email invitations
-          let processedIcs = rawData;
-          if (!processedIcs.includes('METHOD:REQUEST')) {
-            if (processedIcs.includes('METHOD:')) {
-              // Replace existing METHOD
-              processedIcs = processedIcs.replace(/METHOD:[^\r\n]+/g, 'METHOD:REQUEST');
-            } else {
-              // Add METHOD after PRODID
-              processedIcs = processedIcs.replace(/PRODID:[^\r\n]+/g, match => match + '\r\nMETHOD:REQUEST');
-            }
-          }
-          
-          // Use the shared formatter to ensure proper RFC compliance
-          return sanitizeAndFormatICS(processedIcs);
-        }
-      } catch (error) {
-        console.error('Error processing raw data for ICS generation:', error);
-        // Fall through to standard method if there was an error
-      }
+    // If there's already raw data available, we'll transform it using our utility
+    if (data.rawData) {
+      const method = data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST';
+      return sanitizeAndFormatICS(data.rawData, {
+        uid: data.uid,
+        method,
+        status: data.status,
+        sequence: data.sequence,
+        organizer: data.organizer,
+        preserveAttendees: true,
+        preserveResources: true
+      });
     }
     
-    // If no raw data or failed to process it, generate a standard ICS file
-    console.log('No raw data available or processing failed - generating ICS from scratch');
+    // Build a new ICS file from scratch
+    const method = data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST';
+    const status = data.status || (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED');
+    const sequence = data.sequence || 0;
     
-    // Format dates for iCalendar
-    const startDateStr = formatICalDate(startDate);
-    const endDateStr = formatICalDate(endDate);
+    // Format dates according to iCalendar spec
+    const startDate = formatICalDate(data.startDate);
+    const endDate = formatICalDate(data.endDate);
     const now = formatICalDate(new Date());
     
-    // Use the original UID if provided, or generate a new one
-    const eventId = uid || `event-${Date.now()}@caldavclient.local`;
-    
-    // Build basic ICS content with RFC 5545 compliance
-    const icsContent = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//CalDAV Calendar Application//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:REQUEST',
-      'BEGIN:VEVENT',
-      `UID:${eventId}`,
-      `DTSTAMP:${now}`,
-      `DTSTART:${startDateStr}`,
-      `DTEND:${endDateStr}`,
-      `SUMMARY:${title}`,
-    ];
-    
-    // Add optional fields
-    if (description) icsContent.push(`DESCRIPTION:${description.replace(/\n/g, '\\n')}`);
-    if (location) icsContent.push(`LOCATION:${location}`);
-    
+    let icsContent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Replit Calendar App//EN
+CALSCALE:GREGORIAN
+METHOD:${method}
+BEGIN:VEVENT
+UID:${data.uid}
+DTSTAMP:${now}
+DTSTART:${startDate}
+DTEND:${endDate}
+SEQUENCE:${sequence}
+STATUS:${status}
+SUMMARY:${data.title}`;
+
+    if (data.description) {
+      // Encode description properly for iCalendar (line folding and escaping)
+      const escapedDescription = data.description
+        .replace(/\n/g, '\\n')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,');
+      
+      // Add to ICS content with proper line folding
+      icsContent += `
+DESCRIPTION:${escapedDescription}`;
+    }
+
+    if (data.location) {
+      // Escape location properly
+      const escapedLocation = data.location
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,');
+        
+      icsContent += `
+LOCATION:${escapedLocation}`;
+    }
+
     // Add organizer
-    if (organizer && organizer.email) {
-      icsContent.push(`ORGANIZER;CN=${organizer.name || organizer.email}:mailto:${organizer.email}`);
+    if (data.organizer.email) {
+      const organizerString = data.organizer.name 
+        ? `ORGANIZER;CN=${data.organizer.name}:mailto:${data.organizer.email}`
+        : `ORGANIZER:mailto:${data.organizer.email}`;
+        
+      icsContent += `
+${organizerString}`;
     }
-    
+
     // Add attendees
-    if (attendees && Array.isArray(attendees)) {
-      attendees.forEach(attendee => {
-        if (attendee && attendee.email) {
-          icsContent.push(`ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=${attendee.role || 'REQ-PARTICIPANT'};PARTSTAT=${attendee.status || 'NEEDS-ACTION'};CN=${attendee.name || attendee.email}:mailto:${attendee.email}`);
+    if (data.attendees && data.attendees.length > 0) {
+      for (const attendee of data.attendees) {
+        if (!attendee.email) continue;
+        
+        let attendeeString = 'ATTENDEE';
+        
+        if (attendee.name) {
+          attendeeString += `;CN=${attendee.name}`;
         }
-      });
-    }
-    
-    // Add resources as attendees
-    if (resources && Array.isArray(resources)) {
-      resources.forEach(resource => {
-        let resourceStr = `ATTENDEE;CN=${resource.name || resource.subType || 'Resource'};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT`;
-        if (resource.subType) {
-          resourceStr += `;X-RESOURCE-TYPE=${resource.subType}`;
+        
+        if (attendee.role) {
+          attendeeString += `;ROLE=${attendee.role}`;
         }
-        if (resource.capacity !== undefined) {
-          resourceStr += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
+        
+        if (attendee.status) {
+          attendeeString += `;PARTSTAT=${attendee.status}`;
         }
-        resourceStr += `:mailto:${resource.adminEmail}`;
-        icsContent.push(resourceStr);
-      });
+        
+        attendeeString += `:mailto:${attendee.email}`;
+        
+        icsContent += `
+${attendeeString}`;
+      }
     }
-    
-    // Close the event and calendar
-    icsContent.push(
-      'END:VEVENT',
-      'END:VCALENDAR'
-    );
-    
-    try {
-      // Use our shared formatter for consistent formatting
-      return sanitizeAndFormatICS(icsContent.join('\r\n'));
-    } catch (error) {
-      console.error('Error formatting ICS content:', error);
-      return icsContent.join('\r\n'); // Return unformatted as fallback
+
+    // Add resources if present
+    if (data.resources && data.resources.length > 0) {
+      // If we have preserved original resource attendee lines, use those
+      if (data._originalResourceAttendees && data._originalResourceAttendees.length > 0) {
+        for (const line of data._originalResourceAttendees) {
+          icsContent += `
+${line}`;
+        }
+      } else {
+        // Otherwise create new resource attendee lines
+        for (const resource of data.resources) {
+          if (!resource.id || !resource.adminEmail) continue;
+          
+          let resourceString = 'ATTENDEE;CUTYPE=RESOURCE';
+          
+          if (resource.name) {
+            resourceString += `;CN=${resource.name}`;
+          }
+          
+          resourceString += `;RESOURCE-TYPE=${resource.subType || resource.type || 'ROOM'}`;
+          resourceString += `;X-RESOURCE-ID=${resource.id}`;
+          
+          if (resource.capacity) {
+            resourceString += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
+          }
+          
+          resourceString += `:mailto:${resource.adminEmail}`;
+          
+          icsContent += `
+${resourceString}`;
+        }
+      }
     }
+
+    // Add recurrence rule if present
+    if (data.recurrenceRule) {
+      if (typeof data.recurrenceRule === 'string') {
+        icsContent += `
+RRULE:${data.recurrenceRule}`;
+      } else {
+        // Handle object recurrence rule
+        const rrule = Object.entries(data.recurrenceRule)
+          .map(([key, value]) => `${key}=${value}`)
+          .join(';');
+          
+        icsContent += `
+RRULE:${rrule}`;
+      }
+    }
+
+    // Close out the ICS file
+    icsContent += `
+END:VEVENT
+END:VCALENDAR`;
+
+    return icsContent;
   }
 }
 
-// Create a singleton instance of the email service
 export const emailService = new EmailService();
