@@ -269,13 +269,37 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     endDate.setHours(endDate.getHours() + 1);
   }
 
-  // Function for resource extraction with improved deduplication
+  // Function for resource extraction with improved deduplication and email cleaning
   const extractResourcesFromRawData = () => {
     if (!event) return [];
     
     try {
       // Create a Map to track resources by email for deduplication
       const resourceMap = new Map();
+      
+      // Helper function to clean malformed email addresses
+      const cleanEmailAddress = (email: string): string => {
+        if (!email) return '';
+        
+        // Clean email if it contains embedded ICS tags or line breaks
+        if (email.includes('\r\n') || email.includes('END:') || email.includes('VCALENDAR')) {
+          // Extract just the valid email portion using a more restrictive regex
+          const emailCleanRegex = /([^@\s\r\n]+@[^@\s\r\n\\\.,;]+(?:\.[^@\s\r\n\\\.,;]+)+)/;
+          const cleanedEmail = email.match(emailCleanRegex);
+          
+          if (cleanedEmail && cleanedEmail[1]) {
+            console.log('Cleaned malformed email from:', email, 'to:', cleanedEmail[1]);
+            return cleanedEmail[1];
+          }
+          
+          // If regex didn't match, just take everything before the first line break
+          const firstPartEmail = email.split('\r\n')[0];
+          console.log('Cleaned malformed email using split from:', email, 'to:', firstPartEmail);
+          return firstPartEmail;
+        }
+        
+        return email;
+      };
       
       // STEP 1: Try to get resources from the event.resources field first
       if (event.resources) {
@@ -292,15 +316,22 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         // Add resources to our map for deduplication
         if (Array.isArray(parsedResources)) {
           parsedResources.forEach((resource, index) => {
-            const email = resource.adminEmail || resource.email; 
+            let email = resource.adminEmail || resource.email; 
             if (email) {
-              resourceMap.set(email.toLowerCase(), {
-                id: resource.id || `resource-${index}-${Date.now()}`,
-                adminEmail: email,
-                adminName: resource.adminName || resource.name || 'Resource',
-                subType: resource.subType || resource.type || '',
-                capacity: resource.capacity || 1
-              });
+              // Clean the email address
+              email = cleanEmailAddress(email);
+              
+              const emailKey = email.toLowerCase();
+              // Only add if not already in the map (prevents overwriting)
+              if (!resourceMap.has(emailKey)) {
+                resourceMap.set(emailKey, {
+                  id: resource.id || `resource-${index}-${Date.now()}`,
+                  adminEmail: email,
+                  adminName: resource.adminName || resource.name || 'Resource',
+                  subType: resource.subType || resource.type || '',
+                  capacity: resource.capacity || 1
+                });
+              }
             }
           });
         }
@@ -310,17 +341,21 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       if (event.rawData && typeof event.rawData === 'string') {
         const rawDataStr = event.rawData;
         
-        // Use a simple regex to find any ATTENDEE lines containing CUTYPE=RESOURCE
-        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
+        // Improved regex to better match resource emails in ICS data
+        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:]*?mailto:([^@\s\r\n]+@[^@\s\r\n\\\.,;]+(?:\.[^@\s\r\n\\\.,;]+)+)/g;
         const matches = Array.from(rawDataStr.matchAll(resourceRegex));
         
         if (matches && matches.length > 0) {
           matches.forEach((match, index) => {
             const fullLine = match[0]; // The complete ATTENDEE line 
-            const email = match[1]; // The captured email group
+            let email = match[1]; // The captured email group
+            
+            // Clean the email address
+            email = cleanEmailAddress(email);
+            const emailKey = email.toLowerCase();
             
             // Skip if we already have this resource by email
-            if (email && !resourceMap.has(email.toLowerCase())) {
+            if (email && !resourceMap.has(emailKey)) {
               // Extract resource name from CN
               const cnMatch = fullLine.match(/CN=([^;:]+)/);
               const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
@@ -329,12 +364,16 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
               const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
               const resourceType = typeMatch ? typeMatch[1].trim() : '';
               
-              resourceMap.set(email.toLowerCase(), {
+              // Extract capacity if available
+              const capacityMatch = fullLine.match(/X-RESOURCE-CAPACITY=([0-9]+)/);
+              const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : 1;
+              
+              resourceMap.set(emailKey, {
                 id: `resource-${index}-${Date.now()}`,
                 adminEmail: email,
                 adminName: name,
                 subType: resourceType,
-                capacity: 1
+                capacity: capacity
               });
             }
           });

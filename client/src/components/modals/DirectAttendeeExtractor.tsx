@@ -42,17 +42,45 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
       console.log('ATTENDEE DEBUG: Unfolded data example:', unfoldedData.substring(0, 200));
       
       // STEP 2: Use a direct regex approach to find all ATTENDEE lines that aren't resources
-      const attendeeRegex = /ATTENDEE(?!.*CUTYPE=RESOURCE).*?:.*?mailto:([^\s;>,\n\r]+)/g;
+      // Improved regex for more reliable email extraction - handles embedded line breaks and tags
+      const attendeeRegex = /ATTENDEE(?!.*CUTYPE=RESOURCE).*?:.*?mailto:([^@\s\r\n]+@[^@\s\r\n\\\.,;]+(?:\.[^@\s\r\n\\\.,;]+)+)/g;
       const extractedAttendees: Attendee[] = [];
       let regexMatch;
       
       // Track which method was successful
       let extractionMethod = "none";
       
+      // Helper function to clean email addresses
+      const cleanEmailAddress = (email: string): string => {
+        if (!email) return '';
+        
+        // Clean email if it contains embedded ICS tags or line breaks
+        if (email.includes('\r\n') || email.includes('END:') || email.includes('VCALENDAR')) {
+          // Extract just the valid email portion
+          const emailCleanRegex = /([^@\s\r\n]+@[^@\s\r\n\\\.,;]+(?:\.[^@\s\r\n\\\.,;]+)+)/;
+          const cleanedEmail = email.match(emailCleanRegex);
+          
+          if (cleanedEmail && cleanedEmail[1]) {
+            console.log('ATTENDEE DEBUG: Cleaned malformed email from:', email, 'to:', cleanedEmail[1]);
+            return cleanedEmail[1];
+          }
+          
+          // If regex didn't match, just take everything before the first line break
+          const firstPartEmail = email.split('\r\n')[0];
+          console.log('ATTENDEE DEBUG: Cleaned malformed email using split from:', email, 'to:', firstPartEmail);
+          return firstPartEmail;
+        }
+        
+        return email;
+      };
+      
       // Try direct regex first
       while ((regexMatch = attendeeRegex.exec(unfoldedData)) !== null) {
         const fullLine = regexMatch[0];
-        const email = regexMatch[1].trim();
+        let email = regexMatch[1].trim();
+        
+        // Clean the email if it has malformed data
+        email = cleanEmailAddress(email);
         
         // Extract attendee name from CN if available
         const cnMatch = fullLine.match(/CN=([^;:]+)/);
@@ -67,6 +95,18 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
         const status = statusMatch ? statusMatch[1].replace(/-/g, ' ').trim() : 'Needs Action';
         
         console.log(`ATTENDEE DEBUG: Extracted via regex: ${name} <${email}>, role: ${role}`);
+        
+        // Skip adding if this is a resource email (resources are extracted separately)
+        if (fullLine.includes('CUTYPE=RESOURCE')) {
+          console.log(`ATTENDEE DEBUG: Skipping resource email: ${email}`);
+          continue;
+        }
+        
+        // Skip if email is malformed or empty after cleaning
+        if (!email || email.length < 3 || !email.includes('@')) {
+          console.log(`ATTENDEE DEBUG: Skipping invalid email: ${email}`);
+          continue;
+        }
         
         extractedAttendees.push({
           id: `attendee-regex-${extractedAttendees.length}-${Date.now()}`,
@@ -105,7 +145,16 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
               return null;
             }
             
-            const email = emailMatch[1].trim();
+            let email = emailMatch[1].trim();
+            
+            // Clean the email if it has malformed data
+            email = cleanEmailAddress(email);
+            
+            // Skip if email is malformed or empty after cleaning
+            if (!email || email.length < 3 || !email.includes('@')) {
+              console.log(`ATTENDEE DEBUG: Skipping invalid email: ${email}`);
+              return null;
+            }
             
             // Extract other attendee info if available
             const cnMatch = line.match(/CN=([^;:]+)/);
@@ -145,8 +194,25 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
             let mailtoMatch;
             
             while ((mailtoMatch = mailtoRegex.exec(unfoldedData)) !== null) {
-              const email = mailtoMatch[1].trim();
-              console.log(`ATTENDEE DEBUG: Found email via mailto search: ${email}`);
+              let email = mailtoMatch[1].trim();
+              
+              // Clean the email if it has malformed data
+              email = cleanEmailAddress(email);
+              
+              // Skip if email is malformed or empty after cleaning
+              if (!email || email.length < 3 || !email.includes('@')) {
+                console.log(`ATTENDEE DEBUG: Skipping invalid email from mailto search: ${email}`);
+                continue;
+              }
+              
+              // Skip adding if this looks like a resource email
+              const fullLine = mailtoMatch[0];
+              if (fullLine.includes('CUTYPE=RESOURCE')) {
+                console.log(`ATTENDEE DEBUG: Skipping resource email from mailto search: ${email}`);
+                continue;
+              }
+              
+              console.log(`ATTENDEE DEBUG: Found valid email via mailto search: ${email}`);
               
               mailtoMatches.push({
                 id: `attendee-mailto-${mailtoMatches.length}-${Date.now()}`,
