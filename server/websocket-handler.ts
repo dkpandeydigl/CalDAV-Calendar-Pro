@@ -24,6 +24,54 @@ const socketLastPong: Map<WebSocket, number> = new Map();
 // Track if the WebSocket server has been initialized
 let websocketInitialized = false;
 
+/**
+ * Get all active WebSocket connections
+ * 
+ * @returns A map of user IDs to their active WebSocket connections
+ */
+export function getActiveConnections(): Map<number, Set<WebSocket>> {
+  return userConnections;
+}
+
+/**
+ * Broadcast a message to all connected clients or specific users
+ * 
+ * @param message The message to broadcast
+ * @param targetUserIds Optional array of user IDs to target (broadcasts to all if undefined)
+ * @returns Number of clients the message was sent to
+ */
+export function broadcastMessage(message: any, targetUserIds?: number[]): number {
+  let clientCount = 0;
+  
+  // If we have specific target users
+  if (targetUserIds?.length) {
+    for (const userId of targetUserIds) {
+      const userSockets = userConnections.get(userId);
+      if (userSockets) {
+        for (const socket of userSockets) {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify(message));
+            clientCount++;
+          }
+        }
+      }
+    }
+  } 
+  // Otherwise broadcast to all connected clients
+  else {
+    for (const [userId, sockets] of userConnections.entries()) {
+      for (const socket of sockets) {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify(message));
+          clientCount++;
+        }
+      }
+    }
+  }
+  
+  return clientCount;
+}
+
 // Initialize the WebSocket server with two paths for redundancy
 // - Main path at '/api/ws' for normal operations
 // - Fallback path at '/ws' for environments where the main path might be blocked

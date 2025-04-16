@@ -377,9 +377,9 @@ export function useEnhancedSync() {
 
   // Set up listener for WebSocket sync events
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !addMessageListener) return;
 
-    // Handle sync requested confirmation
+    // Create stable references to the handlers to avoid recreation on every render
     const syncRequestedHandler = (data: any) => {
       if (data.success) {
         toast({
@@ -405,10 +405,11 @@ export function useEnhancedSync() {
 
     // Cleanup listeners on unmount
     return () => {
-      removeRequestedListener();
-      removeErrorListener();
+      if (removeRequestedListener) removeRequestedListener();
+      if (removeErrorListener) removeErrorListener();
     };
-  }, [user, addMessageListener, toast]);
+  // Using refs to avoid dependency on functions that might change on every render
+  }, [user?.id]);
 
   return {
     syncStatus,
