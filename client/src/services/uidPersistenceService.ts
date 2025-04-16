@@ -8,15 +8,25 @@
  * 2. Retrieving the correct UID when events are updated or cancelled
  * 3. Persisting UIDs across browser refreshes and sessions
  * 4. Syncing with server-stored UIDs when available
+ * 5. Real-time synchronization across clients via WebSockets
  */
 
 import { openDB, IDBPDatabase } from 'idb';
+import { WebSocketNotification } from './websocketService';
 
 interface UIDMapping {
   eventId: number;
   uid: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// Type for WebSocket UID synchronization messages
+interface UIDSyncMessage {
+  eventId: number;
+  uid: string;
+  operation: 'add' | 'update' | 'delete';
+  timestamp: number;
 }
 
 // Database configuration
