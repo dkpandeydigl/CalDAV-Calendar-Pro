@@ -78,6 +78,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerExportRoutes(app);
   registerImportRoutes(app);
   
+  // Register email test endpoints
+  registerEmailTestEndpoints(app);
+  console.log('Registered email test endpoints');
+  
   // Test endpoint for verifying cancellation ICS transformation (no auth required)
   app.post('/api/test-cancellation-ics', async (req, res) => {
     try {
