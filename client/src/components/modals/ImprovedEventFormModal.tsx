@@ -1302,8 +1302,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         recurrenceRule,
         syncStatus: 'pending', // Mark as pending for immediate sync
         // CRITICAL: If we're updating an event, we MUST preserve its UID
-        // Only generate a new UID for brand new events
-        uid: event?.uid || undefined, // Explicitly preserve UID for updates, undefined for new events
+        // For new events, use the persistedUID from our IndexedDB storage service
+        // This ensures the same UID is used consistently throughout the event lifecycle
+        uid: event?.uid || persistedUID, // Use existing event UID or persisted UID
       };
       
       // Handle existing event update
@@ -1327,12 +1328,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       } 
       // Handle new event creation
       else {
-        // For new events, include all required fields but DO NOT generate UID (server will do it properly)
-        // IMPORTANT: Let the server handle UID generation for new events to ensure proper format and uniqueness
+        // For new events, we're already including the persisted UID from IndexedDB storage in eventData
+        // This ensures consistent UID usage throughout the event lifecycle (create → update → cancel)
         const newEventData = {
           ...eventData,
-          // The server will generate a proper UID if not provided
-          // Do not set uid field here to let the server handle it
+          // The uid is already included in eventData from our persistedUID
+          // This ensures consistent UID usage throughout the event lifecycle
           // Include mandatory fields with null/default values to match schema requirements
           etag: null,
           url: null,
