@@ -671,6 +671,144 @@ export class EmailService {
     }
   }
   
+  public generateEmailPreview(data: EventInvitationData): string {
+    // Generate a simple HTML preview of the email
+    try {
+      // Get the ICS data
+      const icsData = this.generateICSData(data);
+      
+      // Format start and end dates
+      const startDate = new Date(data.startDate);
+      const endDate = new Date(data.endDate);
+      
+      // Format dates for display
+      const dateOptions: Intl.DateTimeFormatOptions = { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      };
+      
+      const formattedStart = startDate.toLocaleString(undefined, dateOptions);
+      const formattedEnd = endDate.toLocaleString(undefined, dateOptions);
+      
+      // Create HTML template 
+      let html = `
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+            .title { font-size: 24px; font-weight: bold; margin-bottom: 10px; color: #2c3e50; }
+            .info { margin-bottom: 20px; }
+            .label { font-weight: bold; margin-right: 5px; }
+            .divider { border-top: 1px solid #eee; margin: 20px 0; }
+            .description { white-space: pre-line; }
+            .attendees { margin-top: 20px; }
+            .footer { margin-top: 30px; font-size: 12px; color: #777; }
+            pre { white-space: pre-wrap; font-family: monospace; background-color: #f9f9f9; padding: 10px; border-radius: 5px; overflow-x: auto; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title">${data.title}</div>
+          </div>
+          
+          <div class="info">
+            <p><span class="label">From:</span> ${formattedStart}</p>
+            <p><span class="label">To:</span> ${formattedEnd}</p>
+            <p><span class="label">Location:</span> ${data.location || 'No location specified'}</p>
+          </div>
+          
+          <div class="divider"></div>
+          
+          <div class="description">
+            <p><span class="label">Description:</span></p>
+            <p>${data.description || 'No description provided'}</p>
+          </div>
+      `;
+      
+      // Add attendees if present
+      if (data.attendees && data.attendees.length > 0) {
+        html += `
+          <div class="divider"></div>
+          <div class="attendees">
+            <p><span class="label">Attendees:</span></p>
+            <ul>
+        `;
+        
+        // Parse attendees if they're in JSON string format
+        let attendeeList = data.attendees;
+        if (typeof attendeeList === 'string') {
+          try {
+            attendeeList = JSON.parse(attendeeList);
+          } catch (e) {
+            console.warn('Failed to parse attendees JSON:', e);
+          }
+        }
+        
+        // Add each attendee
+        if (Array.isArray(attendeeList)) {
+          attendeeList.forEach(attendee => {
+            const name = attendee.name || attendee.email;
+            const email = attendee.email;
+            const role = attendee.role || 'Required';
+            html += `<li>${name} &lt;${email}&gt; (${role})</li>`;
+          });
+        }
+        
+        html += `
+            </ul>
+          </div>
+        `;
+      }
+      
+      // Add resources if present
+      if (data.resources && data.resources.length > 0) {
+        html += `
+          <div class="divider"></div>
+          <div class="resources">
+            <p><span class="label">Resources:</span></p>
+            <ul>
+        `;
+        
+        // Add each resource
+        data.resources.forEach(resource => {
+          const name = resource.name || resource.displayName || resource.id;
+          const type = resource.subType || resource.type || 'Resource';
+          html += `<li>${name} (${type})</li>`;
+        });
+        
+        html += `
+            </ul>
+          </div>
+        `;
+      }
+      
+      // Add ICS data at the bottom
+      html += `
+          <div class="divider"></div>
+          <div class="attachment">
+            <p><span class="label">Calendar Attachment (ICS):</span></p>
+            <pre>${icsData}</pre>
+          </div>
+          
+          <div class="footer">
+            <p>This is a preview of the email that will be sent to attendees.</p>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      return html;
+    } catch (error) {
+      console.error('Error generating email preview:', error);
+      return `<html><body><p>Error generating email preview: ${error.message}</p></body></html>`;
+    }
+  }
+
   public generateICSData(data: EventInvitationData): string {
     // If there's already raw data available, modify it directly instead of using formatter
     if (data.rawData) {
