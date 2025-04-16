@@ -207,14 +207,16 @@ async function verifyCalDAVCredentials(
 }
 
 export function setupAuth(app: Express) {
-  // Use session directly without any store (uses default memory store)
+  // Use session with improved configuration
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "calendar-app-secret",
-    resave: false,
-    saveUninitialized: false,
+    resave: true, // Changed to true to ensure session is saved on each request
+    saveUninitialized: true, // Changed to true to ensure new sessions are saved
     cookie: {
       secure: process.env.NODE_ENV === "production",
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
+      httpOnly: true,
+      sameSite: 'lax' // Allows cross-site requests for better compatibility
     }
   };
 
