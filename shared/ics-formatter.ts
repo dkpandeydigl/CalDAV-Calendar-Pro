@@ -72,6 +72,7 @@ export function formatICS(content: string | string[]): string {
  * - Improperly formatted attendee lines
  * - Incorrect line breaks within content
  * - Incorrect SCHEDULE-STATUS values
+ * - Accidental quote enclosures (e.g., when copying and pasting)
  * 
  * @param icsData Raw iCalendar data string
  * @returns Sanitized and properly formatted iCalendar data
@@ -79,8 +80,15 @@ export function formatICS(content: string | string[]): string {
 export function sanitizeAndFormatICS(icsData: string): string {
   if (!icsData) return '';
   
-  // First, convert all line endings to LF for processing
-  let data = icsData.replace(/\r\n|\r/g, '\n');
+  // Remove any enclosing quotes that might have been added when copying and pasting
+  let data = icsData.trim();
+  if ((data.startsWith('"') && data.endsWith('"')) || 
+      (data.startsWith("'") && data.endsWith("'"))) {
+    data = data.substring(1, data.length - 1);
+  }
+  
+  // Convert all line endings to LF for processing
+  data = data.replace(/\r\n|\r/g, '\n');
   
   // Fix literal "\r\n" text occurrences that should be actual breaks
   data = data.replace(/\\r\\n/g, '\n');
