@@ -198,6 +198,18 @@ function handleWebSocketMessage(ws: WebSocket, message: any) {
         handlePingMessage(ws, data);
         break;
         
+      case 'chat':
+        handleChatMessage(ws, data);
+        break;
+        
+      case 'join':
+        handleJoinMessage(ws, data);
+        break;
+        
+      case 'leave':
+        handleLeaveMessage(ws, data);
+        break;
+        
       default:
         // Forward the message to the notification service
         const notificationService = getWebSocketNotificationService();
@@ -234,6 +246,89 @@ function handlePingMessage(ws: WebSocket, message: any) {
     }));
   } catch (error) {
     logger.error('Error sending pong response:', error);
+  }
+}
+
+/**
+ * Handle a chat message from a client
+ * 
+ * @param ws The WebSocket connection that sent the chat message
+ * @param message The chat message
+ */
+function handleChatMessage(ws: WebSocket, message: any) {
+  try {
+    const userId = (ws as any).userId;
+    const username = message.username || `User-${userId || 'Anonymous'}`;
+    
+    logger.info(`Chat message from ${username}: ${message.message}`);
+    
+    // Construct a response message
+    const responseMessage = {
+      type: 'chat',
+      username: username,
+      message: message.message,
+      timestamp: Date.now(),
+      originalTimestamp: message.timestamp
+    };
+    
+    // Broadcast to all connections
+    broadcastMessage(responseMessage);
+  } catch (error) {
+    logger.error('Error handling chat message:', error);
+  }
+}
+
+/**
+ * Handle a join message from a client
+ * 
+ * @param ws The WebSocket connection that sent the join message
+ * @param message The join message
+ */
+function handleJoinMessage(ws: WebSocket, message: any) {
+  try {
+    const userId = (ws as any).userId;
+    const username = message.username || `User-${userId || 'Anonymous'}`;
+    
+    logger.info(`User joined: ${username}`);
+    
+    // Construct a join notification
+    const joinMessage = {
+      type: 'join',
+      username: username,
+      timestamp: Date.now()
+    };
+    
+    // Broadcast to all connections
+    broadcastMessage(joinMessage);
+  } catch (error) {
+    logger.error('Error handling join message:', error);
+  }
+}
+
+/**
+ * Handle a leave message from a client
+ * 
+ * @param ws The WebSocket connection that sent the leave message
+ * @param message The leave message
+ */
+function handleLeaveMessage(ws: WebSocket, message: any) {
+  try {
+    const userId = (ws as any).userId;
+    const username = message.username || `User-${userId || 'Anonymous'}`;
+    
+    logger.info(`User left: ${username}`);
+    
+    // Construct a leave notification
+    const leaveMessage = {
+      type: 'leave',
+      username: username,
+      timestamp: Date.now()
+    };
+    
+    // Broadcast to all connections
+    broadcastMessage(leaveMessage);
+  } catch (error) {
+    logger.error('Error handling leave message:', error);
   }
 }
 

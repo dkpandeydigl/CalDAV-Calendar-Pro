@@ -9,6 +9,7 @@ import { NotificationsPage } from "@/pages/NotificationsPage";
 import WebSocketTestPage from "@/pages/WebSocketTestPage";
 import WebSocketDebugPage from "@/pages/WebSocketDebugPage";
 import WebSocketDiagnosticPage from "@/pages/WebSocketDiagnosticPage";
+import WebSocketChatPage from "@/pages/WebSocketChatPage";
 import ResourceTestPage from "@/pages/ResourceTestPage";
 import { EmailSettingsPage } from "@/pages/EmailSettingsPage";
 import { ProtectedRoute } from "@/lib/protected-route";
@@ -36,6 +37,9 @@ function Router() {
       </Route>
       <Route path="/websocket-diagnostic">
         {() => <ProtectedRoute component={WebSocketDiagnosticPage} />}
+      </Route>
+      <Route path="/websocket-chat">
+        {() => <ProtectedRoute component={WebSocketChatPage} />}
       </Route>
       <Route path="/resource-test">
         {() => <ProtectedRoute component={ResourceTestPage} />}
