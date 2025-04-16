@@ -50,71 +50,97 @@ function sanitizeIcsForDownload(icsData: string): string {
       inEvent = false;
     }
     
-    // Only process lines within events
-    if (inEvent) {
-      // Fix RRULE with mailto: appended to it
-      if (line.startsWith('RRULE:')) {
-        // Check if RRULE contains a mailto:
-        if (line.includes('mailto:')) {
-          console.log('Fixing malformed RRULE:', line);
-          // Extract just the RRULE part before any email
-          const ruleParts = line.split('mailto:');
-          line = ruleParts[0];
-          console.log('Fixed RRULE:', line);
-        }
+    // Process all lines with a focus on lines within events
+    // Fix RRULE with mailto: appended to it
+    if (line.startsWith('RRULE:')) {
+      // Check if RRULE contains a mailto:
+      if (line.includes('mailto:')) {
+        console.log('Fixing malformed RRULE:', line);
+        // Extract just the RRULE part before any email
+        const ruleParts = line.split('mailto:');
+        line = ruleParts[0];
+        console.log('Fixed RRULE:', line);
+      }
+    }
+    
+    // Fix improperly folded ATTENDEE/ORGANIZER lines
+    if (line.includes('ATTENDEE') || line.includes('ORGANIZER')) {
+      // Remove any embedded newlines
+      if (line.includes('\n')) {
+        console.log('Fixing embedded newlines in ATTENDEE/ORGANIZER line');
+        line = line.replace(/\n/g, '');
       }
       
-      // Fix improperly folded ATTENDEE/ORGANIZER lines
-      if (line.includes('ATTENDEE') || line.includes('ORGANIZER')) {
-        // Remove any embedded newlines
-        if (line.includes('\n')) {
-          console.log('Fixing embedded newlines in ATTENDEE/ORGANIZER line');
-          line = line.replace(/\n/g, '');
-        }
+      // Check for improper SCHEDULE-STATUS formatting
+      if (line.includes('SCHEDULE-STATUS=') && line.includes(':')) {
+        console.log('Fixing malformed SCHEDULE-STATUS in line:', line);
         
-        // Check for improper SCHEDULE-STATUS formatting
-        if (line.includes('SCHEDULE-STATUS=') && line.includes(':')) {
-          console.log('Fixing malformed SCHEDULE-STATUS in line:', line);
+        // Ensure the line is properly formatted
+        const parts = line.split(':');
+        if (parts.length > 1) {
+          const properties = parts[0];
+          const email = parts[1];
           
-          // Ensure the line is properly formatted
-          const parts = line.split(':');
-          if (parts.length > 1) {
-            const properties = parts[0];
-            const email = parts[1];
-            
-            // Make sure email doesn't contain any : characters
-            const cleanEmail = email.replace(/:/g, '');
-            line = `${properties}:${cleanEmail}`;
-            console.log('Fixed ATTENDEE/ORGANIZER line:', line);
-          }
-        }
-        
-        // Fix attendees with incorrect line break formatting
-        if (line.endsWith('\\r\\n') || line.endsWith('\r\n')) {
-          line = line.replace(/\\r\\n$|\r\n$/, '');
+          // Make sure email doesn't contain any : characters
+          const cleanEmail = email.replace(/:/g, '');
+          line = `${properties}:${cleanEmail}`;
+          console.log('Fixed ATTENDEE/ORGANIZER line:', line);
         }
       }
       
-      // Fix lines that contain END:VEVENT or END:VCALENDAR inside them (very malformed)
-      if (line.includes('END:VEVENT') && !line.startsWith('END:VEVENT')) {
-        console.log('Fixing line with embedded END:VEVENT:', line);
-        const parts = line.split('END:VEVENT');
-        line = parts[0]; // Only keep the part before END:VEVENT
+      // Fix attendees with incorrect line break formatting
+      if (line.endsWith('\\r\\n') || line.endsWith('\r\n')) {
+        line = line.replace(/\\r\\n$|\r\n$/, '');
       }
-      
-      if (line.includes('END:VCALENDAR') && !line.startsWith('END:VCALENDAR')) {
-        console.log('Fixing line with embedded END:VCALENDAR:', line);
-        const parts = line.split('END:VCALENDAR');
-        line = parts[0]; // Only keep the part before END:VCALENDAR
-      }
+    }
+    
+    // Fix lines that contain END:VEVENT or END:VCALENDAR inside them (very malformed)
+    if (line.includes('END:VEVENT') && !line.startsWith('END:VEVENT')) {
+      console.log('Fixing line with embedded END:VEVENT:', line);
+      const parts = line.split('END:VEVENT');
+      line = parts[0]; // Only keep the part before END:VEVENT
+    }
+    
+    if (line.includes('END:VCALENDAR') && !line.startsWith('END:VCALENDAR')) {
+      console.log('Fixing line with embedded END:VCALENDAR:', line);
+      const parts = line.split('END:VCALENDAR');
+      line = parts[0]; // Only keep the part before END:VCALENDAR
     }
     
     sanitizedLines.push(line);
   }
   
+  // Properly fold long lines according to RFC 5545
+  const foldedLines = [];
+  for (let i = 0; i < sanitizedLines.length; i++) {
+    const line = sanitizedLines[i];
+    
+    // Skip empty lines
+    if (!line.trim()) continue;
+    
+    // If the line is longer than 75 characters, fold it
+    if (line.length > 75) {
+      let currentPos = 0;
+      const lineLength = line.length;
+      
+      // Add the first line
+      foldedLines.push(line.substring(0, 75));
+      currentPos = 75;
+      
+      // Add continuation lines with a space at the beginning
+      while (currentPos < lineLength) {
+        const chunk = line.substring(currentPos, Math.min(currentPos + 74, lineLength));
+        foldedLines.push(' ' + chunk); // Continuation lines must start with a space
+        currentPos += 74;
+      }
+    } else {
+      foldedLines.push(line);
+    }
+  }
+  
   // Ensure the file has proper RFC 5545 line endings (CRLF)
   // This is crucial for calendar applications to correctly parse the file
-  return sanitizedLines.join('\r\n');
+  return foldedLines.join('\r\n');
 }
 
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
