@@ -1,125 +1,118 @@
 /**
- * Event UID Hook
+ * useEventUID Hook
  * 
- * This hook provides consistent access to event UIDs
- * using the persistence service to ensure the same UID
- * is used throughout an event's lifecycle.
+ * A React hook that provides access to the UID persistence service.
+ * This hook allows components to easily manage event UIDs without
+ * directly interacting with IndexedDB.
  */
 
-import { useState, useEffect } from 'react';
-import { uidPersistenceService } from '../services/uidPersistenceService';
+import { useState, useEffect, useCallback } from 'react';
+import { uidPersistenceService } from '@/services/uidPersistenceService';
 
-// Ignore TypeScript errors for now since we're doing this incrementally
+interface UseEventUIDOptions {
+  eventId?: number;  // Optional if generating a new UID
+  calendarId?: number; // Required when storing a new UID
+}
 
-/**
- * Hook to get a consistent UID for an event
- * 
- * If an eventId is provided, it will attempt to fetch the UID from storage.
- * If no eventId is provided or no UID is found in storage, it will generate a new one.
- * 
- * @param eventId Optional event ID to fetch a stored UID
- * @returns An object containing the UID and related utility functions
- */
-export function useEventUID(eventId?: number | null) {
+interface UseEventUIDResult {
+  uid: string | null;
+  loading: boolean;
+  error: Error | null;
+  storeUID: (uid: string, eventId: number, calendarId: number) => Promise<void>;
+  generateUID: () => string;
+  getOrCreateUID: (eventId: number, calendarId: number) => Promise<string>;
+}
+
+export function useEventUID(options: UseEventUIDOptions = {}): UseEventUIDResult {
+  const { eventId, calendarId } = options;
   const [uid, setUid] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(!!eventId);
   const [error, setError] = useState<Error | null>(null);
 
-  // Fetch or generate a UID on initial render or when eventId changes
+  // Fetch UID for a given event ID
   useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    setError(null);
-
-    async function getUID() {
-      try {
-        if (eventId) {
-          // Try to fetch an existing UID for this event
-          const existingUid = await uidPersistenceService.getUID(eventId);
-          
-          if (existingUid && mounted) {
-            console.log(`[useEventUID] Retrieved existing UID for event ${eventId}: ${existingUid}`);
-            setUid(existingUid);
-            setLoading(false);
-            return;
-          }
-        }
-        
-        // No eventId provided or no UID found for the event, generate a new one
-        if (mounted) {
-          const newUid = uidPersistenceService.generateUID();
-          console.log(`[useEventUID] Generated new UID: ${newUid}`);
-          setUid(newUid);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('[useEventUID] Error fetching/generating UID:', err);
-        if (mounted) {
-          setError(err instanceof Error ? err : new Error(String(err)));
-          
-          // Fallback to generating a new UID
-          const fallbackUid = uidPersistenceService.generateUID();
-          console.log(`[useEventUID] Generated fallback UID due to error: ${fallbackUid}`);
-          setUid(fallbackUid);
-          setLoading(false);
-        }
-      }
-    }
-
-    getUID();
-
-    return () => {
-      mounted = false;
-    };
-  }, [eventId]);
-
-  /**
-   * Store the current UID for the given event ID
-   */
-  const storeUidForEvent = async (eventIdToStore: number) => {
-    if (!uid) {
-      console.error('[useEventUID] Cannot store null UID');
+    if (!eventId) {
+      setLoading(false);
       return;
     }
 
-    try {
-      await uidPersistenceService.storeUID(eventIdToStore, uid);
-      console.log(`[useEventUID] Stored UID ${uid} for event ${eventIdToStore}`);
-    } catch (err) {
-      console.error('[useEventUID] Error storing UID:', err);
-      setError(err instanceof Error ? err : new Error(String(err)));
-    }
-  };
+    setLoading(true);
+    uidPersistenceService.getUID(eventId)
+      .then((fetchedUid) => {
+        setUid(fetchedUid);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('Error fetching UID:', err);
+        setError(err instanceof Error ? err : new Error(String(err)));
+        setLoading(false);
+      });
+  }, [eventId]);
 
-  /**
-   * Delete the UID mapping for an event
-   */
-  const deleteUidMapping = async (eventIdToDelete: number) => {
-    try {
-      await uidPersistenceService.deleteUID(eventIdToDelete);
-      console.log(`[useEventUID] Deleted UID mapping for event ${eventIdToDelete}`);
-    } catch (err) {
-      console.error('[useEventUID] Error deleting UID mapping:', err);
-      setError(err instanceof Error ? err : new Error(String(err)));
+  // Store a UID for an event
+  const storeUID = useCallback(async (
+    uidToStore: string, 
+    eventIdToStore: number, 
+    calendarIdToStore: number
+  ): Promise<void> => {
+    if (!uidToStore || !eventIdToStore || !calendarIdToStore) {
+      throw new Error('Missing required parameters for storing UID');
     }
-  };
 
-  /**
-   * Generate a new UID and update the state
-   */
-  const refreshUid = () => {
-    const newUid = uidPersistenceService.generateUID();
-    console.log(`[useEventUID] Refreshed UID: ${newUid}`);
-    setUid(newUid);
-    return newUid;
-  };
+    try {
+      await uidPersistenceService.storeUID(eventIdToStore, uidToStore, calendarIdToStore);
+      if (eventId === eventIdToStore) {
+        setUid(uidToStore);
+      }
+    } catch (err) {
+      console.error('Error storing UID:', err);
+      setError(err instanceof Error ? err : new Error(String(err)));
+      throw err;
+    }
+  }, [eventId]);
+
+  // Generate a new UID
+  const generateUID = useCallback((): string => {
+    return uidPersistenceService.generateUID();
+  }, []);
+
+  // Get existing UID or create and store a new one
+  const getOrCreateUID = useCallback(async (
+    eventIdToUse: number, 
+    calendarIdToUse: number
+  ): Promise<string> => {
+    if (!eventIdToUse || !calendarIdToUse) {
+      throw new Error('Event ID and Calendar ID are required');
+    }
+
+    try {
+      // Try to get existing UID
+      const existingUid = await uidPersistenceService.getUID(eventIdToUse);
+      
+      if (existingUid) {
+        return existingUid;
+      }
+      
+      // Generate and store a new UID
+      const newUid = uidPersistenceService.generateUID();
+      await uidPersistenceService.storeUID(eventIdToUse, newUid, calendarIdToUse);
+      
+      return newUid;
+    } catch (err) {
+      console.error('Error in getOrCreateUID:', err);
+      setError(err instanceof Error ? err : new Error(String(err)));
+      throw err;
+    }
+  }, []);
 
   return {
     uid,
     loading,
     error,
-    storeUidForEvent,
-    deleteUidMapping,
-    refreshUid
+    storeUID,
+    generateUID,
+    getOrCreateUID
   };
 }
+
+export default useEventUID;

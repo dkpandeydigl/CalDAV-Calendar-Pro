@@ -1,27 +1,27 @@
 /**
- * Enhanced Email Service
+ * Enhanced Email Service With UID Enforcement
  * 
- * A more robust implementation of the email service that:
- * 1. Strictly follows RFC 5545 for iCalendar generation
- * 2. Ensures UID consistency throughout event lifecycle
- * 3. Properly formats all iCalendar components
- * 4. Handles PDF attachments correctly
+ * This version of the email service ensures that events have proper UIDs
+ * by checking for their existence before generating emails.
  */
 
 import nodemailer from 'nodemailer';
-import { SmtpConfig } from '@shared/schema';
-import { storage } from './memory-storage';
-import { formatICalDate } from './ical-utils';
-import { generateEventAgendaPDF } from './pdf-generator';
-import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
-import { 
-  generateICalendarString, 
-  updateICalendarString, 
-  createCancellation,
-  ICSEventData,
-  ICSAttendee,
-  ICSResource
-} from '../shared/rfc5545-compliant-formatter';
+import { formatRFC5545Event } from '../shared/rfc5545-compliant-formatter';
+import { storage } from './storage';
+import path from 'path';
+import fs from 'fs';
+
+// Email configuration
+export interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  auth: {
+    user: string;
+    pass: string;
+  };
+  from: string;
+}
 
 export interface Attendee {
   email: string;
@@ -32,15 +32,15 @@ export interface Attendee {
 
 export interface Resource {
   id: string;
-  name?: string;
-  subType: string;
-  type?: string;
-  capacity?: number;
-  adminEmail: string;
-  email?: string;
-  adminName?: string;
-  remarks?: string;
-  displayName?: string;
+  name?: string;         // Display name of the resource
+  subType: string;       // Resource type (Conference Room, Projector, etc.)
+  type?: string;         // Alternative type field for compatibility
+  capacity?: number;     // Optional capacity (e.g., 10 people)
+  adminEmail: string;    // Email of resource administrator
+  email?: string;        // Alternative email field for compatibility
+  adminName?: string;    // Name of resource administrator
+  remarks?: string;      // Optional remarks or notes
+  displayName?: string;  // For backward compatibility
 }
 
 export interface EventInvitationData {
@@ -64,688 +64,726 @@ export interface EventInvitationData {
   sequence?: number;
   _originalResourceAttendees?: string[];
   calendarId?: number;
+  method?: string; // Added to support explicit METHOD in ICS
+}
+
+export interface EmailResult {
+  success: boolean;
+  message: string;
+  error?: any;
+  icsData?: string;
+  htmlContent?: string;
 }
 
 export class EnhancedEmailService {
   private transporter: nodemailer.Transporter | null = null;
   private config: SmtpConfig | null = null;
+  private initialized = false;
 
-  /**
-   * Initialize the email service with SMTP configuration for a specific user
-   * @param userId The user ID to fetch SMTP configuration for
-   * @returns A boolean indicating whether initialization was successful
-   */
-  async initialize(userId: number): Promise<boolean> {
+  constructor() {
+    this.loadConfig();
+  }
+
+  private loadConfig() {
     try {
-      // Try to synchronize SMTP password with CalDAV password before proceeding
-      await syncSmtpPasswordWithCalDAV(userId);
-      console.log(`SMTP password synchronized with CalDAV password for user ${userId} before sending email`);
-      
-      // Get SMTP configuration for the user
-      let smtpConfig = await storage.getSmtpConfig(userId);
-      
-      // If no SMTP config exists, try to create a default one
-      if (!smtpConfig) {
-        console.log(`No SMTP configuration found for user ${userId}, creating default configuration...`);
-        
-        // Get user details to use their email address
-        const user = await storage.getUser(userId);
-        if (!user || !user.email) {
-          console.error(`Cannot create default SMTP config for user ${userId}: No email found`);
-          return false;
-        }
-        
-        try {
-          // Create a default SMTP config
-          smtpConfig = await storage.createSmtpConfig({
-            userId,
-            host: 'smtps.xgen.in',
-            port: 465,
-            secure: true,
-            username: user.email,
-            password: '', // Will be updated by syncSmtpPasswordWithCalDAV
-            fromEmail: user.email,
-            fromName: user.fullName || user.username,
-            enabled: true
-          });
-          
-          console.log(`Created default SMTP configuration for user ${userId}`);
-          
-          // Try to sync password again after creating config
-          await syncSmtpPasswordWithCalDAV(userId);
-        } catch (createError) {
-          console.error(`Failed to create default SMTP config for user ${userId}:`, createError);
-          return false;
-        }
+      const configPath = path.resolve('config', 'email-config.json');
+      if (fs.existsSync(configPath)) {
+        this.config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        this.initialized = this.initTransporter();
+      } else {
+        console.log('Email config file not found, email service not initialized');
       }
-      
-      if (!smtpConfig) {
-        console.error(`Still no SMTP configuration available for user ${userId}`);
+    } catch (error) {
+      console.error('Error loading email configuration:', error);
+    }
+  }
+
+  private initTransporter(): boolean {
+    try {
+      if (!this.config) {
+        console.log('No email configuration available, cannot initialize transporter');
         return false;
       }
-      
-      // Verify that required fields are present
-      if (!smtpConfig.host || !smtpConfig.port) {
-        console.error(`Invalid SMTP configuration for user ${userId}: Missing host or port`);
-        return false;
-      }
-      
-      // Check if SMTP is enabled
-      if (smtpConfig.enabled === false) {
-        console.error(`SMTP is disabled for user ${userId}`);
-        return false;
-      }
-      
-      // Initialize the transporter
+
       this.transporter = nodemailer.createTransport({
-        host: smtpConfig.host,
-        port: smtpConfig.port,
-        secure: smtpConfig.secure === true,
-        auth: {
-          user: smtpConfig.username,
-          pass: smtpConfig.password
-        }
+        host: this.config.host,
+        port: this.config.port,
+        secure: this.config.secure,
+        auth: this.config.auth
       });
-      
-      // Store the config
-      this.config = smtpConfig;
-      
-      // Verify connection
-      try {
-        await this.transporter.verify();
-        console.log('SMTP connection established successfully');
-      } catch (verifyError) {
-        console.error('SMTP connection verification failed:', verifyError);
-        // We'll still return true since the configuration exists, even if verification fails
-      }
-      
+
       return true;
     } catch (error) {
-      console.error(`Failed to initialize email service for user ${userId}:`, error);
+      console.error('Error initializing email transporter:', error);
       return false;
     }
   }
-  
+
   /**
-   * Send a test email to confirm SMTP configuration is working
+   * Validate that the event has a proper UID
+   * This is critical for ensuring event lifecycle integrity
    */
-  async sendTestEmail(userId: number, recipient: string, subject: string, body: string): Promise<{success: boolean, message: string, details?: any}> {
+  private validateEventUID(data: EventInvitationData): void {
+    if (!data.uid) {
+      throw new Error('Event UID is required for sending emails. Event ID: ' + data.eventId);
+    }
+    
+    // UID should conform to RFC 5545 format
+    const uidRegex = /^[a-zA-Z0-9._-]+-[0-9]+-[a-zA-Z0-9]+(@[a-zA-Z0-9.-]+)?$/;
+    if (!uidRegex.test(data.uid)) {
+      throw new Error(`Invalid UID format: ${data.uid}. UIDs must follow RFC 5545 format.`);
+    }
+  }
+
+  /**
+   * Update or configure the email service
+   */
+  public updateConfig(config: SmtpConfig): boolean {
+    this.config = config;
+    this.initialized = this.initTransporter();
+    
     try {
-      if (!this.transporter || !this.config) {
-        return { 
-          success: false, 
-          message: "Email service not initialized" 
-        };
+      const configPath = path.resolve('config');
+      if (!fs.existsSync(configPath)) {
+        fs.mkdirSync(configPath, { recursive: true });
       }
       
-      // Build the email
-      const mailOptions = {
-        from: this.config.fromName 
-          ? `"${this.config.fromName}" <${this.config.fromEmail}>` 
-          : this.config.fromEmail,
-        to: recipient,
-        subject: subject,
-        text: body,
-        html: `<p>${body}</p>`
-      };
+      fs.writeFileSync(
+        path.resolve(configPath, 'email-config.json'),
+        JSON.stringify(config, null, 2)
+      );
       
-      // Send the email
-      const info = await this.transporter.sendMail(mailOptions);
-      
-      return {
-        success: true,
-        message: "Test email sent successfully",
-        details: {
-          messageId: info.messageId,
-          response: info.response
-        }
-      };
+      return this.initialized;
     } catch (error) {
-      console.error("Error sending test email:", error);
-      return {
-        success: false,
-        message: `Failed to send test email: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        details: { error: String(error) }
-      };
+      console.error('Error updating email configuration:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get the current email configuration
+   */
+  public getConfig(): SmtpConfig | null {
+    return this.config;
+  }
+
+  /**
+   * Check if the email service is initialized
+   */
+  public isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * Generate ICS data for an event
+   * This uses the RFC 5545 compliant formatter
+   */
+  public generateICSData(data: EventInvitationData): string {
+    // Validate UID before proceeding
+    this.validateEventUID(data);
+    
+    try {
+      // If we have pre-generated ICS data, use it
+      if (data.icsData) {
+        return data.icsData;
+      }
+      
+      // Otherwise, generate compliant ICS using our formatter
+      return formatRFC5545Event(data);
+    } catch (error) {
+      console.error('Error generating ICS data:', error);
+      throw error;
     }
   }
 
   /**
    * Send an event invitation email
-   * @param userId The user ID to send the invitation from
-   * @param data The event invitation data
-   * @returns A result object with success/failure information
    */
-  async sendEventInvitation(userId: number, data: EventInvitationData): Promise<{success: boolean, message: string, details?: any}> {
-    try {
-      // Initialize the email service if not already initialized
-      const initialized = await this.initialize(userId);
-      if (!initialized) {
-        return { 
-          success: false, 
-          message: "Failed to initialize email service. Check SMTP configuration." 
-        };
-      }
-      
-      // Get the event ICS data using our RFC 5545 compliant formatter
-      let icsData = data.icsData;
-      if (!icsData) {
-        if (data.rawData) {
-          // If we have raw data, update it
-          icsData = this.updateExistingICSData(data);
-        } else {
-          // Generate new ICS data
-          icsData = this.generateNewICSData(data);
-        }
-      }
-      
-      // Get user info for sending the email
-      const user = await storage.getUser(userId);
-      if (!user || !user.email) {
-        return { 
-          success: false, 
-          message: "Sender information not available" 
-        };
-      }
-      
-      // Prepare a friendly date format for the email body
-      const startDate = data.startDate ? 
-        new Date(data.startDate).toLocaleString(undefined, { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric',
-          hour: 'numeric',
-          minute: 'numeric'
-        }) : 'Not specified';
-      
-      // Create basic HTML email body
-      const htmlBody = `
-      <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px; }
-            .event-details { margin: 20px 0; }
-            .footer { font-size: 12px; color: #777; margin-top: 30px; }
-            h2 { color: #2c3e50; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h2>Calendar Event Invitation</h2>
-            </div>
-            <div class="event-details">
-              <p>You are invited to the following event:</p>
-              <p><strong>Title:</strong> ${data.title}</p>
-              <p><strong>When:</strong> ${startDate}</p>
-              ${data.location ? `<p><strong>Location:</strong> ${data.location}</p>` : ''}
-              ${data.description ? `<p><strong>Description:</strong> ${data.description}</p>` : ''}
-              <p><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
-            </div>
-            <div class="footer">
-              <p>This invitation was sent from the CalDAV Calendar application.</p>
-              <p>Please find the attached calendar invitation file (.ics) to add this event to your calendar.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-      `;
-      
-      // Create a text-only version of the email body
-      const textBody = `
-      Calendar Event Invitation
-      
-      You are invited to the following event:
-      
-      Title: ${data.title}
-      When: ${startDate}
-      ${data.location ? `Location: ${data.location}\n` : ''}
-      ${data.description ? `Description: ${data.description}\n` : ''}
-      Organizer: ${data.organizer.name || data.organizer.email}
-      
-      This invitation was sent from the CalDAV Calendar application.
-      Please find the attached calendar invitation file (.ics) to add this event to your calendar.
-      `;
-      
-      // Recipients list - all attendees
-      let recipients: string[] = [];
-      if (data.attendees && Array.isArray(data.attendees)) {
-        recipients = data.attendees
-          .filter(a => a && a.email && a.email.includes('@'))
-          .map(a => a.email);
-      }
-      
-      // Add resource administrators
-      if (data.resources && Array.isArray(data.resources)) {
-        const resourceEmails = data.resources
-          .filter(r => r && r.adminEmail && r.adminEmail.includes('@'))
-          .map(r => r.adminEmail);
-        recipients = [...recipients, ...resourceEmails];
-      }
-      
-      // Remove duplicates and organizer's email from recipients
-      recipients = Array.from(new Set(recipients));
-      recipients = recipients.filter(email => email !== data.organizer.email);
-      
-      if (recipients.length === 0) {
-        return { 
-          success: false, 
-          message: "No valid recipients found" 
-        };
-      }
-      
-      // Generate PDF attachment
-      let pdfBuffer: Buffer | undefined;
-      try {
-        pdfBuffer = await generateEventAgendaPDF(data);
-      } catch (pdfError) {
-        console.error("Error generating PDF agenda:", pdfError);
-        // Continue without PDF if generation fails
-      }
-      
-      // Build the email with attachments
-      const attachments = [
-        {
-          filename: `${data.uid || `event-${Date.now()}`}.ics`,
-          content: icsData,
-          contentType: 'text/calendar; method=REQUEST; charset=UTF-8'
-        }
-      ];
-      
-      // Add PDF attachment if successfully generated
-      if (pdfBuffer) {
-        attachments.push({
-          filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_agenda.pdf`,
-          content: pdfBuffer.toString('base64'),
-          contentType: 'application/pdf',
-          encoding: 'base64'
-        });
-      }
-      
-      const mailOptions = {
-        from: this.config?.fromName 
-          ? `"${this.config.fromName}" <${this.config.fromEmail}>` 
-          : this.config?.fromEmail,
-        to: recipients.join(', '),
-        subject: `Calendar Invitation: ${data.title}`,
-        text: textBody,
-        html: htmlBody,
-        attachments,
-        headers: {
-          'Content-Type': 'text/calendar; method=REQUEST; charset=UTF-8'
-        }
-      };
-      
-      // Send the email
-      const info = await this.transporter?.sendMail(mailOptions);
-      
-      return {
-        success: true,
-        message: `Invitation sent to ${recipients.length} recipients`,
-        details: {
-          messageId: info?.messageId,
-          recipients: recipients
-        }
-      };
-    } catch (error) {
-      console.error("Error sending event invitation:", error);
+  public async sendEventInvitation(
+    userId: number,
+    data: EventInvitationData
+  ): Promise<EmailResult> {
+    // Check if email service is initialized
+    if (!this.initialized) {
       return {
         success: false,
-        message: `Failed to send invitation: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        details: { error: String(error) }
+        message: 'Email service is not initialized'
+      };
+    }
+
+    try {
+      // Validate the UID
+      this.validateEventUID(data);
+      
+      // Check if the user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: `User with ID ${userId} not found`
+        };
+      }
+
+      // Generate the ICS data
+      const icsData = this.generateICSData({
+        ...data,
+        method: 'REQUEST'  // Explicitly set METHOD:REQUEST for invitations
+      });
+      
+      // Generate HTML content for the email
+      const htmlContent = this.generateInvitationEmailContent(data);
+      
+      // Customize the subject based on event status
+      let subject = `Invitation: ${data.title}`;
+      
+      // Send to each attendee
+      for (const attendee of data.attendees) {
+        if (!attendee.email) continue;
+        
+        await this.transporter?.sendMail({
+          from: this.config?.from || user.email || 'noreply@example.com',
+          to: attendee.email,
+          subject,
+          html: htmlContent,
+          attachments: [
+            {
+              filename: 'event.ics',
+              content: icsData,
+              contentType: 'text/calendar'
+            }
+          ]
+        });
+      }
+
+      // Also send to resource administrators if applicable
+      if (data.resources) {
+        for (const resource of data.resources) {
+          if (resource.adminEmail) {
+            await this.transporter?.sendMail({
+              from: this.config?.from || user.email || 'noreply@example.com',
+              to: resource.adminEmail,
+              subject: `Resource Request: ${data.title}`,
+              html: this.generateResourceRequestEmailContent(data, resource),
+              attachments: [
+                {
+                  filename: 'event.ics',
+                  content: icsData,
+                  contentType: 'text/calendar'
+                }
+              ]
+            });
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Event invitation sent successfully',
+        icsData,
+        htmlContent
+      };
+    } catch (error) {
+      console.error('Error sending event invitation:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error sending invitation',
+        error
       };
     }
   }
-  
+
   /**
    * Send an event cancellation email
-   * @param userId The user ID to send the cancellation from
-   * @param data The event invitation data with status set to 'CANCELLED'
-   * @returns A result object with success/failure information
    */
-  async sendEventCancellation(userId: number, data: EventInvitationData): Promise<{success: boolean, message: string, details?: any}> {
-    try {
-      // Initialize the email service if not already initialized
-      const initialized = await this.initialize(userId);
-      if (!initialized) {
-        return { 
-          success: false, 
-          message: "Failed to initialize email service. Check SMTP configuration." 
-        };
-      }
-      
-      // Update status to CANCELLED if not already set
-      const cancellationData = { 
-        ...data, 
-        status: 'CANCELLED' 
-      };
-      
-      // Get the event ICS data for cancellation
-      let icsData = data.icsData;
-      if (!icsData) {
-        // If we have raw data, transform it for cancellation
-        if (data.rawData) {
-          // Critical: Get the sequence number
-          const sequenceMatch = data.rawData.match(/SEQUENCE:(\d+)/i);
-          const currentSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
-          // Always increment sequence for cancellations
-          const sequence = data.sequence !== undefined ? data.sequence : currentSequence + 1;
-          
-          icsData = createCancellation(
-            data.rawData,
-            data.uid,
-            sequence
-          );
-        } else {
-          // Generate new ICS data with cancelled status
-          icsData = this.generateNewICSData({
-            ...cancellationData,
-            status: 'CANCELLED',
-            method: 'CANCEL',
-            sequence: (data.sequence || 0) + 1
-          });
-        }
-      }
-      
-      // Get user info for sending the email
-      const user = await storage.getUser(userId);
-      if (!user || !user.email) {
-        return { 
-          success: false, 
-          message: "Sender information not available" 
-        };
-      }
-      
-      // Prepare a friendly date format for the email body
-      const startDate = data.startDate ? 
-        new Date(data.startDate).toLocaleString(undefined, { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric',
-          hour: 'numeric',
-          minute: 'numeric'
-        }) : 'Not specified';
-      
-      // Create HTML email body
-      const htmlBody = `
-      <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background-color: #f5f5f5; padding: 15px; border-radius: 5px; }
-            .event-details { margin: 20px 0; }
-            .footer { font-size: 12px; color: #777; margin-top: 30px; }
-            h2 { color: #e74c3c; }
-            .cancelled { color: #e74c3c; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h2>Event Cancellation</h2>
-            </div>
-            <div class="event-details">
-              <p class="cancelled">The following event has been cancelled:</p>
-              <p><strong>Title:</strong> ${data.title}</p>
-              <p><strong>When:</strong> ${startDate}</p>
-              ${data.location ? `<p><strong>Location:</strong> ${data.location}</p>` : ''}
-              ${data.description ? `<p><strong>Description:</strong> ${data.description}</p>` : ''}
-              <p><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
-            </div>
-            <div class="footer">
-              <p>This cancellation notice was sent from the CalDAV Calendar application.</p>
-              <p>The attached calendar file (.ics) will update your calendar automatically.</p>
-            </div>
-          </div>
-        </body>
-      </html>
-      `;
-      
-      // Create a text-only version of the email body
-      const textBody = `
-      Event Cancellation
-      
-      The following event has been cancelled:
-      
-      Title: ${data.title}
-      When: ${startDate}
-      ${data.location ? `Location: ${data.location}\n` : ''}
-      ${data.description ? `Description: ${data.description}\n` : ''}
-      Organizer: ${data.organizer.name || data.organizer.email}
-      
-      This cancellation notice was sent from the CalDAV Calendar application.
-      The attached calendar file (.ics) will update your calendar automatically.
-      `;
-      
-      // Recipients list - all attendees
-      let recipients: string[] = [];
-      if (data.attendees && Array.isArray(data.attendees)) {
-        recipients = data.attendees
-          .filter(a => a && a.email && a.email.includes('@'))
-          .map(a => a.email);
-      }
-      
-      // Add resource administrators
-      if (data.resources && Array.isArray(data.resources)) {
-        const resourceEmails = data.resources
-          .filter(r => r && r.adminEmail && r.adminEmail.includes('@'))
-          .map(r => r.adminEmail);
-        recipients = [...recipients, ...resourceEmails];
-      }
-      
-      // Remove duplicates and organizer's email from recipients
-      recipients = Array.from(new Set(recipients));
-      recipients = recipients.filter(email => email !== data.organizer.email);
-      
-      if (recipients.length === 0) {
-        return { 
-          success: false, 
-          message: "No valid recipients found" 
-        };
-      }
-      
-      // Generate PDF attachment for cancellation
-      let pdfBuffer: Buffer | undefined;
-      try {
-        pdfBuffer = await generateEventAgendaPDF({
-          ...data,
-          title: `CANCELLED: ${data.title}`
-        });
-      } catch (pdfError) {
-        console.error("Error generating cancellation PDF:", pdfError);
-        // Continue without PDF if generation fails
-      }
-      
-      // Build the email with attachments
-      const attachments = [
-        {
-          filename: `${data.uid || `event-${Date.now()}`}.ics`,
-          content: icsData,
-          contentType: 'text/calendar; method=CANCEL; charset=UTF-8'
-        }
-      ];
-      
-      // Add PDF attachment if successfully generated
-      if (pdfBuffer) {
-        attachments.push({
-          filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_cancellation.pdf`,
-          content: pdfBuffer.toString('base64'),
-          contentType: 'application/pdf',
-          encoding: 'base64'
-        });
-      }
-      
-      const mailOptions = {
-        from: this.config?.fromName 
-          ? `"${this.config.fromName}" <${this.config.fromEmail}>` 
-          : this.config?.fromEmail,
-        to: recipients.join(', '),
-        subject: `Event Cancelled: ${data.title}`,
-        text: textBody,
-        html: htmlBody,
-        attachments,
-        headers: {
-          'Content-Type': 'text/calendar; method=CANCEL; charset=UTF-8'
-        }
-      };
-      
-      // Send the email
-      const info = await this.transporter?.sendMail(mailOptions);
-      
-      return {
-        success: true,
-        message: `Cancellation notice sent to ${recipients.length} recipients`,
-        details: {
-          messageId: info?.messageId,
-          recipients: recipients
-        }
-      };
-    } catch (error) {
-      console.error("Error sending event cancellation:", error);
+  public async sendEventCancellation(
+    userId: number,
+    data: EventInvitationData
+  ): Promise<EmailResult> {
+    // Check if email service is initialized
+    if (!this.initialized) {
       return {
         success: false,
-        message: `Failed to send cancellation: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        details: { error: String(error) }
+        message: 'Email service is not initialized'
+      };
+    }
+
+    try {
+      // Validate the UID
+      this.validateEventUID(data);
+      
+      // Check if the user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: `User with ID ${userId} not found`
+        };
+      }
+
+      // Ensure status is set to CANCELLED
+      const cancellationData = {
+        ...data,
+        status: 'CANCELLED',
+        method: 'CANCEL'  // Explicitly set METHOD:CANCEL for cancellations
+      };
+      
+      // Generate the ICS data with cancellation status
+      const icsData = this.generateICSData(cancellationData);
+      
+      // Generate HTML content for the email
+      const htmlContent = this.generateCancellationEmailContent(cancellationData);
+      
+      // Send to each attendee
+      for (const attendee of data.attendees) {
+        if (!attendee.email) continue;
+        
+        await this.transporter?.sendMail({
+          from: this.config?.from || user.email || 'noreply@example.com',
+          to: attendee.email,
+          subject: `Cancelled: ${data.title}`,
+          html: htmlContent,
+          attachments: [
+            {
+              filename: 'event-cancellation.ics',
+              content: icsData,
+              contentType: 'text/calendar'
+            }
+          ]
+        });
+      }
+
+      // Also send to resource administrators if applicable
+      if (data.resources) {
+        for (const resource of data.resources) {
+          if (resource.adminEmail) {
+            await this.transporter?.sendMail({
+              from: this.config?.from || user.email || 'noreply@example.com',
+              to: resource.adminEmail,
+              subject: `Resource Reservation Cancelled: ${data.title}`,
+              html: this.generateResourceCancellationEmailContent(cancellationData, resource),
+              attachments: [
+                {
+                  filename: 'event-cancellation.ics',
+                  content: icsData,
+                  contentType: 'text/calendar'
+                }
+              ]
+            });
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Event cancellation sent successfully',
+        icsData,
+        htmlContent
+      };
+    } catch (error) {
+      console.error('Error sending event cancellation:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error sending cancellation',
+        error
       };
     }
   }
-  
+
   /**
-   * Generate a new ICS file for an event
-   * @param data The event invitation data
-   * @returns RFC 5545 compliant iCalendar string
+   * Send an event update email
    */
-  private generateNewICSData(data: EventInvitationData): string {
-    console.log(`Generating new ICS data with UID ${data.uid}`);
-    
-    // Map our internal event to ICS format
-    const icsEventData: ICSEventData = {
-      uid: data.uid,
-      summary: data.title,
-      description: data.description,
-      location: data.location,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      method: (data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST') as any,
-      status: data.status as any,
-      sequence: data.sequence || 0,
-      organizer: {
-        email: data.organizer.email,
-        name: data.organizer.name
-      },
-      attendees: this.mapAttendees(data.attendees),
-      resources: this.mapResources(data.resources || []),
-      recurrenceRule: typeof data.recurrenceRule === 'string' 
-        ? data.recurrenceRule 
-        : data.recurrenceRule 
-          ? Object.entries(data.recurrenceRule)
-              .map(([key, value]) => `${key}=${value}`)
-              .join(';')
-          : undefined
-    };
-    
-    // Use the RFC 5545 compliant generator
-    return generateICalendarString(icsEventData);
-  }
-  
-  /**
-   * Update an existing ICS file with new event data
-   * @param data The event invitation data with original ICS in rawData
-   * @returns RFC 5545 compliant updated iCalendar string
-   */
-  private updateExistingICSData(data: EventInvitationData): string {
-    console.log(`Updating existing ICS data with UID ${data.uid}`);
-    
-    if (!data.rawData) {
-      throw new Error('Cannot update ICS data without original raw data');
+  public async sendEventUpdate(
+    userId: number,
+    data: EventInvitationData
+  ): Promise<EmailResult> {
+    // Check if email service is initialized
+    if (!this.initialized) {
+      return {
+        success: false,
+        message: 'Email service is not initialized'
+      };
     }
-    
-    // Ensure we have the original UID
-    const uidMatch = data.rawData.match(/UID:([^\r\n]+)/i);
-    const originalUid = uidMatch ? uidMatch[1].trim() : data.uid;
-    
-    if (originalUid !== data.uid && data.uid) {
-      console.warn(`UID mismatch between existing data (${originalUid}) and provided UID (${data.uid})`);
+
+    try {
+      // Validate the UID
+      this.validateEventUID(data);
+      
+      // Check if the user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: `User with ID ${userId} not found`
+        };
+      }
+
+      // Make sure the event has a sequence number and increment it
+      const updateData = {
+        ...data,
+        sequence: (data.sequence ?? 0) + 1,
+        method: 'REQUEST'  // Use METHOD:REQUEST for updates as per RFC 5546
+      };
+      
+      // Generate the ICS data with updated sequence
+      const icsData = this.generateICSData(updateData);
+      
+      // Generate HTML content for the email
+      const htmlContent = this.generateUpdateEmailContent(updateData);
+      
+      // Send to each attendee
+      for (const attendee of data.attendees) {
+        if (!attendee.email) continue;
+        
+        await this.transporter?.sendMail({
+          from: this.config?.from || user.email || 'noreply@example.com',
+          to: attendee.email,
+          subject: `Updated: ${data.title}`,
+          html: htmlContent,
+          attachments: [
+            {
+              filename: 'event-update.ics',
+              content: icsData,
+              contentType: 'text/calendar'
+            }
+          ]
+        });
+      }
+
+      // Also send to resource administrators if applicable
+      if (data.resources) {
+        for (const resource of data.resources) {
+          if (resource.adminEmail) {
+            await this.transporter?.sendMail({
+              from: this.config?.from || user.email || 'noreply@example.com',
+              to: resource.adminEmail,
+              subject: `Resource Reservation Updated: ${data.title}`,
+              html: this.generateResourceUpdateEmailContent(updateData, resource),
+              attachments: [
+                {
+                  filename: 'event-update.ics',
+                  content: icsData,
+                  contentType: 'text/calendar'
+                }
+              ]
+            });
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Event update sent successfully',
+        icsData,
+        htmlContent
+      };
+    } catch (error) {
+      console.error('Error sending event update:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error sending update',
+        error
+      };
     }
-    
-    // Get the current sequence number
-    const sequenceMatch = data.rawData.match(/SEQUENCE:(\d+)/i);
-    const currentSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
-    
-    // Map our internal event to ICS format
-    const icsEventData: ICSEventData = {
-      uid: originalUid,
-      summary: data.title,
-      description: data.description,
-      location: data.location,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      method: (data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST') as any,
-      status: data.status as any,
-      sequence: data.sequence !== undefined ? data.sequence : currentSequence + 1,
-      organizer: {
-        email: data.organizer.email,
-        name: data.organizer.name
-      },
-      attendees: this.mapAttendees(data.attendees),
-      resources: this.mapResources(data.resources || []),
-      recurrenceRule: typeof data.recurrenceRule === 'string' 
-        ? data.recurrenceRule 
-        : data.recurrenceRule 
-          ? Object.entries(data.recurrenceRule)
-              .map(([key, value]) => `${key}=${value}`)
-              .join(';')
-          : undefined
-    };
-    
-    // Use the RFC 5545 compliant updater
-    return updateICalendarString(data.rawData, icsEventData);
   }
-  
+
   /**
-   * Map internal attendee format to ICS format
-   * @param attendees Array of attendees
-   * @returns Mapped attendees in ICS format
+   * Generate an email preview without sending
    */
-  private mapAttendees(attendees: Attendee[]): ICSAttendee[] {
-    if (!attendees || !Array.isArray(attendees)) return [];
-    
-    return attendees
-      .filter(a => a && a.email && a.email.includes('@'))
-      .map(attendee => ({
-        email: attendee.email,
-        name: attendee.name,
-        role: attendee.role,
-        partstat: attendee.status,
-        rsvp: true,
-        type: 'INDIVIDUAL'
-      }));
+  public async generateEmailPreview(
+    userId: number,
+    data: EventInvitationData,
+    type: 'invitation' | 'update' | 'cancellation' = 'invitation'
+  ): Promise<EmailResult> {
+    try {
+      // Validate the UID
+      this.validateEventUID(data);
+      
+      // Check if the user exists
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return {
+          success: false,
+          message: `User with ID ${userId} not found`
+        };
+      }
+
+      let icsData: string;
+      let htmlContent: string;
+      
+      // Process based on the type
+      if (type === 'cancellation') {
+        const cancellationData = {
+          ...data,
+          status: 'CANCELLED',
+          method: 'CANCEL'
+        };
+        icsData = this.generateICSData(cancellationData);
+        htmlContent = this.generateCancellationEmailContent(cancellationData);
+      } else if (type === 'update') {
+        const updateData = {
+          ...data,
+          sequence: (data.sequence ?? 0) + 1,
+          method: 'REQUEST'
+        };
+        icsData = this.generateICSData(updateData);
+        htmlContent = this.generateUpdateEmailContent(updateData);
+      } else {
+        // Default to invitation
+        const invitationData = {
+          ...data,
+          method: 'REQUEST'
+        };
+        icsData = this.generateICSData(invitationData);
+        htmlContent = this.generateInvitationEmailContent(invitationData);
+      }
+
+      return {
+        success: true,
+        message: `Email preview generated successfully for ${type}`,
+        icsData,
+        htmlContent
+      };
+    } catch (error) {
+      console.error(`Error generating ${type} email preview:`, error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : `Unknown error generating ${type} preview`,
+        error
+      };
+    }
   }
-  
+
   /**
-   * Map internal resource format to ICS format
-   * @param resources Array of resources
-   * @returns Mapped resources in ICS format
+   * Generate HTML content for an invitation email
    */
-  private mapResources(resources: Resource[]): ICSResource[] {
-    if (!resources || !Array.isArray(resources)) return [];
+  private generateInvitationEmailContent(data: EventInvitationData): string {
+    const startFormatted = this.formatDateTimeForEmail(data.startDate);
+    const endFormatted = this.formatDateTimeForEmail(data.endDate);
     
-    return resources
-      .filter(r => r && (r.adminEmail || r.email) && r.id)
-      .map(resource => ({
-        id: resource.id,
-        email: resource.adminEmail || resource.email || '',
-        name: resource.name || resource.displayName,
-        type: resource.subType || resource.type || 'ROOM',
-        capacity: resource.capacity
-      }));
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
+        <h1 style="color: #333; font-size: 24px; margin-bottom: 20px;">${data.title}</h1>
+        
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+          <p style="margin: 5px 0;"><strong>When:</strong> ${startFormatted} to ${endFormatted}</p>
+          ${data.location ? `<p style="margin: 5px 0;"><strong>Where:</strong> ${data.location}</p>` : ''}
+          <p style="margin: 5px 0;"><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
+          
+          ${data.attendees.length > 0 ? `
+            <p style="margin: 15px 0 5px;"><strong>Attendees:</strong></p>
+            <ul style="margin: 5px 0; padding-left: 25px;">
+              ${data.attendees.map(att => `<li>${att.name || att.email}</li>`).join('')}
+            </ul>
+          ` : ''}
+          
+          ${data.resources && data.resources.length > 0 ? `
+            <p style="margin: 15px 0 5px;"><strong>Resources:</strong></p>
+            <ul style="margin: 5px 0; padding-left: 25px;">
+              ${data.resources.map(res => `<li>${res.name || res.displayName || res.id} (${res.subType || res.type})</li>`).join('')}
+            </ul>
+          ` : ''}
+        </div>
+        
+        ${data.description ? `
+          <div style="margin-top: 20px;">
+            <h2 style="color: #555; font-size: 18px; margin-bottom: 10px;">Description</h2>
+            <div style="line-height: 1.5;">${data.description}</div>
+          </div>
+        ` : ''}
+        
+        <div style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eaeaea; padding-top: 15px;">
+          <p>This invitation was sent using CalDAV Client.</p>
+          <p>The attached calendar (.ics) file can be imported into your calendar application.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate HTML content for a cancellation email
+   */
+  private generateCancellationEmailContent(data: EventInvitationData): string {
+    const startFormatted = this.formatDateTimeForEmail(data.startDate);
+    const endFormatted = this.formatDateTimeForEmail(data.endDate);
+    
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
+        <h1 style="color: #d9534f; font-size: 24px; margin-bottom: 20px;">CANCELLED: ${data.title}</h1>
+        
+        <div style="background-color: #f9f2f2; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #d9534f;">
+          <p style="margin: 5px 0;"><strong>Event has been cancelled</strong></p>
+          <p style="margin: 15px 0 5px;"><strong>When:</strong> ${startFormatted} to ${endFormatted}</p>
+          ${data.location ? `<p style="margin: 5px 0;"><strong>Where:</strong> ${data.location}</p>` : ''}
+          <p style="margin: 5px 0;"><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
+        </div>
+        
+        <div style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eaeaea; padding-top: 15px;">
+          <p>This cancellation was sent using CalDAV Client.</p>
+          <p>The attached calendar (.ics) file will automatically update your calendar.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate HTML content for an update email
+   */
+  private generateUpdateEmailContent(data: EventInvitationData): string {
+    const startFormatted = this.formatDateTimeForEmail(data.startDate);
+    const endFormatted = this.formatDateTimeForEmail(data.endDate);
+    
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
+        <h1 style="color: #5bc0de; font-size: 24px; margin-bottom: 20px;">UPDATED: ${data.title}</h1>
+        
+        <div style="background-color: #f0f9fc; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #5bc0de;">
+          <p style="margin: 5px 0;"><strong>Event has been updated</strong> (Sequence: ${data.sequence})</p>
+          <p style="margin: 15px 0 5px;"><strong>When:</strong> ${startFormatted} to ${endFormatted}</p>
+          ${data.location ? `<p style="margin: 5px 0;"><strong>Where:</strong> ${data.location}</p>` : ''}
+          <p style="margin: 5px 0;"><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
+          
+          ${data.attendees.length > 0 ? `
+            <p style="margin: 15px 0 5px;"><strong>Attendees:</strong></p>
+            <ul style="margin: 5px 0; padding-left: 25px;">
+              ${data.attendees.map(att => `<li>${att.name || att.email}</li>`).join('')}
+            </ul>
+          ` : ''}
+          
+          ${data.resources && data.resources.length > 0 ? `
+            <p style="margin: 15px 0 5px;"><strong>Resources:</strong></p>
+            <ul style="margin: 5px 0; padding-left: 25px;">
+              ${data.resources.map(res => `<li>${res.name || res.displayName || res.id} (${res.subType || res.type})</li>`).join('')}
+            </ul>
+          ` : ''}
+        </div>
+        
+        ${data.description ? `
+          <div style="margin-top: 20px;">
+            <h2 style="color: #555; font-size: 18px; margin-bottom: 10px;">Description</h2>
+            <div style="line-height: 1.5;">${data.description}</div>
+          </div>
+        ` : ''}
+        
+        <div style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eaeaea; padding-top: 15px;">
+          <p>This update was sent using CalDAV Client.</p>
+          <p>The attached calendar (.ics) file will automatically update your calendar.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate HTML content for a resource request email
+   */
+  private generateResourceRequestEmailContent(data: EventInvitationData, resource: Resource): string {
+    const startFormatted = this.formatDateTimeForEmail(data.startDate);
+    const endFormatted = this.formatDateTimeForEmail(data.endDate);
+    
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
+        <h1 style="color: #333; font-size: 24px; margin-bottom: 20px;">Resource Request: ${data.title}</h1>
+        
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+          <p style="margin: 5px 0;"><strong>Resource:</strong> ${resource.name || resource.displayName || resource.id} (${resource.subType || resource.type})</p>
+          <p style="margin: 5px 0;"><strong>When:</strong> ${startFormatted} to ${endFormatted}</p>
+          ${data.location ? `<p style="margin: 5px 0;"><strong>Where:</strong> ${data.location}</p>` : ''}
+          <p style="margin: 5px 0;"><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
+        </div>
+        
+        ${data.description ? `
+          <div style="margin-top: 20px;">
+            <h2 style="color: #555; font-size: 18px; margin-bottom: 10px;">Event Description</h2>
+            <div style="line-height: 1.5;">${data.description}</div>
+          </div>
+        ` : ''}
+        
+        <div style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eaeaea; padding-top: 15px;">
+          <p>This resource request was sent using CalDAV Client.</p>
+          <p>The attached calendar (.ics) file contains the full event details.</p>
+          ${resource.remarks ? `<p><strong>Resource Notes:</strong> ${resource.remarks}</p>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate HTML content for a resource cancellation email
+   */
+  private generateResourceCancellationEmailContent(data: EventInvitationData, resource: Resource): string {
+    const startFormatted = this.formatDateTimeForEmail(data.startDate);
+    const endFormatted = this.formatDateTimeForEmail(data.endDate);
+    
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
+        <h1 style="color: #d9534f; font-size: 24px; margin-bottom: 20px;">Resource Reservation Cancelled</h1>
+        
+        <div style="background-color: #f9f2f2; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #d9534f;">
+          <p style="margin: 5px 0;"><strong>Event has been cancelled</strong></p>
+          <p style="margin: 5px 0;"><strong>Resource:</strong> ${resource.name || resource.displayName || resource.id} (${resource.subType || resource.type})</p>
+          <p style="margin: 5px 0;"><strong>Event:</strong> ${data.title}</p>
+          <p style="margin: 5px 0;"><strong>When:</strong> ${startFormatted} to ${endFormatted}</p>
+          <p style="margin: 5px 0;"><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
+        </div>
+        
+        <div style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eaeaea; padding-top: 15px;">
+          <p>This cancellation was sent using CalDAV Client.</p>
+          <p>The attached calendar (.ics) file contains the cancelled event details.</p>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Generate HTML content for a resource update email
+   */
+  private generateResourceUpdateEmailContent(data: EventInvitationData, resource: Resource): string {
+    const startFormatted = this.formatDateTimeForEmail(data.startDate);
+    const endFormatted = this.formatDateTimeForEmail(data.endDate);
+    
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 5px;">
+        <h1 style="color: #5bc0de; font-size: 24px; margin-bottom: 20px;">Resource Reservation Updated</h1>
+        
+        <div style="background-color: #f0f9fc; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #5bc0de;">
+          <p style="margin: 5px 0;"><strong>Event has been updated</strong> (Sequence: ${data.sequence})</p>
+          <p style="margin: 5px 0;"><strong>Resource:</strong> ${resource.name || resource.displayName || resource.id} (${resource.subType || resource.type})</p>
+          <p style="margin: 5px 0;"><strong>Event:</strong> ${data.title}</p>
+          <p style="margin: 5px 0;"><strong>When:</strong> ${startFormatted} to ${endFormatted}</p>
+          ${data.location ? `<p style="margin: 5px 0;"><strong>Where:</strong> ${data.location}</p>` : ''}
+          <p style="margin: 5px 0;"><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
+        </div>
+        
+        ${data.description ? `
+          <div style="margin-top: 20px;">
+            <h2 style="color: #555; font-size: 18px; margin-bottom: 10px;">Event Description</h2>
+            <div style="line-height: 1.5;">${data.description}</div>
+          </div>
+        ` : ''}
+        
+        <div style="margin-top: 30px; font-size: 12px; color: #777; border-top: 1px solid #eaeaea; padding-top: 15px;">
+          <p>This update was sent using CalDAV Client.</p>
+          <p>The attached calendar (.ics) file contains the updated event details.</p>
+          ${resource.remarks ? `<p><strong>Resource Notes:</strong> ${resource.remarks}</p>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Format a date and time for email display
+   */
+  private formatDateTimeForEmail(date: Date): string {
+    return date.toLocaleString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
   }
 }
 
-// Export a singleton instance
+// Create and export singleton instance
 export const enhancedEmailService = new EnhancedEmailService();

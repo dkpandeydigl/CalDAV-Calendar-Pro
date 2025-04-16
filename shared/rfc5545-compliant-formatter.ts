@@ -1,393 +1,301 @@
 /**
- * RFC 5545 Compliant iCalendar Formatter
+ * RFC 5545 Compliant Formatter
  * 
- * This module implements strict RFC 5545 compliant iCalendar file generation.
- * It ensures proper:
- *  - Line folding at 75 characters
- *  - CRLF line endings
- *  - Character escaping
- *  - Required fields presence
- *  - UID persistence
+ * This module provides utilities for generating iCalendar content that strictly
+ * complies with RFC 5545 specifications for iCalendar format.
+ * 
+ * Key features:
+ * - Line length validation and folding
+ * - Proper escaping of special characters
+ * - Sequence number management for event updates
+ * - Timezone handling
+ * - METHOD property support for REQUEST/CANCEL/etc
  */
 
-export type ICSMethod = 'REQUEST' | 'CANCEL' | 'REPLY';
-export type ICSStatus = 'CONFIRMED' | 'CANCELLED' | 'TENTATIVE';
+import { EventInvitationData, Attendee, Resource } from '../server/enhanced-email-service';
 
-export interface ICSAttendee {
-  email: string;
-  name?: string;
-  role?: string;
-  partstat?: string; // NEEDS-ACTION, ACCEPTED, DECLINED, TENTATIVE
-  rsvp?: boolean;
-  type?: string; // INDIVIDUAL, GROUP, RESOURCE, ROOM
-}
-
-export interface ICSResource {
-  id: string;
-  email: string;
-  name?: string;
-  type?: string;
-  capacity?: number;
-}
-
-export interface ICSOrganizer {
-  email: string;
-  name?: string;
-}
-
-export interface ICSEventData {
-  uid: string;
-  summary: string;
-  description?: string;
-  location?: string;
-  startDate: Date;
-  endDate: Date;
-  organizer: ICSOrganizer;
-  attendees?: ICSAttendee[];
-  resources?: ICSResource[];
-  method?: ICSMethod;
-  status?: ICSStatus;
-  sequence?: number;
-  recurrenceRule?: string;
-  isAllDay?: boolean;
-}
-
-/**
- * Format a date as iCalendar UTC format
- * @param date The date to format
- * @returns iCalendar UTC formatted date string
- */
-export function formatDateToUTC(date: Date): string {
+// Formats timestamp to RFC 5545 UTC format (20220101T120000Z)
+const formatDateToUTC = (date: Date): string => {
   return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-}
+};
 
-/**
- * Escape special characters in iCalendar text
- * @param text The text to escape
- * @returns Escaped text
- */
-export function escapeText(text: string): string {
+// Formats timestamp to RFC 5545 with timezone
+const formatDateWithTimezone = (date: Date, timezone: string): string => {
+  // Simplified implementation - a robust implementation would handle timezone conversion properly
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '').replace('Z', '');
+};
+
+// Escape special characters as per RFC 5545
+const escapeText = (text: string): string => {
   if (!text) return '';
+  
   return text
-    .replace(/\\/g, '\\\\') // Escape backslash first
-    .replace(/;/g, '\\;')   // Escape semicolon
-    .replace(/,/g, '\\,')   // Escape comma
-    .replace(/\n/g, '\\n'); // Escape newline
-}
+    .replace(/\\/g, '\\\\')  // Backslash must be escaped first to avoid double-escaping
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\n/g, '\\n');
+};
 
-/**
- * Apply line folding to ensure lines don't exceed 75 characters
- * @param line The line to fold
- * @returns The folded line with proper CRLF continuation
- */
-export function foldLine(line: string): string {
-  if (line.length <= 75) return line;
+// Fold lines longer than 75 characters as required by RFC 5545
+const foldLine = (line: string): string => {
+  if (line.length <= 75) {
+    return line;
+  }
   
-  const chunks: string[] = [];
-  let currentPos = 0;
-  
-  while (currentPos < line.length) {
-    if (currentPos === 0) {
-      // First line can be up to 75 chars
-      chunks.push(line.substring(0, Math.min(75, line.length)));
-      currentPos = Math.min(75, line.length);
+  let result = '';
+  for (let i = 0; i < line.length; i += 74) {
+    // First line can be 75 chars, continuation lines start with space and can be 74 chars
+    const isFirstLine = i === 0;
+    const maxLength = isFirstLine ? 75 : 74;
+    const chunk = line.substring(i, i + maxLength);
+    
+    if (isFirstLine) {
+      result += chunk;
     } else {
-      // Continuation lines start with a space and can be up to 74 chars after that
-      chunks.push(' ' + line.substring(currentPos, Math.min(currentPos + 74, line.length)));
-      currentPos += 74;
+      result += '\r\n ' + chunk;
     }
   }
   
-  return chunks.join('\r\n');
-}
+  return result;
+};
+
+// Generate attendee string in ATTENDEE format
+const formatAttendee = (attendee: Attendee): string => {
+  let properties = [];
+  
+  if (attendee.name) {
+    properties.push(`CN=${escapeText(attendee.name)}`);
+  }
+  
+  if (attendee.role) {
+    properties.push(`ROLE=${attendee.role.toUpperCase()}`);
+  } else {
+    properties.push('ROLE=REQ-PARTICIPANT');
+  }
+  
+  if (attendee.status) {
+    properties.push(`PARTSTAT=${attendee.status.toUpperCase()}`);
+  } else {
+    properties.push('PARTSTAT=NEEDS-ACTION');
+  }
+  
+  const propertiesStr = properties.join(';');
+  return foldLine(`ATTENDEE;${propertiesStr}:mailto:${attendee.email}`);
+};
+
+// Generate resource string in ATTENDEE format with appropriate roles
+const formatResource = (resource: Resource): string => {
+  let properties = [];
+  
+  // Resources are typically NON-PARTICIPANT but we use their name in CN
+  if (resource.name || resource.displayName) {
+    properties.push(`CN=${escapeText(resource.name || resource.displayName || '')}`);
+  }
+  
+  // Resources should have NON-PARTICIPANT role
+  properties.push('ROLE=NON-PARTICIPANT');
+  properties.push('PARTSTAT=ACCEPTED'); // Resources typically auto-accept
+  properties.push('CUTYPE=RESOURCE');
+  
+  if (resource.subType || resource.type) {
+    properties.push(`X-RESOURCE-TYPE=${escapeText(resource.subType || resource.type || '')}`);
+  }
+  
+  if (resource.capacity) {
+    properties.push(`X-RESOURCE-CAPACITY=${resource.capacity}`);
+  }
+  
+  const email = resource.email || resource.adminEmail;
+  const propertiesStr = properties.join(';');
+  return foldLine(`ATTENDEE;${propertiesStr}:mailto:${email}`);
+};
 
 /**
- * Transform an existing iCalendar string into a cancellation notice
- * @param originalIcs The original iCalendar string
- * @param uid The event UID (must match original)
- * @param sequence The sequence number (should be incremented)
- * @returns A properly formatted cancellation iCalendar string
+ * Generate a complete iCalendar event as a string following RFC 5545 rules
+ * @param data The event data to format
+ * @returns A RFC 5545 compliant iCalendar string
  */
-export function createCancellation(originalIcs: string, uid: string, sequence: number): string {
-  // First verify the UID matches to prevent errors
-  const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
-  const originalUid = uidMatch ? uidMatch[1].trim() : null;
+export function formatRFC5545Event(data: EventInvitationData): string {
+  // Lines to be joined with CRLF
+  const lines: string[] = [];
   
-  if (originalUid && originalUid !== uid) {
-    console.error(`UID mismatch: ${originalUid} != ${uid}`);
-    throw new Error('UID mismatch: Cannot create cancellation with different UID');
+  // Begin calendar
+  lines.push('BEGIN:VCALENDAR');
+  lines.push('VERSION:2.0');
+  lines.push('PRODID:-//CalDAV Client//EN');
+  
+  // Add METHOD if specified
+  if (data.method) {
+    lines.push(`METHOD:${data.method}`);
+  } else if (data.status === 'CANCELLED') {
+    lines.push('METHOD:CANCEL');
+  } else {
+    lines.push('METHOD:REQUEST');
   }
   
-  // Modify the key properties for cancellation
-  let cancelledIcs = originalIcs
-    .replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL')
-    .replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED')
-    .replace(/SEQUENCE:\d+/i, `SEQUENCE:${sequence}`);
+  // Begin event
+  lines.push('BEGIN:VEVENT');
   
-  // Add METHOD if missing
-  if (!cancelledIcs.includes('METHOD:')) {
-    cancelledIcs = cancelledIcs.replace(
-      /VERSION:[^\r\n]+(\r?\n)/i, 
-      `VERSION:2.0$1METHOD:CANCEL$1`
-    );
+  // Required UID property
+  if (!data.uid) {
+    throw new Error('UID is required for RFC 5545 compliance');
   }
   
-  // Add STATUS if missing
-  if (!cancelledIcs.includes('STATUS:')) {
-    cancelledIcs = cancelledIcs.replace(
-      /SEQUENCE:[^\r\n]+(\r?\n)/i,
-      `SEQUENCE:${sequence}$1STATUS:CANCELLED$1`
-    );
+  lines.push(`UID:${data.uid}`);
+  
+  // Handle special status properties
+  if (data.status === 'CANCELLED') {
+    lines.push('STATUS:CANCELLED');
   }
   
-  // Add SEQUENCE if missing
-  if (!cancelledIcs.includes('SEQUENCE:')) {
-    cancelledIcs = cancelledIcs.replace(
-      /UID:[^\r\n]+(\r?\n)/i,
-      `UID:${uid}$1SEQUENCE:${sequence}$1`
-    );
+  // Required DTSTAMP property (creation/modification timestamp)
+  lines.push(`DTSTAMP:${formatDateToUTC(new Date())}`);
+  
+  // Sequence for versioning (RFC 5546)
+  if (data.sequence !== undefined) {
+    lines.push(`SEQUENCE:${data.sequence}`);
+  } else {
+    lines.push('SEQUENCE:0');
   }
   
-  return cancelledIcs;
-}
-
-/**
- * Generate a complete iCalendar string for an event
- * @param event The event data
- * @returns RFC 5545 compliant iCalendar string
- */
-export function generateICalendarString(event: ICSEventData): string {
-  // Default values
-  const method = event.method || 'REQUEST';
-  const status = event.status || 'CONFIRMED';
-  const sequence = event.sequence || 0;
+  // Event timing properties
+  lines.push(`DTSTART:${formatDateToUTC(data.startDate)}`);
+  lines.push(`DTEND:${formatDateToUTC(data.endDate)}`);
   
-  if (!event.uid) {
-    throw new Error('Event UID is required');
+  // Event title (SUMMARY)
+  lines.push(foldLine(`SUMMARY:${escapeText(data.title)}`));
+  
+  // Optional properties
+  if (data.location) {
+    lines.push(foldLine(`LOCATION:${escapeText(data.location)}`));
   }
   
-  const dtstamp = formatDateToUTC(new Date());
-  const dtstart = formatDateToUTC(event.startDate);
-  const dtend = formatDateToUTC(event.endDate);
-  
-  // Start building the iCalendar string
-  let components: string[] = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//CalDAV Client//RFC5545 Compliant//EN',
-    'CALSCALE:GREGORIAN',
-    `METHOD:${method}`,
-    'BEGIN:VEVENT',
-    `UID:${event.uid}`,
-    `DTSTAMP:${dtstamp}`,
-    `DTSTART:${dtstart}`,
-    `DTEND:${dtend}`,
-    `SEQUENCE:${sequence}`,
-    `STATUS:${status}`,
-    `SUMMARY:${escapeText(event.summary)}`
-  ];
-  
-  // Add optional components
-  if (event.description) {
-    components.push(`DESCRIPTION:${escapeText(event.description)}`);
+  if (data.description) {
+    lines.push(foldLine(`DESCRIPTION:${escapeText(data.description)}`));
   }
   
-  if (event.location) {
-    components.push(`LOCATION:${escapeText(event.location)}`);
-  }
-  
-  // Add organizer
-  if (event.organizer?.email) {
+  // Organizer
+  if (data.organizer) {
     let organizerStr = 'ORGANIZER';
-    if (event.organizer.name) {
-      organizerStr += `;CN=${escapeText(event.organizer.name)}`;
+    if (data.organizer.name) {
+      organizerStr += `;CN=${escapeText(data.organizer.name)}`;
     }
-    organizerStr += `:mailto:${event.organizer.email}`;
-    components.push(organizerStr);
+    organizerStr += `:mailto:${data.organizer.email}`;
+    lines.push(foldLine(organizerStr));
   }
   
-  // Add attendees
-  if (event.attendees && event.attendees.length > 0) {
-    for (const attendee of event.attendees) {
-      if (!attendee.email) continue;
-      
-      let attendeeStr = 'ATTENDEE';
-      
-      if (attendee.name) {
-        attendeeStr += `;CN=${escapeText(attendee.name)}`;
-      }
-      
-      if (attendee.role) {
-        attendeeStr += `;ROLE=${attendee.role}`;
-      }
-      
-      if (attendee.partstat) {
-        attendeeStr += `;PARTSTAT=${attendee.partstat}`;
-      } else {
-        attendeeStr += ';PARTSTAT=NEEDS-ACTION';
-      }
-      
-      if (attendee.rsvp !== false) {
-        attendeeStr += ';RSVP=TRUE';
-      }
-      
-      if (attendee.type) {
-        attendeeStr += `;CUTYPE=${attendee.type}`;
-      } else {
-        attendeeStr += ';CUTYPE=INDIVIDUAL';
-      }
-      
-      attendeeStr += `:mailto:${attendee.email}`;
-      components.push(attendeeStr);
+  // Attendees
+  if (data.attendees && data.attendees.length > 0) {
+    for (const attendee of data.attendees) {
+      lines.push(formatAttendee(attendee));
     }
   }
   
-  // Add resources as special attendees
-  if (event.resources && event.resources.length > 0) {
-    for (const resource of event.resources) {
-      if (!resource.email) continue;
-      
-      let resourceStr = 'ATTENDEE;CUTYPE=RESOURCE';
-      
-      if (resource.name) {
-        resourceStr += `;CN=${escapeText(resource.name)}`;
-      }
-      
-      if (resource.type) {
-        resourceStr += `;RESOURCE-TYPE=${resource.type}`;
-      } else {
-        resourceStr += ';RESOURCE-TYPE=ROOM';
-      }
-      
-      if (resource.id) {
-        resourceStr += `;X-RESOURCE-ID=${resource.id}`;
-      }
-      
-      if (resource.capacity) {
-        resourceStr += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
-      }
-      
-      resourceStr += `:mailto:${resource.email}`;
-      components.push(resourceStr);
+  // Resources (formatted as special attendees)
+  if (data.resources && data.resources.length > 0) {
+    for (const resource of data.resources) {
+      lines.push(formatResource(resource));
     }
   }
   
-  // Add recurrence rule if present
-  if (event.recurrenceRule) {
-    components.push(`RRULE:${event.recurrenceRule}`);
+  // Recurrence rule if provided
+  if (data.recurrenceRule) {
+    if (typeof data.recurrenceRule === 'string') {
+      lines.push(foldLine(`RRULE:${data.recurrenceRule}`));
+    } else {
+      // Handle object representation of recurrence rule
+      // (Implementation would depend on your object structure)
+      const rruleStr = 'FREQ=DAILY;COUNT=1'; // Default fallback
+      lines.push(foldLine(`RRULE:${rruleStr}`));
+    }
   }
   
-  // Close the iCalendar
-  components.push('END:VEVENT');
-  components.push('END:VCALENDAR');
+  // End event
+  lines.push('END:VEVENT');
   
-  // Fold any lines that are too long
-  const foldedComponents = components.map(line => foldLine(line));
+  // End calendar
+  lines.push('END:VCALENDAR');
   
-  // Join with CRLF as required by RFC 5545
-  return foldedComponents.join('\r\n');
+  // Join all lines with CR+LF as required by RFC 5545
+  return lines.join('\r\n');
 }
 
 /**
- * Update an existing iCalendar string with new event data
- * @param originalIcs The original iCalendar string
- * @param event The updated event data (must have same UID)
- * @returns RFC 5545 compliant updated iCalendar string
+ * Validate an iCalendar string against basic RFC 5545 requirements
+ * @param icsData The iCalendar string to validate
+ * @returns Object with validation result
  */
-export function updateICalendarString(originalIcs: string, event: ICSEventData): string {
-  // Extract the original UID and verify it matches
-  const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
-  const originalUid = uidMatch ? uidMatch[1].trim() : null;
+export function validateICSData(icsData: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
   
-  if (originalUid && originalUid !== event.uid) {
-    console.error(`UID mismatch: ${originalUid} != ${event.uid}`);
-    throw new Error('UID mismatch: Cannot update event with different UID');
+  // Check for required components
+  if (!icsData.includes('BEGIN:VCALENDAR')) {
+    errors.push('Missing BEGIN:VCALENDAR');
   }
   
-  // Extract the current sequence and increment it
-  const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
-  const currentSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
-  const newSequence = event.sequence !== undefined ? event.sequence : currentSequence + 1;
-  
-  // Determine method and status
-  const method = event.method || 'REQUEST';
-  const status = event.status || 'CONFIRMED';
-  
-  // Update basic properties
-  let updatedIcs = originalIcs
-    .replace(/METHOD:[^\r\n]+/i, `METHOD:${method}`)
-    .replace(/STATUS:[^\r\n]+/i, `STATUS:${status}`)
-    .replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`)
-    .replace(/SUMMARY:[^\r\n]+/i, `SUMMARY:${escapeText(event.summary)}`);
-  
-  // Update dates
-  if (event.startDate) {
-    const dtstart = formatDateToUTC(event.startDate);
-    updatedIcs = updatedIcs.replace(/DTSTART[^:]*:[^\r\n]+/i, `DTSTART:${dtstart}`);
+  if (!icsData.includes('END:VCALENDAR')) {
+    errors.push('Missing END:VCALENDAR');
   }
   
-  if (event.endDate) {
-    const dtend = formatDateToUTC(event.endDate);
-    updatedIcs = updatedIcs.replace(/DTEND[^:]*:[^\r\n]+/i, `DTEND:${dtend}`);
+  if (!icsData.includes('BEGIN:VEVENT')) {
+    errors.push('Missing BEGIN:VEVENT');
   }
   
-  // Update description if present
-  if (event.description !== undefined) {
-    if (updatedIcs.includes('DESCRIPTION:')) {
-      updatedIcs = updatedIcs.replace(
-        /DESCRIPTION:[^\r\n]+(\r?\n)/i,
-        `DESCRIPTION:${escapeText(event.description)}$1`
-      );
-    } else {
-      // Add after summary
-      updatedIcs = updatedIcs.replace(
-        /SUMMARY:[^\r\n]+(\r?\n)/i,
-        `SUMMARY:${escapeText(event.summary)}$1DESCRIPTION:${escapeText(event.description)}$1`
-      );
+  if (!icsData.includes('END:VEVENT')) {
+    errors.push('Missing END:VEVENT');
+  }
+  
+  // Check for required properties
+  if (!icsData.includes('UID:')) {
+    errors.push('Missing UID property');
+  }
+  
+  if (!icsData.includes('DTSTAMP:')) {
+    errors.push('Missing DTSTAMP property');
+  }
+  
+  if (!icsData.includes('DTSTART:')) {
+    errors.push('Missing DTSTART property');
+  }
+  
+  // Check for VERSION
+  if (!icsData.includes('VERSION:2.0')) {
+    errors.push('Missing or incorrect VERSION property');
+  }
+  
+  // Check for line length (should be folded if >75 chars)
+  const lines = icsData.split('\r\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Ignore folded continuation lines that start with space
+    if (!line.startsWith(' ') && line.length > 75) {
+      errors.push(`Line ${i + 1} exceeds 75 character limit and is not folded`);
     }
   }
   
-  // Update location if present
-  if (event.location !== undefined) {
-    if (updatedIcs.includes('LOCATION:')) {
-      updatedIcs = updatedIcs.replace(
-        /LOCATION:[^\r\n]+(\r?\n)/i,
-        `LOCATION:${escapeText(event.location)}$1`
-      );
-    } else {
-      // Add after description or summary
-      const insertAfter = updatedIcs.includes('DESCRIPTION:') ? 'DESCRIPTION' : 'SUMMARY';
-      updatedIcs = updatedIcs.replace(
-        new RegExp(`${insertAfter}:[^\\r\\n]+(\\r?\\n)`, 'i'),
-        `${insertAfter}:${updatedIcs.match(new RegExp(`${insertAfter}:[^\\r\\n]+`, 'i'))?.[0].substring(insertAfter.length + 1) || ''}$1LOCATION:${escapeText(event.location)}$1`
-      );
-    }
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Ensure ics data has proper line endings (CRLF)
+ */
+export function ensureProperLineEndings(icsData: string): string {
+  // Replace any lone CR or LF with CRLF
+  return icsData.replace(/\r\n|\n\r|\n|\r/g, '\r\n');
+}
+
+/**
+ * Extract UID from an ICS string
+ * @param icsData The iCalendar string to extract from
+ * @returns The UID, or null if not found
+ */
+export function extractUIDFromICS(icsData: string): string | null {
+  const uidMatch = icsData.match(/UID:(.*?)(?:\r\n|\r|\n)(?! )/);
+  if (uidMatch && uidMatch[1]) {
+    return uidMatch[1].trim();
   }
-  
-  // Ensure METHOD, STATUS, and SEQUENCE exist
-  if (!updatedIcs.includes('METHOD:')) {
-    updatedIcs = updatedIcs.replace(
-      /VERSION:[^\r\n]+(\r?\n)/i, 
-      `VERSION:2.0$1METHOD:${method}$1`
-    );
-  }
-  
-  if (!updatedIcs.includes('STATUS:')) {
-    updatedIcs = updatedIcs.replace(
-      /SEQUENCE:[^\r\n]+(\r?\n)/i,
-      `SEQUENCE:${newSequence}$1STATUS:${status}$1`
-    );
-  }
-  
-  if (!updatedIcs.includes('SEQUENCE:')) {
-    updatedIcs = updatedIcs.replace(
-      /UID:[^\r\n]+(\r?\n)/i,
-      `UID:${event.uid}$1SEQUENCE:${newSequence}$1`
-    );
-  }
-  
-  // Since handling attendees is complex with removal/addition, we'll leave them as is
-  // A more complete implementation would parse and diff attendees
-  
-  return updatedIcs;
+  return null;
 }

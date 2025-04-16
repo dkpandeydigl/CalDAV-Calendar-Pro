@@ -112,8 +112,13 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     uid: persistedUID, 
     loading: uidLoading, 
     error: uidError, 
-    storeUidForEvent 
-  } = useEventUID(event?.id);
+    storeUID,
+    generateUID,
+    getOrCreateUID
+  } = useEventUID({
+    eventId: event?.id,
+    calendarId: event?.calendarId
+  });
   
   // Debug log for UID persistence
   useEffect(() => {
@@ -1286,6 +1291,46 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
       const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify(recurrence) : null;
             
+      // Get or create a UID as needed
+      let eventUID: string;
+
+      try {
+        if (event?.uid) {
+          // For existing events, always use the existing UID
+          eventUID = event.uid;
+          console.log(`Using existing event UID: ${eventUID}`);
+        } else if (persistedUID) {
+          // For new events with a persisted UID already available, use it
+          eventUID = persistedUID;
+          console.log(`Using persisted UID from IndexedDB: ${eventUID}`);
+        } else {
+          // For completely new events without a stored UID, generate a new one
+          // and store it for future reference
+          eventUID = generateUID();
+          console.log(`Generated new UID for event: ${eventUID}`);
+        }
+
+        // Log the UID source for debugging
+        console.log(`Final event UID (${event ? 'update' : 'create'}): ${eventUID}`, {
+          source: event?.uid ? 'existing' : (persistedUID ? 'persisted' : 'generated'),
+          eventId: event?.id,
+        });
+
+        // Validate that we have a valid UID
+        if (!eventUID) {
+          throw new Error('Failed to get or create a valid UID for the event');
+        }
+      } catch (uidError) {
+        console.error('Error managing event UID:', uidError);
+        toast({
+          title: 'Error',
+          description: 'Failed to generate a unique ID for the event. Please try again.',
+          variant: 'destructive'
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
       // Map form data to schema fields
       const eventData = {
         title,
@@ -1301,10 +1346,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         resources: resources.length > 0 ? resources : null,
         recurrenceRule,
         syncStatus: 'pending', // Mark as pending for immediate sync
-        // CRITICAL: If we're updating an event, we MUST preserve its UID
-        // For new events, use the persistedUID from our IndexedDB storage service
-        // This ensures the same UID is used consistently throughout the event lifecycle
-        uid: event?.uid || persistedUID, // Use existing event UID or persisted UID
+        // Use the UID we determined above
+        uid: eventUID,
       };
       
       // Handle existing event update
@@ -1328,28 +1371,45 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       } 
       // Handle new event creation
       else {
-        // For new events, we're already including the persisted UID from IndexedDB storage in eventData
-        // This ensures consistent UID usage throughout the event lifecycle (create → update → cancel)
-        const newEventData = {
-          ...eventData,
-          // The uid is already included in eventData from our persistedUID
-          // This ensures consistent UID usage throughout the event lifecycle
-          // Include mandatory fields with null/default values to match schema requirements
-          etag: null,
-          url: null,
-          rawData: null,
-          syncError: null,
-          lastSyncAttempt: null,
-          emailSent: null,
-          emailError: null
-        };
-        
-        // Create new event
-        await createEvent(newEventData);
-        
-        // Refresh the events list and close modal
-        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-        onClose();
+        try {
+          // For new events, we need to prepare the full event data
+          const newEventData = {
+            ...eventData,
+            // Include mandatory fields with null/default values to match schema requirements
+            etag: null,
+            url: null,
+            rawData: null,
+            syncError: null,
+            lastSyncAttempt: null,
+            emailSent: null,
+            emailError: null
+          };
+          
+          // Create the new event
+          const createdEvent = await createEvent(newEventData);
+          
+          // After successful creation, store the UID mapping in IndexedDB for future reference
+          if (createdEvent?.id) {
+            try {
+              await storeUID(createdEvent.id, eventUID, parseInt(calendarId));
+              console.log(`Stored UID mapping for new event:`, {
+                eventId: createdEvent.id,
+                uid: eventUID,
+                calendarId: parseInt(calendarId)
+              });
+            } catch (storageError) {
+              // Log the error but don't block the event creation
+              console.error('Failed to store UID mapping:', storageError);
+            }
+          }
+          
+          // Refresh the events list and close modal
+          queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+          onClose();
+        } catch (createError) {
+          console.error("Failed to create event:", createError);
+          throw createError; // Will be caught by the outer catch block
+        }
       }
     } catch (error: any) {
       toast({
