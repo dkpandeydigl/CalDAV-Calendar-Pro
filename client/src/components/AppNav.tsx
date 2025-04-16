@@ -17,8 +17,10 @@ import {
   LogOut,
   Mail,
   Menu,
+  MessageSquare,
   Settings,
   User,
+  Wifi,
   X,
 } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -68,6 +70,15 @@ export function AppNav() {
             >
               Email Settings
             </Link>
+            <Link
+              to="/websocket-chat"
+              className={`text-sm font-medium ${location === '/websocket-chat' ? 'text-foreground' : 'text-muted-foreground'} hover:text-foreground transition-colors`}
+            >
+              <span className="flex items-center gap-1">
+                <Wifi className="h-3 w-3" />
+                Chat
+              </span>
+            </Link>
           </nav>
         </div>
 
@@ -109,6 +120,14 @@ export function AppNav() {
                 >
                   <Mail className="h-4 w-4" />
                   Email Settings
+                </Link>
+                <Link
+                  to="/websocket-chat"
+                  className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-muted text-sm"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  Chat
                 </Link>
               </nav>
             </SheetContent>
