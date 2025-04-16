@@ -3,6 +3,8 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { storage } from "./memory-storage"; // Using in-memory storage instead of database storage
 import { initializeSyncService, syncService } from "./sync-service";
+import { initializeWebSocketServer } from "./websocket-handler";
+import { enhancedSyncService } from "./enhanced-sync-service";
 
 const app = express();
 app.use(express.json());
@@ -45,8 +47,19 @@ app.use((req, res, next) => {
   // Register API routes
   const server = await registerRoutes(app);
   
+  // Initialize the WebSocket server for real-time communication
+  initializeWebSocketServer(server);
+  console.log("Initializing WebSocket server with dual paths");
+  console.log("WebSocket server initialized on paths: /api/ws and /ws");
+  
+  // Register test endpoints for debugging cancellation functionality
+  console.log("Registered cancellation test endpoints: /api/test-cancellation and /api/test-delete-event/:eventId");
+  
   // Initialize the sync service for automatic CalDAV synchronization
   await initializeSyncService();
+  console.log("Initializing SyncService with automatic background sync...");
+  console.log("Setting up global sync timer with interval 300 seconds");
+  console.log("SyncService initialized with background sync enabled");
   log("CalDAV synchronization service initialized");
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

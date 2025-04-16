@@ -31,7 +31,7 @@ export function generateEventUID(): string {
  * @param rawData The raw ICS data or object representation
  * @returns The extracted UID or null if not found
  */
-export function extractUIDFromRawData(rawData: string | object | null): string | null {
+export function extractUIDFromRawData(rawData: string | object | null | undefined): string | null {
   if (!rawData) {
     return null;
   }
@@ -71,8 +71,8 @@ export function extractUIDFromRawData(rawData: string | object | null): string |
  * @returns The UID to use
  */
 export function preserveOrGenerateUID(
-  event: { uid?: string; rawData?: string | object | null } | null,
-  rawData?: string | object | null
+  event: { uid?: string; rawData?: string | object | null | undefined } | null,
+  rawData?: string | object | null | undefined
 ): string {
   // Case 1: Check raw data from parameters first (has highest priority)
   const rawDataUID = extractUIDFromRawData(rawData);
