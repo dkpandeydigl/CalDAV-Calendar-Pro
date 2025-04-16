@@ -11,6 +11,7 @@ interface Attendee {
 
 interface DirectAttendeeExtractorProps {
   rawData: string | object | null | undefined;
+  attendees?: any[]; // Direct attendees array if available
   showMoreCount?: number; // Number of attendees to show before "more"
   isPreview?: boolean; // If true, only show limited attendees with count indicator
   fallbackEmail?: string; // Fallback email to use when no valid email is found
@@ -18,6 +19,7 @@ interface DirectAttendeeExtractorProps {
 
 const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({ 
   rawData,
+  attendees: directAttendees = [],
   showMoreCount = 2,
   isPreview = true,
   fallbackEmail = ""
@@ -50,9 +52,34 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
   
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   
-  // Try to extract attendees from rawData object directly if it has attendees property
+  // Try to extract attendees from different sources in priority order
   useEffect(() => {
-    // First try to get attendees directly from the object if available
+    // First check if we have direct attendees passed in as prop
+    if (directAttendees && Array.isArray(directAttendees) && directAttendees.length > 0) {
+      try {
+        console.log('ATTENDEE DEBUG: Using directly provided attendees array:', directAttendees);
+        
+        const validAttendees = directAttendees
+          .filter(att => att && typeof att === 'object' && 'email' in att && att.email)
+          .map((att, index) => ({
+            id: att.id || `attendee-direct-${index}-${Date.now()}`,
+            email: att.email,
+            name: att.name || att.email.split('@')[0],
+            role: att.role || 'Attendee',
+            status: att.status || 'Needs Action'
+          }));
+        
+        if (validAttendees.length > 0) {
+          console.log(`ATTENDEE DEBUG: Successfully processed ${validAttendees.length} direct attendees`);
+          setAttendees(validAttendees);
+          return; // Exit early if we found attendees
+        }
+      } catch (e) {
+        console.error('ATTENDEE DEBUG: Error processing direct attendees:', e);
+      }
+    }
+    
+    // Then try to get attendees from rawData object if available
     if (rawData && typeof rawData === 'object' && 'attendees' in rawData) {
       try {
         const objAttendees = (rawData as any).attendees;
@@ -295,7 +322,7 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
     } catch (error) {
       console.error('ATTENDEE DEBUG: Error extracting attendees:', error);
     }
-  }, [rawData, rawDataString]);
+  }, [rawData, rawDataString, directAttendees]);
   
   // Handle fallback email when no attendees found
   useEffect(() => {
