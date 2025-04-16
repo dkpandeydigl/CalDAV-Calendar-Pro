@@ -13,8 +13,11 @@ import { setupAuth } from './auth';
  * Register the email test endpoints
  */
 export function registerEmailTestEndpoints(app: express.Express) {
+  // Get isAuthenticated middleware from auth
+  const { isAuthenticated } = setupAuth(app);
+  
   // Test email endpoint - sends a test email to the current user
-  app.post('/api/test-email', requireAuth, async (req, res) => {
+  app.post('/api/test-email', isAuthenticated, async (req, res) => {
     try {
       const userId = req.user?.id;
       
@@ -64,7 +67,7 @@ export function registerEmailTestEndpoints(app: express.Express) {
           secure: smtpConfig?.secure,
           username: smtpConfig?.username,
           // Don't include password
-          from: smtpConfig?.from,
+          from: smtpConfig?.fromEmail,
           fromName: smtpConfig?.fromName,
           enabled: smtpConfig?.enabled
         }
@@ -79,7 +82,7 @@ export function registerEmailTestEndpoints(app: express.Express) {
   });
 
   // Endpoint to get current SMTP configuration (for debugging)
-  app.get('/api/smtp-config', requireAuth, async (req, res) => {
+  app.get('/api/smtp-config', isAuthenticated, async (req, res) => {
     try {
       const userId = req.user?.id;
       
@@ -105,7 +108,7 @@ export function registerEmailTestEndpoints(app: express.Express) {
           secure: smtpConfig.secure,
           username: smtpConfig.username,
           // Don't include password
-          from: smtpConfig.from,
+          from: smtpConfig.fromEmail,
           fromName: smtpConfig.fromName,
           enabled: smtpConfig.enabled
         }
