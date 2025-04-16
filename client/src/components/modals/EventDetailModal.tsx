@@ -35,7 +35,9 @@ function sanitizeIcsForDownload(icsData: string): string {
   // Track if we're within a VEVENT section
   let inEvent = false;
   
-  for (let line of icsLines) {
+  for (let i = 0; i < icsLines.length; i++) {
+    let line = icsLines[i];
+    
     // Track events
     if (line === 'BEGIN:VEVENT') {
       inEvent = true;
@@ -58,9 +60,47 @@ function sanitizeIcsForDownload(icsData: string): string {
       }
       
       // Fix improperly folded ATTENDEE/ORGANIZER lines
-      if (line.includes('ATTENDEE') && line.includes('\n')) {
-        console.log('Fixing malformed ATTENDEE line with embedded newlines');
-        line = line.replace(/\n/g, '');
+      if (line.includes('ATTENDEE') || line.includes('ORGANIZER')) {
+        // Remove any embedded newlines
+        if (line.includes('\n')) {
+          console.log('Fixing embedded newlines in ATTENDEE/ORGANIZER line');
+          line = line.replace(/\n/g, '');
+        }
+        
+        // Check for improper SCHEDULE-STATUS formatting
+        if (line.includes('SCHEDULE-STATUS=') && line.includes(':')) {
+          console.log('Fixing malformed SCHEDULE-STATUS in line:', line);
+          
+          // Ensure the line is properly formatted
+          const parts = line.split(':');
+          if (parts.length > 1) {
+            const properties = parts[0];
+            const email = parts[1];
+            
+            // Make sure email doesn't contain any : characters
+            const cleanEmail = email.replace(/:/g, '');
+            line = `${properties}:${cleanEmail}`;
+            console.log('Fixed ATTENDEE/ORGANIZER line:', line);
+          }
+        }
+        
+        // Fix attendees with incorrect line break formatting
+        if (line.endsWith('\\r\\n') || line.endsWith('\r\n')) {
+          line = line.replace(/\\r\\n$|\r\n$/, '');
+        }
+      }
+      
+      // Fix lines that contain END:VEVENT or END:VCALENDAR inside them (very malformed)
+      if (line.includes('END:VEVENT') && !line.startsWith('END:VEVENT')) {
+        console.log('Fixing line with embedded END:VEVENT:', line);
+        const parts = line.split('END:VEVENT');
+        line = parts[0]; // Only keep the part before END:VEVENT
+      }
+      
+      if (line.includes('END:VCALENDAR') && !line.startsWith('END:VCALENDAR')) {
+        console.log('Fixing line with embedded END:VCALENDAR:', line);
+        const parts = line.split('END:VCALENDAR');
+        line = parts[0]; // Only keep the part before END:VCALENDAR
       }
     }
     
