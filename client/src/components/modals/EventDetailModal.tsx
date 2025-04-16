@@ -1197,21 +1197,55 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             };
                             
                             console.log('Creating basic ICS content (no raw data available)');
-                            icsContent = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//XGenCal//EN
-CALSCALE:GREGORIAN
-METHOD:PUBLISH
-BEGIN:VEVENT
-SUMMARY:${event.title}
-DTSTART:${formatDate(startDate)}
-DTEND:${formatDate(endDate)}
-DESCRIPTION:${event.description || ''}
-LOCATION:${event.location || ''}
-UID:${event.uid || `event-${Date.now()}`}
-STATUS:CONFIRMED
-END:VEVENT
-END:VCALENDAR`;
+                            // Create the basic information as an array of lines
+                            let lines = [
+                              'BEGIN:VCALENDAR',
+                              'VERSION:2.0',
+                              'PRODID:-//XGenCal//EN',
+                              'CALSCALE:GREGORIAN',
+                              'METHOD:PUBLISH',
+                              'BEGIN:VEVENT',
+                              `SUMMARY:${event.title}`,
+                              `DTSTART:${formatDate(startDate)}`,
+                              `DTEND:${formatDate(endDate)}`,
+                              `DESCRIPTION:${event.description || ''}`,
+                              `LOCATION:${event.location || ''}`,
+                              `UID:${event.uid || `event-${Date.now()}`}`,
+                              'STATUS:CONFIRMED',
+                              'END:VEVENT',
+                              'END:VCALENDAR'
+                            ];
+                            
+                            // Apply proper line folding for RFC 5545 compliance
+                            const foldedLines = [];
+                            for (let i = 0; i < lines.length; i++) {
+                              const line = lines[i];
+                              
+                              // Skip empty lines
+                              if (!line.trim()) continue;
+                              
+                              // If the line is longer than 75 characters, fold it according to RFC 5545
+                              if (line.length > 75) {
+                                let currentPos = 0;
+                                const lineLength = line.length;
+                                
+                                // Add the first line
+                                foldedLines.push(line.substring(0, 75));
+                                currentPos = 75;
+                                
+                                // Add continuation lines with a space at the beginning
+                                while (currentPos < lineLength) {
+                                  const chunk = line.substring(currentPos, Math.min(currentPos + 74, lineLength));
+                                  foldedLines.push(' ' + chunk); // Continuation lines must start with a space
+                                  currentPos += 74;
+                                }
+                              } else {
+                                foldedLines.push(line);
+                              }
+                            }
+                            
+                            // Convert to string with CRLF line endings
+                            icsContent = foldedLines.join('\r\n');
                           }
                           
                           // Create blob and trigger download
