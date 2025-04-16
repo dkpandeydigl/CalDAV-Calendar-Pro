@@ -37,9 +37,90 @@ const UID_STORE = 'uid-mappings';
 class UIDPersistenceService {
   private db: Promise<IDBPDatabase>;
   private isInitialized = false;
+  private webSocket: WebSocket | null = null;
+  private userId: number | null = null;
   
   constructor() {
     this.db = this.initDatabase();
+  }
+  
+  /**
+   * Connect to the WebSocket server for real-time UID synchronization
+   * 
+   * @param userId The ID of the current user
+   */
+  public connectWebSocket(userId: number): void {
+    if (!userId) {
+      console.error('Cannot connect WebSocket: No user ID provided');
+      return;
+    }
+    
+    this.userId = userId;
+    
+    // Determine the WebSocket URL based on the current protocol and host
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const primaryWsUrl = `${protocol}//${window.location.host}/api/ws?userId=${userId}`;
+    const fallbackWsUrl = `${protocol}//${window.location.host}/ws?userId=${userId}`;
+    
+    try {
+      // Close any existing connection
+      if (this.webSocket) {
+        this.webSocket.close();
+      }
+      
+      // Create new WebSocket connection, trying primary endpoint first
+      console.log(`Connecting UID persistence WebSocket to ${primaryWsUrl}`);
+      
+      // Try primary WebSocket endpoint
+      this.connectToEndpoint(primaryWsUrl, () => {
+        // If primary fails, try fallback endpoint
+        console.log('Primary WebSocket endpoint failed, trying fallback...');
+        this.connectToEndpoint(fallbackWsUrl, () => {
+          console.error('All WebSocket connection attempts failed');
+        });
+      });
+    } catch (error) {
+      console.error('Error establishing UID persistence WebSocket connection:', error);
+    }
+  }
+  
+  /**
+   * Connect to a specific WebSocket endpoint
+   * 
+   * @param url The WebSocket endpoint URL
+   * @param onFailure Callback to execute if connection fails
+   */
+  private connectToEndpoint(url: string, onFailure: () => void): void {
+    try {
+      // Create new WebSocket connection
+      this.webSocket = new WebSocket(url);
+      
+      // Set up event handlers
+      this.webSocket.onopen = this.handleWebSocketOpen.bind(this);
+      this.webSocket.onmessage = this.handleWebSocketMessage.bind(this);
+      
+      // Special handler for this connection attempt
+      this.webSocket.onclose = (event: CloseEvent) => {
+        // If the connection was never established (failed immediately)
+        if (event.code !== 1000 && this.webSocket?.readyState !== WebSocket.OPEN) {
+          onFailure();
+        } else {
+          // Normal close handling for established connections
+          this.handleWebSocketClose(event);
+        }
+      };
+      
+      this.webSocket.onerror = (error: Event) => {
+        this.handleWebSocketError(error);
+        // Error doesn't always trigger close, so we ensure onFailure is called
+        if (this.webSocket?.readyState !== WebSocket.OPEN) {
+          onFailure();
+        }
+      };
+    } catch (error) {
+      console.error(`Error connecting to WebSocket endpoint ${url}:`, error);
+      onFailure();
+    }
   }
   
   /**
@@ -87,6 +168,9 @@ class UIDPersistenceService {
           updatedAt: now
         });
         console.log(`Updated UID mapping for event ID ${eventId}: ${uid}`);
+        
+        // Notify other clients about the updated UID
+        this.sendUIDSyncMessage(eventId, uid, 'update');
       } else {
         // Create new mapping
         await dbInstance.add(UID_STORE, {
@@ -96,6 +180,9 @@ class UIDPersistenceService {
           updatedAt: now
         });
         console.log(`Stored new UID mapping for event ID ${eventId}: ${uid}`);
+        
+        // Notify other clients about the new UID
+        this.sendUIDSyncMessage(eventId, uid, 'add');
       }
     } catch (error) {
       console.error(`Failed to store UID mapping for event ${eventId}:`, error);
@@ -149,8 +236,19 @@ class UIDPersistenceService {
   public async deleteUIDMapping(eventId: number): Promise<void> {
     try {
       const dbInstance = await this.db;
+      
+      // Get the UID before deleting (for WebSocket notification)
+      const mapping = await dbInstance.get(UID_STORE, eventId);
+      const uid = mapping?.uid;
+      
+      // Delete the mapping
       await dbInstance.delete(UID_STORE, eventId);
       console.log(`Deleted UID mapping for event ID ${eventId}`);
+      
+      // Notify other clients about the deleted UID (if we have the UID)
+      if (uid) {
+        this.sendUIDSyncMessage(eventId, uid, 'delete');
+      }
     } catch (error) {
       console.error(`Failed to delete UID mapping for event ${eventId}:`, error);
       throw error;
@@ -234,6 +332,132 @@ class UIDPersistenceService {
     } catch (error) {
       console.error('Failed to clear UID mappings:', error);
       throw error;
+    }
+  }
+  
+  /**
+   * Process a WebSocket message containing UID data
+   * 
+   * @param message The message containing UID sync data
+   */
+  private async processUIDSyncMessage(message: UIDSyncMessage): Promise<void> {
+    try {
+      switch (message.operation) {
+        case 'add':
+        case 'update':
+          await this.storeUID(message.eventId, message.uid);
+          console.log(`Received UID sync: ${message.operation} - Event ID ${message.eventId}, UID ${message.uid}`);
+          break;
+          
+        case 'delete':
+          await this.deleteUIDMapping(message.eventId);
+          console.log(`Received UID sync: ${message.operation} - Event ID ${message.eventId}`);
+          break;
+          
+        default:
+          console.warn(`Unknown UID sync operation: ${(message as any).operation}`);
+      }
+    } catch (error) {
+      console.error('Error processing UID sync message:', error);
+    }
+  }
+  
+  /**
+   * Send a UID mapping update to other clients via WebSocket
+   * 
+   * @param eventId The event ID
+   * @param uid The event UID
+   * @param operation The operation being performed ('add', 'update', or 'delete')
+   * @returns True if the message was sent successfully
+   */
+  private sendUIDSyncMessage(eventId: number, uid: string, operation: 'add' | 'update' | 'delete'): boolean {
+    if (!this.webSocket || this.webSocket.readyState !== WebSocket.OPEN) {
+      console.warn('Cannot send UID sync: WebSocket not connected');
+      return false;
+    }
+    
+    try {
+      const message: WebSocketNotification = {
+        type: 'event',
+        action: 'uid-sync',
+        timestamp: Date.now(),
+        data: {
+          eventId,
+          uid,
+          operation,
+          timestamp: Date.now()
+        },
+        sourceUserId: this.userId
+      };
+      
+      this.webSocket.send(JSON.stringify(message));
+      return true;
+    } catch (error) {
+      console.error('Error sending UID sync message:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Handle WebSocket open event
+   */
+  private handleWebSocketOpen(): void {
+    console.log('UID persistence WebSocket connection established');
+  }
+  
+  /**
+   * Handle WebSocket message event
+   */
+  private handleWebSocketMessage(event: MessageEvent): void {
+    try {
+      const data = JSON.parse(event.data);
+      
+      // Check if this is a UID sync message
+      if (data.type === 'event' && data.action === 'uid-sync' && data.data) {
+        const syncMessage = data.data as UIDSyncMessage;
+        
+        // Don't process our own messages
+        if (data.sourceUserId !== this.userId) {
+          this.processUIDSyncMessage(syncMessage);
+        }
+      }
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error);
+    }
+  }
+  
+  /**
+   * Handle WebSocket close event
+   */
+  private handleWebSocketClose(event: CloseEvent): void {
+    console.log('UID persistence WebSocket connection closed:', event.code, event.reason);
+    
+    // Attempt to reconnect after a delay if we have a user ID
+    if (this.userId) {
+      setTimeout(() => {
+        if (this.userId) {
+          console.log('Attempting to reconnect UID persistence WebSocket...');
+          this.connectWebSocket(this.userId);
+        }
+      }, 5000);
+    }
+  }
+  
+  /**
+   * Handle WebSocket error event
+   */
+  private handleWebSocketError(error: Event): void {
+    console.error('UID persistence WebSocket error:', error);
+  }
+  
+  /**
+   * Disconnect from the WebSocket server
+   */
+  public disconnectWebSocket(): void {
+    if (this.webSocket) {
+      this.webSocket.close();
+      this.webSocket = null;
+      this.userId = null;
     }
   }
 }

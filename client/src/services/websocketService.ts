@@ -10,7 +10,7 @@
  */
 export interface WebSocketNotification {
   type: 'event' | 'calendar' | 'system' | 'resource' | 'attendee' | 'email';
-  action: 'created' | 'updated' | 'deleted' | 'status-change' | 'error' | 'info';
+  action: 'created' | 'updated' | 'deleted' | 'status-change' | 'error' | 'info' | 'uid-sync';
   timestamp: number;
   data: any;
   sourceUserId?: number | null; // The user who triggered the notification
@@ -83,6 +83,7 @@ export function getNotificationActionName(action: WebSocketNotification['action'
     case 'status-change': return 'Status Changed';
     case 'error': return 'Error';
     case 'info': return 'Information';
+    case 'uid-sync': return 'UID Synchronized';
     default: return 'Action';
   }
 }
