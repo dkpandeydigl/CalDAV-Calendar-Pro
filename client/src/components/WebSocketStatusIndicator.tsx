@@ -19,16 +19,19 @@ export function WebSocketStatusIndicator() {
   useEffect(() => {
     // Listen for event changes
     const removeEventListener = addMessageListener('event_changed', (data) => {
-      const { eventId, calendarId, changeType, timestamp } = data;
+      const { eventId, calendarId, changeType, uid, title, timestamp } = data;
       
       // Record last update time
       const updateTime = new Date().toLocaleTimeString();
       setLastUpdate(updateTime);
       
-      // Show toast notification for event changes
+      // Enhanced logging with UID tracking for debugging
+      console.log(`[WS Event] ${changeType} - ID: ${eventId}, UID: ${uid || 'none'}, Title: ${title || 'Unnamed'}`);
+      
+      // Show toast notification for event changes with title if available
       toast({
         title: `Event ${changeType}`,
-        description: `Calendar event has been ${changeType} (ID: ${eventId})`,
+        description: `${title ? `"${title}"` : 'Calendar event'} has been ${changeType} ${uid ? `[UID: ${uid.substring(0, 8)}...]` : ''}`,
         variant: 'default',
       });
     });

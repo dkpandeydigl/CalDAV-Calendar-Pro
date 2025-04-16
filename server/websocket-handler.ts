@@ -442,31 +442,42 @@ export function notifyCalendarChanged(
 // Notify about event changes
 export function notifyEventChanged(
   userId: number,
-  eventId: number,
+  eventId: number | { id: number; calendarId: number; uid?: string; title?: string },
   changeType: 'created' | 'updated' | 'deleted',
   details?: any
 ) {
   try {
     // Backward compatibility with existing code
     if (typeof eventId === 'number' && typeof changeType === 'string') {
+      // Try to extract UID from details for legacy format
+      const uid = details?.uid || null;
+      const calendarId = details?.calendarId || null;
+      
+      console.log(`[WS] Legacy notification for user ${userId}: event ${eventId} ${changeType} with uid: ${uid || 'not specified'}`);
+      
       broadcastToUser(userId, {
         type: 'event_changed',
         eventId,
         changeType,
+        // CRITICAL: Include these fields in every notification for consistent identity tracking
+        uid: uid,  // UID is critical for event identity across updates
+        calendarId: calendarId,
         details,
         timestamp: Date.now()
       });
     } 
     // Support for enhanced sync service format
     else if (eventId && typeof eventId === 'object') {
-      const event = eventId as { id: number; calendarId: number; uid: string; title?: string };
+      const event = eventId as { id: number; calendarId: number; uid?: string; title?: string };
       const action = changeType as 'created' | 'updated' | 'deleted';
+      
+      console.log(`[WS] Enhanced notification for user ${userId}: event ${event.id} ${action} with uid: ${event.uid || 'not specified'}`);
       
       broadcastToUser(userId, {
         type: 'event_changed',
         eventId: event.id,
         calendarId: event.calendarId,
-        uid: event.uid,
+        uid: event.uid, // This is critical for event identity
         title: event.title,
         changeType: action,
         details,
