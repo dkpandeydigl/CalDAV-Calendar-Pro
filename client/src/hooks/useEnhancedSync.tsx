@@ -210,6 +210,7 @@ export function useEnhancedSync() {
   }, [user, toast]);
 
   // Update an existing event with immediate server synchronization
+  // Ensure UID consistency through the update process
   const updateEventWithSync = useCallback(async (eventId: number, eventData: any) => {
     if (!user?.id) {
       setUpdateOperation({
@@ -220,6 +221,13 @@ export function useEnhancedSync() {
       return null;
     }
 
+    // Ensure the original event UID is properly preserved
+    if (eventData.uid) {
+      console.log(`[EnhancedSync] Updating event ${eventId} with existing UID: ${eventData.uid}`);
+    } else {
+      console.warn(`[EnhancedSync] Missing UID for event update: ${eventId}. This may cause sync issues.`);
+    }
+
     setUpdateOperation({
       isProcessing: true,
       success: null,
@@ -227,10 +235,20 @@ export function useEnhancedSync() {
     });
 
     try {
+      // Add timestamp and sync flags to eventData
+      const enhancedEventData = {
+        ...eventData,
+        syncStatus: 'pending', // Mark for immediate sync
+        syncPriority: 'high',
+        lastModifiedAt: new Date().toISOString(),
+        lastModifiedBy: user.id,
+        lastModifiedByName: user.username || null
+      };
+
       const response = await apiRequest(
         'POST',
         `/api/events/${eventId}/update-with-sync`,
-        eventData
+        enhancedEventData
       );
       
       const result = await response.json();
@@ -241,6 +259,9 @@ export function useEnhancedSync() {
           success: true,
           error: null
         });
+        
+        // Log UID preservation success
+        console.log(`[EnhancedSync] Event updated successfully: ID=${result.event.id}, UID=${result.event.uid}`);
         
         toast({
           title: "Event Updated",
@@ -255,6 +276,8 @@ export function useEnhancedSync() {
           success: false,
           error: result.message || 'Update failed without specific error'
         });
+        
+        console.error(`[EnhancedSync] Event update failed: ${result.message}. UID preservation may be affected.`);
         
         toast({
           title: "Event Update Failed",
@@ -273,6 +296,8 @@ export function useEnhancedSync() {
         error: errorMessage
       });
       
+      console.error(`[EnhancedSync] Event update error: ${errorMessage}`);
+      
       toast({
         title: "Event Update Error",
         description: errorMessage,
@@ -284,7 +309,8 @@ export function useEnhancedSync() {
   }, [user, toast]);
 
   // Cancel/delete an event with immediate server synchronization
-  const cancelEventWithSync = useCallback(async (eventId: number) => {
+  // Preserves the event UID for proper iCalendar compliance
+  const cancelEventWithSync = useCallback(async (eventId: number, eventUid?: string) => {
     if (!user?.id) {
       setDeleteOperation({
         isProcessing: false,
@@ -294,6 +320,13 @@ export function useEnhancedSync() {
       return false;
     }
 
+    // If we have the UID available, log it for debugging
+    if (eventUid) {
+      console.log(`[EnhancedSync] Cancelling event ${eventId} with UID: ${eventUid}`);
+    } else {
+      console.log(`[EnhancedSync] Cancelling event ${eventId} without UID information`);
+    }
+
     setDeleteOperation({
       isProcessing: true,
       success: null,
@@ -301,9 +334,13 @@ export function useEnhancedSync() {
     });
 
     try {
+      // Include the UID in the request if available
+      const payload = eventUid ? { preservedUid: eventUid } : {};
+      
       const response = await apiRequest(
         'POST',
-        `/api/events/${eventId}/cancel-with-sync`
+        `/api/events/${eventId}/cancel-with-sync`,
+        payload
       );
       
       const result = await response.json();
@@ -314,6 +351,11 @@ export function useEnhancedSync() {
           success: true,
           error: null
         });
+        
+        // Log success with UID information if available
+        if (result.preservedUid) {
+          console.log(`[EnhancedSync] Event cancelled successfully with preserved UID: ${result.preservedUid}`);
+        }
         
         toast({
           title: "Event Cancelled",
@@ -328,6 +370,8 @@ export function useEnhancedSync() {
           success: false,
           error: result.message || 'Cancellation failed without specific error'
         });
+        
+        console.error(`[EnhancedSync] Event cancellation failed: ${result.message}`);
         
         toast({
           title: "Event Cancellation Failed",
@@ -345,6 +389,8 @@ export function useEnhancedSync() {
         success: false,
         error: errorMessage
       });
+      
+      console.error(`[EnhancedSync] Event cancellation error: ${errorMessage}`);
       
       toast({
         title: "Event Cancellation Error",

@@ -192,6 +192,14 @@ export function useWebSocketClient() {
         try {
           const data = JSON.parse(event.data);
           
+          // Enhanced logging for event changes to trace UID across lifecycle
+          if (data.type === 'event_changed') {
+            console.log(
+              `[WS Received] Event ${data.changeType}: ID=${data.eventId}, ` + 
+              `UID=${data.uid || 'none'}, Calendar=${data.calendarId || 'unknown'}`
+            );
+          }
+          
           // Call registered listeners for this message type
           const listeners = messageListenersRef.current.get(data.type) || [];
           for (const listener of listeners) {
