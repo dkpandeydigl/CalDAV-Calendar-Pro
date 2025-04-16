@@ -6,9 +6,7 @@ import { generateEventAgendaPDF } from './pdf-generator';
 import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
 import { 
   sanitizeAndFormatICS, 
-  transformIcsForCancellation, 
-  foldLine, 
-  escapeIcsSpecialChars 
+  transformIcsForCancellation
 } from '../shared/ics-formatter-fixed';
 
 export interface Attendee {
