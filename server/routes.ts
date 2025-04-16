@@ -2703,7 +2703,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertEventSchema.parse(eventData);
       const newEvent = await storage.createEvent(validatedData);
       
-      res.status(201).json(newEvent);
+      // Trigger immediate CalDAV synchronization for the new event
+      try {
+        console.log(`Triggering immediate sync for new event ${newEvent.id} with UID ${newEvent.uid}`);
+        
+        // Trigger a push sync operation for the user
+        const success = await syncService.pushLocalEvents(userId, newEvent.calendarId);
+        
+        console.log(`Immediate sync result for new event: ${success ? 'successful' : 'failed'}`);
+        
+        // Add sync status to response
+        res.status(201).json({
+          ...newEvent,
+          syncTriggered: true,
+          syncSuccess: success
+        });
+      } catch (syncErr) {
+        console.error("Error during immediate sync after event creation:", syncErr);
+        // Still return 201 since the event was created successfully, but include sync error
+        res.status(201).json({
+          ...newEvent,
+          syncTriggered: true,
+          syncSuccess: false,
+          syncError: syncErr instanceof Error ? syncErr.message : String(syncErr)
+        });
+      }
     } catch (err) {
       console.error("Error creating event:", err);
       return handleZodError(err, res);
