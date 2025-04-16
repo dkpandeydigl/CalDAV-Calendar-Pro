@@ -1,0 +1,78 @@
+review these .ics file contents and find and fix the error. Gmail is not able to understand our ics file. Also i think few format error are in ics file, All lines should be mmore clean and formatted. Also pdf attachment is not found with invitation email.
+
+
+.ics file of original event downloaded by openning from our client
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//CalDAV Client//NONSGML v1.0//EN
+BEGIN:VEVENT
+UID:event-1744834817860-32z26qhl@caldavclient.local
+SUMMARY:19
+DTSTART:20250519T033000Z
+DTEND:20250519T043000Z
+DESCRIPTION:test event
+LOCATION:DIGL Jaipur
+DTSTAMP:20250416T202020Z
+CREATED:20250416T202020Z
+LAST-MODIFIED:20250416T202020Z
+SEQUENCE:0
+RRULE:FREQ=DAILY;COUNT=2
+ATTENDEE;ROLE=Secretary;PARTSTAT=NEEDS-ACTION;SCHEDULE-STATUS=3.7:
+mailto:pandey.dharmendra30@gmail.com
+ATTENDEE;CN=Resource Name;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-T
+ YPE=res type;X-RESOURCE-CAPACITY=2;X-ADMIN-NAME=Dharmendra;X-NOTES-REMARKS
+ =test;SCHEDULE-STATUS=3.7:mailto
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+END:VEVENT
+END:VCALENDAR
+................................................................
+.ics file Downloaded from gmail, this was attached in our invitation email
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Replit Calendar App//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:manual-send-1744834812607@caldavclient.local
+DTSTAMP:20250416T202014Z
+DTSTART:20250519T033000Z
+DTEND:20250519T043000Z
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:19
+DESCRIPTION:<p>test event</p>
+LOCATION:DIGL Jaipur
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+ATTENDEE;ROLE=Secretary:mailto:pandey.dharmendra30@gmail.com
+ATTENDEE;CUTYPE=RESOURCE;CN=Resource Name;RESOURCE-TYPE=res type;X-RESOURCE-ID=896a2095-7999-4cd5-b234-2427e4cbe65a;X-RESOURCE-CAPACITY=2:mailto:dktest@dil.in
+RRULE:pattern=Daily;interval=1;weekdays=;endType=After;occurrences=2
+END:VEVENT
+END:VCALENDAR
+
+.ics file of updated event downloaded from our client
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//CalDAV Client//NONSGML v1.0//EN
+BEGIN:VEVENT
+UID:event-1744834817860-32z26qhl@caldavclient.local
+SUMMARY:19 update
+DTSTART:20250519T033000Z
+DTEND:20250519T043000Z
+DESCRIPTION:test event
+LOCATION:DIGL Jaipur
+DTSTAMP:20250416T202745Z
+CREATED:20250416T202020Z
+LAST-MODIFIED:20250416T202745Z
+SEQUENCE:1
+RRULE:FREQ=DAILY;COUNT=2
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+ATTENDEE;ROLE=Secretary;PARTSTAT=NEEDS-ACTION;SCHEDULE-STATUS=3.7:
+mailto:pandey.dharmendra30@gmail.com
+ATTENDEE;CN=Dharmendra;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT;X-RESOURCE-TYPE
+ =res type;X-RESOURCE-CAPACITY=2;X-RESOURCE-REMARKS=test;SCHEDULE-STATUS=3.
+ 7:mailto
+:
+END:VEVENT
+END:VCALENDAR

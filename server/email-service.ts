@@ -4,7 +4,7 @@ import { storage } from './memory-storage';
 import { formatICalDate } from './ical-utils';
 import { generateEventAgendaPDF } from './pdf-generator';
 import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
-import { sanitizeAndFormatICS } from '../shared/ics-formatter';
+import { sanitizeAndFormatICS, transformIcsForCancellation } from '../shared/ics-formatter-fixed';
 
 export interface Attendee {
   email: string;
