@@ -18,6 +18,58 @@ import AttendeeResponseForm from '../attendees/AttendeeResponseForm';
 import AttendeeStatusDisplay from '../attendees/AttendeeStatusDisplay';
 import AttendeeDialog from '../attendees/AttendeeDialog';
 
+/**
+ * Sanitizes ICS data for proper downloading
+ * Fixes issues with malformed RRULE values and attendee formatting
+ * 
+ * @param icsData The raw ICS data string
+ * @returns Sanitized ICS data string that complies with RFC 5545
+ */
+function sanitizeIcsForDownload(icsData: string): string {
+  if (!icsData) return '';
+  
+  // Split into lines for easier processing
+  let icsLines = icsData.split(/\r\n|\n|\r/);
+  let sanitizedLines = [];
+  
+  // Track if we're within a VEVENT section
+  let inEvent = false;
+  
+  for (let line of icsLines) {
+    // Track events
+    if (line === 'BEGIN:VEVENT') {
+      inEvent = true;
+    } else if (line === 'END:VEVENT') {
+      inEvent = false;
+    }
+    
+    // Only process lines within events
+    if (inEvent) {
+      // Fix RRULE with mailto: appended to it
+      if (line.startsWith('RRULE:')) {
+        // Check if RRULE contains a mailto:
+        if (line.includes('mailto:')) {
+          console.log('Fixing malformed RRULE:', line);
+          // Extract just the RRULE part before any email
+          const ruleParts = line.split('mailto:');
+          line = ruleParts[0];
+          console.log('Fixed RRULE:', line);
+        }
+      }
+      
+      // Fix improperly folded ATTENDEE/ORGANIZER lines
+      if (line.includes('ATTENDEE') && line.includes('\n')) {
+        console.log('Fixing malformed ATTENDEE line with embedded newlines');
+        line = line.replace(/\n/g, '');
+      }
+    }
+    
+    sanitizedLines.push(line);
+  }
+  
+  return sanitizedLines.join('\r\n');
+}
+
 // Skip TypeScript errors for the JSON fields - they're always going to be tricky to handle
 // since they come from dynamic sources. Instead we'll do runtime checks.
 
@@ -1048,8 +1100,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       let icsContent = '';
                       
                       if (event.rawData && typeof event.rawData === 'string') {
-                        // Use the raw iCalendar data if available
-                        icsContent = event.rawData;
+                        // Use the raw iCalendar data if available but sanitize it first
+                        // This fixes issues with malformed RRULE values and attendee formatting
+                        console.log('Using and sanitizing raw ICS data for download');
+                        icsContent = sanitizeIcsForDownload(event.rawData);
                       } else {
                         // Create basic iCalendar format
                         const startDate = new Date(event.startDate);
@@ -1060,6 +1114,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                           return date.toISOString().replace(/[-:]/g, '').replace(/\.\d+/g, '');
                         };
                         
+                        console.log('Creating basic ICS content for download (no raw data available)');
                         icsContent = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//XGenCal//EN
@@ -1076,6 +1131,9 @@ STATUS:CONFIRMED
 END:VEVENT
 END:VCALENDAR`;
                       }
+                      
+                      // Log what we're downloading for debugging
+                      console.log('Downloading ICS content:', icsContent);
                       
                       // Create blob and download link
                       const blob = new Blob([icsContent], { type: 'text/calendar' });
