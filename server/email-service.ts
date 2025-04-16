@@ -45,6 +45,7 @@ export interface EventInvitationData {
   rawData?: string; // Original raw iCalendar data
   sequence?: number; // Sequence number for versioning events (RFC 5545)
   _originalResourceAttendees?: string[]; // Preserved original resource attendee lines for RFC 5546 compliance
+  calendarId?: number; // Calendar ID the event belongs to
 }
 
 export class EmailService {
@@ -901,6 +902,10 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
       // and only make the necessary modifications to convert it to a cancellation
       let cancellationIcsData: string;
       
+      // Variables to track original and preserved resource lines for WebSocket notification
+      let originalResourceLines: string[] = [];
+      let cancelledResourceLines: string[] = [];
+      
       // Validate the raw data first
       if (!data.rawData || typeof data.rawData !== 'string' || data.rawData.length < 50) {
         console.warn(`Raw ICS data is missing or invalid (length: ${data.rawData ? data.rawData.length : 0})`);
@@ -908,6 +913,9 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         // Check if we have preserved original resource attendees before giving up on raw data
         if (data._originalResourceAttendees && data._originalResourceAttendees.length > 0) {
           console.log(`We have ${data._originalResourceAttendees.length} preserved original resource attendees, using those despite missing raw data`);
+          
+          // Store for WebSocket notification later
+          originalResourceLines = data._originalResourceAttendees;
           
           // Extract any UID from original resource attendees if possible for extra RFC compliance
           let foundOriginalUid = data.uid;
@@ -926,6 +934,15 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         // Mark the status as CANCELLED for ICS generation
         const cancellationData = { ...data, status: 'CANCELLED' };
         cancellationIcsData = this.generateICSData(cancellationData);
+        
+        // Extract resource lines from generated cancellation ICS for comparison
+        const attendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+        const allGeneratedAttendeeLines = cancellationIcsData.match(attendeePattern) || [];
+        cancelledResourceLines = allGeneratedAttendeeLines.filter(line => 
+          line.includes('CUTYPE=RESOURCE') || 
+          line.includes('X-RESOURCE-TYPE') || 
+          line.includes('RESOURCE-TYPE')
+        );
       } else {
         // We have valid raw data, use our specialized transformer for maximum RFC 5546 compliance
         console.log(`Raw ICS data available (${data.rawData.length} chars), using direct modification for cancellation`);
@@ -933,6 +950,26 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
         
         try {
           cancellationIcsData = this.transformIcsForCancellation(data.rawData, data);
+          
+          // Extract original resource attendee lines from raw data for comparison later
+          const originalAttendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const allOriginalAttendeeLines = data.rawData.match(originalAttendeePattern) || [];
+          originalResourceLines = allOriginalAttendeeLines.filter(line => 
+            line.includes('CUTYPE=RESOURCE') || 
+            line.includes('X-RESOURCE-TYPE') || 
+            line.includes('RESOURCE-TYPE')
+          );
+          
+          // Extract resource lines from the cancellation ICS for comparison
+          const cancelledAttendeePattern = /ATTENDEE[^:\r\n]+:[^\r\n]+/g;
+          const allCancelledAttendeeLines = cancellationIcsData.match(cancelledAttendeePattern) || [];
+          cancelledResourceLines = allCancelledAttendeeLines.filter(line => 
+            line.includes('CUTYPE=RESOURCE') || 
+            line.includes('X-RESOURCE-TYPE') || 
+            line.includes('RESOURCE-TYPE')
+          );
+          
+          console.log(`Original resource lines: ${originalResourceLines.length}, Cancelled resource lines: ${cancelledResourceLines.length}`);
           
           // Validate the generated ICS
           const hasMethod = cancellationIcsData.includes('METHOD:CANCEL');
@@ -1037,6 +1074,51 @@ Configuration: ${this.config.host}:${this.config.port} (${this.config.secure ? '
           message: `Sent cancellation notices to ${successful} out of ${allRecipients.length} recipients.`,
           details: detailedResults
         };
+      }
+
+      // Send notification through WebSocket for real-time updates
+      try {
+        // Import WebSocket notification handler
+        const { notifyEventCancelled } = require('./websocket-handler');
+        
+        // Get important details for the notification
+        const eventId = data.eventId || 0;
+        const calendarId = data.calendarId || 0;
+        const eventTitle = data.title || 'Untitled Event';
+        
+        // Analyze preservation status
+        const originalResourceCount = data.resources?.length || 0;
+        let preservedUid = data.uid || '';
+        
+        // Check for UID in cancellation ICS to verify preservation
+        if (cancellationIcsData) {
+          const uidMatch = cancellationIcsData.match(/UID:([^\r\n]+)/i);
+          if (uidMatch && uidMatch[1]) {
+            preservedUid = uidMatch[1];
+          }
+        }
+        
+        // Check if resources were preserved in the cancellation
+        const resourcesPreserved = cancelledResourceLines && originalResourceLines && 
+          (cancelledResourceLines.length === originalResourceLines.length);
+        
+        console.log(`Sending WebSocket notification for cancelled event: "${eventTitle}" (${preservedUid})`);
+        console.log(`Resource preservation status: ${resourcesPreserved ? 'Success' : 'Incomplete'} - ${cancelledResourceLines?.length || 0} of ${originalResourceLines?.length || 0}`);
+        
+        // Send the real-time notification
+        notifyEventCancelled(
+          userId,
+          eventId,
+          calendarId,
+          eventTitle,
+          preservedUid,
+          resourcesPreserved,
+          originalResourceCount,
+          { emailResults: detailedResults }
+        );
+      } catch (wsError) {
+        console.error('Error sending WebSocket cancellation notification:', wsError);
+        // Continue anyway - email notifications are the primary mechanism
       }
 
       return {

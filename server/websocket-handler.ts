@@ -301,11 +301,12 @@ export function broadcastToUser(userId: number, message: any) {
     
     const messageString = typeof message === 'string' ? message : JSON.stringify(message);
     
-    for (const socket of userSockets) {
+    // Use forEach instead of for...of to avoid TypeScript downlevelIteration issue
+    userSockets.forEach(socket => {
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(messageString);
       }
-    }
+    });
   } catch (error) {
     console.error(`Error broadcasting to user ${userId}:`, error);
   }
@@ -429,16 +430,11 @@ export function notifyEventCancelled(
     // Create a permanent notification for this important event
     createAndSendNotification(
       userId,
-      'event_cancellation',
       'Event Cancelled',
       `Event "${eventTitle}" has been cancelled. ${resourceCount > 0 ? `${resourceCount} resources were ${resourcesPreserved ? 'preserved' : 'not preserved'}.` : ''}`,
-      {
-        eventId,
-        calendarId,
-        preservedUid,
-        resourcesPreserved,
-        resourceCount
-      }
+      'event_cancellation',
+      'event',
+      eventId
     );
     
     console.log(`Sent cancellation notification for event ${eventId} (${eventTitle}) to user ${userId}`);
@@ -476,7 +472,8 @@ async function sendPendingNotifications(userId: number, ws: WebSocket) {
 // Ping all connected clients to check for stale connections
 function pingAllClients() {
   try {
-    for (const [ws, userId] of socketUsers.entries()) {
+    // Use forEach instead of for...of to avoid TypeScript downlevelIteration issue
+    socketUsers.forEach((userId, ws) => {
       if (ws.readyState === WebSocket.OPEN) {
         // Update last ping time
         socketLastPing.set(ws, Date.now());
@@ -489,7 +486,7 @@ function pingAllClients() {
           cleanupConnection(ws);
         }
       }
-    }
+    });
   } catch (error) {
     console.error('Error pinging WebSocket clients:', error);
   }
