@@ -2592,11 +2592,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       
-      // Generate a unique UID for the event if not provided
+      // Handle UID generation and preservation
+      // First, check if we received a uid in the request that looks like a server-generated UID
+      let uid = req.body.uid;
+      
+      // Check if this is a client-side temporary UID (like "event-23@caldavclient.local")
+      // or if it's missing entirely (then we need to generate a proper one)
+      if (!uid || uid.match(/^event-\d+@caldavclient\.local$/)) {
+        // Generate a proper CalDAV standard-compliant UID that will be preserved throughout the event lifecycle
+        uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
+        console.log(`Generated new standard UID: ${uid} for event (replacing ${req.body.uid || 'missing uid'})`);
+      } else {
+        console.log(`Using provided UID: ${uid} for event creation`);
+      }
+      
       // Set syncStatus to pending to mark it for pushing to the server
       const eventData = {
         ...req.body,
-        uid: req.body.uid || `event-${Date.now()}-${Math.random().toString(36).substring(2, 8)}@caldavclient.local`,
+        uid: uid,
         syncStatus: 'pending'
       };
       

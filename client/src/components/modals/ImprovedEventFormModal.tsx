@@ -1277,7 +1277,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         attendees: attendeesJson,
         resources: resources.length > 0 ? resources : null,
         recurrenceRule,
-        syncStatus: 'local',
+        syncStatus: 'pending', // Mark as pending for immediate sync
+        // CRITICAL: If we're updating an event, we MUST preserve its UID
+        // Only generate a new UID for brand new events
+        uid: event?.uid || undefined, // Explicitly preserve UID for updates, undefined for new events
       };
       
       // Handle existing event update
