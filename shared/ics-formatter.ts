@@ -2,7 +2,7 @@
  * ICS Formatter Utility
  * 
  * Handles proper formatting of iCalendar files according to RFC 5545
- * Ensures consistent line folding across both client and server implementations
+ * Ensures consistent line folding across client and server implementations
  */
 
 /**
@@ -11,133 +11,127 @@
  * - Formats with proper CRLF line endings
  * - Handles continuation lines with leading spaces
  * 
+ * The iCalendar specification (RFC 5545) requires:
+ * 1. Lines MUST be no longer than 75 octets excluding CRLF
+ * 2. Long lines MUST be split into multiple lines, with each continuation line
+ *    starting with a space character
+ * 3. Line separators MUST be CRLF (CR+LF, \r\n)
+ * 
  * @param content String or array of lines to format
- * @returns Properly formatted iCalendar string
+ * @returns Properly formatted iCalendar string with CRLF line breaks
  */
 export function formatICS(content: string | string[]): string {
-  // If content is a string, split it into lines
-  const lines = typeof content === 'string' 
-    ? content.replace(/\r\n|\r/g, '\n').split('\n') 
+  // Convert content to array of lines if it's a string
+  // First normalize any line endings to simple LF
+  const inputLines = typeof content === 'string'
+    ? content.replace(/\r\n|\r/g, '\n').split('\n')
     : content;
   
-  // Format each line according to RFC 5545
-  const formattedLines: string[] = [];
+  const result: string[] = [];
   
-  for (const line of lines) {
-    // Skip empty lines
-    if (!line.trim()) continue;
+  // Process each input line
+  for (let i = 0; i < inputLines.length; i++) {
+    const line = inputLines[i].trim();
     
-    // Check if the line needs folding (longer than 75 characters)
-    if (line.length > 75) {
-      // First part (exactly 75 characters)
-      formattedLines.push(line.substring(0, 75));
-      
-      // Remaining parts as continuation lines (each starting with a space)
-      let position = 75;
-      while (position < line.length) {
-        // Each continuation line can be 74 characters + the leading space
-        const chunkLength = Math.min(74, line.length - position);
-        formattedLines.push(` ${line.substring(position, position + chunkLength)}`);
-        position += chunkLength;
-      }
-    } else {
-      // No folding needed for lines ≤ 75 characters
-      formattedLines.push(line);
+    // Skip completely empty lines
+    if (!line) continue;
+    
+    // If line is shorter than 75 chars, add it as is
+    if (line.length <= 75) {
+      result.push(line);
+      continue;
+    }
+    
+    // Line needs folding - split it into chunks
+    let pos = 0;
+    const length = line.length;
+    
+    // Add first chunk (75 chars max)
+    result.push(line.substring(0, 75));
+    pos = 75;
+    
+    // Add continuation chunks with space prefix
+    while (pos < length) {
+      // Each continuation line can be 74 chars max (plus the leading space)
+      const chunk = line.substring(pos, Math.min(pos + 74, length));
+      result.push(` ${chunk}`);
+      pos += 74;
     }
   }
   
-  // Join with proper CRLF line endings as required by RFC 5545
-  return formattedLines.join('\r\n');
+  // Join with CRLF as required by RFC 5545
+  return result.join('\r\n');
 }
 
 /**
- * Sanitize raw ICS data for proper formatting
- * Fixes common issues with iCalendar data from various sources
+ * Sanitize raw ICS data and format it according to RFC 5545
+ * Fixes common issues with iCalendar data from different sources
  * 
- * @param icsData Raw iCalendar data
+ * Handles issues like:
+ * - Malformed RRULE values with embedded mailto: strings
+ * - Improperly formatted attendee lines
+ * - Incorrect line breaks within content
+ * - Incorrect SCHEDULE-STATUS values
+ * 
+ * @param icsData Raw iCalendar data string
  * @returns Sanitized and properly formatted iCalendar data
  */
 export function sanitizeAndFormatICS(icsData: string): string {
   if (!icsData) return '';
   
-  // Normalize line endings to LF first
-  let normalizedData = icsData.replace(/\r\n|\r/g, '\n');
+  // First, convert all line endings to LF for processing
+  let data = icsData.replace(/\r\n|\r/g, '\n');
   
-  // Split into lines for easier processing
-  let icsLines = normalizedData.split('\n');
-  let sanitizedLines: string[] = [];
+  // Fix literal "\r\n" text occurrences that should be actual breaks
+  data = data.replace(/\\r\\n/g, '\n');
   
-  // Track if we're within a VEVENT section
-  let inEvent = false;
+  // Split into lines for content-aware processing
+  const lines = data.split('\n');
+  const sanitizedLines: string[] = [];
   
-  for (let i = 0; i < icsLines.length; i++) {
-    let line = icsLines[i];
+  // Process each line
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
     
-    // Track event boundaries
-    if (line === 'BEGIN:VEVENT') {
-      inEvent = true;
-    } else if (line === 'END:VEVENT') {
-      inEvent = false;
+    // Skip completely empty lines
+    if (!line) continue;
+    
+    // Fix RRULE with improperly appended mailto:
+    if (line.startsWith('RRULE:') && line.includes('mailto:')) {
+      const ruleParts = line.split('mailto:');
+      line = ruleParts[0]; // Keep only the part before mailto:
     }
     
-    // Fix RRULE with mailto: appended to it (common error)
-    if (line.startsWith('RRULE:')) {
-      if (line.includes('mailto:')) {
-        console.log('Fixing malformed RRULE:', line);
-        const ruleParts = line.split('mailto:');
-        line = ruleParts[0];
-      }
-    }
-    
-    // Fix improperly folded ATTENDEE/ORGANIZER lines
+    // Fix issues with ATTENDEE and ORGANIZER lines
     if (line.includes('ATTENDEE') || line.includes('ORGANIZER')) {
-      // Remove any embedded newlines
-      if (line.includes('\n')) {
-        line = line.replace(/\n/g, '');
-      }
-      
-      // Check for improper SCHEDULE-STATUS formatting
+      // Fix improper SCHEDULE-STATUS formatting
       if (line.includes('SCHEDULE-STATUS=') && line.includes(':')) {
+        // Split into parameters and value parts
         const parts = line.split(':');
         if (parts.length > 1) {
-          const properties = parts[0];
-          const email = parts[1];
+          const parameters = parts[0];
+          const value = parts[1];
           
-          // Make sure email doesn't contain any : characters
-          const cleanEmail = email.replace(/:/g, '');
-          line = `${properties}:${cleanEmail}`;
+          // Remove any stray colons from the value part
+          const cleanValue = value.replace(/:/g, '');
+          line = `${parameters}:${cleanValue}`;
         }
       }
-      
-      // Fix attendees with incorrect line break formatting
-      if (line.endsWith('\\r\\n') || line.endsWith('\r\n')) {
-        line = line.replace(/\\r\\n$|\r\n$/, '');
-      }
     }
     
-    // Fix lines that contain END:VEVENT or END:VCALENDAR inside them
-    if (line.includes('END:VEVENT') && !line.startsWith('END:VEVENT')) {
-      const parts = line.split('END:VEVENT');
-      line = parts[0]; // Only keep the part before END:VEVENT
-    }
-    
-    if (line.includes('END:VCALENDAR') && !line.startsWith('END:VCALENDAR')) {
-      const parts = line.split('END:VCALENDAR');
-      line = parts[0]; // Only keep the part before END:VCALENDAR
-    }
-    
+    // Add the sanitized line
     sanitizedLines.push(line);
   }
   
-  // Format the sanitized lines according to RFC 5545
+  // Apply proper RFC 5545 formatting to the sanitized content
   return formatICS(sanitizedLines);
 }
 
 /**
- * Create a simple iCalendar string for an event
+ * Create a basic RFC 5545 compliant iCalendar file for an event
  * 
- * @param event Event data
- * @returns Formatted iCalendar string
+ * @param event Required event data
+ * @returns Properly formatted iCalendar string
  */
 export function createBasicICS(event: {
   title: string;
@@ -147,12 +141,24 @@ export function createBasicICS(event: {
   location?: string;
   uid: string;
 }): string {
-  // Convert dates to iCalendar format (yyyyMMddTHHmmssZ)
+  // Format dates as required by iCalendar spec (UTC, no separators)
+  // Format: YYYYMMDDTHHmmssZ
   const formatDate = (date: Date): string => {
-    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d+/g, '');
+    return date.toISOString()
+      .replace(/[-:]/g, '')  // Remove dashes and colons
+      .replace(/\.\d+/g, ''); // Remove milliseconds
   };
   
-  // Create basic iCalendar content as array of lines
+  // Escape special characters in text fields according to RFC 5545
+  const escapeText = (text: string): string => {
+    return text
+      .replace(/\\/g, '\\\\')  // Escape backslashes first
+      .replace(/;/g, '\\;')    // Escape semicolons
+      .replace(/,/g, '\\,')    // Escape commas
+      .replace(/\n/g, '\\n');  // Convert newlines to literal \n
+  };
+  
+  // Create required iCalendar component lines
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -160,17 +166,17 @@ export function createBasicICS(event: {
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'BEGIN:VEVENT',
-    `SUMMARY:${event.title}`,
+    `SUMMARY:${escapeText(event.title)}`,
     `DTSTART:${formatDate(event.startDate)}`,
     `DTEND:${formatDate(event.endDate)}`,
-    `DESCRIPTION:${event.description || ''}`,
-    `LOCATION:${event.location || ''}`,
+    `DESCRIPTION:${escapeText(event.description || '')}`,
+    `LOCATION:${escapeText(event.location || '')}`,
     `UID:${event.uid}`,
     'STATUS:CONFIRMED',
     'END:VEVENT',
     'END:VCALENDAR'
   ];
   
-  // Format according to RFC 5545
+  // Apply proper formatting according to RFC 5545
   return formatICS(lines);
 }

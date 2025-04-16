@@ -1,5 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { storage } from "./storage";
+import { formatICS, sanitizeAndFormatICS, createBasicICS } from "../shared/ics-formatter";
 
 // Format date for iCalendar - YYYYMMDDTHHMMSSZ format
 function formatICALDate(date: Date): string {
@@ -105,74 +106,28 @@ export function registerExportRoutes(app: Express) {
       // Get or create ICS content
       let icsContent = '';
       
-      // If we have raw ICS data, use it with sanitization
+      // If we have raw ICS data, use it with our shared sanitization utility
       if (event.rawData && typeof event.rawData === 'string') {
-        console.log('Using raw ICS data for download');
-        icsContent = event.rawData;
+        console.log('Using raw ICS data for download with shared sanitizer');
         
-        // Clean up any RRULE issues with mailto: appended to it
-        icsContent = icsContent.replace(/RRULE:(.*?)mailto:/g, 'RRULE:$1');
-        
-        // Fix line breaks for proper iCalendar format
-        const lines = icsContent.split(/\r\n|\n|\r/);
-        
-        // Process each line to fix any format issues
-        const processedLines = lines.map((line: string) => {
-          // Fix SCHEDULE-STATUS formatting issues in attendee lines
-          if ((line.includes('ATTENDEE') || line.includes('ORGANIZER')) && 
-              line.includes('SCHEDULE-STATUS=')) {
-            // Extract the properties and value parts
-            const parts = line.split(':');
-            if (parts.length > 1) {
-              const properties = parts[0];
-              const email = parts[1];
-              // Clean up any embedded colons in the email part
-              const cleanEmail = email.replace(/:/g, '');
-              return `${properties}:${cleanEmail}`;
-            }
-          }
-          return line;
-        });
-        
-        // Apply proper line folding for RFC 5545 compliance
-        const foldedLines = [];
-        for (let i = 0; i < processedLines.length; i++) {
-          const line = processedLines[i];
-          
-          // Skip empty lines
-          if (!line.trim()) continue;
-          
-          // If the line is longer than 75 characters, fold it according to RFC 5545
-          if (line.length > 75) {
-            let currentPos = 0;
-            const lineLength = line.length;
-            
-            // Add the first line
-            foldedLines.push(line.substring(0, 75));
-            currentPos = 75;
-            
-            // Add continuation lines with a space at the beginning
-            while (currentPos < lineLength) {
-              const chunk = line.substring(currentPos, Math.min(currentPos + 74, lineLength));
-              foldedLines.push(' ' + chunk); // Continuation lines must start with a space
-              currentPos += 74;
-            }
-          } else {
-            foldedLines.push(line);
-          }
-        }
-        
-        // Rejoin with proper CRLF line endings
-        icsContent = foldedLines.join('\r\n');
+        // Use our shared utility for consistent RFC 5545 formatting
+        icsContent = sanitizeAndFormatICS(event.rawData);
       } else {
-        // Create basic iCalendar format
+        // Create basic iCalendar format using our shared utility
         const startDate = new Date(event.startDate);
         const endDate = new Date(event.endDate);
         
-        // Format dates as required by iCalendar format (UTC)
-        console.log('Creating basic ICS file for download (no raw data)');
+        console.log('Creating basic ICS file for download using shared utility');
         
-        icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//XGenCal//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nBEGIN:VEVENT\r\nSUMMARY:${event.title}\r\nDTSTART:${formatICALDate(startDate)}\r\nDTEND:${formatICALDate(endDate)}\r\nDESCRIPTION:${event.description || ''}\r\nLOCATION:${event.location || ''}\r\nUID:${event.uid || `event-${Date.now()}`}\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+        // Use shared createBasicICS function for consistent RFC 5545 formatting
+        icsContent = createBasicICS({
+          title: event.title,
+          startDate,
+          endDate,
+          description: event.description || '',
+          location: event.location || '',
+          uid: event.uid || `event-${Date.now()}`
+        });
       }
       
       // Log the successful preparation of ICS content
@@ -278,36 +233,8 @@ export function registerExportRoutes(app: Express) {
       
       lines.push('END:VCALENDAR');
       
-      // Apply proper line folding for RFC 5545 compliance
-      const foldedLines = [];
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        
-        // Skip empty lines
-        if (!line.trim()) continue;
-        
-        // If the line is longer than 75 characters, fold it according to RFC 5545
-        if (line.length > 75) {
-          let currentPos = 0;
-          const lineLength = line.length;
-          
-          // Add the first line
-          foldedLines.push(line.substring(0, 75));
-          currentPos = 75;
-          
-          // Add continuation lines with a space at the beginning
-          while (currentPos < lineLength) {
-            const chunk = line.substring(currentPos, Math.min(currentPos + 74, lineLength));
-            foldedLines.push(' ' + chunk); // Continuation lines must start with a space
-            currentPos += 74;
-          }
-        } else {
-          foldedLines.push(line);
-        }
-      }
-      
-      // Convert to string with CRLF line endings
-      const icalContent = foldedLines.join('\r\n');
+      // Use shared formatter utility to ensure proper RFC 5545 compliance
+      const icalContent = formatICS(lines);
       
       // Set the appropriate headers for file download
       res.setHeader('Content-Type', 'text/calendar');
@@ -472,36 +399,8 @@ export function registerExportRoutes(app: Express) {
       
       lines.push('END:VCALENDAR');
       
-      // Apply proper line folding for RFC 5545 compliance
-      const foldedLines = [];
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        
-        // Skip empty lines
-        if (!line.trim()) continue;
-        
-        // If the line is longer than 75 characters, fold it according to RFC 5545
-        if (line.length > 75) {
-          let currentPos = 0;
-          const lineLength = line.length;
-          
-          // Add the first line
-          foldedLines.push(line.substring(0, 75));
-          currentPos = 75;
-          
-          // Add continuation lines with a space at the beginning
-          while (currentPos < lineLength) {
-            const chunk = line.substring(currentPos, Math.min(currentPos + 74, lineLength));
-            foldedLines.push(' ' + chunk); // Continuation lines must start with a space
-            currentPos += 74;
-          }
-        } else {
-          foldedLines.push(line);
-        }
-      }
-      
-      // Convert to string with CRLF line endings
-      const icalContent = foldedLines.join('\r\n');
+      // Use shared formatter utility to ensure proper RFC 5545 compliance
+      const icalContent = formatICS(lines);
       
       // Set the appropriate headers for file download
       let filename = 'calendars_export.ics';
