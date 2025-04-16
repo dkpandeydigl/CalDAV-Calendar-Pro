@@ -1190,18 +1190,37 @@ END:VCALENDAR`;
                         // This ensures our session cookie is sent with the request
                         setIsLoading(true);
                         
+                        // Log session cookie existence for debugging
+                        console.log('Has session cookie:', document.cookie.includes('connect.sid'));
+                        
                         fetch(`/api/download-ics/${event.id}`, {
                           method: 'GET',
-                          credentials: 'include' // Important for session cookies
+                          credentials: 'include', // Important for session cookies
+                          headers: {
+                            'Accept': 'text/calendar',
+                            'Cache-Control': 'no-cache'
+                          }
                         })
                           .then(response => {
+                            console.log('ICS download response status:', response.status);
+                            
                             setIsLoading(false);
                             if (!response.ok) {
-                              // If response isn't successful, parse the error message
-                              return response.json().then(data => {
-                                throw new Error(data.message || 'Failed to download ICS file');
-                              });
+                              console.error('Download failed with status:', response.status);
+                              
+                              // Try to get detailed error message
+                              const contentType = response.headers.get('content-type');
+                              if (contentType && contentType.includes('application/json')) {
+                                return response.json().then(data => {
+                                  console.error('Server error response:', data);
+                                  throw new Error(data.message || `Server error (${response.status})`);
+                                });
+                              } else {
+                                throw new Error(`Download failed with status ${response.status}`);
+                              }
                             }
+                            
+                            console.log('Download response successful, getting blob data');
                             // For successful response, get the blob data
                             return response.blob();
                           })

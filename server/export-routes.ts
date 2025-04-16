@@ -52,13 +52,25 @@ export function registerExportRoutes(app: Express) {
    */
   app.get("/api/download-ics/:eventId", isAuthenticated, async (req, res) => {
     try {
+      console.log('Download ICS endpoint called');
+      
+      // Check if user is authenticated properly
+      if (!req.user) {
+        console.error('User is not authenticated in download-ics endpoint');
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+      
       // Get user ID from session - we can safely use req.user here since we're using isAuthenticated middleware
       const userId = (req.user as User).id;
+      console.log(`Download ICS requested by user ID: ${userId}`);
       
       const eventId = parseInt(req.params.eventId, 10);
       if (isNaN(eventId)) {
+        console.error(`Invalid event ID provided: ${req.params.eventId}`);
         return res.status(400).json({ message: 'Invalid event ID' });
       }
+      
+      console.log(`Attempting to download event ID: ${eventId}`);
       
       // Get the event
       const event = await storage.getEvent(eventId);
@@ -139,7 +151,16 @@ export function registerExportRoutes(app: Express) {
       
     } catch (error) {
       console.error('Error downloading ICS file:', error);
-      res.status(500).json({ message: 'Failed to download ICS file' });
+      console.error('User authentication state:', req.isAuthenticated(), req.user ? `User ID: ${(req.user as any).id}` : 'No user');
+      
+      // Return a more detailed error response
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ 
+        message: 'Failed to download ICS file', 
+        error: errorMessage,
+        authenticated: req.isAuthenticated(),
+        timestamp: new Date().toISOString()
+      });
     }
   });
 
