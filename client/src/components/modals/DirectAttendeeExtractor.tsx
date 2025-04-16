@@ -10,7 +10,7 @@ interface Attendee {
 }
 
 interface DirectAttendeeExtractorProps {
-  rawData: string | null | undefined;
+  rawData: string | object | null | undefined;
   showMoreCount?: number; // Number of attendees to show before "more"
   isPreview?: boolean; // If true, only show limited attendees with count indicator
   fallbackEmail?: string; // Fallback email to use when no valid email is found
@@ -22,8 +22,27 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
   isPreview = true,
   fallbackEmail = ""
 }) => {
+  // Convert rawData to string if it's an object
+  let rawDataString: string | null | undefined = null;
+  
+  if (rawData === null || rawData === undefined) {
+    rawDataString = null;
+  } else if (typeof rawData === 'string') {
+    rawDataString = rawData;
+  } else {
+    // It's an object, try to stringify it
+    try {
+      rawDataString = JSON.stringify(rawData);
+      console.log('ATTENDEE DEBUG: Converted object rawData to string of length', rawDataString.length);
+    } catch (e) {
+      console.error('ATTENDEE DEBUG: Failed to stringify rawData:', e);
+      rawDataString = null;
+    }
+  }
+  
   console.log('ATTENDEE DEBUG: DirectAttendeeExtractor component rendering with:', {
-    rawData: rawData ? `string of length ${rawData.length}` : 'null/undefined',
+    rawDataType: rawData ? typeof rawData : 'null/undefined',
+    rawDataStringLength: rawDataString ? rawDataString.length : 0,
     fallbackEmail: fallbackEmail || 'none provided',
     isPreview,
     showMoreCount
@@ -31,20 +50,50 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
   
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   
+  // Try to extract attendees from rawData object directly if it has attendees property
   useEffect(() => {
-    if (!rawData) {
-      console.log('ATTENDEE DEBUG: No raw data available');
+    // First try to get attendees directly from the object if available
+    if (rawData && typeof rawData === 'object' && 'attendees' in rawData) {
+      try {
+        const objAttendees = (rawData as any).attendees;
+        if (Array.isArray(objAttendees) && objAttendees.length > 0) {
+          console.log('ATTENDEE DEBUG: Found attendees array directly in object:', objAttendees);
+          
+          const validAttendees = objAttendees
+            .filter(att => att && typeof att === 'object' && 'email' in att && att.email)
+            .map((att, index) => ({
+              id: att.id || `attendee-obj-${index}-${Date.now()}`,
+              email: att.email,
+              name: att.name || att.email.split('@')[0],
+              role: att.role || 'Attendee',
+              status: att.status || 'Needs Action'
+            }));
+          
+          if (validAttendees.length > 0) {
+            console.log(`ATTENDEE DEBUG: Successfully extracted ${validAttendees.length} attendees from object`);
+            setAttendees(validAttendees);
+            return; // Exit early if we found attendees
+          }
+        }
+      } catch (e) {
+        console.error('ATTENDEE DEBUG: Error extracting attendees from object:', e);
+      }
+    }
+    
+    // If no attendees found in object or it's not an object, proceed with raw string processing
+    if (!rawDataString) {
+      console.log('ATTENDEE DEBUG: No raw data string available');
       return;
     }
     
     try {
       // First log some raw data for debugging
-      console.log('ATTENDEE DEBUG: Searching raw data of length', rawData.length);
-      console.log('ATTENDEE DEBUG: First 100 chars of raw data:', rawData.substring(0, 100));
+      console.log('ATTENDEE DEBUG: Searching raw data of length', rawDataString.length);
+      console.log('ATTENDEE DEBUG: First 100 chars of raw data:', rawDataString.substring(0, 100));
       
       // STEP 1: Unfold the iCalendar data (RFC 5545 format)
       // This is critical for handling folded lines with CRLF + space continuations
-      const unfoldedData = rawData.replace(/\r?\n[ \t]/g, '');
+      const unfoldedData = rawDataString.replace(/\r?\n[ \t]/g, '');
       console.log('ATTENDEE DEBUG: Unfolded data example:', unfoldedData.substring(0, 200));
       
       // STEP 2: Use a direct regex approach to find all ATTENDEE lines that aren't resources
@@ -246,7 +295,7 @@ const DirectAttendeeExtractor: React.FC<DirectAttendeeExtractorProps> = ({
     } catch (error) {
       console.error('ATTENDEE DEBUG: Error extracting attendees:', error);
     }
-  }, [rawData]);
+  }, [rawData, rawDataString]);
   
   // Handle fallback email when no attendees found
   useEffect(() => {
