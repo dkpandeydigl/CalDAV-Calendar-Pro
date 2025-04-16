@@ -4,7 +4,12 @@ import { storage } from './memory-storage';
 import { formatICalDate } from './ical-utils';
 import { generateEventAgendaPDF } from './pdf-generator';
 import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
-import { sanitizeAndFormatICS, transformIcsForCancellation } from '../shared/ics-formatter-fixed';
+import { 
+  sanitizeAndFormatICS, 
+  transformIcsForCancellation, 
+  foldLine, 
+  escapeIcsSpecialChars 
+} from '../shared/ics-formatter-fixed';
 
 export interface Attendee {
   email: string;
@@ -336,9 +341,9 @@ export class EmailService {
       if (pdfBuffer) {
         attachments.push({
           filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_agenda.pdf`,
-          content: pdfBuffer,
+          content: pdfBuffer.toString('base64'), // Convert Buffer to base64 string
           contentType: 'application/pdf',
-          encoding: 'base64' // Tell nodemailer this is a binary buffer
+          encoding: 'base64' // Tell nodemailer this is base64 encoded
         });
       }
       
@@ -533,9 +538,9 @@ export class EmailService {
       if (pdfBuffer) {
         attachments.push({
           filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_cancellation.pdf`,
-          content: pdfBuffer,
+          content: pdfBuffer.toString('base64'), // Convert Buffer to base64 string
           contentType: 'application/pdf',
-          encoding: 'base64' // Tell nodemailer this is a binary buffer
+          encoding: 'base64' // Tell nodemailer this is base64 encoded
         });
       }
       
@@ -579,11 +584,17 @@ export class EmailService {
    */
   transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
-      // Verify we have a UID to work with
-      const uid = data.uid || (() => {
-        const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
-        return uidMatch ? uidMatch[1] : `event-${Date.now()}`;
-      })();
+      // CRITICAL: Extract the original UID exactly as is and preserve it
+      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+      if (!uidMatch) {
+        console.error('No UID found in original ICS data, using provided UID or generating new one');
+      }
+      // Always prioritize the UID from the original ICS over any other source
+      const originalUid = uidMatch ? uidMatch[1].trim() : data.uid;
+      
+      if (!originalUid) {
+        console.error('Could not determine UID for event cancellation, this will cause synchronization issues');
+      }
       
       // Parse the current sequence from the original ICS if available
       const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
@@ -597,25 +608,63 @@ export class EmailService {
       const organizerNameMatch = originalIcs.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
       const organizerName = organizerNameMatch ? organizerNameMatch[1] : data.organizer.name;
       
-      // Create a sanitized and correctly formatted ICS for cancellation
-      // Using the utility function from shared ics-formatter to ensure consistency
-      return sanitizeAndFormatICS(originalIcs, {
-        uid,
-        method: 'CANCEL',
-        status: 'CANCELLED',
-        sequence: newSequence,
-        organizer: {
-          email: organizerEmail,
-          name: organizerName
-        },
-        preserveAttendees: true,
-        preserveResources: true
-      });
+      console.log(`Preserving original UID in cancellation: ${originalUid}`);
+      
+      // Create a modified version of the original ICS with only necessary changes
+      // This preserves all original formatting and attributes
+      let modifiedIcs = originalIcs
+        // Change METHOD to CANCEL
+        .replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL') 
+        // If METHOD doesn't exist, we'll add it later
+        // Change STATUS to CANCELLED
+        .replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED')
+        // Update SEQUENCE
+        .replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
+      
+      // Add METHOD if it doesn't exist (after VERSION line)
+      if (!modifiedIcs.includes('METHOD:')) {
+        modifiedIcs = modifiedIcs.replace(
+          /VERSION:[^\r\n]+(\r?\n)/i, 
+          `VERSION:2.0$1METHOD:CANCEL$1`
+        );
+      }
+      
+      // Add STATUS if it doesn't exist (after SEQUENCE or UID if SEQUENCE doesn't exist)
+      if (!modifiedIcs.includes('STATUS:')) {
+        if (modifiedIcs.includes('SEQUENCE:')) {
+          modifiedIcs = modifiedIcs.replace(
+            /SEQUENCE:[^\r\n]+(\r?\n)/i,
+            `SEQUENCE:${newSequence}$1STATUS:CANCELLED$1`
+          );
+        } else {
+          // Add after UID if SEQUENCE doesn't exist
+          modifiedIcs = modifiedIcs.replace(
+            /UID:[^\r\n]+(\r?\n)/i,
+            `UID:${originalUid}$1SEQUENCE:${newSequence}$1STATUS:CANCELLED$1`
+          );
+        }
+      }
+      
+      return modifiedIcs;
     } catch (error) {
       console.error('Error transforming ICS for cancellation:', error);
-      // Fallback to generating a new ICS with CANCELLED status
+      console.error('Original ICS:', originalIcs);
+      
+      // As a last resort, generate a new ICS but ensure we use the exact same UID as the original
+      // First try to extract UID from original ICS data
+      let uid = data.uid;
+      try {
+        const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+        if (uidMatch) {
+          uid = uidMatch[1].trim();
+        }
+      } catch (e) {
+        console.error('Failed to extract UID from original ICS while generating fallback:', e);
+      }
+      
       return this.generateICSData({
         ...data,
+        uid,
         status: 'CANCELLED',
         sequence: (data.sequence || 0) + 1
       });
@@ -623,24 +672,87 @@ export class EmailService {
   }
   
   public generateICSData(data: EventInvitationData): string {
-    // If there's already raw data available, we'll transform it using our utility
+    // If there's already raw data available, modify it directly instead of using formatter
     if (data.rawData) {
+      // Extract the original UID from raw data
+      let originalUid = data.uid;
+      const uidMatch = String(data.rawData).match(/UID:([^\r\n]+)/i);
+      if (uidMatch) {
+        originalUid = uidMatch[1].trim();
+        console.log(`Using original UID from raw data: ${originalUid}`);
+      } else {
+        console.warn("Could not find UID in raw data, using provided UID");
+      }
+      
+      // Create a modified version of the original ICS with only necessary changes
       const method = data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST';
-      return sanitizeAndFormatICS(data.rawData, {
-        uid: data.uid,
-        method,
-        status: data.status,
-        sequence: data.sequence,
-        organizer: data.organizer,
-        preserveAttendees: true,
-        preserveResources: true
-      });
+      const status = data.status || (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED');
+      
+      // Get the sequence number - increment existing or use provided
+      let newSequence = data.sequence || 0;
+      const sequenceMatch = String(data.rawData).match(/SEQUENCE:(\d+)/i);
+      if (sequenceMatch) {
+        const currentSequence = parseInt(sequenceMatch[1], 10);
+        newSequence = data.sequence !== undefined ? data.sequence : currentSequence + 1;
+      }
+      
+      // Make direct modifications to preserve formatting
+      let modifiedIcs = String(data.rawData)
+        // Update METHOD
+        .replace(/METHOD:[^\r\n]+/i, `METHOD:${method}`);
+      
+      // Add METHOD if it doesn't exist
+      if (!modifiedIcs.includes('METHOD:')) {
+        modifiedIcs = modifiedIcs.replace(
+          /VERSION:[^\r\n]+(\r?\n)/i, 
+          `VERSION:2.0$1METHOD:${method}$1`
+        );
+      }
+      
+      // Update STATUS
+      modifiedIcs = modifiedIcs.replace(/STATUS:[^\r\n]+/i, `STATUS:${status}`);
+      
+      // Add STATUS if it doesn't exist (after SEQUENCE or UID if SEQUENCE doesn't exist)
+      if (!modifiedIcs.includes('STATUS:')) {
+        if (modifiedIcs.includes('SEQUENCE:')) {
+          modifiedIcs = modifiedIcs.replace(
+            /SEQUENCE:[^\r\n]+(\r?\n)/i,
+            `SEQUENCE:${newSequence}$1STATUS:${status}$1`
+          );
+        } else {
+          // Add after UID if SEQUENCE doesn't exist
+          modifiedIcs = modifiedIcs.replace(
+            /UID:[^\r\n]+(\r?\n)/i,
+            `UID:${originalUid}$1SEQUENCE:${newSequence}$1STATUS:${status}$1`
+          );
+        }
+      }
+      
+      // Update SEQUENCE
+      modifiedIcs = modifiedIcs.replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
+      
+      // Add SEQUENCE if it doesn't exist (after UID)
+      if (!modifiedIcs.includes('SEQUENCE:')) {
+        modifiedIcs = modifiedIcs.replace(
+          /UID:[^\r\n]+(\r?\n)/i,
+          `UID:${originalUid}$1SEQUENCE:${newSequence}$1`
+        );
+      }
+      
+      // Update the SUMMARY if it has changed
+      if (data.title) {
+        modifiedIcs = modifiedIcs.replace(/SUMMARY:[^\r\n]+/i, `SUMMARY:${data.title}`);
+      }
+      
+      return modifiedIcs;
     }
     
-    // Build a new ICS file from scratch
+    // Build a new ICS file from scratch (only for new events)
     const method = data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST';
     const status = data.status || (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED');
     const sequence = data.sequence || 0;
+    
+    console.log(`Generating new ICS with UID: ${data.uid}`);
     
     // Format dates according to iCalendar spec
     const startDate = formatICalDate(data.startDate);
