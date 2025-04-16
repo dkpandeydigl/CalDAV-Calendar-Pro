@@ -402,6 +402,52 @@ export function notifyEventChanged(
   }
 }
 
+// Notify about event cancellations
+export function notifyEventCancelled(
+  userId: number,
+  eventId: number,
+  calendarId: number,
+  eventTitle: string,
+  preservedUid: string,
+  resourcesPreserved: boolean,
+  resourceCount: number,
+  details?: any
+) {
+  try {
+    broadcastToUser(userId, {
+      type: 'event_cancelled',
+      eventId,
+      calendarId,
+      eventTitle,
+      preservedUid,
+      resourcesPreserved,
+      resourceCount,
+      details,
+      timestamp: Date.now()
+    });
+    
+    // Create a permanent notification for this important event
+    createAndSendNotification(
+      userId,
+      'event_cancellation',
+      'Event Cancelled',
+      `Event "${eventTitle}" has been cancelled. ${resourceCount > 0 ? `${resourceCount} resources were ${resourcesPreserved ? 'preserved' : 'not preserved'}.` : ''}`,
+      {
+        eventId,
+        calendarId,
+        preservedUid,
+        resourcesPreserved,
+        resourceCount
+      }
+    );
+    
+    console.log(`Sent cancellation notification for event ${eventId} (${eventTitle}) to user ${userId}`);
+    
+  } catch (error) {
+    console.error(`Error sending event cancellation notification to user ${userId}:`, error);
+  }
+}
+
 // Send any pending notifications for a user
 async function sendPendingNotifications(userId: number, ws: WebSocket) {
   try {
