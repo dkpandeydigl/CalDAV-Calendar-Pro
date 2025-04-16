@@ -891,13 +891,19 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                           }
                           
                           // If no processed attendees, fall back to raw extraction
+                          // Always try DirectAttendeeExtractor, as it's better at extracting attendees from rawData
                           return (
                             <>
-                              <DirectAttendeeExtractor 
-                                rawData={typeof event.rawData === 'string' ? event.rawData : null} 
-                                showMoreCount={10}
-                                isPreview={false}
-                              />
+                              <div className="border rounded-md">
+                                <div className="bg-muted/30 p-2 border-b">
+                                  <h3 className="font-medium">Attendee List</h3>
+                                </div>
+                                <DirectAttendeeExtractor 
+                                  rawData={typeof event.rawData === 'string' ? event.rawData : null} 
+                                  showMoreCount={10}
+                                  isPreview={false}
+                                />
+                              </div>
                             </>
                           );
                         })()}
