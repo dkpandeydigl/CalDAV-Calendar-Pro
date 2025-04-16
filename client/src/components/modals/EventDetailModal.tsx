@@ -1145,26 +1145,33 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     onClick={() => {
                       if (!event) return;
                       
-                      // Create a Blob with the event data (either raw data or basic iCalendar format)
-                      let icsContent = '';
+                      // Start by setting loading state
+                      setIsLoading(true);
                       
-                      if (event.rawData && typeof event.rawData === 'string') {
-                        // Use the raw iCalendar data if available but sanitize it first
-                        // This fixes issues with malformed RRULE values and attendee formatting
-                        console.log('Using and sanitizing raw ICS data for download');
-                        icsContent = sanitizeIcsForDownload(event.rawData);
-                      } else {
-                        // Create basic iCalendar format
-                        const startDate = new Date(event.startDate);
-                        const endDate = new Date(event.endDate);
-                        
-                        // Format dates as required by iCalendar format (UTC)
-                        const formatDate = (date: Date) => {
-                          return date.toISOString().replace(/[-:]/g, '').replace(/\.\d+/g, '');
-                        };
-                        
-                        console.log('Creating basic ICS content for download (no raw data available)');
-                        icsContent = `BEGIN:VCALENDAR
+                      // Function to download via client-side (browser)
+                      const downloadViaClientSide = () => {
+                        try {
+                          console.log('Using client-side fallback for ICS download');
+                          
+                          // Create a Blob with the event data
+                          let icsContent = '';
+                          
+                          if (event.rawData && typeof event.rawData === 'string') {
+                            // Use the raw iCalendar data if available but sanitize it first
+                            console.log('Using and sanitizing raw ICS data');
+                            icsContent = sanitizeIcsForDownload(event.rawData);
+                          } else {
+                            // Create basic iCalendar format
+                            const startDate = new Date(event.startDate);
+                            const endDate = new Date(event.endDate);
+                            
+                            // Format dates as required by iCalendar format (UTC)
+                            const formatDate = (date: Date) => {
+                              return date.toISOString().replace(/[-:]/g, '').replace(/\.\d+/g, '');
+                            };
+                            
+                            console.log('Creating basic ICS content (no raw data available)');
+                            icsContent = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//XGenCal//EN
 CALSCALE:GREGORIAN
@@ -1179,18 +1186,48 @@ UID:${event.uid || `event-${Date.now()}`}
 STATUS:CONFIRMED
 END:VEVENT
 END:VCALENDAR`;
-                      }
-                      
-                      // Use the server-side endpoint to download the properly formatted ICS file
-                      // This is more reliable and handles all formatting issues on the server
-                      console.log('Using server-side ICS download endpoint for event ID:', event.id);
-                      
+                          }
+                          
+                          // Create blob and trigger download
+                          const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          
+                          // Set up download attributes
+                          link.href = url;
+                          link.download = `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
+                          document.body.appendChild(link);
+                          
+                          // Trigger download and clean up
+                          link.click();
+                          document.body.removeChild(link);
+                          URL.revokeObjectURL(url);
+                          
+                          setIsLoading(false);
+                          toast({
+                            title: "Downloaded Successfully",
+                            description: "Calendar file downloaded using client-side method.",
+                            variant: "default"
+                          });
+                          
+                          return true;
+                        } catch (err) {
+                          console.error('Client-side fallback failed:', err);
+                          setIsLoading(false);
+                          
+                          toast({
+                            title: 'Download Failed',
+                            description: 'Could not download ICS file even with fallback method.',
+                            variant: 'destructive'
+                          });
+                          
+                          return false;
+                        }
+                      };
+
+                      // First try server-side download
                       try {
-                        // Instead of opening in a new window, use fetch with credentials
-                        // This ensures our session cookie is sent with the request
-                        setIsLoading(true);
-                        
-                        // Log session cookie existence for debugging
+                        console.log('Attempting server-side ICS download for event ID:', event.id);
                         console.log('Has session cookie:', document.cookie.includes('connect.sid'));
                         
                         fetch(`/api/download-ics/${event.id}`, {
@@ -1198,33 +1235,42 @@ END:VCALENDAR`;
                           credentials: 'include', // Important for session cookies
                           headers: {
                             'Accept': 'text/calendar',
-                            'Cache-Control': 'no-cache'
+                            'Cache-Control': 'no-cache',
+                            'X-Requested-With': 'XMLHttpRequest' // Helps with CORS
                           }
                         })
-                          .then(response => {
-                            console.log('ICS download response status:', response.status);
+                        .then(response => {
+                          console.log('ICS download response status:', response.status);
+                          
+                          if (!response.ok) {
+                            console.error('Server download failed with status:', response.status);
                             
-                            setIsLoading(false);
-                            if (!response.ok) {
-                              console.error('Download failed with status:', response.status);
-                              
-                              // Try to get detailed error message
-                              const contentType = response.headers.get('content-type');
-                              if (contentType && contentType.includes('application/json')) {
-                                return response.json().then(data => {
-                                  console.error('Server error response:', data);
-                                  throw new Error(data.message || `Server error (${response.status})`);
-                                });
-                              } else {
-                                throw new Error(`Download failed with status ${response.status}`);
-                              }
+                            // If server download fails with authentication error, try client-side method
+                            if (response.status === 401) {
+                              console.log('Authentication failed, trying client-side method');
+                              return downloadViaClientSide();
                             }
                             
-                            console.log('Download response successful, getting blob data');
-                            // For successful response, get the blob data
-                            return response.blob();
-                          })
-                          .then(blob => {
+                            // For other errors, try to get a detailed message
+                            const contentType = response.headers.get('content-type');
+                            if (contentType && contentType.includes('application/json')) {
+                              return response.json().then(data => {
+                                console.error('Server error details:', data);
+                                // Still try client-side method even in case of other errors
+                                return downloadViaClientSide();
+                              });
+                            } else {
+                              // No JSON error, still try client-side
+                              return downloadViaClientSide();
+                            }
+                          }
+                          
+                          console.log('Server download successful, getting blob data');
+                          // For successful response, get the blob data
+                          return response.blob();
+                        })
+                        .then(blob => {
+                          if (blob instanceof Blob) {
                             // Create a local URL for the blob
                             const url = URL.createObjectURL(blob);
                             const link = document.createElement('a');
@@ -1238,16 +1284,24 @@ END:VCALENDAR`;
                             link.click();
                             document.body.removeChild(link);
                             URL.revokeObjectURL(url);
-                          })
-                          .catch(error => {
+                            
                             setIsLoading(false);
-                            console.error('Error downloading ICS file:', error);
                             toast({
-                              title: 'Download Failed',
-                              description: error.message || 'Could not download ICS file. Please try again.',
-                              variant: 'destructive'
+                              title: "Downloaded Successfully",
+                              description: "Calendar file downloaded successfully.",
+                              variant: "default"
                             });
+                          }
+                        })
+                        .catch(error => {
+                          setIsLoading(false);
+                          console.error('Error downloading ICS file:', error);
+                          toast({
+                            title: 'Download Failed',
+                            description: error.message || 'Could not download ICS file. Please try again.',
+                            variant: 'destructive'
                           });
+                        });
                       } catch (error) {
                         setIsLoading(false);
                         console.error('Error setting up ICS download:', error);

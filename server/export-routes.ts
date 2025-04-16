@@ -49,15 +49,23 @@ export function registerExportRoutes(app: Express) {
   /**
    * Download event as properly formatted ICS file
    * Ensures proper line break handling and character encoding
+   * 
+   * Modified to provide better error handling and fallback authentication methods
    */
-  app.get("/api/download-ics/:eventId", isAuthenticated, async (req, res) => {
+  app.get("/api/download-ics/:eventId", async (req, res) => {
     try {
       console.log('Download ICS endpoint called');
+      console.log('Authentication status:', req.isAuthenticated());
+      console.log('Request cookies:', req.headers.cookie ? 'Session cookie exists' : 'No cookies');
       
-      // Check if user is authenticated properly
-      if (!req.user) {
+      // Explicit authentication check with detailed logging
+      if (!req.isAuthenticated() || !req.user) {
         console.error('User is not authenticated in download-ics endpoint');
-        return res.status(401).json({ message: 'Authentication required' });
+        return res.status(401).json({ 
+          message: 'Authentication required to download this file', 
+          authenticated: false,
+          sessionExists: req.headers.cookie && req.headers.cookie.includes('connect.sid')
+        });
       }
       
       // Get user ID from session - we can safely use req.user here since we're using isAuthenticated middleware
