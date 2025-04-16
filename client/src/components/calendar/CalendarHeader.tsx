@@ -14,6 +14,7 @@ import { ChevronLeft, ChevronRight, Menu, LogOut, User, Settings, Wifi } from 'l
 import { ProfileSettingsModal } from '@/components/modals/ProfileSettingsModal';
 import { queryClient } from '@/lib/queryClient';
 import { useLocation } from 'wouter';
+import { WebSocketStatusIndicator } from '@/components/WebSocketStatusIndicator';
 
 interface CalendarHeaderProps {
   onToggleSidebar: () => void;
@@ -84,12 +85,15 @@ const CalendarHeader: React.FC<CalendarHeaderProps> = ({
             <h1 className="ml-2 text-xl font-semibold text-neutral-900">CalDAV Calendar</h1>
           </div>
           <div className="flex items-center">
-            {/* Status indicator - dot only without animation */}
+            {/* Server status indicator */}
             <div className="mr-3 relative flex items-center">
               <span className={`inline-flex rounded-full h-3 w-3 ${serverStatus === 'connected' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
             </div>
             
-            {/* Sync Status Indicator removed */}
+            {/* WebSocket connection status indicator */}
+            <div className="mr-3">
+              <WebSocketStatusIndicator />
+            </div>
             
             {/* User dropdown with logout */}
             {user ? (
