@@ -21,6 +21,7 @@ import AttendeeDialog from '../attendees/AttendeeDialog';
 /**
  * Sanitizes ICS data for proper downloading
  * Fixes issues with malformed RRULE values and attendee formatting
+ * Ensures proper line folding according to RFC 5545
  * 
  * @param icsData The raw ICS data string
  * @returns Sanitized ICS data string that complies with RFC 5545
@@ -28,8 +29,11 @@ import AttendeeDialog from '../attendees/AttendeeDialog';
 function sanitizeIcsForDownload(icsData: string): string {
   if (!icsData) return '';
   
+  // First, normalize all line endings to LF
+  let normalizedData = icsData.replace(/\r\n|\r/g, '\n');
+  
   // Split into lines for easier processing
-  let icsLines = icsData.split(/\r\n|\n|\r/);
+  let icsLines = normalizedData.split('\n');
   let sanitizedLines = [];
   
   // Track if we're within a VEVENT section
@@ -107,6 +111,8 @@ function sanitizeIcsForDownload(icsData: string): string {
     sanitizedLines.push(line);
   }
   
+  // Ensure the file has proper RFC 5545 line endings (CRLF)
+  // This is crucial for calendar applications to correctly parse the file
   return sanitizedLines.join('\r\n');
 }
 
@@ -1175,12 +1181,26 @@ END:VCALENDAR`;
                       // Log what we're downloading for debugging
                       console.log('Downloading ICS content:', icsContent);
                       
-                      // Create blob and download link
-                      const blob = new Blob([icsContent], { type: 'text/calendar' });
+                      // To ensure proper line breaks in the downloaded file, we need to:
+                      // 1. Make sure we have normalized CRLF line endings (RFC 5545 requirement)
+                      // 2. Encode the content properly for the blob
+                      
+                      // First ensure all line endings are proper CRLF (\r\n) as required by RFC 5545
+                      const normalizedIcsContent = icsContent.replace(/\r\n|\n|\r/g, '\r\n');
+                      
+                      // Create blob with the proper MIME type for iCalendar files
+                      // Use text/calendar for correct handling by email clients and calendar applications
+                      const blob = new Blob([normalizedIcsContent], { 
+                        type: 'text/calendar;charset=utf-8' 
+                      });
+                      
+                      // Create and trigger the download
                       const url = URL.createObjectURL(blob);
                       const link = document.createElement('a');
                       link.href = url;
                       link.download = `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
+                      
+                      // Append to body, click, then clean up
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
