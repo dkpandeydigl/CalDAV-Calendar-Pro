@@ -15,6 +15,7 @@ import { ProtectedRoute } from "@/lib/protected-route";
 import { AuthProvider } from "@/hooks/use-auth";
 import { CalendarProvider } from "@/contexts/CalendarContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
+import { EnhancedSyncProvider } from "@/contexts/EnhancedSyncContext";
 
 function Router() {
   return (
@@ -52,10 +53,12 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <NotificationProvider>
-          <CalendarProvider>
-            <Router />
-            <Toaster />
-          </CalendarProvider>
+          <EnhancedSyncProvider>
+            <CalendarProvider>
+              <Router />
+              <Toaster />
+            </CalendarProvider>
+          </EnhancedSyncProvider>
         </NotificationProvider>
       </AuthProvider>
     </QueryClientProvider>
