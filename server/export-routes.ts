@@ -45,6 +45,100 @@ export function registerExportRoutes(app: Express) {
       res.status(500).json({ message: 'Debug error', error: String(error) });
     }
   });
+  
+  /**
+   * Download event as properly formatted ICS file
+   * Ensures proper line break handling and character encoding
+   */
+  app.get("/api/download-ics/:eventId", isAuthenticated, async (req, res) => {
+    try {
+      // Get user ID from session - we can safely use req.user here since we're using isAuthenticated middleware
+      const userId = (req.user as User).id;
+      
+      const eventId = parseInt(req.params.eventId, 10);
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: 'Invalid event ID' });
+      }
+      
+      // Get the event
+      const event = await storage.getEvent(eventId);
+      if (!event) {
+        return res.status(404).json({ message: 'Event not found' });
+      }
+      
+      // Check permissions
+      const calendar = await storage.getCalendar(event.calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: 'Calendar not found' });
+      }
+      
+      // Check if user has permission to access this event
+      if (calendar.userId !== userId) {
+        // Check if calendar is shared with user
+        const sharedCalendars = await storage.getSharedCalendars(userId);
+        const hasAccess = sharedCalendars.some(sharedCal => sharedCal.id === calendar.id);
+        if (!hasAccess) {
+          return res.status(403).json({ message: 'You do not have permission to access this event' });
+        }
+      }
+      
+      // Get or create ICS content
+      let icsContent = '';
+      
+      // If we have raw ICS data, use it with sanitization
+      if (event.rawData && typeof event.rawData === 'string') {
+        console.log('Using raw ICS data for download');
+        icsContent = event.rawData;
+        
+        // Clean up any RRULE issues with mailto: appended to it
+        icsContent = icsContent.replace(/RRULE:(.*?)mailto:/g, 'RRULE:$1');
+        
+        // Fix line breaks for proper iCalendar format
+        const lines = icsContent.split(/\r\n|\n|\r/);
+        
+        // Process each line to fix any format issues
+        const processedLines = lines.map((line: string) => {
+          // Fix SCHEDULE-STATUS formatting issues in attendee lines
+          if ((line.includes('ATTENDEE') || line.includes('ORGANIZER')) && 
+              line.includes('SCHEDULE-STATUS=')) {
+            // Extract the properties and value parts
+            const parts = line.split(':');
+            if (parts.length > 1) {
+              const properties = parts[0];
+              const email = parts[1];
+              // Clean up any embedded colons in the email part
+              const cleanEmail = email.replace(/:/g, '');
+              return `${properties}:${cleanEmail}`;
+            }
+          }
+          return line;
+        });
+        
+        // Rejoin with proper CRLF line endings
+        icsContent = processedLines.join('\r\n');
+      } else {
+        // Create basic iCalendar format
+        const startDate = new Date(event.startDate);
+        const endDate = new Date(event.endDate);
+        
+        // Format dates as required by iCalendar format (UTC)
+        console.log('Creating basic ICS file for download (no raw data)');
+        
+        icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//XGenCal//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\nBEGIN:VEVENT\r\nSUMMARY:${event.title}\r\nDTSTART:${formatICALDate(startDate)}\r\nDTEND:${formatICALDate(endDate)}\r\nDESCRIPTION:${event.description || ''}\r\nLOCATION:${event.location || ''}\r\nUID:${event.uid || `event-${Date.now()}`}\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+      }
+      
+      // Set appropriate headers
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics"`);
+      
+      // Send the content with proper line breaks
+      res.send(icsContent);
+      
+    } catch (error) {
+      console.error('Error downloading ICS file:', error);
+      res.status(500).json({ message: 'Failed to download ICS file' });
+    }
+  });
 
   // Calendar Export API - new implementation completely bypassing database calls
   app.get("/api/export-simple", isAuthenticated, async (req, res) => {

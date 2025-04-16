@@ -1178,33 +1178,15 @@ END:VEVENT
 END:VCALENDAR`;
                       }
                       
-                      // Log what we're downloading for debugging
-                      console.log('Downloading ICS content:', icsContent);
+                      // Use the server-side endpoint to download the properly formatted ICS file
+                      // This is more reliable and handles all formatting issues on the server
+                      console.log('Using server-side ICS download endpoint for event ID:', event.id);
                       
-                      // To ensure proper line breaks in the downloaded file, we need to:
-                      // 1. Make sure we have normalized CRLF line endings (RFC 5545 requirement)
-                      // 2. Encode the content properly for the blob
+                      // Open the download in a new window/tab to trigger the file download
+                      window.open(`/api/download-ics/${event.id}`, '_blank');
                       
-                      // First ensure all line endings are proper CRLF (\r\n) as required by RFC 5545
-                      const normalizedIcsContent = icsContent.replace(/\r\n|\n|\r/g, '\r\n');
-                      
-                      // Create blob with the proper MIME type for iCalendar files
-                      // Use text/calendar for correct handling by email clients and calendar applications
-                      const blob = new Blob([normalizedIcsContent], { 
-                        type: 'text/calendar;charset=utf-8' 
-                      });
-                      
-                      // Create and trigger the download
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.href = url;
-                      link.download = `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
-                      
-                      // Append to body, click, then clean up
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      URL.revokeObjectURL(url);
+                      // No need for browser-side Blob handling anymore, the server handles everything
+                      // including line breaks, MIME types, and character encoding
                     }}
                   >
                     <Clock className="h-4 w-4" />
