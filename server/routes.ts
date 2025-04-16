@@ -30,6 +30,7 @@ import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./memory-notification-service";
 import { initializeWebSocketServer, broadcastToUser, sendNotification, createAndSendNotification } from "./websocket-handler";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
+import { enhancedSyncService } from './enhanced-sync-service';
 
 // Using directly imported syncService
 import type { SyncService as SyncServiceType } from "./sync-service";
