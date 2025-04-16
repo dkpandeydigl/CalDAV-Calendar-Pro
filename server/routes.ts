@@ -2703,18 +2703,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertEventSchema.parse(eventData);
       const newEvent = await storage.createEvent(validatedData);
       
+      // Wait a moment to ensure event is saved in database
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Mark the event as pending for sync (in case it was set to 'local' by default)
+      await storage.updateEvent(newEvent.id, { syncStatus: 'pending' });
+      
+      // Now get the updated event to ensure syncStatus is set correctly
+      const updatedEvent = await storage.getEvent(newEvent.id);
+      
+      if (!updatedEvent) {
+        res.status(201).json({
+          ...newEvent,
+          syncTriggered: false,
+          syncSuccess: false,
+          syncError: 'Event was created but could not be retrieved for syncing'
+        });
+        return;
+      }
+      
+      console.log(`Event created with syncStatus: ${updatedEvent.syncStatus}`);
+      
       // Trigger immediate CalDAV synchronization for the new event
       try {
-        console.log(`Triggering immediate sync for new event ${newEvent.id} with UID ${newEvent.uid}`);
+        console.log(`Triggering immediate sync for new event ${updatedEvent.id} with UID ${updatedEvent.uid}`);
+        
+        // Verify this event is marked as pending before syncing
+        if (updatedEvent.syncStatus !== 'pending') {
+          console.log(`Warning: Event ${updatedEvent.id} has syncStatus=${updatedEvent.syncStatus}, updating to 'pending'`);
+          await storage.updateEvent(updatedEvent.id, { syncStatus: 'pending' });
+        }
         
         // Trigger a push sync operation for the user
-        const success = await syncService.pushLocalEvents(userId, newEvent.calendarId);
+        const success = await syncService.pushLocalEvents(userId, updatedEvent.calendarId);
         
         console.log(`Immediate sync result for new event: ${success ? 'successful' : 'failed'}`);
         
         // Add sync status to response
         res.status(201).json({
-          ...newEvent,
+          ...updatedEvent,
           syncTriggered: true,
           syncSuccess: success
         });
@@ -2722,7 +2749,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Error during immediate sync after event creation:", syncErr);
         // Still return 201 since the event was created successfully, but include sync error
         res.status(201).json({
-          ...newEvent,
+          ...updatedEvent,
           syncTriggered: true,
           syncSuccess: false,
           syncError: syncErr instanceof Error ? syncErr.message : String(syncErr)
