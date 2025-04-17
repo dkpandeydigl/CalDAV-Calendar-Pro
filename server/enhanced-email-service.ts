@@ -9,8 +9,13 @@
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
-import { formatRFC5545Event, validateICSData } from '../shared/rfc5545-compliant-formatter';
+import { validateICSData } from '../shared/rfc5545-compliant-formatter';
 import { centralUIDService } from './central-uid-service';
+import { 
+  generateNewEventICS, 
+  generateUpdatedEventICS, 
+  generateCancelledEventICS 
+} from '../shared/centralized-ics-service';
 
 export interface SmtpConfig {
   host: string;
@@ -188,16 +193,38 @@ export class EnhancedEmailService {
 
   /**
    * Generate ICS data for an event
-   * This uses the RFC 5545 compliant formatter
+   * This uses the centralized ICS generation service to ensure consistency
    */
-  public generateICSData(data: EventInvitationData): string {
-    const formatOptions = {
-      method: data.method || 'REQUEST',
-      status: data.status,
-      sequence: data.sequence
-    };
+  public generateICSData(data: EventInvitationData, preGeneratedICSData?: string): string {
+    if (preGeneratedICSData) {
+      console.log('Using pre-generated ICS data');
+      
+      // Still validate the pre-generated ICS data
+      const validationResult = validateICSData(preGeneratedICSData);
+      if (!validationResult.valid) {
+        console.warn('Pre-generated ICS data has validation issues:', validationResult.errors);
+      }
+      
+      return preGeneratedICSData;
+    }
     
-    const icsData = formatRFC5545Event(data, formatOptions);
+    console.log('Generating ICS data using centralized service');
+    
+    // Determine what type of ICS to generate based on the event's method or status
+    const method = data.method || 'REQUEST';
+    const status = data.status || 'CONFIRMED';
+    
+    let icsData: string;
+    
+    if (method === 'CANCEL' || status === 'CANCELLED') {
+      icsData = generateCancelledEventICS(data, data.rawData || null);
+    } else if ((data.sequence || 0) > 0) {
+      // If sequence > 0, it's an update
+      icsData = generateUpdatedEventICS(data, data.rawData || null);
+    } else {
+      // Otherwise it's a new event
+      icsData = generateNewEventICS(data, data.rawData || null);
+    }
     
     // Validate the generated ICS data
     const validationResult = validateICSData(icsData);
@@ -229,12 +256,12 @@ export class EnhancedEmailService {
       // Default method for invitations is REQUEST
       const method = data.method || 'REQUEST';
       
-      // Generate ICS data using RFC 5545 compliant formatter
-      const icsData = this.generateICSData({
+      // Generate ICS data using the centralized ICS service
+      const icsData = data.icsData || generateNewEventICS({
         ...data,
         method,
         sequence: data.sequence || 0
-      });
+      }, data.rawData || null);
       
       // Extract UID from generated ICS data as a double-check
       const extractedUid = centralUIDService.extractUIDFromICS(icsData);
@@ -339,8 +366,8 @@ export class EnhancedEmailService {
         sequence: (data.sequence || 0) + 1
       };
       
-      // Generate ICS data for the cancellation
-      const icsData = this.generateICSData(cancelData);
+      // Generate ICS data for the cancellation using the centralized ICS service
+      const icsData = data.icsData || generateCancelledEventICS(cancelData, data.rawData || null);
       
       // Generate HTML content for the email
       const htmlContent = this.generateCancellationEmailContent(cancelData);
@@ -438,8 +465,8 @@ export class EnhancedEmailService {
         sequence: (data.sequence || 0) + 1
       };
       
-      // Generate ICS data for the update
-      const icsData = this.generateICSData(updateData);
+      // Generate ICS data for the update using the centralized ICS service
+      const icsData = data.icsData || generateUpdatedEventICS(updateData, data.rawData || null);
       
       // Generate HTML content for the email
       const htmlContent = this.generateUpdateEmailContent(updateData);
@@ -530,31 +557,36 @@ export class EnhancedEmailService {
       switch (type) {
         case 'invitation':
           method = 'REQUEST';
-          icsData = this.generateICSData({
+          // Use centralized ICS service for invitation preview
+          icsData = data.icsData || generateNewEventICS({
             ...data,
             method,
             sequence: data.sequence || 0
-          });
+          }, data.rawData || null);
           htmlContent = this.generateInvitationEmailContent(data);
           break;
         case 'update':
           method = 'REQUEST';
-          icsData = this.generateICSData({
+          // Use centralized ICS service for update preview
+          const updateData = {
             ...data,
             method,
             sequence: (data.sequence || 0) + 1
-          });
-          htmlContent = this.generateUpdateEmailContent(data);
+          };
+          icsData = data.icsData || generateUpdatedEventICS(updateData, data.rawData || null);
+          htmlContent = this.generateUpdateEmailContent(updateData);
           break;
         case 'cancellation':
           method = 'CANCEL';
-          icsData = this.generateICSData({
+          // Use centralized ICS service for cancellation preview
+          const cancelData = {
             ...data,
             status: 'CANCELLED',
             method,
             sequence: (data.sequence || 0) + 1
-          });
-          htmlContent = this.generateCancellationEmailContent(data);
+          };
+          icsData = data.icsData || generateCancelledEventICS(cancelData, data.rawData || null);
+          htmlContent = this.generateCancellationEmailContent(cancelData);
           break;
         default:
           throw new Error('Invalid email preview type');
