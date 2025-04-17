@@ -51,6 +51,8 @@ const escapeText = (text: string): string => {
 
 /**
  * Folds long lines as per RFC 5545 (each line <= 75 octets)
+ * When a line exceeds 75 characters, it must be folded by inserting a CRLF
+ * followed by a single whitespace character (LWSP)
  */
 const foldLine = (line: string): string => {
   if (line.length <= LINE_LENGTH_LIMIT) return line;
@@ -65,7 +67,8 @@ const foldLine = (line: string): string => {
       currentPos += LINE_LENGTH_LIMIT;
     } else {
       // Continuation lines - must begin with a space
-      result += '\\r\\n ';
+      // Use literal CRLF for now, we'll replace with actual CRLF later
+      result += '\r\n ';  // Changed from '\\r\\n ' to use actual CRLF
       const chunk = line.slice(currentPos, currentPos + LINE_LENGTH_LIMIT - 1);
       result += chunk;
       currentPos += chunk.length;
@@ -232,36 +235,53 @@ export function formatRFC5545Event(
   const sequence = options?.sequence !== undefined ? options.sequence : (data.sequence || 0);
   icsContent.push(`SEQUENCE:${sequence}`);
   
-  // Add recurrence rule if specified
+  // Add recurrence rule if specified, with improved sanitization
   if (data.recurrenceRule) {
     let rrule: string;
     
     if (typeof data.recurrenceRule === 'string') {
-      // Clean and normalize the string
-      rrule = data.recurrenceRule
-        .replace(/mailto:.+$/, '') // Remove any trailing mailto: values (common corruption)
-        .trim();
+      // Extract only valid RRULE parts: FREQ, UNTIL, COUNT, INTERVAL, etc.
+      const validRulePrefixes = ['FREQ=', 'UNTIL=', 'COUNT=', 'INTERVAL=', 'BYSECOND=', 
+        'BYMINUTE=', 'BYHOUR=', 'BYDAY=', 'BYMONTHDAY=', 'BYYEARDAY=', 
+        'BYWEEKNO=', 'BYMONTH=', 'BYSETPOS=', 'WKST='];
+      
+      const originalRule = data.recurrenceRule.trim();
+      const ruleParts = originalRule.split(';');
+      const validParts = ruleParts.filter(part => {
+        // Keep only parts that start with valid RRULE parameter names
+        return validRulePrefixes.some(prefix => part.startsWith(prefix));
+      });
+      
+      // Reconstruct the RRULE with only valid parts
+      rrule = validParts.join(';');
+      
+      // If we modified the rule, log it
+      if (rrule !== originalRule) {
+        console.log(`Sanitized RRULE: ${rrule} (original: ${originalRule})`);
+      }
     } else {
       // Assume it's an object that needs to be converted to RRULE format
       // This would be implementation-specific based on your recurrence rule object structure
       rrule = 'FREQ=DAILY;COUNT=1'; // Fallback default
+      console.log('Converting recurrence rule object to string format not fully implemented');
     }
     
-    icsContent.push(`RRULE:${rrule}`);
+    // Only add if we have a valid rule after sanitization
+    if (rrule && rrule.startsWith('FREQ=')) {
+      icsContent.push(`RRULE:${rrule}`);
+    } else {
+      console.warn('Skipping invalid recurrence rule:', rrule);
+    }
   }
   
   // Close the event and calendar
   icsContent.push('END:VEVENT');
   icsContent.push('END:VCALENDAR');
   
-  // Join with CRLF as required by RFC 5545
-  let icsString = icsContent.join('\\r\\n');
+  // Create the initial string with literal '\r\n' that will be replaced
+  let icsString = icsContent.join('\r\n');
   
-  // Apply line folding for RFC 5545 compliance
-  // In real implementation, this would need to properly fold each line
-  
-  // For simplicity in this implementation, we'll add proper line endings as a final step
-  // Replace the literal \\r\\n with actual CRLF
+  // Apply proper line folding and ensure CRLF line endings
   return ensureProperLineEndings(icsString);
 }
 
@@ -335,11 +355,41 @@ export function validateICSData(icsData: string): { valid: boolean; errors: stri
 }
 
 /**
- * Ensure ics data has proper line endings (CRLF)
+ * Ensure ics data has proper line endings (CRLF) and apply folding for long lines
+ * according to RFC 5545 requirements
  */
 export function ensureProperLineEndings(icsData: string): string {
-  // Replace literal \\r\\n with actual CRLF
+  // First, replace literal \\r\\n with actual CRLF
   let result = icsData.replace(/\\r\\n/g, '\r\n');
+  
+  // Now properly fold long lines according to RFC 5545
+  const lines = result.split('\r\n');
+  const foldedLines: string[] = [];
+  
+  lines.forEach(line => {
+    if (line.length <= LINE_LENGTH_LIMIT) {
+      // Line is short enough, add as is
+      foldedLines.push(line);
+    } else {
+      // Line needs folding
+      let pos = 0;
+      const length = line.length;
+      
+      // First chunk (75 chars max)
+      foldedLines.push(line.substring(0, LINE_LENGTH_LIMIT));
+      pos = LINE_LENGTH_LIMIT;
+      
+      // Add continuation chunks with space prefix
+      while (pos < length) {
+        const chunk = line.substring(pos, Math.min(pos + LINE_LENGTH_LIMIT - 1, length));
+        foldedLines.push(` ${chunk}`);
+        pos += LINE_LENGTH_LIMIT - 1;
+      }
+    }
+  });
+  
+  // Join with CRLF
+  result = foldedLines.join('\r\n');
   
   // Ensure the file ends with a CRLF
   if (!result.endsWith('\r\n')) {

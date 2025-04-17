@@ -91,19 +91,25 @@ export function generateICS(
     }
   }
   
-  // If strict mode or fallback from error, use full RFC 5545 formatter
-  if (strictMode) {
+  // In most cases, we want to use the strict RFC 5545 compliant formatter
+  if (strictMode || !rawICSData) {
     console.log('Using strict RFC 5545 compliant formatter');
-    return formatRFC5545Event(enrichedEventData, {
-      method,
-      status,
-      sequence
-    });
+    try {
+      return formatRFC5545Event(enrichedEventData, {
+        method,
+        status,
+        sequence
+      });
+    } catch (error) {
+      console.error('Error using RFC 5545 compliant formatter, falling back to sanitizer:', error);
+      // Fall through to basic sanitizer if strict formatter fails
+    }
   }
-  
-  // Last resort - use basic sanitizer to create from scratch
-  console.log('Falling back to basic ICS generation');
-  return sanitizeAndFormatICS('', {
+
+  // If for some reason the strict formatter fails, use sanitizer as a fallback
+  console.log('Using sanitizer for ICS generation');
+  const template = rawICSData || '';
+  return sanitizeAndFormatICS(template, {
     method,
     status,
     sequence,

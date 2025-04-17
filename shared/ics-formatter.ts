@@ -221,25 +221,89 @@ export function sanitizeAndFormatICS(icsData: string, options?: SanitizeOptions)
       }
     }
     
-    // Fix RRULE with improperly appended mailto:
-    if (line.startsWith('RRULE:') && line.includes('mailto:')) {
-      const ruleParts = line.split('mailto:');
-      line = ruleParts[0]; // Keep only the part before mailto:
+    // Fix RRULE with improperly appended mailto: or any other text after valid parameters
+    if (line.startsWith('RRULE:')) {
+      const originalRule = line.substring(6); // Remove 'RRULE:' prefix
+      
+      // Check if there's a mailto: or colon in the RRULE - this is a common issue
+      if (originalRule.includes('mailto:') || originalRule.includes(':')) {
+        console.log(`Found mailto: or colon in RRULE - cleaning it properly`);
+        
+        // If there's a colon, split at the first colon and only keep the part before it
+        // This handles cases like "FREQ=DAILY;COUNT=2:mailto:someone@example.com"
+        let cleanedRule = originalRule;
+        if (originalRule.includes(':')) {
+          const colonIndex = originalRule.indexOf(':');
+          cleanedRule = originalRule.substring(0, colonIndex);
+          console.log(`Split RRULE at colon, keeping only: ${cleanedRule}`);
+        }
+        
+        // Continue with normal processing with the cleaned rule
+        line = `RRULE:${cleanedRule}`;
+      }
+      
+      // Extract only valid RRULE parts: FREQ, UNTIL, COUNT, INTERVAL, BYSECOND, BYMINUTE, etc.
+      const validRulePrefixes = ['FREQ=', 'UNTIL=', 'COUNT=', 'INTERVAL=', 'BYSECOND=', 
+        'BYMINUTE=', 'BYHOUR=', 'BYDAY=', 'BYMONTHDAY=', 'BYYEARDAY=', 
+        'BYWEEKNO=', 'BYMONTH=', 'BYSETPOS=', 'WKST='];
+      
+      const ruleParts = line.substring(6).split(';'); // Remove 'RRULE:' prefix and split by semicolon
+      const validParts = ruleParts.filter(part => {
+        // Keep only parts that start with valid RRULE parameter names
+        return validRulePrefixes.some(prefix => part.startsWith(prefix));
+      });
+      
+      // Reconstruct the RRULE with only valid parts
+      line = `RRULE:${validParts.join(';')}`;
+      console.log(`Extracted RRULE from raw ICS data: ${validParts.join(';')}`);
     }
     
     // Fix issues with ATTENDEE and ORGANIZER lines
     if (line.includes('ATTENDEE') || line.includes('ORGANIZER')) {
-      // Fix improper SCHEDULE-STATUS formatting
-      if (line.includes('SCHEDULE-STATUS=') && line.includes(':')) {
-        // Split into parameters and value parts
-        const parts = line.split(':');
-        if (parts.length > 1) {
-          const parameters = parts[0];
-          const value = parts[1];
-          
-          // Remove any stray colons from the value part
-          const cleanValue = value.replace(/:/g, '');
-          line = `${parameters}:${cleanValue}`;
+      // Check if this line contains SCHEDULE-STATUS
+      if (line.includes('SCHEDULE-STATUS=')) {
+        console.log('Found SCHEDULE-STATUS in raw ICS data - preprocessing...');
+        
+        // Fix improper SCHEDULE-STATUS formatting
+        if (line.includes(':')) {
+          // Split into parameters and value parts
+          const parts = line.split(':');
+          if (parts.length > 1) {
+            const parameters = parts[0];
+            const value = parts[1];
+            
+            // Extract SCHEDULE-STATUS component before the colon
+            let scheduleStatusPattern = /SCHEDULE-STATUS=([^;:]+)/;
+            let scheduleStatusMatch = parameters.match(scheduleStatusPattern);
+            
+            if (scheduleStatusMatch) {
+              const statusValue = scheduleStatusMatch[1];
+              
+              // Ensure the status value is properly formatted (should be a number.number format)
+              const statusRegex = /^\d+\.\d+$/;
+              if (!statusRegex.test(statusValue)) {
+                // Replace with a valid value (1.2 means successfully processed)
+                const fixedParameters = parameters.replace(
+                  /SCHEDULE-STATUS=[^;:]+/, 
+                  'SCHEDULE-STATUS=1.2'
+                );
+                
+                // Remove any stray colons from the value part
+                const cleanValue = value.replace(/:/g, '');
+                line = `${fixedParameters}:${cleanValue}`;
+                console.log('Fixed invalid SCHEDULE-STATUS format');
+              } else {
+                // Status value is valid, just clean up any stray colons
+                const cleanValue = value.replace(/:/g, '');
+                line = `${parameters}:${cleanValue}`;
+              }
+            } else {
+              // No SCHEDULE-STATUS parameter found despite the string being present
+              // This could be due to malformed data - just clean up
+              const cleanValue = value.replace(/:/g, '');
+              line = `${parameters}:${cleanValue}`;
+            }
+          }
         }
       }
     }
