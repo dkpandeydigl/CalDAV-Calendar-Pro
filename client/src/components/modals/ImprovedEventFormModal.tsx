@@ -171,6 +171,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     }
   }, [open]);
   
+  // Clear email preview when form data changes to prevent stale previews
+  useEffect(() => {
+    if (open && previewData) {
+      clearPreview();
+      setEmailPreviewHtml(null);
+      console.log('[FORM CHANGE] Cleared email preview due to form field change');
+    }
+  }, [title, description, location, startDate, startTime, endDate, endTime, allDay, attendees, resources, calendarId]);
+  
   // Watch for tab changes to refresh email preview
   useEffect(() => {
     // When switching to the "emails" tab, validate the form and regenerate preview
