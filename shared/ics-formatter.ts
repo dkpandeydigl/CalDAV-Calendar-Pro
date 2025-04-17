@@ -260,6 +260,12 @@ export function sanitizeAndFormatICS(icsData: string, options?: SanitizeOptions)
     
     // Fix issues with ATTENDEE and ORGANIZER lines
     if (line.includes('ATTENDEE') || line.includes('ORGANIZER')) {
+      // Fix double colon issue in mailto:: (a common formatting error)
+      if (line.includes('mailto::')) {
+        console.log('Found double colon in mailto:: - fixing to mailto:');
+        line = line.replace(/mailto::/g, 'mailto:');
+      }
+      
       // Check if this line contains SCHEDULE-STATUS
       if (line.includes('SCHEDULE-STATUS=')) {
         console.log('Found SCHEDULE-STATUS in raw ICS data - preprocessing...');
