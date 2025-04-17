@@ -88,8 +88,8 @@ export function initializeWebSocketServer(httpServer: Server): WebSocketServer {
  */
 function handleMessage(socket: WebSocket, message: any) {
   // Handle authentication/registration message
-  if (message.type === 'auth' && message.userId) {
-    registerUserConnection(parseInt(message.userId), socket);
+  if (message.type === 'auth' && message.action === 'register' && message.data?.userId) {
+    registerUserConnection(parseInt(message.data.userId), socket);
     return;
   }
   

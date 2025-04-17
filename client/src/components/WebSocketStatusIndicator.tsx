@@ -14,7 +14,6 @@ interface WebSocketStatusIndicatorProps {
  * 
  * Shows a visual indicator of the WebSocket connection status:
  * - Green: Connected
- * - Amber: Connecting
  * - Red: Disconnected
  */
 const WebSocketStatusIndicator: React.FC<WebSocketStatusIndicatorProps> = ({
@@ -22,39 +21,27 @@ const WebSocketStatusIndicator: React.FC<WebSocketStatusIndicatorProps> = ({
   showLabel = true,
   className
 }) => {
-  const { connectionStatus } = useWebSocket({
-    userId: userId || null,
+  const { isConnected } = useWebSocket({
+    userId: userId ? Number(userId) : undefined,
     autoConnect: !!userId,
-    onMessage: () => {} // Empty handler, we're just displaying status
+    onOpen: () => console.log('WebSocket connected'),
+    onClose: () => console.log('WebSocket disconnected')
   });
 
   // Map connection status to visual indicators
   const getStatusInfo = () => {
-    switch (connectionStatus) {
-      case 'connected':
-        return {
-          icon: <Wifi className="h-4 w-4 text-green-500" />,
-          label: 'Connected',
-          color: 'text-green-500'
-        };
-      case 'connecting':
-        return {
-          icon: <AlertTriangle className="h-4 w-4 text-amber-500 animate-pulse" />,
-          label: 'Connecting',
-          color: 'text-amber-500'
-        };
-      case 'disconnected':
-        return {
-          icon: <WifiOff className="h-4 w-4 text-red-500" />,
-          label: 'Disconnected',
-          color: 'text-red-500'
-        };
-      default:
-        return {
-          icon: <WifiOff className="h-4 w-4 text-gray-500" />,
-          label: 'Unknown',
-          color: 'text-gray-500'
-        };
+    if (isConnected) {
+      return {
+        icon: <Wifi className="h-4 w-4 text-green-500" />,
+        label: 'Connected',
+        color: 'text-green-500'
+      };
+    } else {
+      return {
+        icon: <WifiOff className="h-4 w-4 text-red-500" />,
+        label: 'Disconnected',
+        color: 'text-red-500'
+      };
     }
   };
 
