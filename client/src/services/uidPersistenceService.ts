@@ -308,10 +308,20 @@ class UIDPersistenceService {
   
   /**
    * Generate a unique UID for a new event
-   * This follows the RFC 4122 v4 UUID format which is compatible with iCalendar UID requirements
+   * This matches the server-side centralUIDService.generateUID() format
+   * to ensure consistent UID generation between client and server
+   * 
+   * @param prefix Optional prefix to use for special types of UIDs (e.g., "manual")
+   * @returns A globally unique identifier that's compliant with RFC 5545
    */
-  public generateUID(): string {
-    return crypto.randomUUID();
+  public generateUID(prefix: string = 'event'): string {
+    // Use a more specific format that works well with CalDAV servers
+    // This follows the format: prefix-timestamp-randomstring@domain
+    // which is more readily recognizable and debuggable than a UUID
+    const timestamp = Date.now();
+    // Generate random part (since we don't have crypto.randomBytes on client)
+    const randomPart = Math.random().toString(36).substring(2, 10);
+    return `${prefix}-${timestamp}-${randomPart}@caldavclient.local`;
   }
   
   /**
