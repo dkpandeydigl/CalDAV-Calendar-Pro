@@ -27,7 +27,7 @@ interface ServerCredentials {
  * @returns RFC 5546 compliant cancellation ICS content
  */
 export function generateCancellationIcs(originalIcs: string, eventData: EventInvitationData): string {
-  console.log('=== GENERATING RFC 5546 COMPLIANT CANCELLATION ICS ===');
+  console.log('=== GENERATING RFC 6638 COMPLIANT CANCELLATION ICS ===');
   
   if (!originalIcs) {
     console.error('No original ICS content provided for cancellation');
@@ -56,24 +56,66 @@ export function generateCancellationIcs(originalIcs: string, eventData: EventInv
     
     console.log(`Using original UID for cancellation: ${originalUid}`);
     
-    // Replace METHOD:REQUEST with METHOD:CANCEL
-    let cancellationIcs = originalIcs.replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL');
+    // CRITICAL RFC 6638 REQUIREMENTS
+    // -----------------------------
+    // 1. First, ensure METHOD:CANCEL is present
+    let cancellationIcs = originalIcs;
     
-    // If METHOD doesn't exist, add it after BEGIN:VCALENDAR
-    if (!cancellationIcs.includes('METHOD:')) {
+    // Handle METHOD property correctly - this MUST be in the VCALENDAR component
+    if (cancellationIcs.includes('METHOD:')) {
+      // Replace any existing METHOD
+      cancellationIcs = cancellationIcs.replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL');
+    } else {
+      // If no METHOD exists, add it after BEGIN:VCALENDAR
       cancellationIcs = cancellationIcs.replace(
         'BEGIN:VCALENDAR',
         'BEGIN:VCALENDAR\r\nMETHOD:CANCEL'
       );
     }
     
-    // Add STATUS:CANCELLED if not present
+    // 2. Ensure STATUS:CANCELLED is present in the VEVENT component
     if (!cancellationIcs.includes('STATUS:CANCELLED')) {
+      if (cancellationIcs.includes('STATUS:')) {
+        // Replace any existing STATUS
+        cancellationIcs = cancellationIcs.replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED');
+      } else {
+        // Add STATUS:CANCELLED after BEGIN:VEVENT if not present
+        cancellationIcs = cancellationIcs.replace(
+          'BEGIN:VEVENT',
+          'BEGIN:VEVENT\r\nSTATUS:CANCELLED'
+        );
+      }
+    }
+    
+    // 3. Ensure exact same UID is preserved (required by RFC 6638)
+    // Replace any existing UID with the original one
+    if (cancellationIcs.includes('UID:')) {
+      cancellationIcs = cancellationIcs.replace(/UID:[^\r\n]+/i, `UID:${originalUid}`);
+    } else {
+      // Add UID if missing (should never happen)
       cancellationIcs = cancellationIcs.replace(
         'BEGIN:VEVENT',
-        'BEGIN:VEVENT\r\nSTATUS:CANCELLED'
+        `BEGIN:VEVENT\r\nUID:${originalUid}`
       );
     }
+    
+    // 4. Increment SEQUENCE number as required by RFC 6638
+    let newSequence = 1; // Default if no existing sequence
+    const sequenceMatch = cancellationIcs.match(/SEQUENCE:(\d+)/i);
+    if (sequenceMatch && sequenceMatch[1]) {
+      newSequence = parseInt(sequenceMatch[1], 10) + 1;
+      cancellationIcs = cancellationIcs.replace(
+        /SEQUENCE:\d+/i,
+        `SEQUENCE:${newSequence}`
+      );
+    } else {
+      // Add SEQUENCE:1 if not present
+      cancellationIcs = cancellationIcs.replace(
+        'BEGIN:VEVENT',
+        'BEGIN:VEVENT\r\nSEQUENCE:1'
+      );
+    }
+    console.log(`Updated SEQUENCE to ${newSequence}`);
     
     // Update SUMMARY to have CANCELLED prefix if not already
     const summaryMatch = cancellationIcs.match(/SUMMARY:([^\r\n]+)/i);
@@ -85,22 +127,6 @@ export function generateCancellationIcs(originalIcs: string, eventData: EventInv
           `SUMMARY:CANCELLED: ${summary}`
         );
       }
-    }
-    
-    // Increment SEQUENCE number
-    const sequenceMatch = cancellationIcs.match(/SEQUENCE:(\d+)/i);
-    if (sequenceMatch && sequenceMatch[1]) {
-      const newSequence = parseInt(sequenceMatch[1], 10) + 1;
-      cancellationIcs = cancellationIcs.replace(
-        /SEQUENCE:\d+/i,
-        `SEQUENCE:${newSequence}`
-      );
-    } else {
-      // Add SEQUENCE:1 if not present
-      cancellationIcs = cancellationIcs.replace(
-        'BEGIN:VEVENT',
-        'BEGIN:VEVENT\r\nSEQUENCE:1'
-      );
     }
     
     // Update DTSTAMP to current time
@@ -164,11 +190,29 @@ export function generateCancellationIcs(originalIcs: string, eventData: EventInv
     // 2. Fix duplicate ATTENDEE entries
     cancellationIcs = deduplicateAttendees(cancellationIcs);
     
-    console.log('Successfully generated RFC 5546 compliant cancellation ICS');
+    // FINAL VERIFICATION - Ensure critical RFC 6638 properties are present
+    // This is a failsafe to guarantee the file is RFC 6638 compliant
+    const finalCheck = {
+      hasMethodCancel: /METHOD:CANCEL/i.test(cancellationIcs),
+      hasStatusCancelled: /STATUS:CANCELLED/i.test(cancellationIcs),
+      hasSequence: /SEQUENCE:\d+/i.test(cancellationIcs),
+      hasOriginalUid: new RegExp(`UID:${originalUid}`, 'i').test(cancellationIcs)
+    };
+    
+    console.log('Final RFC 6638 compliance check:', finalCheck);
+    
+    if (!finalCheck.hasMethodCancel || !finalCheck.hasStatusCancelled || !finalCheck.hasSequence || !finalCheck.hasOriginalUid) {
+      console.warn('⚠️ CRITICAL: Final ICS check failed, rebuilding with guaranteed RFC 6638 compliance');
+      // If any required property is still missing, rebuild the ICS file
+      return createMinimalCancellationIcs(eventData, originalUid);
+    }
+    
+    console.log('Successfully generated RFC 6638 compliant cancellation ICS');
     return cancellationIcs;
     
   } catch (error) {
     console.error('Error generating cancellation ICS:', error);
+    // Fallback to minimal ICS with guaranteed compliance
     return createMinimalCancellationIcs(eventData);
   }
 }
@@ -177,27 +221,41 @@ export function generateCancellationIcs(originalIcs: string, eventData: EventInv
  * Creates a minimal cancellation ICS if we don't have the original
  * This is a fallback method only used in error scenarios
  */
-function createMinimalCancellationIcs(eventData: EventInvitationData): string {
-  console.log('Creating minimal cancellation ICS (fallback)');
+/**
+ * Creates a minimal RFC 6638 compliant cancellation ICS
+ * This is either used as a fallback method or when rebuilding a non-compliant ICS
+ * 
+ * @param eventData Event data containing information about the event
+ * @param forcedUid Optional UID to use (important for preserving original UID)
+ */
+function createMinimalCancellationIcs(eventData: EventInvitationData, forcedUid?: string): string {
+  console.log('Creating minimal RFC 6638 compliant cancellation ICS');
   
-  const uid = eventData.uid || `fallback-${Date.now()}@caldavclient.local`;
+  // Use the forced UID if provided, otherwise use the event UID or generate a fallback
+  const uid = forcedUid || eventData.uid || `fallback-${Date.now()}@caldavclient.local`;
+  
+  // Per RFC 6638, these properties must be present for cancellation ICS files
   const dtstamp = formatIcsDate(new Date());
   const dtstart = formatIcsDate(eventData.startDate);
   const dtend = formatIcsDate(eventData.endDate);
   
+  // Sequence should be incremented from the original event, or default to 1
+  const sequence = (eventData.sequence ? parseInt(String(eventData.sequence), 10) + 1 : 1);
+  
+  // Construct the ICS with all required RFC 6638 properties
   let ics = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//CalDAV Calendar Application//EN',
     'CALSCALE:GREGORIAN',
-    'METHOD:CANCEL',
+    'METHOD:CANCEL', // This is critical for RFC 6638
     'BEGIN:VEVENT',
-    `UID:${uid}`,
+    `UID:${uid}`, // Must match the original event UID
     `DTSTAMP:${dtstamp}`,
     `DTSTART:${dtstart}`,
     `DTEND:${dtend}`,
-    'SEQUENCE:1',
-    'STATUS:CANCELLED',
+    `SEQUENCE:${sequence}`, // Increment sequence number per RFC 6638
+    'STATUS:CANCELLED', // Must be set to CANCELLED per RFC 6638
     `SUMMARY:CANCELLED: ${eventData.title || 'Untitled Event'}`,
     `ORGANIZER;CN=${eventData.organizer?.name || eventData.organizer?.email || ''}:mailto:${eventData.organizer?.email || 'unknown@example.com'}`
   ];
