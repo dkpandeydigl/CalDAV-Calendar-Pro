@@ -59,8 +59,9 @@ export class CentralUIDService {
    */
   private async tableExists(): Promise<boolean> {
     try {
-      const allEvents = await storage.getAllEvents();
-      return true; // If we can get events, assume we can store UIDs
+      // Check if we can access any calendars to indirectly confirm storage is working
+      const users = await storage.getAllUsers();
+      return users.length > 0; // If we can get users, assume we can store UIDs
     } catch (error) {
       return false;
     }

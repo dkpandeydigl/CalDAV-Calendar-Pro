@@ -221,7 +221,7 @@ export class EnhancedEmailService {
       });
       
       // Extract UID from generated ICS data as a double-check
-      const extractedUid = extractUIDFromICS(icsData);
+      const extractedUid = centralUIDService.extractUIDFromICS(icsData);
       if (extractedUid !== data.uid) {
         console.warn(`UID mismatch in generated ICS data. Expected: ${data.uid}, Got: ${extractedUid}`);
       }

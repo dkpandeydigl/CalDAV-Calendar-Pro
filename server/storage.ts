@@ -102,6 +102,7 @@ export class MemStorage implements IStorage {
   private calendarSharingMap: Map<number, CalendarSharing>;
   private smtpConfigMap: Map<number, SmtpConfig>;
   private notificationsMap: Map<number, Notification>;
+  private uidMappings: Map<number, UIDMapping>; // Store UID mappings
   
   private userIdCounter: number;
   private calendarIdCounter: number;
@@ -127,6 +128,7 @@ export class MemStorage implements IStorage {
     this.calendarSharingMap = new Map();
     this.smtpConfigMap = new Map();
     this.notificationsMap = new Map();
+    this.uidMappings = new Map();
     
     this.userIdCounter = 1;
     this.calendarIdCounter = 1;
@@ -782,6 +784,51 @@ export class MemStorage implements IStorage {
   
   async deleteNotification(id: number): Promise<boolean> {
     return this.notificationsMap.delete(id);
+  }
+  
+  // UID Persistence methods
+  async getAllUIDs(): Promise<UIDMapping[]> {
+    return Array.from(this.uidMappings.values());
+  }
+  
+  async getUIDByEventId(eventId: number): Promise<UIDMapping | undefined> {
+    return Array.from(this.uidMappings.values()).find(
+      mapping => mapping.eventId === eventId
+    );
+  }
+  
+  async getEventIdByUID(uid: string): Promise<UIDMapping | undefined> {
+    return Array.from(this.uidMappings.values()).find(
+      mapping => mapping.uid === uid
+    );
+  }
+  
+  async storeUID(mapping: UIDMapping): Promise<UIDMapping> {
+    // Use the event ID as the key in our map
+    this.uidMappings.set(mapping.eventId, mapping);
+    console.log(`[MemStorage] Stored UID mapping: Event ${mapping.eventId} -> UID ${mapping.uid}`);
+    return mapping;
+  }
+  
+  async updateUID(eventId: number, uid: string): Promise<UIDMapping | undefined> {
+    const mapping = await this.getUIDByEventId(eventId);
+    if (!mapping) return undefined;
+    
+    const now = new Date();
+    const updatedMapping: UIDMapping = {
+      ...mapping,
+      uid,
+      updatedAt: now
+    };
+    
+    this.uidMappings.set(eventId, updatedMapping);
+    console.log(`[MemStorage] Updated UID mapping: Event ${eventId} -> UID ${uid}`);
+    return updatedMapping;
+  }
+  
+  async deleteUID(eventId: number): Promise<boolean> {
+    console.log(`[MemStorage] Deleting UID mapping for event ${eventId}`);
+    return this.uidMappings.delete(eventId);
   }
   
   // Helper methods for syncing
