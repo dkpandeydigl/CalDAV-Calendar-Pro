@@ -259,7 +259,7 @@ export class EmailService {
       let icsData = data.icsData;
       if (!icsData) {
         // Now generateICSData will use the validated UID
-        icsData = this.generateICSData(data);
+        icsData = await this.generateICSData(data);
       } else {
         // If we already have ICS data, validate the UID in it matches our validated UID
         const extractedUid = icsData.match(/UID:([^\r\n]+)/i)?.[1]?.trim();
@@ -478,7 +478,7 @@ export class EmailService {
           }
         } else {
           // Generate new ICS data with cancelled status
-          icsData = this.generateICSData(cancellationData);
+          icsData = await this.generateICSData(cancellationData);
         }
       }
       
@@ -761,12 +761,27 @@ export class EmailService {
         console.error('Failed to extract UID from original ICS while generating fallback:', e);
       }
       
-      return this.generateICSData({
-        ...data,
-        uid,
-        status: 'CANCELLED',
-        sequence: (data.sequence || 0) + 1
-      });
+      // Since we can't return a Promise here, we need to return a basic template instead
+      // The caller will need to handle generating full ICS data
+      console.error('Returning basic cancellation template due to transformation error');
+      
+      const now = formatICalDate(new Date());
+      
+      return `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Replit Calendar App//EN
+CALSCALE:GREGORIAN
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${now}
+DTSTART:${formatICalDate(data.startDate)}
+DTEND:${formatICalDate(data.endDate)}
+SEQUENCE:${(data.sequence || 0) + 1}
+STATUS:CANCELLED
+SUMMARY:${data.title || "Untitled Event"}
+END:VEVENT
+END:VCALENDAR`;
     }
   }
   
@@ -884,10 +899,10 @@ export class EmailService {
       // Get the ICS data with error handling
       let icsData = '';
       try {
-        icsData = this.generateICSData(data);
+        icsData = await this.generateICSData(data);
       } catch (icsError) {
         console.error('Error generating ICS data:', icsError);
-        icsData = 'Error generating ICS data: ' + icsError.message;
+        icsData = 'Error generating ICS data: ' + (icsError instanceof Error ? icsError.message : String(icsError));
       }
       
       // Format start and end dates with error handling
@@ -1111,17 +1126,26 @@ export class EmailService {
    * Generate ICS data for an event
    * This method ensures a consistent UID is used throughout the event lifecycle
    */
-  public generateICSData(data: EventInvitationData): string {
+  public async generateICSData(data: EventInvitationData): Promise<string> {
+    // IMPORTANT: Always ensure we have a valid UID before generating ICS
+    await this.ensureValidUID(data);
+    console.log(`[EmailService] Using validated UID ${data.uid} for generating ICS data`);
+
     // If there's already raw data available, modify it directly instead of using formatter
     if (data.rawData) {
       // Extract the original UID from raw data
-      let originalUid = data.uid;
       const uidMatch = String(data.rawData).match(/UID:([^\r\n]+)/i);
       if (uidMatch) {
-        originalUid = uidMatch[1].trim();
-        console.log(`Using original UID from raw data: ${originalUid}`);
+        const rawUid = uidMatch[1].trim();
+        
+        // Check if there's a mismatch between the validated UID and raw data UID
+        if (rawUid !== data.uid) {
+          console.warn(`[EmailService] UID mismatch detected in raw ICS data:`);
+          console.warn(`[EmailService] Raw data UID: ${rawUid}, Validated UID: ${data.uid}`);
+          console.warn(`[EmailService] Using validated UID from centralUIDService for consistency`);
+        }
       } else {
-        console.warn("Could not find UID in raw data, using provided UID");
+        console.warn("[EmailService] Could not find UID in raw data, using validated UID");
       }
       
       // Create a modified version of the original ICS with only necessary changes
@@ -1141,6 +1165,9 @@ export class EmailService {
 
       // Fix any double colons in mailto: references
       modifiedIcs = modifiedIcs.replace(/mailto::([^\r\n]+)/g, 'mailto:$1');
+      
+      // CRITICAL: Always update UID to use the validated one from centralUIDService
+      modifiedIcs = modifiedIcs.replace(/UID:[^\r\n]+/i, `UID:${data.uid}`);
       
       // Update METHOD
       modifiedIcs = modifiedIcs.replace(/METHOD:[^\r\n]+/i, `METHOD:${method}`);
@@ -1167,7 +1194,7 @@ export class EmailService {
           // Add after UID if SEQUENCE doesn't exist
           modifiedIcs = modifiedIcs.replace(
             /UID:[^\r\n]+(\r?\n)/i,
-            `UID:${originalUid}$1SEQUENCE:${newSequence}$1STATUS:${status}$1`
+            `UID:${data.uid}$1SEQUENCE:${newSequence}$1STATUS:${status}$1`
           );
         }
       }
@@ -1179,7 +1206,7 @@ export class EmailService {
       if (!modifiedIcs.includes('SEQUENCE:')) {
         modifiedIcs = modifiedIcs.replace(
           /UID:[^\r\n]+(\r?\n)/i,
-          `UID:${originalUid}$1SEQUENCE:${newSequence}$1`
+          `UID:${data.uid}$1SEQUENCE:${newSequence}$1`
         );
       }
       
@@ -1194,45 +1221,16 @@ export class EmailService {
       // Fix commas in LOCATION (don't need to be escaped in quoted values)
       modifiedIcs = modifiedIcs.replace(/(LOCATION:[^"\r\n]*?)\\,([^"\r\n]*?(?:\r?\n|$))/g, '$1,$2');
       
-      return modifiedIcs;
+      // Apply proper line folding for RFC 5545 compliance
+      return this.applyIcsLineFolding(modifiedIcs);
     }
     
     // Build a new ICS file from scratch (only for new events)
     const method = data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST';
     const status = data.status || (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED');
     const sequence = data.sequence || 0;
-
-    // Ensure we have a valid UID, get from centralUIDService if undefined
-    if (!data.uid) {
-      // Import the centralUIDService for UID generation to maintain consistency
-      import('./central-uid-service').then(({ centralUIDService }) => {
-        // If we have an eventId, use it to get or create a consistent UID
-        if (data.eventId) {
-          centralUIDService.validateEventUID(data.eventId)
-            .then(validatedUid => {
-              console.log(`[EmailService] Retrieved UID ${validatedUid} for event ${data.eventId} from centralUIDService`);
-              data.uid = validatedUid;
-            })
-            .catch(err => {
-              console.error(`[EmailService] Error getting validated UID for event ${data.eventId}:`, err);
-              // Only generate a new UID as a last resort
-              data.uid = centralUIDService.generateUID();
-              console.warn(`[EmailService] Generated fallback UID: ${data.uid} - this should be stored if possible`);
-            });
-        } else {
-          // We don't have an eventId, generate a new UID
-          data.uid = centralUIDService.generateUID();
-          console.warn(`[EmailService] Generated new UID for event without ID: ${data.uid}`);
-        }
-      }).catch(err => {
-        console.error(`[EmailService] Error importing centralUIDService:`, err);
-        // Fallback only as a last resort
-        data.uid = `event-emergency-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@caldavclient.local`;
-        console.error(`[EmailService] EMERGENCY: Generated fallback UID without centralUIDService: ${data.uid}`);
-      });
-    }
     
-    console.log(`Generating new ICS with UID: ${data.uid}`);
+    console.log(`[EmailService] Generating new ICS with validated UID: ${data.uid}`);
     
     // Format dates according to iCalendar spec
     const startDate = formatICalDate(data.startDate);
