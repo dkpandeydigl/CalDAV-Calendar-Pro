@@ -12,6 +12,7 @@ import WebSocketDiagnosticPage from "@/pages/WebSocketDiagnosticPage";
 import WebSocketChatPage from "@/pages/WebSocketChatPage";
 import ResourceTestPage from "@/pages/ResourceTestPage";
 import CancellationTestPage from "@/pages/CancellationTestPage";
+import IcsFormatTestPage from "@/pages/IcsFormatTestPage";
 import { EmailSettingsPage } from "@/pages/EmailSettingsPage";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AuthProvider } from "@/hooks/use-auth";
@@ -47,6 +48,9 @@ function Router() {
       </Route>
       <Route path="/cancellation-test">
         {() => <ProtectedRoute component={CancellationTestPage} />}
+      </Route>
+      <Route path="/ics-format-test">
+        {() => <ProtectedRoute component={IcsFormatTestPage} />}
       </Route>
       <Route path="/">
         {() => <ProtectedRoute component={Calendar} />}
