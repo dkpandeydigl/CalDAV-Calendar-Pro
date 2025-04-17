@@ -34,6 +34,7 @@ import { registerEmailTestEndpoints } from "./email-test-endpoint";
 import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
 import { registerCancellationTestEndpoints } from "./cancellation-test-endpoints";
 import { registerRFC6638TestEndpoints } from "./rfc6638-test-endpoint";
+import { setupCancelICSTestEndpoints } from "./cancel-ics-test-endpoint";
 import { initializeWebSocketServer as initializeOldWebSocketServer } from "./websocket-handler";
 import { initializeWebSocketNotificationService, WebSocketNotificationService, WebSocketNotification } from "./websocket-notifications";
 // Import our new WebSocket server implementation
@@ -129,6 +130,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register RFC 6638 compliant cancellation test endpoints
   registerRFC6638TestEndpoints(app);
   console.log('[express] Registered RFC 6638 compliant cancellation test endpoints');
+  
+  // Register enhanced cancellation ICS test endpoints
+  setupCancelICSTestEndpoints(app);
+  console.log('[express] Registered enhanced cancellation ICS test endpoints');
   
   // WebSocket test endpoint
   app.post('/api/test-websocket', isAuthenticated, (req, res) => {
