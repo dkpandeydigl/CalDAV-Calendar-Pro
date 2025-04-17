@@ -33,9 +33,21 @@ import { notificationService } from "./memory-notification-service";
 import { registerEmailTestEndpoints } from "./email-test-endpoint";
 import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
 import { initializeWebSocketServer } from "./websocket-handler";
-import { initializeWebSocketNotificationService } from "./websocket-notifications";
+import { initializeWebSocketNotificationService, WebSocketNotificationService } from "./websocket-notifications";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 import { enhancedSyncService } from './enhanced-sync-service';
+
+// Initialize the WebSocket notification service for use throughout the app
+let websocketNotificationService: WebSocketNotificationService;
+
+// Helper function to broadcast messages to users
+function broadcastToUser(userId: number, message: any) {
+  if (websocketNotificationService) {
+    websocketNotificationService.sendToUser(userId, message);
+  } else {
+    console.warn('WebSocket notification service not initialized yet');
+  }
+}
 
 // Using directly imported syncService
 import type { SyncService as SyncServiceType } from "./sync-service";
@@ -5034,7 +5046,10 @@ END:VCALENDAR`;
       const notification = await notificationService.createNotification(testNotification);
       
       // Send the notification through WebSocket if available
-      await sendNotification(userId, notification);
+      await websocketNotificationService.sendToUser(userId, {
+        type: 'notification',
+        data: notification
+      });
       
       res.status(201).json(notification);
     } catch (err) {
