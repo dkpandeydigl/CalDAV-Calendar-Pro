@@ -55,118 +55,6 @@ export interface EventInvitationData {
 export class EmailService {
   private transporter: nodemailer.Transporter | null = null;
   private config: SmtpConfig | null = null;
-  
-  /**
-   * Process ICS data to fix common formatting issues for attachments
-   * - Fixes literal \r\n strings in ICS data
-   * - Handles ICS data that appears as a single line
-   * - Fixes corrupted SEQUENCE fields with mailto: appended
-   * 
-   * @param icsData The raw ICS data to process
-   * @returns Properly formatted ICS data
-   */
-  /**
-   * Format a date for use in a filename (YYYYMMDD format)
-   * @param date The date to format
-   * @returns Formatted date string in YYYYMMDD format
-   */
-  formatDateForFilename(date: Date | string | number): string {
-    try {
-      const d = new Date(date);
-      if (isNaN(d.getTime())) {
-        return new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      }
-      return d.toISOString().slice(0, 10).replace(/-/g, '');
-    } catch (e) {
-      console.error('Error formatting date for filename:', e);
-      return new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    }
-  }
-
-  /**
-   * Process ICS data to fix common formatting issues for attachments
-   * - Fixes literal \r\n strings in ICS data
-   * - Handles ICS data that appears as a single line
-   * - Fixes corrupted SEQUENCE fields with mailto: appended
-   * - Removes any surrounding quotes from the ICS data
-   * 
-   * @param icsData The raw ICS data to process
-   * @returns Properly formatted ICS data
-   */
-  processIcsForAttachment(icsData: string): string {
-    // Ensure data is a string
-    if (typeof icsData !== 'string') {
-      return '';
-    }
-    
-    let processedIcsData = icsData;
-    
-    // Remove any surrounding quotes
-    if (processedIcsData.startsWith('"') && processedIcsData.endsWith('"')) {
-      console.log('[EmailService] Removing surrounding quotes from ICS data');
-      processedIcsData = processedIcsData.substring(1, processedIcsData.length - 1);
-    }
-    
-    // Check if ICS data contains literal \r\n strings instead of actual line breaks
-    if (processedIcsData.includes('\\r\\n') || !processedIcsData.includes('\r\n')) {
-      console.log('[EmailService] Fixing ICS data with literal \\r\\n strings');
-      // Replace literal \r\n with actual line breaks
-      processedIcsData = processedIcsData
-        .replace(/\\r\\n/g, '\r\n')
-        // Also fix other escape sequences that might be literal
-        .replace(/\\n/g, '\n')
-        .replace(/\\t/g, '\t');
-    }
-    
-    // If the entire ICS is on a single line, try to split it properly
-    if (!processedIcsData.includes('\r\n') && processedIcsData.includes(':')) {
-      console.log('[EmailService] ICS appears to be on a single line, reformatting properly');
-      
-      // Split by common ICS properties
-      processedIcsData = processedIcsData
-        .replace(/BEGIN:/g, '\r\nBEGIN:')
-        .replace(/END:/g, '\r\nEND:')
-        .replace(/SUMMARY:/g, '\r\nSUMMARY:')
-        .replace(/DTSTART:/g, '\r\nDTSTART:')
-        .replace(/DTEND:/g, '\r\nDTEND:')
-        .replace(/LOCATION:/g, '\r\nLOCATION:')
-        .replace(/DESCRIPTION:/g, '\r\nDESCRIPTION:')
-        .replace(/UID:/g, '\r\nUID:')
-        .replace(/METHOD:/g, '\r\nMETHOD:')
-        .replace(/STATUS:/g, '\r\nSTATUS:')
-        .replace(/SEQUENCE:/g, '\r\nSEQUENCE:')
-        .replace(/ORGANIZER/g, '\r\nORGANIZER')
-        .replace(/ATTENDEE/g, '\r\nATTENDEE')
-        .replace(/DTSTAMP:/g, '\r\nDTSTAMP:')
-        .replace(/CREATED:/g, '\r\nCREATED:')
-        .replace(/LAST-MODIFIED:/g, '\r\nLAST-MODIFIED:')
-        .replace(/VERSION:/g, '\r\nVERSION:')
-        .replace(/PRODID:/g, '\r\nPRODID:')
-        .replace(/CALSCALE:/g, '\r\nCALSCALE:');
-        
-      // Clean up any double line breaks
-      processedIcsData = processedIcsData.replace(/\r\n\r\n/g, '\r\n');
-      
-      // Trim leading/trailing line breaks
-      processedIcsData = processedIcsData.trim();
-      
-      // Ensure it ends with a final line break
-      if (!processedIcsData.endsWith('\r\n')) {
-        processedIcsData += '\r\n';
-      }
-    }
-    
-    // Fix SEQUENCE field if it has mailto: incorrectly appended to it
-    const sequenceMatch = processedIcsData.match(/SEQUENCE:(\d+)([^\r\n]*)/i);
-    if (sequenceMatch && sequenceMatch[2] && sequenceMatch[2].includes('mailto:')) {
-      console.log(`[EmailService] Fixing corrupt SEQUENCE value: ${sequenceMatch[0]}`);
-      // Replace the entire corrupt sequence line with just the numeric part
-      const sequenceNumber = parseInt(sequenceMatch[1], 10);
-      processedIcsData = processedIcsData.replace(/SEQUENCE:[^\r\n]+/i, `SEQUENCE:${sequenceNumber}`);
-    }
-    
-    return processedIcsData;
-  }
 
   /**
    * Initialize the email service with SMTP configuration for a specific user
@@ -456,13 +344,10 @@ export class EmailService {
       }
       
       // Build the email with attachments
-      // Process ICS data for attachment to ensure proper formatting
-      const processedIcsData = this.processIcsForAttachment(icsData);
-      
       const attachments = [
         {
           filename: `${data.uid || `event-${Date.now()}`}.ics`,
-          content: processedIcsData,
+          content: icsData,
           contentType: 'text/calendar'
         }
       ];
@@ -510,26 +395,7 @@ export class EmailService {
   }
   
   /**
-   * RFC 6638 vs RFC 5545 Event Cancellation
-   * 
-   * RFC 5545 (iCalendar) defines the basic format for calendar objects, including events.
-   * RFC 6638 (CalDAV Scheduling Extensions) builds upon RFC 5545 and adds specific
-   * requirements for how event cancellations should be formatted in email messages:
-   * 
-   * Key differences:
-   * 1. METHOD:CANCEL must be included in the VCALENDAR component
-   * 2. STATUS:CANCELLED must be set on the VEVENT component
-   * 3. SEQUENCE must be incremented from the original event
-   * 4. The original UID must be preserved exactly
-   * 5. All timestamp fields (CREATED, DTSTAMP, LAST-MODIFIED) must be included
-   * 6. The ICS file must not have surrounding quotes that would break client parsing
-   * 
-   * Our implementation fully complies with RFC 6638 requirements to ensure maximum
-   * compatibility across email clients and calendar servers.
-   */
-  
-  /**
-   * Send an event cancellation email following RFC 6638 specifications
+   * Send an event cancellation email
    * @param userId The user ID to send the cancellation from
    * @param data The event invitation data with status set to 'CANCELLED'
    * @returns A result object with success/failure information
@@ -691,24 +557,10 @@ export class EmailService {
       }
       
       // Build the email with attachments
-      // Process ICS data for attachment to ensure proper formatting in email clients
-      const processedIcsData = this.processIcsForAttachment(icsData);
-      
-      // Generate a standardized filename for the cancellation ICS
-      // Use format: "cancelled-event-title-YYYYMMDD.ics" for better readability
-      const formattedDate = this.formatDateForFilename(data.startDate);
-      const sanitizedTitle = (data.title || 'event')
-        .replace(/[^a-zA-Z0-9]/g, '-')
-        .replace(/-{2,}/g, '-')
-        .toLowerCase()
-        .substring(0, 30); // Limit title length in filename
-      
-      const icsFilename = `cancelled-${sanitizedTitle}-${formattedDate}.ics`;
-      
       const attachments = [
         {
-          filename: icsFilename,
-          content: processedIcsData,
+          filename: `${data.uid || `event-${Date.now()}`}.ics`,
+          content: icsData,
           contentType: 'text/calendar'
         }
       ];
@@ -756,189 +608,98 @@ export class EmailService {
   }
   
   /**
-   * Transform an ICS file for cancellation using our enhanced RFC 6638 compliant generator
-   * 
-   * @param originalIcs Original ICS data
-   * @param data Event data for the cancellation
-   * @returns Properly formatted cancellation ICS
-   */
-  /**
-   * Transform an ICS file for cancellation using RFC 6638 compliant generator
-   * 
-   * This is a critical function that ensures all event cancellations follow
-   * the RFC 6638 specification which requires:
-   * 1. METHOD:CANCEL property in the VCALENDAR component
-   * 2. STATUS:CANCELLED property in the VEVENT component
-   * 3. Incremented SEQUENCE number
-   * 4. Preservation of the original event UID
-   * 
-   * @param originalIcs Original ICS data
-   * @param data Event data for the cancellation
-   * @returns Properly formatted cancellation ICS
+   * Transform an ICS file for cancellation
+   * @param originalIcs The original ICS data
+   * @param data Additional event data to include
+   * @returns The transformed ICS data with cancellation information
    */
   transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
-      console.log(`Using enhanced ICS cancellation generator for event with UID: ${data.uid}`);
-      
-      // First ensure we have a properly formatted ICS by handling common issues
-      let processedIcs = originalIcs;
-      
-      // Fix literal \r\n strings
-      if (processedIcs.includes('\\r\\n') || !processedIcs.includes('\r\n')) {
-        console.log('Fixing ICS data with literal \\r\\n strings');
-        processedIcs = processedIcs
-          .replace(/\\r\\n/g, '\r\n')
-          .replace(/\\n/g, '\n')
-          .replace(/\\t/g, '\t');
+      // CRITICAL: Extract the original UID exactly as is
+      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+      if (!uidMatch) {
+        console.error('No UID found in original ICS data, using validated UID from centralUIDService');
       }
       
-      // Fix single-line ICS files
-      if (!processedIcs.includes('\r\n') && processedIcs.includes(':')) {
-        console.log('ICS appears to be on a single line, reformatting properly');
-        processedIcs = processedIcs
-          .replace(/BEGIN:/g, '\r\nBEGIN:')
-          .replace(/END:/g, '\r\nEND:')
-          .replace(/SUMMARY:/g, '\r\nSUMMARY:')
-          .replace(/DTSTART:/g, '\r\nDTSTART:')
-          .replace(/DTEND:/g, '\r\nDTEND:')
-          .replace(/LOCATION:/g, '\r\nLOCATION:')
-          .replace(/DESCRIPTION:/g, '\r\nDESCRIPTION:')
-          .replace(/UID:/g, '\r\nUID:')
-          .replace(/METHOD:/g, '\r\nMETHOD:')
-          .replace(/STATUS:/g, '\r\nSTATUS:')
-          .replace(/SEQUENCE:/g, '\r\nSEQUENCE:')
-          .replace(/ORGANIZER/g, '\r\nORGANIZER')
-          .replace(/ATTENDEE/g, '\r\nATTENDEE')
-          .replace(/DTSTAMP:/g, '\r\nDTSTAMP:')
-          .replace(/CREATED:/g, '\r\nCREATED:')
-          .replace(/LAST-MODIFIED:/g, '\r\nLAST-MODIFIED:')
-          .replace(/VERSION:/g, '\r\nVERSION:')
-          .replace(/PRODID:/g, '\r\nPRODID:')
-          .replace(/CALSCALE:/g, '\r\nCALSCALE:')
-          .replace(/\r\n\r\n/g, '\r\n')
-          .trim();
+      // IMPORTANT: We now prioritize the validated UID from centralUIDService 
+      // This ensures consistent UIDs are used throughout the entire event lifecycle
+      const originalUid = data.uid || (uidMatch ? uidMatch[1].trim() : null);
+      
+      if (!originalUid) {
+        console.error('No valid UID found or provided for event cancellation');
+        // Note: This shouldn't happen as we now validate UIDs before calling this function
       }
       
-      // CRITICAL FIX: Check for RFC 6638 compliance in the original ICS
-      // If METHOD:CANCEL or STATUS:CANCELLED are missing, we must ensure they're 
-      // in the final output regardless of what happens next
-      const hasMethodCancel = /METHOD:CANCEL/i.test(processedIcs);
-      const hasStatusCancelled = /STATUS:CANCELLED/i.test(processedIcs);
-      
-      if (!hasMethodCancel) {
-        console.log("RFC 6638 compliance issue: METHOD:CANCEL missing from original ICS");
+      if (!originalUid) {
+        console.error('Could not determine UID for event cancellation, this will cause synchronization issues');
       }
       
-      if (!hasStatusCancelled) {
-        console.log("RFC 6638 compliance issue: STATUS:CANCELLED missing from original ICS");
+      // Parse the current sequence from the original ICS if available
+      const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
+      const currentSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
+      const newSequence = currentSequence + 1;
+      
+      // Parse the original ORGANIZER and organizer name if available
+      const organizerMatch = originalIcs.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
+      const organizerEmail = organizerMatch ? organizerMatch[1] : data.organizer.email;
+      
+      const organizerNameMatch = originalIcs.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
+      const organizerName = organizerNameMatch ? organizerNameMatch[1] : data.organizer.name;
+      
+      console.log(`Preserving original UID in cancellation: ${originalUid}`);
+      
+      // Create a modified version of the original ICS with only necessary changes
+      // This preserves all original formatting and attributes
+      let modifiedIcs = originalIcs
+        // Change METHOD to CANCEL
+        .replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL') 
+        // If METHOD doesn't exist, we'll add it later
+        // Change STATUS to CANCELLED
+        .replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED')
+        // Update SEQUENCE
+        .replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
+      
+      // Add METHOD if it doesn't exist (after VERSION line)
+      if (!modifiedIcs.includes('METHOD:')) {
+        modifiedIcs = modifiedIcs.replace(
+          /VERSION:[^\r\n]+(\r?\n)/i, 
+          `VERSION:2.0$1METHOD:CANCEL$1`
+        );
       }
       
-      // CRITICAL FIX: We need to be extremely careful with UID handling in cancellations
-      // First, we prioritize the UID that was validated by centralUIDService (data.uid)
-      // as that is the canonical UID for this event in our system
-      let finalUid = data.uid;
-      
-      // Extract UID from the original ICS as a fallback
-      const uidMatch = processedIcs.match(/UID:([^\r\n]+)/i);
-      const extractedUid = uidMatch ? uidMatch[1].trim() : null;
-      
-      // Log and track any UID inconsistencies we find
-      if (extractedUid && extractedUid !== finalUid) {
-        console.warn(`⚠️ UID mismatch detected in cancellation process!`);
-        console.warn(`Extracted from ICS: ${extractedUid}`);
-        console.warn(`Validated service UID: ${finalUid}`);
-        console.warn(`Using validated UID for consistency: ${finalUid}`);
-      } else if (extractedUid) {
-        console.log(`✓ UID consistency verified: ${finalUid}`);
-      }
-      
-      if (!finalUid) {
-        console.error('❌ CRITICAL ERROR: No valid UID found for event cancellation');
-        // If we somehow got here without a UID, this is a serious error
-        // But we'll continue with a generated UID as a last resort
-        finalUid = `emergency-cancel-${Date.now()}@caldavclient.local`;
-      }
-      
-      // Extract and use the original UID from the raw ICS data - this is critical for
-      // maintaining UID consistency throughout the event lifecycle
-      console.log(`Preserving original event UID for cancellation: ${finalUid}`);
-      
-      // Import our fixed enhanced ICS cancellation generator
-      const { generateCancellationIcs } = require('./enhanced-ics-cancellation-fixed');
-      
-      // Prepare event data for cancellation, ensuring we use the original event UID
-      const cancellationData = {
-        ...data,
-        uid: finalUid,
-        status: 'CANCELLED' // Always explicitly set status to CANCELLED
-      };
-      
-      // Generate the cancellation ICS using our enhanced generator
-      const cancellationIcs = generateCancellationIcs(processedIcs, cancellationData);
-      
-      // Verify that the generated ICS contains required RFC 6638 properties
-      const hasMethod = cancellationIcs.includes('METHOD:CANCEL');
-      const hasStatus = cancellationIcs.includes('STATUS:CANCELLED');
-      const hasOriginalUid = cancellationIcs.includes(`UID:${finalUid}`);
-      
-      if (!hasMethod || !hasStatus || !hasOriginalUid) {
-        console.error('Generated cancellation ICS is missing required properties:');
-        if (!hasMethod) console.error('- Missing METHOD:CANCEL');
-        if (!hasStatus) console.error('- Missing STATUS:CANCELLED');
-        if (!hasOriginalUid) console.error(`- UID mismatch: Expected ${finalUid}`);
-        
-        // CRITICAL FIX: If any RFC 6638 required properties are missing,
-        // we'll manually add them to ensure compliance
-        let fixedIcs = cancellationIcs;
-        
-        if (!hasMethod) {
-          // Add METHOD:CANCEL after VERSION if missing
-          fixedIcs = fixedIcs.replace(
-            /VERSION:[^\r\n]+(\r?\n)/i,
-            `VERSION:2.0$1METHOD:CANCEL$1`
+      // Add STATUS if it doesn't exist (after SEQUENCE or UID if SEQUENCE doesn't exist)
+      if (!modifiedIcs.includes('STATUS:')) {
+        if (modifiedIcs.includes('SEQUENCE:')) {
+          modifiedIcs = modifiedIcs.replace(
+            /SEQUENCE:[^\r\n]+(\r?\n)/i,
+            `SEQUENCE:${newSequence}$1STATUS:CANCELLED$1`
+          );
+        } else {
+          // Add after UID if SEQUENCE doesn't exist
+          modifiedIcs = modifiedIcs.replace(
+            /UID:[^\r\n]+(\r?\n)/i,
+            `UID:${originalUid}$1SEQUENCE:${newSequence}$1STATUS:CANCELLED$1`
           );
         }
-        
-        if (!hasStatus) {
-          // Add STATUS:CANCELLED after SEQUENCE if it exists
-          if (fixedIcs.includes('SEQUENCE:')) {
-            fixedIcs = fixedIcs.replace(
-              /SEQUENCE:[^\r\n]+(\r?\n)/i,
-              `SEQUENCE:${data.sequence || 1}$1STATUS:CANCELLED$1`
-            );
-          } else {
-            // Or add after UID otherwise
-            fixedIcs = fixedIcs.replace(
-              /UID:[^\r\n]+(\r?\n)/i,
-              `UID:${finalUid}$1STATUS:CANCELLED$1`
-            );
-          }
-        }
-        
-        console.log('Fixed missing RFC 6638 properties in cancellation ICS');
-        return fixedIcs;
       }
       
-      return cancellationIcs;
-      
+      return modifiedIcs;
     } catch (error) {
-      console.error('Error using enhanced ICS cancellation generator:', error);
+      console.error('Error transforming ICS for cancellation:', error);
       console.error('Original ICS:', originalIcs);
       
-      // Fall back to basic cancellation format if enhanced generator fails
-      // This is our last resort to ensure valid cancellation ICS
+      // As a last resort, generate a new ICS but ensure we use the exact same UID as the original
+      // First try to extract UID from original ICS data
       let uid = data.uid;
       try {
         const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
         if (uidMatch) {
           uid = uidMatch[1].trim();
-          console.log(`Fallback: Using original UID from ICS: ${uid}`);
         }
       } catch (e) {
-        console.warn('Error extracting UID from original ICS, using event data UID:', e);
+        console.error('Failed to extract UID from original ICS while generating fallback:', e);
       }
       
-      // Always ensure the status is set to CANCELLED
       return this.generateICSData({
         ...data,
         uid,
@@ -1272,12 +1033,7 @@ export class EmailService {
   
   /**
    * Generate ICS data for an event
-   * 
-   * This method ensures a consistent UID is used throughout the event lifecycle by:
-   * 1. Extracting and preserving the original UID from raw data if available
-   * 2. Using the centralized UID from the event data if no raw data is available
-   * 3. Ensuring METHOD and STATUS fields are set appropriately for the event type
-   * 4. Incrementing SEQUENCE values as required by RFC 6638
+   * This method ensures a consistent UID is used throughout the event lifecycle
    */
   public generateICSData(data: EventInvitationData): string {
     // If there's already raw data available, modify it directly instead of using formatter
@@ -1365,17 +1121,10 @@ export class EmailService {
       return modifiedIcs;
     }
     
-    // Build a new ICS file from scratch
-    // RFC 6638 COMPLIANCE CHECK: If this is a cancellation, ensure METHOD=CANCEL and STATUS=CANCELLED
-    const isCancellation = data.status === 'CANCELLED';
-    const method = isCancellation ? 'CANCEL' : 'REQUEST';
-    const status = isCancellation ? 'CANCELLED' : (data.status || 'CONFIRMED');
+    // Build a new ICS file from scratch (only for new events)
+    const method = data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST';
+    const status = data.status || (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED');
     const sequence = data.sequence || 0;
-    
-    // Log explicit information about cancellation status for debugging
-    if (isCancellation) {
-      console.log(`GENERATING CANCELLATION ICS: METHOD=${method}, STATUS=${status}, SEQUENCE=${sequence}, UID=${data.uid || 'pending'}`);
-    }
 
     // Ensure we have a valid UID, get from centralUIDService if undefined
     if (!data.uid) {

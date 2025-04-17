@@ -858,70 +858,22 @@ export function processScheduleStatus(icsData: string): string {
  * @param options Optional settings to apply (method, status, sequence)
  * @returns Properly formatted and sanitized ICS data
  */
-/**
- * Sanitize and format ICS data according to RFC 6638 compliance
- * 
- * RFC 6638 requires specific formatting for event cancellations:
- * 1. METHOD:CANCEL in the VCALENDAR component
- * 2. STATUS:CANCELLED in the VEVENT component 
- * 3. Consistent SEQUENCE numbering
- * 
- * This function ensures all requirements are met for cancellations.
- */
 export function sanitizeAndFormatICS(icsData: string, options: { method?: string, status?: string, sequence?: number } = {}): string {
   let result = icsData;
   
-  // Special handling for cancellations (RFC 6638 compliance)
-  const isCancellation = options.method === 'CANCEL' || options.status === 'CANCELLED';
-  
-  if (isCancellation) {
-    console.log('RFC 6638 COMPLIANCE: Ensuring METHOD:CANCEL and STATUS:CANCELLED for cancellation ICS');
-    
-    // Force correct values for cancellations
-    options.method = 'CANCEL';
-    options.status = 'CANCELLED';
-    
-    // Increment sequence if not explicitly provided
-    if (options.sequence === undefined) {
-      const sequenceMatch = result.match(/SEQUENCE:(\d+)/i);
-      options.sequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) + 1 : 1;
-    }
+  // Fix missing METHOD
+  if (options.method && !result.includes('METHOD:')) {
+    result = result.replace('PRODID:', `METHOD:${options.method}\r\nPRODID:`);
   }
   
-  // Fix missing or incorrect METHOD - most critical for cancellations
-  if (options.method) {
-    if (!result.includes('METHOD:')) {
-      // If no METHOD exists, add it after VERSION
-      if (result.includes('VERSION:')) {
-        result = result.replace(/(VERSION:[^\r\n]*(\r?\n))/i, `$1METHOD:${options.method}\r\n`);
-      } else {
-        // Fallback if VERSION not found
-        result = result.replace('BEGIN:VCALENDAR', `BEGIN:VCALENDAR\r\nMETHOD:${options.method}`);
-      }
+  // Fix missing STATUS - add after UID line similar to SEQUENCE
+  if (options.status && !result.includes('STATUS:')) {
+    const uidRegex = /(UID:.*(?:\r\n|\n|$))/;
+    if (uidRegex.test(result)) {
+      result = result.replace(uidRegex, `$1STATUS:${options.status}\r\n`);
     } else {
-      // Update existing METHOD
-      result = result.replace(/METHOD:[^\r\n]*/i, `METHOD:${options.method}`);
-    }
-  }
-  
-  // Fix missing or incorrect STATUS - critical for cancellations
-  if (options.status) {
-    if (!result.includes('STATUS:')) {
-      // If no STATUS exists, add it after UID or SEQUENCE if available
-      const uidRegex = /(UID:.*(?:\r\n|\n|$))/;
-      const sequenceRegex = /(SEQUENCE:.*(?:\r\n|\n|$))/;
-      
-      if (sequenceRegex.test(result)) {
-        result = result.replace(sequenceRegex, `$1STATUS:${options.status}\r\n`);
-      } else if (uidRegex.test(result)) {
-        result = result.replace(uidRegex, `$1STATUS:${options.status}\r\n`);
-      } else {
-        // Fallback if neither UID nor SEQUENCE found
-        result = result.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nSTATUS:${options.status}`);
-      }
-    } else {
-      // Update existing STATUS
-      result = result.replace(/STATUS:[^\r\n]*/i, `STATUS:${options.status}`);
+      // Fallback if UID line not found
+      result = result.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nSTATUS:${options.status}`);
     }
   }
   

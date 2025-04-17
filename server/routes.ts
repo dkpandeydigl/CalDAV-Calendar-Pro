@@ -32,16 +32,10 @@ import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./memory-notification-service";
 import { registerEmailTestEndpoints } from "./email-test-endpoint";
 import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
-import { registerCancellationTestEndpoints } from "./cancellation-test-endpoints";
-import { registerRFC6638TestEndpoints } from "./rfc6638-test-endpoint";
-import { setupCancelICSTestEndpoints } from "./cancel-ics-test-endpoint";
-import { initializeWebSocketServer as initializeOldWebSocketServer } from "./websocket-handler";
+import { initializeWebSocketServer } from "./websocket-handler";
 import { initializeWebSocketNotificationService, WebSocketNotificationService, WebSocketNotification } from "./websocket-notifications";
-// Import our new WebSocket server implementation
-import { initializeWebSocketServer, broadcastMessage, sendToUser as wsSendToUser } from "./websocket-server";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 import { enhancedSyncService } from './enhanced-sync-service';
-import { testIcsFormatting } from './ics-formatter-test';
 
 // Initialize the WebSocket notification service for use throughout the app
 let websocketNotificationService: WebSocketNotificationService;
@@ -100,10 +94,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create the HTTP server
   const httpServer = createServer(app);
   
-  // Initialize legacy WebSocket server for notification service
-  initializeOldWebSocketServer(httpServer);
-  
-  // Initialize our new dedicated WebSocket server on the /ws path
+  // Initialize WebSocket server for real-time notifications
+  // This internally initializes the WebSocket notification service
   initializeWebSocketServer(httpServer);
   
   // Initialize the WebSocket notification service for use with the broadcast function
@@ -121,62 +113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register enhanced email test endpoints with RFC 5545 compliance
   registerEnhancedEmailTestEndpoints(app);
-  console.log('[express] Registered enhanced RFC 5545 compliant email test endpoints');
-  
-  // Register cancellation test endpoints for event management
-  registerCancellationTestEndpoints(app);
-  console.log('[express] Registered cancellation test endpoints for event management');
-  
-  // Register RFC 6638 compliant cancellation test endpoints
-  registerRFC6638TestEndpoints(app);
-  console.log('[express] Registered RFC 6638 compliant cancellation test endpoints');
-  
-  // Register enhanced cancellation ICS test endpoints
-  setupCancelICSTestEndpoints(app);
-  console.log('[express] Registered enhanced cancellation ICS test endpoints');
-  
-  // WebSocket test endpoint
-  app.post('/api/test-websocket', isAuthenticated, (req, res) => {
-    try {
-      const { userId, message, type = 'test', action = 'notification' } = req.body;
-      
-      if (!message) {
-        return res.status(400).json({ error: 'Message is required' });
-      }
-      
-      // Create a properly formatted message
-      const wsMessage = {
-        type,
-        action,
-        timestamp: Date.now(),
-        data: {
-          message,
-          sender: req.user?.username || 'System'
-        }
-      };
-      
-      if (userId) {
-        // Send to specific user
-        wsSendToUser(Number(userId), wsMessage);
-        return res.json({ 
-          success: true, 
-          details: `Message sent to user ${userId}`,
-          message: wsMessage
-        });
-      } else {
-        // Broadcast to all connected clients
-        broadcastMessage(wsMessage);
-        return res.json({ 
-          success: true, 
-          details: 'Message broadcast to all connected clients',
-          message: wsMessage
-        });
-      }
-    } catch (error) {
-      console.error('Error in WebSocket test endpoint:', error);
-      return res.status(500).json({ error: String(error) });
-    }
-  });
+  console.log('Registered enhanced RFC 5545 compliant email test endpoints');
   
   // Test endpoint for verifying cancellation ICS transformation (no auth required)
   app.post('/api/test-cancellation-ics', async (req, res) => {
@@ -308,167 +245,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // ICS Formatting Test endpoint
-  app.post('/api/test-ics-formatting', isAuthenticated, async (req, res) => {
-    try {
-      const { eventId, icsData, sendRealEmails = false } = req.body;
-      let icsDataToTest = icsData;
-      
-      // If eventId is provided, get the event's raw ICS data
-      if (eventId && !icsData) {
-        const event = await storage.getEvent(eventId);
-        if (!event) {
-          return res.status(404).json({ error: 'Event not found' });
-        }
-        
-        if (!event.rawData) {
-          return res.status(400).json({ error: 'Event has no raw ICS data' });
-        }
-        
-        icsDataToTest = String(event.rawData);
-        console.log(`Testing ICS formatting for event ID ${eventId}`);
-      } else if (!icsData) {
-        return res.status(400).json({ error: 'Either eventId or icsData must be provided' });
-      }
-      
-      // Perform the test using imported testIcsFormatting function
-      const result = testIcsFormatting(icsDataToTest);
-      
-      // If sendRealEmails is true, also send a test email with the formatted ICS
-      if (sendRealEmails) {
-        // Initialize email service
-        await emailService.initialize(req.user!.id);
-        
-        // Get user email for testing
-        const user = await storage.getUser(req.user!.id);
-        if (!user || !user.email) {
-          return res.status(400).json({ 
-            error: 'User has no email address for test email',
-            testResult: result
-          });
-        }
-        
-        // Create test event data
-        const testEventData = {
-          eventId: eventId || 0,
-          uid: `test-${Date.now()}`,
-          title: 'ICS Format Test',
-          description: 'Test email for ICS formatting',
-          startDate: new Date(),
-          endDate: new Date(Date.now() + 3600000), // 1 hour later
-          organizer: {
-            email: user.email,
-            name: user.fullName || user.username
-          },
-          attendees: [
-            {
-              email: user.email,
-              name: user.fullName || user.username
-            }
-          ],
-          icsData: result.processed, // Use the processed ICS data
-        };
-        
-        // Send test email
-        const emailResult = await emailService.sendEventInvitation(req.user!.id, testEventData);
-        
-        // Return both test result and email result
-        return res.json({
-          testResult: result,
-          emailResult
-        });
-      }
-      
-      // Return just the test result if not sending emails
-      return res.json(result);
-    } catch (error) {
-      console.error('Error testing ICS formatting:', error);
-      return res.status(500).json({ error: String(error) });
-    }
-  });
-  
-  // Test endpoint for double organizer cancellation fix 
-  app.post('/api/test-organizer-fix', isAuthenticated, async (req, res) => {
-    try {
-      const { icsData } = req.body;
-      
-      if (!icsData) {
-        return res.status(400).json({ error: 'Missing ICS data' });
-      }
-      
-      // Extract UID and organizer from the original ICS
-      const uidMatch = icsData.match(/UID:([^\r\n]+)/i);
-      const uid = uidMatch ? uidMatch[1].trim() : `test-${Date.now()}`;
-      
-      const organizerMatch = icsData.match(/ORGANIZER[^:]*:([^\r\n]+)/i);
-      const organizerData = organizerMatch ? organizerMatch[1].trim() : '';
-      
-      // Extract organizer email and name
-      let organizerEmail = '';
-      let organizerName = '';
-      
-      if (organizerData.includes('mailto:')) {
-        const emailMatch = organizerData.match(/mailto:([^\s;,]+)/);
-        organizerEmail = emailMatch ? emailMatch[1] : 'test@example.com';
-      }
-      
-      const nameMatch = icsData.match(/ORGANIZER;CN=([^:;]+)/i);
-      organizerName = nameMatch ? nameMatch[1].trim() : '';
-      
-      console.log(`Original ORGANIZER parsed: ${organizerName} <${organizerEmail}>`);
-      
-      // Build test event data
-      const eventData = {
-        eventId: 0, // Not a real event, just for testing
-        uid,
-        title: "Test Event for Organizer Fix",
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 3600000),
-        organizer: {
-          email: organizerEmail,
-          name: organizerName
-        },
-        attendees: [],
-        rawData: icsData,
-        sequence: 1
-      };
-      
-      // Test both implementations to compare
-      const cancelledIcs = emailService.transformIcsForCancellation(icsData, eventData);
-      
-      // Import our newly updated formatter
-      const { transformIcsForCancellation } = await import('../shared/ics-formatter-fixed');
-      const fixedCancelledIcs = transformIcsForCancellation(icsData, eventData);
-      
-      // Extract the ORGANIZER line from both results
-      const cancelledOrganizerMatch = cancelledIcs.match(/ORGANIZER[^:\r\n]*:[^\r\n]*/);
-      const fixedCancelledOrganizerMatch = fixedCancelledIcs.match(/ORGANIZER[^:\r\n]*:[^\r\n]*/);
-      
-      const cancelledOrganizer = cancelledOrganizerMatch ? cancelledOrganizerMatch[0] : 'Not found';
-      const fixedCancelledOrganizer = fixedCancelledOrganizerMatch ? fixedCancelledOrganizerMatch[0] : 'Not found';
-      
-      return res.json({
-        success: true,
-        originalIcs: icsData,
-        legacyImplementation: {
-          ics: cancelledIcs,
-          organizer: cancelledOrganizer,
-          method: cancelledIcs.match(/METHOD:([^\r\n]+)/i)?.[1] || 'none',
-          status: cancelledIcs.match(/STATUS:([^\r\n]+)/i)?.[1] || 'none'
-        },
-        fixedImplementation: {
-          ics: fixedCancelledIcs,
-          organizer: fixedCancelledOrganizer,
-          method: fixedCancelledIcs.match(/METHOD:([^\r\n]+)/i)?.[1] || 'none',
-          status: fixedCancelledIcs.match(/STATUS:([^\r\n]+)/i)?.[1] || 'none'
-        }
-      });
-    } catch (error) {
-      console.error('Error testing organizer fix:', error);
-      return res.status(500).json({ error: String(error) });
-    }
-  });
-
   // Test endpoint for cancellation emails with resource preservation
   app.post('/api/test-cancellation-email', isAuthenticated, async (req, res) => {
     try {
