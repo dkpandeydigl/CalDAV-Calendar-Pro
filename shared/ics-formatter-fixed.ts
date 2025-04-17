@@ -261,11 +261,39 @@ export function sanitizeAndFormatICS(
       
       // Handle ORGANIZER property
       if (line.startsWith('ORGANIZER')) {
+        // Check if ORGANIZER is defined in options - if so, use that instead
+        if (options.organizer) {
+          let organizerLine = options.organizer.name 
+            ? `ORGANIZER;CN=${options.organizer.name}:mailto:${options.organizer.email}`
+            : `ORGANIZER:mailto:${options.organizer.email}`;
+          
+          // Properly fold long lines
+          if (organizerLine.length > 75) {
+            outputLines.push(foldLine(organizerLine));
+          } else {
+            outputLines.push(organizerLine);
+          }
+          continue;
+        }
+        
+        // Fix merged mailto: values (common error in some clients)
+        if (line.includes('mailto:') && line.split('mailto:').length > 2) {
+          // Extract only the first email after mailto:
+          const parts = line.split('mailto:');
+          const organizerParams = parts[0];
+          const firstEmail = parts[1].split(/[,;\s]/)[0]; // Get first email up to delimiter
+          
+          line = `${organizerParams}mailto:${firstEmail}`;
+        }
+        
         // Ensure it has mailto:
         if (!line.includes('mailto:') && line.includes(':')) {
           const parts = line.split(':');
           line = `${parts[0]}:mailto:${parts[1]}`;
         }
+        
+        // Remove any trailing colons (a common error)
+        line = line.replace(/:{2,}$/g, ':');
         
         // Properly fold long lines
         if (line.length > 75) {
@@ -358,10 +386,47 @@ function escapeIcsSpecialChars(text: string): string {
  * @returns A properly formatted cancellation ICS
  */
 export function transformIcsForCancellation(originalIcs: string, eventData: any): string {
+  // Extract the original organizer if present in the event data
+  let organizer = undefined;
+  if (eventData.organizer && eventData.organizer.email) {
+    organizer = {
+      email: eventData.organizer.email,
+      name: eventData.organizer.name || undefined
+    };
+  } else {
+    // Try to extract organizer from original ICS
+    const organizerMatch = originalIcs.match(/ORGANIZER(?:;[^:]*)?:mailto:([^\r\n]+)/i);
+    if (organizerMatch && organizerMatch[1]) {
+      const email = organizerMatch[1].trim();
+      
+      // Try to extract the name if present
+      const nameMatch = originalIcs.match(/ORGANIZER;CN=([^:;]+)/i);
+      const name = nameMatch ? nameMatch[1].trim() : undefined;
+      
+      organizer = { email, name };
+    }
+  }
+  
+  // Extract UID from original ICS or use the one from eventData
+  let uid = eventData.uid;
+  if (!uid) {
+    const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+    if (uidMatch && uidMatch[1]) {
+      uid = uidMatch[1].trim();
+    }
+  }
+  
+  console.log(`[ICS Formatter] Transforming ICS for cancellation with UID: ${uid}`);
+  if (organizer) {
+    console.log(`[ICS Formatter] Using organizer: ${organizer.name || ''} <${organizer.email}>`);
+  }
+  
   return sanitizeAndFormatICS(originalIcs, {
     method: 'CANCEL',
     status: 'CANCELLED',
     sequence: (parseInt(eventData.sequence || '0') + 1),
-    preserveAttendees: true // Ensure all attendees are notified
+    preserveAttendees: true, // Ensure all attendees are notified
+    organizer: organizer, // Include organizer if available
+    uid: uid // Ensure consistent UID
   });
 }

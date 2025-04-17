@@ -245,6 +245,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Test endpoint for double organizer cancellation fix 
+  app.post('/api/test-organizer-fix', isAuthenticated, async (req, res) => {
+    try {
+      const { icsData } = req.body;
+      
+      if (!icsData) {
+        return res.status(400).json({ error: 'Missing ICS data' });
+      }
+      
+      // Extract UID and organizer from the original ICS
+      const uidMatch = icsData.match(/UID:([^\r\n]+)/i);
+      const uid = uidMatch ? uidMatch[1].trim() : `test-${Date.now()}`;
+      
+      const organizerMatch = icsData.match(/ORGANIZER[^:]*:([^\r\n]+)/i);
+      const organizerData = organizerMatch ? organizerMatch[1].trim() : '';
+      
+      // Extract organizer email and name
+      let organizerEmail = '';
+      let organizerName = '';
+      
+      if (organizerData.includes('mailto:')) {
+        const emailMatch = organizerData.match(/mailto:([^\s;,]+)/);
+        organizerEmail = emailMatch ? emailMatch[1] : 'test@example.com';
+      }
+      
+      const nameMatch = icsData.match(/ORGANIZER;CN=([^:;]+)/i);
+      organizerName = nameMatch ? nameMatch[1].trim() : '';
+      
+      console.log(`Original ORGANIZER parsed: ${organizerName} <${organizerEmail}>`);
+      
+      // Build test event data
+      const eventData = {
+        uid,
+        title: "Test Event for Organizer Fix",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 3600000),
+        organizer: {
+          email: organizerEmail,
+          name: organizerName
+        },
+        attendees: [],
+        rawData: icsData,
+        sequence: 1
+      };
+      
+      // Test both implementations to compare
+      const cancelledIcs = emailService.transformIcsForCancellation(icsData, eventData);
+      
+      // Import our newly updated formatter
+      const { transformIcsForCancellation } = await import('../shared/ics-formatter-fixed');
+      const fixedCancelledIcs = transformIcsForCancellation(icsData, eventData);
+      
+      // Extract the ORGANIZER line from both results
+      const cancelledOrganizerMatch = cancelledIcs.match(/ORGANIZER[^:\r\n]*:[^\r\n]*/);
+      const fixedCancelledOrganizerMatch = fixedCancelledIcs.match(/ORGANIZER[^:\r\n]*:[^\r\n]*/);
+      
+      const cancelledOrganizer = cancelledOrganizerMatch ? cancelledOrganizerMatch[0] : 'Not found';
+      const fixedCancelledOrganizer = fixedCancelledOrganizerMatch ? fixedCancelledOrganizerMatch[0] : 'Not found';
+      
+      return res.json({
+        success: true,
+        originalIcs: icsData,
+        legacyImplementation: {
+          ics: cancelledIcs,
+          organizer: cancelledOrganizer,
+          method: cancelledIcs.match(/METHOD:([^\r\n]+)/i)?.[1] || 'none',
+          status: cancelledIcs.match(/STATUS:([^\r\n]+)/i)?.[1] || 'none'
+        },
+        fixedImplementation: {
+          ics: fixedCancelledIcs,
+          organizer: fixedCancelledOrganizer,
+          method: fixedCancelledIcs.match(/METHOD:([^\r\n]+)/i)?.[1] || 'none',
+          status: fixedCancelledIcs.match(/STATUS:([^\r\n]+)/i)?.[1] || 'none'
+        }
+      });
+    } catch (error) {
+      console.error('Error testing organizer fix:', error);
+      return res.status(500).json({ error: String(error) });
+    }
+  });
+
   // Test endpoint for cancellation emails with resource preservation
   app.post('/api/test-cancellation-email', isAuthenticated, async (req, res) => {
     try {
