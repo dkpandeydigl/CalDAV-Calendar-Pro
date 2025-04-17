@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
+  Ban,
   Calendar, 
   CalendarDays, 
   Clock, 
@@ -102,7 +103,7 @@ interface RecurrenceConfig {
 const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDate, onClose }) => {
   const { calendars } = useCalendars();
   const { sharedCalendars } = useSharedCalendars();
-  const { createEvent, updateEvent, deleteEvent } = useCalendarEvents();
+  const { createEvent, updateEvent, deleteEvent, cancelEvent } = useCalendarEvents();
   const { selectedTimezone } = useCalendarContext();
   const { toast } = useToast();
   
@@ -2478,21 +2479,40 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           </Tabs>
           
           <DialogFooter className="border-t p-4 gap-y-3">
-            <div className="flex-1 flex justify-start">
+            <div className="flex-1 flex justify-start gap-2">
               {event && (
-                <Button 
-                  variant="destructive" 
-                  onClick={handleDelete}
-                  disabled={isSubmitting || isDeleting || isEmailSending}
-                  type="button"
-                  className="flex items-center gap-2 shadow-sm transition-all hover:shadow-md hover:bg-destructive/90"
-                >
-                  {isDeleting ? 
-                    <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
-                    <Trash2 className="h-4 w-4 mr-1" />
-                  }
-                  {isDeleting ? 'Deleting...' : 'Delete Event'}
-                </Button>
+                <>
+                  <Button 
+                    variant="destructive" 
+                    onClick={handleDelete}
+                    disabled={isSubmitting || isDeleting || isEmailSending || isCancelling}
+                    type="button"
+                    className="flex items-center gap-2 shadow-sm transition-all hover:shadow-md hover:bg-destructive/90"
+                  >
+                    {isDeleting ? 
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                      <Trash2 className="h-4 w-4 mr-1" />
+                    }
+                    {isDeleting ? 'Deleting...' : 'Delete Event'}
+                  </Button>
+                  
+                  {/* Only show Cancel Event button for existing events with attendees */}
+                  {attendees.length > 0 && (
+                    <Button 
+                      variant="secondary" 
+                      onClick={handleCancelEvent}
+                      disabled={isSubmitting || isDeleting || isEmailSending || isCancelling}
+                      type="button"
+                      className="flex items-center gap-2 shadow-sm transition-all hover:shadow-md bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300"
+                    >
+                      {isCancelling ? 
+                        <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                        <Ban className="h-4 w-4 mr-1" />
+                      }
+                      {isCancelling ? 'Cancelling...' : 'Cancel Event'}
+                    </Button>
+                  )}
+                </>
               )}
             </div>
             <div className="flex gap-3">
