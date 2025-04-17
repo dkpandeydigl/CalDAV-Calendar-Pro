@@ -55,6 +55,84 @@ export interface EventInvitationData {
 export class EmailService {
   private transporter: nodemailer.Transporter | null = null;
   private config: SmtpConfig | null = null;
+  
+  /**
+   * Process ICS data to fix common formatting issues for attachments
+   * - Fixes literal \r\n strings in ICS data
+   * - Handles ICS data that appears as a single line
+   * - Fixes corrupted SEQUENCE fields with mailto: appended
+   * 
+   * @param icsData The raw ICS data to process
+   * @returns Properly formatted ICS data
+   */
+  processIcsForAttachment(icsData: string): string {
+    // Ensure data is a string
+    if (typeof icsData !== 'string') {
+      return '';
+    }
+    
+    let processedIcsData = icsData;
+    
+    // Check if ICS data contains literal \r\n strings instead of actual line breaks
+    if (processedIcsData.includes('\\r\\n') || !processedIcsData.includes('\r\n')) {
+      console.log('[EmailService] Fixing ICS data with literal \\r\\n strings');
+      // Replace literal \r\n with actual line breaks
+      processedIcsData = processedIcsData
+        .replace(/\\r\\n/g, '\r\n')
+        // Also fix other escape sequences that might be literal
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t');
+    }
+    
+    // If the entire ICS is on a single line, try to split it properly
+    if (!processedIcsData.includes('\r\n') && processedIcsData.includes(':')) {
+      console.log('[EmailService] ICS appears to be on a single line, reformatting properly');
+      
+      // Split by common ICS properties
+      processedIcsData = processedIcsData
+        .replace(/BEGIN:/g, '\r\nBEGIN:')
+        .replace(/END:/g, '\r\nEND:')
+        .replace(/SUMMARY:/g, '\r\nSUMMARY:')
+        .replace(/DTSTART:/g, '\r\nDTSTART:')
+        .replace(/DTEND:/g, '\r\nDTEND:')
+        .replace(/LOCATION:/g, '\r\nLOCATION:')
+        .replace(/DESCRIPTION:/g, '\r\nDESCRIPTION:')
+        .replace(/UID:/g, '\r\nUID:')
+        .replace(/METHOD:/g, '\r\nMETHOD:')
+        .replace(/STATUS:/g, '\r\nSTATUS:')
+        .replace(/SEQUENCE:/g, '\r\nSEQUENCE:')
+        .replace(/ORGANIZER/g, '\r\nORGANIZER')
+        .replace(/ATTENDEE/g, '\r\nATTENDEE')
+        .replace(/DTSTAMP:/g, '\r\nDTSTAMP:')
+        .replace(/CREATED:/g, '\r\nCREATED:')
+        .replace(/LAST-MODIFIED:/g, '\r\nLAST-MODIFIED:')
+        .replace(/VERSION:/g, '\r\nVERSION:')
+        .replace(/PRODID:/g, '\r\nPRODID:')
+        .replace(/CALSCALE:/g, '\r\nCALSCALE:');
+        
+      // Clean up any double line breaks
+      processedIcsData = processedIcsData.replace(/\r\n\r\n/g, '\r\n');
+      
+      // Trim leading/trailing line breaks
+      processedIcsData = processedIcsData.trim();
+      
+      // Ensure it ends with a final line break
+      if (!processedIcsData.endsWith('\r\n')) {
+        processedIcsData += '\r\n';
+      }
+    }
+    
+    // Fix SEQUENCE field if it has mailto: incorrectly appended to it
+    const sequenceMatch = processedIcsData.match(/SEQUENCE:(\d+)([^\r\n]*)/i);
+    if (sequenceMatch && sequenceMatch[2] && sequenceMatch[2].includes('mailto:')) {
+      console.log(`[EmailService] Fixing corrupt SEQUENCE value: ${sequenceMatch[0]}`);
+      // Replace the entire corrupt sequence line with just the numeric part
+      const sequenceNumber = parseInt(sequenceMatch[1], 10);
+      processedIcsData = processedIcsData.replace(/SEQUENCE:[^\r\n]+/i, `SEQUENCE:${sequenceNumber}`);
+    }
+    
+    return processedIcsData;
+  }
 
   /**
    * Initialize the email service with SMTP configuration for a specific user
