@@ -213,10 +213,27 @@ export class EmailService {
         };
       }
       
+      // CRITICAL: Ensure we have a valid UID from centralUIDService before proceeding
+      // This is essential for maintaining UID consistency across the entire application
+      await this.ensureValidUID(data);
+      console.log(`[EmailService] Using validated UID ${data.uid} for event ${data.eventId || 'without ID'}`);
+      
       // Get the event ICS data
       let icsData = data.icsData;
       if (!icsData) {
+        // Now generateICSData will use the validated UID
         icsData = this.generateICSData(data);
+      } else {
+        // If we already have ICS data, validate the UID in it matches our validated UID
+        const extractedUid = icsData.match(/UID:([^\r\n]+)/i)?.[1]?.trim();
+        
+        if (extractedUid && extractedUid !== data.uid) {
+          console.warn(`[EmailService] UID mismatch in ICS data: ${extractedUid} vs validated ${data.uid}`);
+          console.warn('[EmailService] Ensuring consistency by using validated UID from centralUIDService');
+          
+          // Replace the UID in the ICS data
+          icsData = icsData.replace(/UID:[^\r\n]+/i, `UID:${data.uid}`);
+        }
       }
       
       // Get user info for sending the email
@@ -394,6 +411,11 @@ export class EmailService {
         };
       }
       
+      // CRITICAL: Ensure we have a valid UID from centralUIDService before proceeding
+      // This is essential for maintaining UID consistency across the entire application
+      await this.ensureValidUID(data);
+      console.log(`[EmailService] Using validated UID ${data.uid} for cancelling event ${data.eventId || 'without ID'}`);
+      
       // Update status to CANCELLED if not already set
       const cancellationData = { 
         ...data, 
@@ -406,6 +428,17 @@ export class EmailService {
         // If we have raw data, transform it for cancellation
         if (data.rawData) {
           icsData = this.transformIcsForCancellation(data.rawData, cancellationData);
+          
+          // Ensure the transformed ICS uses our validated UID
+          const extractedUid = icsData.match(/UID:([^\r\n]+)/i)?.[1]?.trim();
+          
+          if (extractedUid && extractedUid !== data.uid) {
+            console.warn(`[EmailService] UID mismatch in transformed cancellation ICS: ${extractedUid} vs validated ${data.uid}`);
+            console.warn('[EmailService] Ensuring consistency by using validated UID from centralUIDService');
+            
+            // Replace the UID in the ICS data
+            icsData = icsData.replace(/UID:[^\r\n]+/i, `UID:${data.uid}`);
+          }
         } else {
           // Generate new ICS data with cancelled status
           icsData = this.generateICSData(cancellationData);
@@ -582,13 +615,20 @@ export class EmailService {
    */
   transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
-      // CRITICAL: Extract the original UID exactly as is and preserve it
+      // CRITICAL: Extract the original UID exactly as is
       const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
       if (!uidMatch) {
-        console.error('No UID found in original ICS data, using provided UID or generating new one');
+        console.error('No UID found in original ICS data, using validated UID from centralUIDService');
       }
-      // Always prioritize the UID from the original ICS over any other source
-      const originalUid = uidMatch ? uidMatch[1].trim() : data.uid;
+      
+      // IMPORTANT: We now prioritize the validated UID from centralUIDService 
+      // This ensures consistent UIDs are used throughout the entire event lifecycle
+      const originalUid = data.uid || (uidMatch ? uidMatch[1].trim() : null);
+      
+      if (!originalUid) {
+        console.error('No valid UID found or provided for event cancellation');
+        // Note: This shouldn't happen as we now validate UIDs before calling this function
+      }
       
       if (!originalUid) {
         console.error('Could not determine UID for event cancellation, this will cause synchronization issues');
@@ -669,12 +709,22 @@ export class EmailService {
     }
   }
   
-  public generateEmailPreview(data: EventInvitationData): string {
+  public async generateEmailPreview(data: EventInvitationData): Promise<string> {
     // Generate a simple HTML preview of the email
     try {
       // Validate that we have the required data
       if (!data) {
         throw new Error('No event data provided');
+      }
+      
+      // CRITICAL: Ensure we have a valid UID from centralUIDService before proceeding
+      // This ensures preview UIDs match the ones that will be used in actual emails
+      try {
+        await this.ensureValidUID(data);
+        console.log(`[EmailPreview] Using validated UID ${data.uid} for email preview`);
+      } catch (uidError) {
+        console.warn('[EmailPreview] Could not validate UID for preview:', uidError);
+        // Preview can continue with potentially inconsistent UID
       }
 
       // Ensure we have a valid organizer structure
