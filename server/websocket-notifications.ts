@@ -11,8 +11,8 @@ import { logger } from './logger';
 
 // Import any notification types from shared files or define them here
 export interface WebSocketNotification {
-  type: 'event' | 'calendar' | 'system' | 'resource' | 'attendee' | 'email';
-  action: 'created' | 'updated' | 'deleted' | 'status-change' | 'error' | 'info';
+  type: 'event' | 'calendar' | 'system' | 'resource' | 'attendee' | 'email' | 'uid';
+  action: 'created' | 'updated' | 'deleted' | 'status-change' | 'error' | 'info' | 'add' | 'update' | 'delete';
   timestamp: number;
   data: any;
   sourceUserId?: number | null; // The user who triggered the notification
@@ -217,4 +217,37 @@ export function initializeWebSocketNotificationService(wss: WebSocketServer): We
   const service = WebSocketNotificationService.getInstance();
   service.initialize(wss);
   return service;
+}
+
+/**
+ * Broadcast a UID change notification to all connected clients
+ * This static method will be called from the centralUIDService
+ * 
+ * @param eventId The ID of the event
+ * @param uid The UID associated with the event
+ * @param operation The operation performed (add, update, delete)
+ */
+export function broadcastUIDChange(eventId: number, uid: string, operation: 'add' | 'update' | 'delete'): void {
+  try {
+    const service = getWebSocketNotificationService();
+    
+    // Create a notification about the UID change
+    const notification: WebSocketNotification = {
+      type: 'uid',
+      action: operation,
+      timestamp: Date.now(),
+      data: {
+        eventId,
+        uid,
+        message: `Event UID ${operation}d: ${uid}`
+      }
+    };
+    
+    // Broadcast to all users
+    service.broadcastToAll(notification);
+    
+    logger.info(`[WebSocket] UID change notification broadcast: ${operation} for event ${eventId} with UID ${uid}`);
+  } catch (error) {
+    logger.error(`[WebSocket] Error broadcasting UID change: ${error}`);
+  }
 }

@@ -9,8 +9,8 @@
  * Interface for WebSocket notifications
  */
 export interface WebSocketNotification {
-  type: 'event' | 'calendar' | 'system' | 'resource' | 'attendee' | 'email';
-  action: 'created' | 'updated' | 'deleted' | 'status-change' | 'error' | 'info' | 'uid-sync';
+  type: 'event' | 'calendar' | 'system' | 'resource' | 'attendee' | 'email' | 'uid';
+  action: 'created' | 'updated' | 'deleted' | 'status-change' | 'error' | 'info' | 'uid-sync' | 'add' | 'update' | 'delete';
   timestamp: number;
   data: any;
   sourceUserId?: number | null; // The user who triggered the notification
@@ -65,6 +65,7 @@ export function getNotificationTypeName(type: WebSocketNotification['type']): st
     case 'resource': return 'Resource';
     case 'attendee': return 'Attendee';
     case 'email': return 'Email';
+    case 'uid': return 'Event UID';
     default: return 'Notification';
   }
 }
@@ -84,6 +85,9 @@ export function getNotificationActionName(action: WebSocketNotification['action'
     case 'error': return 'Error';
     case 'info': return 'Information';
     case 'uid-sync': return 'UID Synchronized';
+    case 'add': return 'Added';
+    case 'update': return 'Updated';
+    case 'delete': return 'Deleted';
     default: return 'Action';
   }
 }
