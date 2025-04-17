@@ -7,6 +7,7 @@
 
 import express from 'express';
 import { enhancedEmailService } from './enhanced-email-service';
+import { centralUIDService } from './central-uid-service';
 
 export function registerEnhancedEmailTestEndpoints(app: express.Express) {
   // Configuration endpoint
@@ -89,12 +90,29 @@ export function registerEnhancedEmailTestEndpoints(app: express.Express) {
       
       const testData = req.body;
       
-      // Validate essential fields
-      if (!testData.uid) {
+      // For test endpoints, we should NEVER use a real event ID or uid that references existing events
+      if (testData.eventId) {
         return res.status(400).json({
           success: false,
-          message: 'UID is required for RFC 5545 compliance'
+          message: 'Test endpoints should not reference existing events. This endpoint is for testing purposes only. Remove the eventId parameter.'
         });
+      }
+      
+      // Ensure the UID starts with "manual-" prefix or generate a new one
+      let uid: string;
+      if (testData.uid) {
+        // If UID is provided, ensure it starts with manual- prefix
+        if (!testData.uid.startsWith('manual-')) {
+          return res.status(400).json({
+            success: false,
+            message: 'Test UIDs must start with "manual-" prefix to avoid conflicts with real events'
+          });
+        }
+        uid = testData.uid;
+      } else {
+        // Generate a new manual UID using the central service
+        uid = centralUIDService.generateUID("manual");
+        console.log(`[TestEmail] Generated test UID: ${uid}`);
       }
       
       if (!testData.title || !testData.startDate || !testData.endDate || !testData.organizer) {
@@ -115,10 +133,10 @@ export function registerEnhancedEmailTestEndpoints(app: express.Express) {
       const startDate = new Date(testData.startDate);
       const endDate = new Date(testData.endDate);
       
-      // Create invitation data
+      // Create invitation data - using a fake eventId (99999) for test purposes only
       const invitationData = {
-        eventId: testData.eventId || 12345, // Use provided ID or fallback to a test ID
-        uid: testData.uid,
+        eventId: 99999, // Always use a fake ID for test emails
+        uid: uid,
         title: testData.title,
         description: testData.description || 'Test event description',
         location: testData.location || 'Test location',
@@ -180,12 +198,29 @@ export function registerEnhancedEmailTestEndpoints(app: express.Express) {
       
       const testData = req.body;
       
-      // Validate essential fields
-      if (!testData.uid) {
+      // For test endpoints, we should NEVER use a real event ID that references existing events
+      if (testData.eventId) {
         return res.status(400).json({
           success: false,
-          message: 'UID is required for RFC 5545 compliance'
+          message: 'Test endpoints should not reference existing events. This endpoint is for testing purposes only. Remove the eventId parameter.'
         });
+      }
+      
+      // Ensure the UID starts with "manual-" prefix or generate a new one
+      let uid: string;
+      if (testData.uid) {
+        // If UID is provided, ensure it starts with manual- prefix
+        if (!testData.uid.startsWith('manual-')) {
+          return res.status(400).json({
+            success: false,
+            message: 'Test UIDs must start with "manual-" prefix to avoid conflicts with real events'
+          });
+        }
+        uid = testData.uid;
+      } else {
+        // Generate a new manual UID using the central service
+        uid = centralUIDService.generateUID("manual");
+        console.log(`[TestEmail] Generated test UID: ${uid}`);
       }
       
       if (!testData.title || !testData.startDate || !testData.endDate || !testData.organizer) {
@@ -206,10 +241,10 @@ export function registerEnhancedEmailTestEndpoints(app: express.Express) {
       const startDate = new Date(testData.startDate);
       const endDate = new Date(testData.endDate);
       
-      // Create update data
+      // Create update data - using a fake eventId (99999) for test purposes only
       const updateData = {
-        eventId: testData.eventId || 12345, // Use provided ID or fallback to a test ID
-        uid: testData.uid,
+        eventId: 99999, // Always use a fake ID for test emails
+        uid: uid,
         title: testData.title,
         description: testData.description || 'Updated event description',
         location: testData.location || 'Updated location',
@@ -272,12 +307,29 @@ export function registerEnhancedEmailTestEndpoints(app: express.Express) {
       
       const testData = req.body;
       
-      // Validate essential fields
-      if (!testData.uid) {
+      // For test endpoints, we should NEVER use a real event ID that references existing events
+      if (testData.eventId) {
         return res.status(400).json({
           success: false,
-          message: 'UID is required for RFC 5545 compliance'
+          message: 'Test endpoints should not reference existing events. This endpoint is for testing purposes only. Remove the eventId parameter.'
         });
+      }
+      
+      // Ensure the UID starts with "manual-" prefix or generate a new one
+      let uid: string;
+      if (testData.uid) {
+        // If UID is provided, ensure it starts with manual- prefix
+        if (!testData.uid.startsWith('manual-')) {
+          return res.status(400).json({
+            success: false,
+            message: 'Test UIDs must start with "manual-" prefix to avoid conflicts with real events'
+          });
+        }
+        uid = testData.uid;
+      } else {
+        // Generate a new manual UID using the central service
+        uid = centralUIDService.generateUID("manual");
+        console.log(`[TestEmail] Generated test UID: ${uid}`);
       }
       
       if (!testData.title || !testData.startDate || !testData.endDate || !testData.organizer) {
@@ -298,10 +350,10 @@ export function registerEnhancedEmailTestEndpoints(app: express.Express) {
       const startDate = new Date(testData.startDate);
       const endDate = new Date(testData.endDate);
       
-      // Create cancellation data
+      // Create cancellation data - using a fake eventId (99999) for test purposes only
       const cancellationData = {
-        eventId: testData.eventId || 12345, // Use provided ID or fallback to a test ID
-        uid: testData.uid,
+        eventId: 99999, // Always use a fake ID for test emails
+        uid: uid,
         title: testData.title,
         description: testData.description || 'Cancelled event description',
         location: testData.location || 'Cancelled location',
