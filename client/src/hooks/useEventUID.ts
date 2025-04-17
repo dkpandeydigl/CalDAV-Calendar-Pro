@@ -62,8 +62,8 @@ export function useEventUID({ eventId, uid: initialUid, autoLoad = true }: UseEv
   }, []);
   
   // Generate a new UID (but don't store it yet)
-  const generateUID = useCallback((prefix?: string) => {
-    const newUid = uidPersistenceService.generateUID(prefix);
+  const generateUID = useCallback(() => {
+    const newUid = uidPersistenceService.generateUID();
     setUid(newUid);
     return newUid;
   }, []);
