@@ -895,13 +895,47 @@ export function sanitizeAndFormatICS(icsData: string, options: { method?: string
   // Fix double colons in mailto references
   result = result.replace(/mailto::([^\r\n]+)/g, 'mailto:$1');
   
+  // Fix incorrect timestamp formats with double Z (e.g., 20250417T105135ZZ)
+  result = result.replace(/(\d{8}T\d{6})ZZ/g, '$1Z');
+  
   // Fix SCHEDULE-STATUS values with improper syntax
   result = processScheduleStatus(result);
   
-  // Fix RRULE values containing mailto references
-  result = result.replace(/RRULE:([^:;\r\n]*)mailto:([^\r\n]*)/g, (match, prefix) => {
-    return `RRULE:${prefix}`;
+  // Fix RRULE values containing mailto references or other invalid data
+  result = result.replace(/RRULE:([^;\r\n]*)(mailto:.*?)(?:\r\n|\n|$)/g, (match, prefix) => {
+    // Handle cases where mailto: is incorrectly appended to RRULE
+    return `RRULE:${prefix}\r\n`;
   });
+  
+  // Additionally look for malformed RRULE values and fix them
+  const rruleRegex = /RRULE:([^\r\n]*)/g;
+  let rruleMatch;
+  let fixedResult = result;
+  
+  while ((rruleMatch = rruleRegex.exec(result)) !== null) {
+    const fullMatch = rruleMatch[0];
+    const rruleValue = rruleMatch[1];
+    
+    // Check if the RRULE contains invalid components
+    if (rruleValue.includes('@') || rruleValue.includes('<') || rruleValue.includes('>')) {
+      // Extract only valid RRULE parts (FREQ, UNTIL, COUNT, INTERVAL, etc.)
+      const validParts = [];
+      const parts = rruleValue.split(';');
+      
+      for (const part of parts) {
+        // Only keep parts that start with valid RRULE parameters
+        if (/^(FREQ|UNTIL|COUNT|INTERVAL|BYSECOND|BYMINUTE|BYHOUR|BYDAY|BYMONTHDAY|BYYEARDAY|BYWEEKNO|BYMONTH|BYSETPOS|WKST)=/i.test(part)) {
+          validParts.push(part);
+        }
+      }
+      
+      // Replace the malformed RRULE with a cleaned version
+      const cleanRrule = `RRULE:${validParts.join(';')}`;
+      fixedResult = fixedResult.replace(fullMatch, cleanRrule);
+    }
+  }
+  
+  result = fixedResult;
   
   // Properly terminate the file if needed
   if (!result.endsWith('END:VCALENDAR')) {

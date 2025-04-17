@@ -3977,7 +3977,7 @@ LOCATION:${req.body.location || "Test Location"}
 ORGANIZER;CN=test@example.com:mailto:test@example.com
 ATTENDEE;ROLE=Secretary:mailto::attendee@example.com
 ATTENDEE;CUTYPE=RESOURCE;CN=Resource Name;RESOURCE-TYPE=Conference Room;X-RESOURCE-ID=resource-123;X-RESOURCE-CAPACITY=10:mailto::resource@example.com
-RRULE:FREQ=DAILY;COUNT=2mailto:something@wrong.com
+RRULE:FREQ=DAILY;COUNT=2
 END:VEVENT
 END:VCALENDAR`;
       
