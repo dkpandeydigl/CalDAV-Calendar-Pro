@@ -1139,7 +1139,7 @@ ${line}`;
             resourceString += `;CN=${resource.name}`;
           }
           
-          resourceString += `;RESOURCE-TYPE=${resource.subType || resource.type || 'ROOM'}`;
+          resourceString += `;X-RESOURCE-TYPE=${resource.subType || resource.type || 'ROOM'}`;
           resourceString += `;X-RESOURCE-ID=${resource.id}`;
           
           if (resource.capacity) {

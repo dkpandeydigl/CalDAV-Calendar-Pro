@@ -776,3 +776,127 @@ export function generateCancellationICalEvent(event: any, options: {
     status: 'CANCELLED'
   });
 }
+
+/**
+ * Enhanced folding for iCalendar lines according to RFC 5545 section 3.1
+ * Lines longer than 75 octets should be folded by inserting a CRLF followed by a space
+ * @param text The line to fold
+ * @returns The folded line
+ */
+export function foldLineEnhanced(text: string): string {
+  if (text.length <= 75) {
+    return text;
+  }
+  
+  // Fold the line by inserting CRLF+SPACE every 75 characters
+  // RFC 5545 specifies folding after 75 octets, not characters
+  // But since we're mostly dealing with ASCII, this is a reasonable approximation
+  let result = '';
+  let currentLineLength = 0;
+  let firstLine = true;
+  
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    
+    // If we've reached 75 characters (but not at the beginning of the line)
+    if (!firstLine && currentLineLength >= 75) {
+      result += '\r\n '; // CRLF followed by a space
+      currentLineLength = 1; // Reset with the space already counted
+    }
+    
+    result += char;
+    currentLineLength++;
+    
+    if (firstLine) {
+      firstLine = false;
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Fold all lines in an iCalendar document
+ * @param icsData The iCalendar data to fold
+ * @returns The folded iCalendar data
+ */
+export function foldICSContent(icsData: string): string {
+  // Split by lines, fold each line, then join back
+  const lines = icsData.split(/\r?\n/);
+  const foldedLines = lines.map(line => foldLineEnhanced(line));
+  return foldedLines.join('\r\n');
+}
+
+/**
+ * Process SCHEDULE-STATUS properties in an ICS file to ensure they are properly formatted
+ * This fixes issues with incorrectly formatted SCHEDULE-STATUS parameters
+ */
+export function processScheduleStatus(icsData: string): string {
+  // Look for SCHEDULE-STATUS in ATTENDEE lines
+  const attendeeRegex = /ATTENDEE(?:[^:]*)(SCHEDULE-STATUS=[^;:]*)(?:[^:]*):([^\r\n]+)/g;
+  
+  return icsData.replace(attendeeRegex, (match, statusPart, value) => {
+    // Extract the actual status value
+    const statusMatch = statusPart.match(/SCHEDULE-STATUS=([^;:]+)/);
+    if (statusMatch) {
+      const status = statusMatch[1].trim();
+      // Only if it's not already quoted, quote it
+      if (status && !status.startsWith('"') && !status.endsWith('"')) {
+        const fixedStatusPart = statusPart.replace(/SCHEDULE-STATUS=[^;:]+/, `SCHEDULE-STATUS="${status}"`);
+        return match.replace(statusPart, fixedStatusPart);
+      }
+    }
+    
+    return match;
+  });
+}
+
+/**
+ * Sanitize and format an ICS file to ensure RFC 5545 compliance
+ * This fixes various formatting issues and ensures the file is properly formatted
+ * @param icsData The raw ICS data
+ * @param options Optional settings to apply (method, status, sequence)
+ * @returns Properly formatted and sanitized ICS data
+ */
+export function sanitizeAndFormatICS(icsData: string, options: { method?: string, status?: string, sequence?: number } = {}): string {
+  let result = icsData;
+  
+  // Fix missing METHOD
+  if (options.method && !result.includes('METHOD:')) {
+    result = result.replace('PRODID:', `METHOD:${options.method}\r\nPRODID:`);
+  }
+  
+  // Fix missing STATUS
+  if (options.status && !result.includes('STATUS:')) {
+    result = result.replace('UID:', `UID:\r\nSTATUS:${options.status}\r\n`);
+  }
+  
+  // Fix missing SEQUENCE
+  if (options.sequence !== undefined && !result.includes('SEQUENCE:')) {
+    result = result.replace('UID:', `UID:\r\nSEQUENCE:${options.sequence}\r\n`);
+  }
+  
+  // Fix non-standard RESOURCE-TYPE properties (should have X- prefix)
+  result = result.replace(/RESOURCE-TYPE=/g, 'X-RESOURCE-TYPE=');
+  
+  // Fix double colons in mailto references
+  result = result.replace(/mailto::([^\r\n]+)/g, 'mailto:$1');
+  
+  // Fix SCHEDULE-STATUS values with improper syntax
+  result = processScheduleStatus(result);
+  
+  // Fix RRULE values containing mailto references
+  result = result.replace(/RRULE:([^:;\r\n]*)mailto:([^\r\n]*)/g, (match, prefix) => {
+    return `RRULE:${prefix}`;
+  });
+  
+  // Properly terminate the file if needed
+  if (!result.endsWith('END:VCALENDAR')) {
+    result = result.trimEnd() + '\r\nEND:VCALENDAR';
+  }
+
+  // Apply RFC 5545 compliant line folding
+  result = foldICSContent(result);
+
+  return result;
+}
