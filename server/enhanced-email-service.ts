@@ -466,7 +466,35 @@ export class EnhancedEmailService {
       };
       
       // Generate ICS data for the update using the centralized ICS service
-      const icsData = data.icsData || generateUpdatedEventICS(updateData, data.rawData || null);
+      // CRITICAL FIX: Ensure we're using the validated UID from the central UID service
+      console.log(`[EnhancedEmailService] Preparing update for event with UID: ${updateData.uid}`);
+      
+      // If we have raw ICS data already, use that as the base to preserve UID consistency
+      let icsData: string;
+      if (data.icsData) {
+        // Use pre-generated ICS data if available (this should have the correct UID)
+        icsData = data.icsData;
+        console.log(`[EnhancedEmailService] Using pre-generated ICS data for update`);
+      } else if (data.rawData) {
+        // Generate from raw data to maximize preservation of original properties
+        icsData = generateUpdatedEventICS(updateData, data.rawData);
+        console.log(`[EnhancedEmailService] Generated ICS from raw data for update`);
+      } else {
+        // Generate fresh ICS data as a last resort
+        icsData = generateUpdatedEventICS(updateData, null);
+        console.log(`[EnhancedEmailService] Generated fresh ICS data for update`);
+      }
+      
+      // Verify that the generated ICS contains the correct UID
+      const extractedUid = centralUIDService.extractUIDFromICS(icsData);
+      if (extractedUid !== updateData.uid) {
+        console.error(`[EnhancedEmailService] UID MISMATCH IN UPDATE! Expected: ${updateData.uid}, Got: ${extractedUid}`);
+        // Force the correct UID in the ICS data
+        icsData = icsData.replace(/UID:([^\r\n]+)/i, `UID:${updateData.uid}`);
+        console.log(`[EnhancedEmailService] Forced correct UID in ICS data for update`);
+      } else {
+        console.log(`[EnhancedEmailService] Verified correct UID in update ICS: ${extractedUid}`);
+      }
       
       // Generate HTML content for the email
       const htmlContent = this.generateUpdateEmailContent(updateData);
@@ -573,7 +601,27 @@ export class EnhancedEmailService {
             method,
             sequence: (data.sequence || 0) + 1
           };
-          icsData = data.icsData || generateUpdatedEventICS(updateData, data.rawData || null);
+          
+          // Apply the same UID preservation logic used in sendEventUpdate
+          if (data.icsData) {
+            icsData = data.icsData;
+            console.log(`[EnhancedEmailService] Preview: Using pre-generated ICS data for update`);
+          } else if (data.rawData) {
+            icsData = generateUpdatedEventICS(updateData, data.rawData);
+            console.log(`[EnhancedEmailService] Preview: Generated ICS from raw data for update`);
+          } else {
+            icsData = generateUpdatedEventICS(updateData, null);
+            console.log(`[EnhancedEmailService] Preview: Generated fresh ICS data for update`);
+          }
+          
+          // Verify UID consistency in preview
+          const extractedUid = centralUIDService.extractUIDFromICS(icsData);
+          if (extractedUid !== updateData.uid) {
+            console.error(`[EnhancedEmailService] Preview: UID MISMATCH! Expected: ${updateData.uid}, Got: ${extractedUid}`);
+            // Force the correct UID in the ICS data
+            icsData = icsData.replace(/UID:([^\r\n]+)/i, `UID:${updateData.uid}`);
+            console.log(`[EnhancedEmailService] Preview: Forced correct UID in ICS data`);
+          }
           htmlContent = this.generateUpdateEmailContent(updateData);
           break;
         case 'cancellation':

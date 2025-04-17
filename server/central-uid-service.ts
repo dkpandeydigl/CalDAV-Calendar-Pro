@@ -333,6 +333,26 @@ export class CentralUIDService {
   }
   
   /**
+   * Extract UID from ICS data
+   * This provides a standard way to extract UIDs across the application
+   */
+  public extractUIDFromICS(icsData: string): string | null {
+    if (!icsData) return null;
+    
+    try {
+      // Extract UID using regex
+      const uidMatch = icsData.match(/UID:([^\r\n]+)/i);
+      if (uidMatch && uidMatch[1]) {
+        return uidMatch[1].trim();
+      }
+    } catch (error) {
+      console.error('[CentralUIDService] Error extracting UID from ICS data:', error);
+    }
+    
+    return null;
+  }
+
+  /**
    * Synchronize UIDs from external sources (e.g., CalDAV server)
    */
   public async syncExternalUIDs(mappings: { eventId: number; uid: string }[]): Promise<void> {
