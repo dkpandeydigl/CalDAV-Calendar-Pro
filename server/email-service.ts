@@ -970,9 +970,13 @@ export class EmailService {
       }
       
       // Make direct modifications to preserve formatting
-      let modifiedIcs = String(data.rawData)
-        // Update METHOD
-        .replace(/METHOD:[^\r\n]+/i, `METHOD:${method}`);
+      let modifiedIcs = String(data.rawData);
+
+      // Fix any double colons in mailto: references
+      modifiedIcs = modifiedIcs.replace(/mailto::([^\r\n]+)/g, 'mailto:$1');
+      
+      // Update METHOD
+      modifiedIcs = modifiedIcs.replace(/METHOD:[^\r\n]+/i, `METHOD:${method}`);
       
       // Add METHOD if it doesn't exist
       if (!modifiedIcs.includes('METHOD:')) {
@@ -1017,6 +1021,12 @@ export class EmailService {
         modifiedIcs = modifiedIcs.replace(/SUMMARY:[^\r\n]+/i, `SUMMARY:${data.title}`);
       }
       
+      // Fix non-standard RESOURCE-TYPE to be X-RESOURCE-TYPE
+      modifiedIcs = modifiedIcs.replace(/RESOURCE-TYPE=/g, 'X-RESOURCE-TYPE=');
+      
+      // Fix commas in LOCATION (don't need to be escaped in quoted values)
+      modifiedIcs = modifiedIcs.replace(/(LOCATION:[^"\r\n]*?)\\,([^"\r\n]*?(?:\r?\n|$))/g, '$1,$2');
+      
       return modifiedIcs;
     }
     
@@ -1024,6 +1034,12 @@ export class EmailService {
     const method = data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST';
     const status = data.status || (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED');
     const sequence = data.sequence || 0;
+
+    // Ensure we have a valid UID, generate one if undefined
+    if (!data.uid) {
+      data.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@caldavclient.local`;
+      console.log(`Generated new UID for missing UID: ${data.uid}`);
+    }
     
     console.log(`Generating new ICS with UID: ${data.uid}`);
     
