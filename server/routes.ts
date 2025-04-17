@@ -4294,6 +4294,119 @@ END:VCALENDAR`;
   // See IMMEDIATE SYNC ENDPOINT section
   
   // Original Sync API endpoint (kept for backward compatibility)
+  // Fix malformed RRULE values in existing events
+  app.post("/api/fix-event-rrules", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const { calendarId } = req.body;
+      
+      // Validate calendarId if provided
+      if (calendarId !== undefined) {
+        if (typeof calendarId !== 'number') {
+          return res.status(400).json({ error: 'calendarId must be a number' });
+        }
+        
+        // Check if user has access to the calendar
+        const calendar = await storage.getCalendar(calendarId);
+        if (!calendar || calendar.userId !== userId) {
+          return res.status(403).json({ error: 'Access denied to calendar' });
+        }
+      }
+      
+      // Import the ical-utils module
+      const { sanitizeAndFormatICS } = await import('./ical-utils');
+      
+      // Get all calendars for the user if no specific calendar provided
+      const calendars = calendarId 
+        ? [await storage.getCalendar(calendarId)] 
+        : await storage.getCalendars(userId);
+      
+      // Filter out null values and only process user's own calendars
+      const userCalendars = calendars.filter(cal => cal && cal.userId === userId);
+      
+      // Track fixes statistics
+      const stats = {
+        calendarsProcessed: 0,
+        eventsProcessed: 0,
+        eventsFix_RRULE: 0,
+        eventsFix_RESOURCE_TYPE: 0,
+        eventsFix_mailto: 0,
+        eventsFix_DTSTAMP: 0,
+        eventsFix_other: 0
+      };
+      
+      // Process each calendar
+      for (const calendar of userCalendars) {
+        if (!calendar) continue;
+        
+        stats.calendarsProcessed++;
+        console.log(`Processing calendar ${calendar.id}: ${calendar.name}`);
+        
+        // Get all events for this calendar
+        const events = await storage.getEvents(calendar.id);
+        
+        // Process each event
+        for (const event of events) {
+          stats.eventsProcessed++;
+          
+          // Check if event has rawData to process
+          if (!event.rawData) continue;
+          
+          let needsUpdate = false;
+          const rawData = String(event.rawData);
+          
+          // Check for malformed RRULE
+          if (rawData.includes('RRULE:') && (rawData.includes('mailto:') || rawData.includes('MAILTO:'))) {
+            needsUpdate = true;
+            stats.eventsFix_RRULE++;
+          }
+          
+          // Check for RESOURCE-TYPE without X- prefix
+          if (rawData.includes('RESOURCE-TYPE=') && !rawData.includes('X-RESOURCE-TYPE=')) {
+            needsUpdate = true;
+            stats.eventsFix_RESOURCE_TYPE++;
+          }
+          
+          // Check for double colons in mailto references
+          if (rawData.includes('mailto::')) {
+            needsUpdate = true;
+            stats.eventsFix_mailto++;
+          }
+          
+          // Check for double Z in DTSTAMP
+          if (rawData.match(/\d{8}T\d{6}ZZ/)) {
+            needsUpdate = true;
+            stats.eventsFix_DTSTAMP++;
+          }
+          
+          // If any issue found, fix the event
+          if (needsUpdate) {
+            try {
+              // Fix the raw data
+              const fixedIcs = sanitizeAndFormatICS(rawData);
+              
+              // Update the event with fixed data
+              await storage.updateEvent(event.id, { rawData: fixedIcs });
+              
+              console.log(`Fixed formatting issues in event ${event.id}: ${event.title}`);
+            } catch (error) {
+              console.error(`Failed to fix event ${event.id}:`, error);
+              stats.eventsFix_other++;
+            }
+          }
+        }
+      }
+      
+      return res.json({
+        success: true,
+        stats
+      });
+    } catch (error) {
+      console.error("Error fixing event RRULEs:", error);
+      return res.status(500).json({ error: 'Failed to fix events', details: String(error) });
+    }
+  });
+  
   app.post("/api/sync", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
