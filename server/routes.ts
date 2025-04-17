@@ -19,6 +19,7 @@ import { setupAuth } from "./auth";
 import { DAVClient } from "tsdav";
 import { emailService } from "./email-service";
 import { enhancedEmailService } from "./enhanced-email-service";
+import { centralUIDService } from "./central-uid-service";
 import { syncSmtpPasswordWithCalDAV } from "./smtp-sync-utility";
 import { z } from "zod";
 import { registerExportRoutes } from "./export-routes";
@@ -4000,7 +4001,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Use provided eventId or generate a unique ID for this event
-      const uid = eventId ? `event-${eventId}@caldavclient.local` : `manual-send-${Date.now()}@caldavclient.local`;
+      // For existing events, we must retrieve the correct UID from the central service
+      // For new events, the validateEventUID method will generate one for us
+      let uid: string;
+      if (eventId) {
+        // Get the stored UID from central service
+        try {
+          uid = await centralUIDService.getUID(eventId);
+          if (!uid) {
+            console.error(`[ERROR] No UID found for event ${eventId} in central service`);
+            // Fall back to the old pattern but log an error
+            uid = `event-${eventId}@caldavclient.local`;
+            // Store this UID for future reference
+            await centralUIDService.storeUID(eventId, uid);
+            console.log(`[RECOVERY] Stored generated UID ${uid} for event ${eventId}`);
+          } else {
+            console.log(`[EmailEndpoint] Using stored UID ${uid} for event ${eventId}`);
+          }
+        } catch (uidError) {
+          console.error(`[ERROR] Failed to get UID for event ${eventId}:`, uidError);
+          return res.status(500).json({ 
+            success: false, 
+            message: 'Failed to retrieve proper UID for event' 
+          });
+        }
+      } else {
+        // For test emails, leave uid undefined - the email service will generate one properly
+        uid = undefined;
+      }
       
       // If this is for an existing event, update the emailSent status
       if (eventId) {

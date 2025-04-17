@@ -154,8 +154,13 @@ export function formatRFC5545Event(
     sequence?: number;
   }
 ): string {
-  // Ensure we have a UID (required by RFC 5545)
-  const uid = data.uid || uuidv4();
+  // CRITICAL: We must ONLY use the UID provided by the CentralUIDService
+  // Never generate a new UID here - that would break the event lifecycle integrity
+  if (!data.uid) {
+    console.error('ERROR: Missing UID in event data - this should never happen if validateEventUID is working');
+    throw new Error('Missing UID in event data');
+  }
+  const uid = data.uid;
   
   // Determine the METHOD (prioritize options, then data, then default to REQUEST)
   const method = (options?.method || data.method || 'REQUEST').toUpperCase();
