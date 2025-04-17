@@ -3951,7 +3951,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const previewHtml = emailService.generateEmailPreview(req.body);
       res.setHeader('Content-Type', 'application/json');
-      res.json({ html: previewHtml });
+      res.json({ 
+        html: previewHtml,
+        uid: req.body.uid  // Include the UID in the response so client can use it
+      });
     } catch (err) {
       console.error("Error generating email preview:", err);
       res.setHeader('Content-Type', 'application/json');
@@ -4109,8 +4112,31 @@ END:VCALENDAR`;
       // For existing events, we must retrieve the correct UID from the central service
       // For new events, the validateEventUID method will generate one for us
       let uid: string;
-      if (eventId) {
-        // Get the stored UID from central service
+      
+      // First, check if there's a uid directly in the request body
+      // This would be the case if we're sending after seeing a preview
+      if (req.body.uid) {
+        uid = req.body.uid;
+        console.log(`[EmailEndpoint] Using UID from request: ${uid}`);
+        
+        // If we have an eventId, store this UID for consistency
+        if (eventId) {
+          // Check if this UID is different from what might be stored
+          const storedUid = await centralUIDService.getUID(eventId);
+          if (storedUid && storedUid !== uid) {
+            console.warn(`[EmailEndpoint] Request UID ${uid} differs from stored UID ${storedUid}`);
+            console.warn(`[EmailEndpoint] Using request UID for consistency with preview`);
+            
+            // Update the stored UID to match the preview UID
+            await centralUIDService.storeUID(eventId, uid);
+          } else if (!storedUid) {
+            // Store this UID if we don't have one yet
+            await centralUIDService.storeUID(eventId, uid);
+            console.log(`[EmailEndpoint] Stored UID ${uid} for event ${eventId}`);
+          }
+        }
+      } else if (eventId) {
+        // If no UID in request but we have an eventId, get from central service
         try {
           uid = await centralUIDService.getUID(eventId);
           if (!uid) {
@@ -4132,7 +4158,7 @@ END:VCALENDAR`;
           });
         }
       } else {
-        // For emails without an eventId, still use the centralUIDService
+        // For emails without an eventId or UID, use the centralUIDService
         // to ensure all UIDs in the system follow the same consistent pattern
         uid = centralUIDService.generateUID();
         console.log(`[EmailEndpoint] Generated new UID ${uid} from centralUIDService for email`);
