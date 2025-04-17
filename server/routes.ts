@@ -32,6 +32,7 @@ import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
 import { notificationService } from "./memory-notification-service";
 import { registerEmailTestEndpoints } from "./email-test-endpoint";
 import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
+import { registerCancellationTestEndpoints } from "./cancellation-test-endpoints";
 import { initializeWebSocketServer } from "./websocket-handler";
 import { initializeWebSocketNotificationService, WebSocketNotificationService, WebSocketNotification } from "./websocket-notifications";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
@@ -114,7 +115,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register enhanced email test endpoints with RFC 5545 compliance
   registerEnhancedEmailTestEndpoints(app);
-  console.log('Registered enhanced RFC 5545 compliant email test endpoints');
+  console.log('[express] Registered enhanced RFC 5545 compliant email test endpoints');
+  
+  // Register cancellation test endpoints for event management
+  registerCancellationTestEndpoints(app);
+  console.log('[express] Registered cancellation test endpoints for event management');
   
   // Test endpoint for verifying cancellation ICS transformation (no auth required)
   app.post('/api/test-cancellation-ics', async (req, res) => {

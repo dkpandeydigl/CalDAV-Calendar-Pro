@@ -47,95 +47,127 @@ export interface CancellationEventData {
  * @returns Properly formatted ICS file for cancellation
  */
 export function generateCancellationIcs(originalIcs: string, eventData: CancellationEventData): string {
-  // Extract key components from original ICS
-  const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
-  const originalUid = uidMatch ? uidMatch[1].trim() : eventData.uid;
+  console.log(`Generating RFC 5545 compliant cancellation ICS for event: ${eventData.uid}`);
+  
+  // Extract essential information from original ICS
+  const originalSequence = extractSequence(originalIcs);
+  // Handle sequence number - ensure it's treated as a number
+  const newSequence = typeof originalSequence === 'number' ? 
+    (originalSequence + 1) : 
+    (eventData.sequence ? Number(eventData.sequence) + 1 : 1);
+  
+  // Extract X-properties to preserve them
+  const xProperties = extractXProperties(originalIcs);
+  
+  // Create the cancellation ICS
+  let icsData = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//CalDAV Client//NONSGML v1.0//EN
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:${eventData.uid}
+SUMMARY:${escapeICalString(eventData.title || 'Cancelled Event')}
+DTSTART:${formatICalDate(eventData.startDate)}
+DTEND:${formatICalDate(eventData.endDate)}
+DTSTAMP:${formatICalDate(new Date())}
+SEQUENCE:${newSequence}
+STATUS:CANCELLED
+`;
 
-  // Extract original sequence number and increment it
-  const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
-  const originalSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
-  const newSequence = eventData.sequence !== undefined ? eventData.sequence : originalSequence + 1;
-  
-  // Extract original DTSTAMP to maintain consistency
-  const dtstampMatch = originalIcs.match(/DTSTAMP:([^\r\n]+)/i);
-  const dtstamp = dtstampMatch ? dtstampMatch[1].trim() : formatICalDate(new Date());
-  
-  // Extract original CREATED date to maintain consistency
-  const createdMatch = originalIcs.match(/CREATED:([^\r\n]+)/i);
-  const created = createdMatch ? createdMatch[1].trim() : formatICalDate(new Date());
-  
-  // Format dates properly for ICS
-  const formattedStartDate = formatICalDate(eventData.startDate);
-  const formattedEndDate = formatICalDate(eventData.endDate);
-  const lastModified = formatICalDate(new Date());
-  
-  // Begin building the ICS file
-  let icsLines: string[] = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
-    'METHOD:CANCEL',
-    'BEGIN:VEVENT',
-    `UID:${originalUid}`,
-    `SUMMARY:${escapeICalString(eventData.title)}`,
-    `DTSTART:${formattedStartDate}`,
-    `DTEND:${formattedEndDate}`,
-    `DTSTAMP:${dtstamp}`,
-    `CREATED:${created}`,
-    `LAST-MODIFIED:${lastModified}`,
-    `SEQUENCE:${newSequence}`,
-    'STATUS:CANCELLED'
-  ];
-  
-  // Add optional fields
-  if (eventData.description) {
-    icsLines.push(`DESCRIPTION:${escapeICalString(eventData.description)}`);
+  // Add ORGANIZER with CN if available
+  if (eventData.organizer) {
+    const organizerName = eventData.organizer.name ? `;CN=${escapeICalString(eventData.organizer.name)}` : '';
+    icsData += `ORGANIZER${organizerName}:mailto:${eventData.organizer.email}\r\n`;
   }
   
+  // Add location if available
   if (eventData.location) {
-    icsLines.push(`LOCATION:${escapeICalString(eventData.location)}`);
+    icsData += `LOCATION:${escapeICalString(eventData.location)}\r\n`;
   }
   
-  // Add organizer
-  const organizerName = eventData.organizer.name ? 
-    `;CN=${escapeICalString(eventData.organizer.name)}` : '';
-  icsLines.push(`ORGANIZER${organizerName}:mailto:${eventData.organizer.email}`);
+  // Add description if available
+  if (eventData.description) {
+    icsData += `DESCRIPTION:${escapeICalString(eventData.description)}\r\n`;
+  }
   
-  // Add attendees
+  // Add attendees if available
   if (eventData.attendees && eventData.attendees.length > 0) {
-    eventData.attendees.forEach(attendee => {
-      const name = attendee.name ? `;CN=${escapeICalString(attendee.name)}` : '';
-      const role = attendee.role ? `;ROLE=${attendee.role}` : '';
-      const partstat = attendee.status ? `;PARTSTAT=${attendee.status}` : ';PARTSTAT=NEEDS-ACTION';
-      icsLines.push(`ATTENDEE${name}${role}${partstat}:mailto:${attendee.email}`);
-    });
-  }
-  
-  // Add resources (as special attendees with CUTYPE=RESOURCE)
-  if (eventData.resources && eventData.resources.length > 0) {
-    eventData.resources.forEach(resource => {
-      const name = resource.name ? `;CN=${escapeICalString(resource.name)}` : '';
-      const resourceType = resource.type ? `;X-RESOURCE-TYPE=${escapeICalString(resource.type)}` : '';
+    for (const attendee of eventData.attendees) {
+      if (!attendee || !attendee.email) continue;
       
-      // Add the resource as an attendee with special properties
-      icsLines.push(
-        `ATTENDEE${name};CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT${resourceType}:mailto:${resource.email}`
-      );
-    });
+      let attendeeLine = 'ATTENDEE';
+      
+      // Add CN if available
+      if (attendee.name) {
+        attendeeLine += `;CN=${escapeICalString(attendee.name)}`;
+      }
+      
+      // Add role if available
+      if (attendee.role) {
+        attendeeLine += `;ROLE=${attendee.role}`;
+      }
+      
+      // Add PARTSTAT if available, otherwise default to NEEDS-ACTION
+      if (attendee.status) {
+        attendeeLine += `;PARTSTAT=${attendee.status}`;
+      } else {
+        attendeeLine += `;PARTSTAT=NEEDS-ACTION`;
+      }
+      
+      attendeeLine += `:mailto:${attendee.email}`;
+      icsData += `${attendeeLine}\r\n`;
+    }
   }
   
-  // Extract any X- properties from original ICS to preserve them
-  const xPropLines = extractXProperties(originalIcs);
-  if (xPropLines.length > 0) {
-    icsLines = icsLines.concat(xPropLines);
+  // Add resources if available (as special attendees with resource type)
+  if (eventData.resources && eventData.resources.length > 0) {
+    for (const resource of eventData.resources) {
+      if (!resource || !resource.email) continue;
+      
+      let resourceLine = 'ATTENDEE';
+      
+      // Add CN if available
+      if (resource.name) {
+        resourceLine += `;CN=${escapeICalString(resource.name)}`;
+      }
+      
+      // Add CUTYPE=RESOURCE
+      resourceLine += `;CUTYPE=RESOURCE`;
+      
+      // Add X-RESOURCE-TYPE if type is available
+      const resourceType = resource.subType || resource.type;
+      if (resourceType) {
+        resourceLine += `;X-RESOURCE-TYPE=${escapeICalString(resourceType)}`;
+      }
+      
+      resourceLine += `;PARTSTAT=NEEDS-ACTION`;
+      resourceLine += `:mailto:${resource.email}`;
+      icsData += `${resourceLine}\r\n`;
+    }
   }
   
-  // Finish the ICS file
-  icsLines.push('END:VEVENT');
-  icsLines.push('END:VCALENDAR');
+  // Add any X-properties we extracted from the original ICS
+  xProperties.forEach(property => {
+    icsData += `${property}\r\n`;
+  });
   
-  // Join lines with proper CRLF line endings for maximum compatibility
-  return icsLines.join('\r\n');
+  // Close the VEVENT and VCALENDAR
+  icsData += `END:VEVENT\r\nEND:VCALENDAR`;
+  
+  return icsData;
+}
+
+/**
+ * Extract the sequence number from the original ICS
+ * @param icsData Original ICS data
+ * @returns Current sequence number or null if not found
+ */
+function extractSequence(icsData: string): number | null {
+  const sequenceMatch = icsData.match(/SEQUENCE:(\d+)/i);
+  if (sequenceMatch && sequenceMatch[1]) {
+    return parseInt(sequenceMatch[1], 10);
+  }
+  return null;
 }
 
 /**
@@ -144,18 +176,12 @@ export function generateCancellationIcs(originalIcs: string, eventData: Cancella
  * @returns Formatted date string
  */
 function formatICalDate(date: Date): string {
-  const pad = (n: number) => (n < 10 ? '0' + n : n);
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+    // If date is invalid, use current date
+    date = new Date();
+  }
   
-  return (
-    date.getUTCFullYear() +
-    pad(date.getUTCMonth() + 1) +
-    pad(date.getUTCDate()) +
-    'T' +
-    pad(date.getUTCHours()) +
-    pad(date.getUTCMinutes()) +
-    pad(date.getUTCSeconds()) +
-    'Z'
-  );
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
 }
 
 /**
@@ -170,7 +196,7 @@ function escapeICalString(str: string | null | undefined): string {
     .replace(/\\/g, '\\\\')
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
-    .replace(/\r\n|\n/g, '\\n');
+    .replace(/\n/g, '\\n');
 }
 
 /**
@@ -179,14 +205,14 @@ function escapeICalString(str: string | null | undefined): string {
  * @returns Array of X- property lines
  */
 function extractXProperties(icsData: string): string[] {
+  const xProperties: string[] = [];
   const lines = icsData.split(/\r?\n/);
-  const xProps: string[] = [];
   
   for (const line of lines) {
-    if (line.startsWith('X-')) {
-      xProps.push(line);
+    if (line.match(/^X-[^:]+:.+/i)) {
+      xProperties.push(line);
     }
   }
   
-  return xProps;
+  return xProperties;
 }

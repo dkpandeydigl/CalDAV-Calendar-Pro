@@ -697,27 +697,32 @@ export class EmailService {
    * @param data Additional event data to include
    * @returns The transformed ICS data with cancellation information
    */
+  /**
+   * Transform an ICS file for cancellation using our enhanced RFC 5545 compliant generator
+   * 
+   * @param originalIcs Original ICS data
+   * @param data Event data for the cancellation
+   * @returns Properly formatted cancellation ICS
+   */
   transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
-      // Handle the case where ICS data contains literal \r\n strings instead of actual line breaks
+      console.log(`Using enhanced ICS cancellation generator for event with UID: ${data.uid}`);
+      
+      // First ensure we have a properly formatted ICS by handling common issues
       let processedIcs = originalIcs;
       
-      // Check if ICS data contains literal \r\n strings instead of actual line breaks
+      // Fix literal \r\n strings
       if (processedIcs.includes('\\r\\n') || !processedIcs.includes('\r\n')) {
         console.log('Fixing ICS data with literal \\r\\n strings');
-        // Replace literal \r\n with actual line breaks
         processedIcs = processedIcs
           .replace(/\\r\\n/g, '\r\n')
-          // Also fix other escape sequences that might be literal
           .replace(/\\n/g, '\n')
           .replace(/\\t/g, '\t');
       }
       
-      // If the entire ICS is on a single line, try to split it properly
+      // Fix single-line ICS files
       if (!processedIcs.includes('\r\n') && processedIcs.includes(':')) {
         console.log('ICS appears to be on a single line, reformatting properly');
-        
-        // Split by common ICS properties
         processedIcs = processedIcs
           .replace(/BEGIN:/g, '\r\nBEGIN:')
           .replace(/END:/g, '\r\nEND:')
@@ -737,111 +742,36 @@ export class EmailService {
           .replace(/LAST-MODIFIED:/g, '\r\nLAST-MODIFIED:')
           .replace(/VERSION:/g, '\r\nVERSION:')
           .replace(/PRODID:/g, '\r\nPRODID:')
-          .replace(/CALSCALE:/g, '\r\nCALSCALE:');
-          
-        // Clean up any double line breaks
-        processedIcs = processedIcs.replace(/\r\n\r\n/g, '\r\n');
-        
-        // Trim leading/trailing line breaks
-        processedIcs = processedIcs.trim();
+          .replace(/CALSCALE:/g, '\r\nCALSCALE:')
+          .replace(/\r\n\r\n/g, '\r\n')
+          .trim();
       }
       
-      // CRITICAL: Extract the original UID exactly as is
+      // Get UID from original ICS or data
       const uidMatch = processedIcs.match(/UID:([^\r\n]+)/i);
-      if (!uidMatch) {
-        console.error('No UID found in original ICS data, using validated UID from centralUIDService');
-      }
-      
-      // IMPORTANT: We now prioritize the validated UID from centralUIDService 
-      // This ensures consistent UIDs are used throughout the entire event lifecycle
       const originalUid = data.uid || (uidMatch ? uidMatch[1].trim() : null);
       
       if (!originalUid) {
-        console.error('No valid UID found or provided for event cancellation');
-        // Note: This shouldn't happen as we now validate UIDs before calling this function
+        console.error('No valid UID found for event cancellation');
       }
       
-      if (!originalUid) {
-        console.error('Could not determine UID for event cancellation, this will cause synchronization issues');
-      }
+      // Import our enhanced ICS cancellation generator
+      const { generateCancellationIcs } = require('./enhanced-ics-cancellation');
       
-      // Parse the current sequence from the original ICS if available
-      // Fix for SEQUENCE with mailto: appended
-      const sequenceMatch = processedIcs.match(/SEQUENCE:(\d+)([^\r\n]*)/i);
-      let currentSequence = 0;
+      // Prepare event data for cancellation
+      const cancellationData = {
+        ...data,
+        uid: originalUid || data.uid
+      };
       
-      if (sequenceMatch) {
-        // If we find something additional after the sequence number, log it as a problem
-        if (sequenceMatch[2] && sequenceMatch[2].includes('mailto:')) {
-          console.log(`Found corrupt SEQUENCE value with appended mailto: ${sequenceMatch[0]}`);
-          // Just extract the numeric part
-          currentSequence = parseInt(sequenceMatch[1], 10);
-        } else {
-          currentSequence = parseInt(sequenceMatch[1], 10);
-        }
-      }
+      // Generate the cancellation ICS using our enhanced generator
+      return generateCancellationIcs(processedIcs, cancellationData);
       
-      const newSequence = currentSequence + 1;
-      
-      // Parse the original ORGANIZER and organizer name if available
-      const organizerMatch = processedIcs.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
-      const organizerEmail = organizerMatch ? organizerMatch[1] : data.organizer.email;
-      
-      const organizerNameMatch = processedIcs.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
-      const organizerName = organizerNameMatch ? organizerNameMatch[1] : data.organizer.name;
-      
-      console.log(`Preserving original UID in cancellation: ${originalUid}`);
-      
-      // Create a modified version of the original ICS with only necessary changes
-      // This preserves all original formatting and attributes
-      let modifiedIcs = processedIcs
-        // Change METHOD to CANCEL
-        .replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL') 
-        // If METHOD doesn't exist, we'll add it later
-        // Change STATUS to CANCELLED
-        .replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED');
-      
-      // Fix SEQUENCE field - clean up any corrupted entries with mailto:
-      if (sequenceMatch && sequenceMatch[2] && sequenceMatch[2].includes('mailto:')) {
-        console.log(`Fixing corrupt SEQUENCE value: ${sequenceMatch[0]} -> SEQUENCE:${newSequence}`);
-        // Replace the entire corrupt sequence line
-        modifiedIcs = modifiedIcs.replace(/SEQUENCE:[^\r\n]+/i, `SEQUENCE:${newSequence}`);
-      } else {
-        // Normal sequence update
-        modifiedIcs = modifiedIcs.replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
-      }
-      
-      // Add METHOD if it doesn't exist (after VERSION line)
-      if (!modifiedIcs.includes('METHOD:')) {
-        modifiedIcs = modifiedIcs.replace(
-          /VERSION:[^\r\n]+(\r?\n)/i, 
-          `VERSION:2.0$1METHOD:CANCEL$1`
-        );
-      }
-      
-      // Add STATUS if it doesn't exist (after SEQUENCE or UID if SEQUENCE doesn't exist)
-      if (!modifiedIcs.includes('STATUS:')) {
-        if (modifiedIcs.includes('SEQUENCE:')) {
-          modifiedIcs = modifiedIcs.replace(
-            /SEQUENCE:[^\r\n]+(\r?\n)/i,
-            `SEQUENCE:${newSequence}$1STATUS:CANCELLED$1`
-          );
-        } else {
-          // Add after UID if SEQUENCE doesn't exist
-          modifiedIcs = modifiedIcs.replace(
-            /UID:[^\r\n]+(\r?\n)/i,
-            `UID:${originalUid}$1SEQUENCE:${newSequence}$1STATUS:CANCELLED$1`
-          );
-        }
-      }
-      
-      return modifiedIcs;
     } catch (error) {
-      console.error('Error transforming ICS for cancellation:', error);
+      console.error('Error using enhanced ICS cancellation generator:', error);
       console.error('Original ICS:', originalIcs);
       
-      // As a last resort, generate a new ICS but ensure we use the exact same UID as the original
-      // First try to extract UID from original ICS data
+      // Fall back to basic cancellation format if enhanced generator fails
       let uid = data.uid;
       try {
         const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
@@ -849,7 +779,7 @@ export class EmailService {
           uid = uidMatch[1].trim();
         }
       } catch (e) {
-        console.error('Failed to extract UID from original ICS while generating fallback:', e);
+        console.warn('Error extracting UID from original ICS, using event data UID:', e);
       }
       
       return this.generateICSData({
