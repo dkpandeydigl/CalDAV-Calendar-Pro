@@ -105,16 +105,15 @@ export class CentralUIDService {
   /**
    * Generate a new RFC-compliant UID for an event
    * 
-   * @param prefix Optional prefix to use for special types of UIDs (e.g., "manual")
    * @returns A globally unique identifier that's compliant with RFC 5545
    */
-  public generateUID(prefix: string = 'event'): string {
+  public generateUID(): string {
     // Use a more specific format that works well with CalDAV servers
-    // This follows the format: prefix-timestamp-randomstring@domain
+    // This follows the format: event-timestamp-randomstring@domain
     // which is more readily recognizable and debuggable than a UUID
     const timestamp = Date.now();
     const randomPart = crypto.randomBytes(4).toString('hex');
-    return `${prefix}-${timestamp}-${randomPart}@caldavclient.local`;
+    return `event-${timestamp}-${randomPart}@caldavclient.local`;
   }
   
   /**

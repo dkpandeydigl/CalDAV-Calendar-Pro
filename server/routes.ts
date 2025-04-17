@@ -4027,10 +4027,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       } else {
-        // For test/manual emails without an eventId, still use the centralUIDService
+        // For emails without an eventId, still use the centralUIDService
         // to ensure all UIDs in the system follow the same consistent pattern
-        uid = centralUIDService.generateUID("manual");
-        console.log(`[EmailEndpoint] Generated new manual UID ${uid} from centralUIDService for test/manual email`);
+        uid = centralUIDService.generateUID();
+        console.log(`[EmailEndpoint] Generated new UID ${uid} from centralUIDService for email`);
       }
       
       // If this is for an existing event, update the emailSent status
