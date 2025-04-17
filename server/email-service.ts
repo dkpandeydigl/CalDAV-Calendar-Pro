@@ -615,8 +615,55 @@ export class EmailService {
    */
   transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
+      // Handle the case where ICS data contains literal \r\n strings instead of actual line breaks
+      let processedIcs = originalIcs;
+      
+      // Check if ICS data contains literal \r\n strings instead of actual line breaks
+      if (processedIcs.includes('\\r\\n') || !processedIcs.includes('\r\n')) {
+        console.log('Fixing ICS data with literal \\r\\n strings');
+        // Replace literal \r\n with actual line breaks
+        processedIcs = processedIcs
+          .replace(/\\r\\n/g, '\r\n')
+          // Also fix other escape sequences that might be literal
+          .replace(/\\n/g, '\n')
+          .replace(/\\t/g, '\t');
+      }
+      
+      // If the entire ICS is on a single line, try to split it properly
+      if (!processedIcs.includes('\r\n') && processedIcs.includes(':')) {
+        console.log('ICS appears to be on a single line, reformatting properly');
+        
+        // Split by common ICS properties
+        processedIcs = processedIcs
+          .replace(/BEGIN:/g, '\r\nBEGIN:')
+          .replace(/END:/g, '\r\nEND:')
+          .replace(/SUMMARY:/g, '\r\nSUMMARY:')
+          .replace(/DTSTART:/g, '\r\nDTSTART:')
+          .replace(/DTEND:/g, '\r\nDTEND:')
+          .replace(/LOCATION:/g, '\r\nLOCATION:')
+          .replace(/DESCRIPTION:/g, '\r\nDESCRIPTION:')
+          .replace(/UID:/g, '\r\nUID:')
+          .replace(/METHOD:/g, '\r\nMETHOD:')
+          .replace(/STATUS:/g, '\r\nSTATUS:')
+          .replace(/SEQUENCE:/g, '\r\nSEQUENCE:')
+          .replace(/ORGANIZER/g, '\r\nORGANIZER')
+          .replace(/ATTENDEE/g, '\r\nATTENDEE')
+          .replace(/DTSTAMP:/g, '\r\nDTSTAMP:')
+          .replace(/CREATED:/g, '\r\nCREATED:')
+          .replace(/LAST-MODIFIED:/g, '\r\nLAST-MODIFIED:')
+          .replace(/VERSION:/g, '\r\nVERSION:')
+          .replace(/PRODID:/g, '\r\nPRODID:')
+          .replace(/CALSCALE:/g, '\r\nCALSCALE:');
+          
+        // Clean up any double line breaks
+        processedIcs = processedIcs.replace(/\r\n\r\n/g, '\r\n');
+        
+        // Trim leading/trailing line breaks
+        processedIcs = processedIcs.trim();
+      }
+      
       // CRITICAL: Extract the original UID exactly as is
-      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
+      const uidMatch = processedIcs.match(/UID:([^\r\n]+)/i);
       if (!uidMatch) {
         console.error('No UID found in original ICS data, using validated UID from centralUIDService');
       }
@@ -635,29 +682,50 @@ export class EmailService {
       }
       
       // Parse the current sequence from the original ICS if available
-      const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
-      const currentSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
+      // Fix for SEQUENCE with mailto: appended
+      const sequenceMatch = processedIcs.match(/SEQUENCE:(\d+)([^\r\n]*)/i);
+      let currentSequence = 0;
+      
+      if (sequenceMatch) {
+        // If we find something additional after the sequence number, log it as a problem
+        if (sequenceMatch[2] && sequenceMatch[2].includes('mailto:')) {
+          console.log(`Found corrupt SEQUENCE value with appended mailto: ${sequenceMatch[0]}`);
+          // Just extract the numeric part
+          currentSequence = parseInt(sequenceMatch[1], 10);
+        } else {
+          currentSequence = parseInt(sequenceMatch[1], 10);
+        }
+      }
+      
       const newSequence = currentSequence + 1;
       
       // Parse the original ORGANIZER and organizer name if available
-      const organizerMatch = originalIcs.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
+      const organizerMatch = processedIcs.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
       const organizerEmail = organizerMatch ? organizerMatch[1] : data.organizer.email;
       
-      const organizerNameMatch = originalIcs.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
+      const organizerNameMatch = processedIcs.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
       const organizerName = organizerNameMatch ? organizerNameMatch[1] : data.organizer.name;
       
       console.log(`Preserving original UID in cancellation: ${originalUid}`);
       
       // Create a modified version of the original ICS with only necessary changes
       // This preserves all original formatting and attributes
-      let modifiedIcs = originalIcs
+      let modifiedIcs = processedIcs
         // Change METHOD to CANCEL
         .replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL') 
         // If METHOD doesn't exist, we'll add it later
         // Change STATUS to CANCELLED
-        .replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED')
-        // Update SEQUENCE
-        .replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
+        .replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED');
+      
+      // Fix SEQUENCE field - clean up any corrupted entries with mailto:
+      if (sequenceMatch && sequenceMatch[2] && sequenceMatch[2].includes('mailto:')) {
+        console.log(`Fixing corrupt SEQUENCE value: ${sequenceMatch[0]} -> SEQUENCE:${newSequence}`);
+        // Replace the entire corrupt sequence line
+        modifiedIcs = modifiedIcs.replace(/SEQUENCE:[^\r\n]+/i, `SEQUENCE:${newSequence}`);
+      } else {
+        // Normal sequence update
+        modifiedIcs = modifiedIcs.replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
+      }
       
       // Add METHOD if it doesn't exist (after VERSION line)
       if (!modifiedIcs.includes('METHOD:')) {

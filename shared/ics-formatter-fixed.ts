@@ -131,6 +131,17 @@ export function sanitizeAndFormatICS(
       // Handle SEQUENCE property
       if (line.startsWith('SEQUENCE:')) {
         hasSequence = true;
+        
+        // Check for corrupt SEQUENCE values with mailto: in them
+        if (line.includes('mailto:')) {
+          // Extract just the sequence number
+          const sequenceMatch = line.match(/SEQUENCE:(\d+)/);
+          const sequenceNumber = sequenceMatch ? parseInt(sequenceMatch[1]) : 0;
+          
+          console.log(`Fixed corrupt SEQUENCE value: ${line} -> SEQUENCE:${sequenceNumber}`);
+          line = `SEQUENCE:${sequenceNumber}`;
+        }
+        
         // Override the sequence if specified in options
         if (sequence !== null) {
           outputLines.push(`SEQUENCE:${sequence}`);
