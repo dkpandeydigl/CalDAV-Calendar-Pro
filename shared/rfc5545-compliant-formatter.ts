@@ -143,14 +143,22 @@ const formatResource = (resource: Resource): string => {
 /**
  * Generate a complete iCalendar event as a string following RFC 5545 rules
  * @param data The event data to format
+ * @param options Additional options for formatting the event
  * @returns A RFC 5545 compliant iCalendar string
  */
-export function formatRFC5545Event(data: EventInvitationData): string {
+export function formatRFC5545Event(
+  data: EventInvitationData, 
+  options?: {
+    method?: string;
+    status?: string;
+    sequence?: number;
+  }
+): string {
   // Ensure we have a UID (required by RFC 5545)
   const uid = data.uid || uuidv4();
   
-  // Determine the METHOD (default to REQUEST if not specified)
-  const method = data.method || 'REQUEST';
+  // Determine the METHOD (prioritize options, then data, then default to REQUEST)
+  const method = (options?.method || data.method || 'REQUEST').toUpperCase();
   
   // Start building the ics content
   let icsContent = [
@@ -209,12 +217,16 @@ export function formatRFC5545Event(data: EventInvitationData): string {
   }
   
   // Add status if specified (important for cancellations)
-  if (data.status) {
-    icsContent.push(`STATUS:${data.status}`);
+  // Prioritize options.status over data.status
+  const status = options?.status || data.status;
+  if (status) {
+    icsContent.push(`STATUS:${status.toUpperCase()}`);
   }
   
   // Add sequence number for tracking updates (RFC 5545 requires sequence increments for updates)
-  icsContent.push(`SEQUENCE:${data.sequence || 0}`);
+  // Prioritize options.sequence over data.sequence
+  const sequence = options?.sequence !== undefined ? options.sequence : (data.sequence || 0);
+  icsContent.push(`SEQUENCE:${sequence}`);
   
   // Add recurrence rule if specified
   if (data.recurrenceRule) {
