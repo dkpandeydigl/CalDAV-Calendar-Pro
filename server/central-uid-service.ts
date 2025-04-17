@@ -10,6 +10,7 @@
 
 import { storage } from './storage';
 import crypto from 'crypto';
+import { WebSocketNotificationService } from './websocket-notification-service';
 
 // Interface for UID mappings
 interface UIDMapping {
@@ -347,8 +348,14 @@ export class CentralUIDService {
    * Broadcast a UID change to all connected clients
    */
   private broadcastUIDChange(eventId: number, uid: string, operation: 'add' | 'update' | 'delete'): void {
-    // Just log for now - we'll implement WebSocket integration later
-    console.log(`[CentralUIDService] Broadcasting UID ${operation} for event ${eventId}: ${uid}`);
+    try {
+      console.log(`[CentralUIDService] Broadcasting UID ${operation} for event ${eventId}: ${uid}`);
+      
+      // Use the WebSocketNotificationService to broadcast the change
+      WebSocketNotificationService.broadcastUIDChange(eventId, uid, operation);
+    } catch (error) {
+      console.error(`[CentralUIDService] Error broadcasting UID change: ${error}`);
+    }
   }
 }
 
