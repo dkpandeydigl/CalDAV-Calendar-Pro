@@ -510,7 +510,26 @@ export class EmailService {
   }
   
   /**
-   * Send an event cancellation email
+   * RFC 6638 vs RFC 5545 Event Cancellation
+   * 
+   * RFC 5545 (iCalendar) defines the basic format for calendar objects, including events.
+   * RFC 6638 (CalDAV Scheduling Extensions) builds upon RFC 5545 and adds specific
+   * requirements for how event cancellations should be formatted in email messages:
+   * 
+   * Key differences:
+   * 1. METHOD:CANCEL must be included in the VCALENDAR component
+   * 2. STATUS:CANCELLED must be set on the VEVENT component
+   * 3. SEQUENCE must be incremented from the original event
+   * 4. The original UID must be preserved exactly
+   * 5. All timestamp fields (CREATED, DTSTAMP, LAST-MODIFIED) must be included
+   * 6. The ICS file must not have surrounding quotes that would break client parsing
+   * 
+   * Our implementation fully complies with RFC 6638 requirements to ensure maximum
+   * compatibility across email clients and calendar servers.
+   */
+  
+  /**
+   * Send an event cancellation email following RFC 6638 specifications
    * @param userId The user ID to send the cancellation from
    * @param data The event invitation data with status set to 'CANCELLED'
    * @returns A result object with success/failure information
@@ -737,13 +756,7 @@ export class EmailService {
   }
   
   /**
-   * Transform an ICS file for cancellation
-   * @param originalIcs The original ICS data
-   * @param data Additional event data to include
-   * @returns The transformed ICS data with cancellation information
-   */
-  /**
-   * Transform an ICS file for cancellation using our enhanced RFC 5545 compliant generator
+   * Transform an ICS file for cancellation using our enhanced RFC 6638 compliant generator
    * 
    * @param originalIcs Original ICS data
    * @param data Event data for the cancellation

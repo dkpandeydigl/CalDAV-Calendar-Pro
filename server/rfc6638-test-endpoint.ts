@@ -183,27 +183,29 @@ export function registerRFC6638TestEndpoints(app: Express) {
       const sequenceMatch = processedIcs.match(/SEQUENCE:(\d+)/i);
       const sequenceNumber = sequenceMatch ? parseInt(sequenceMatch[1], 10) : null;
       
-      // Check if all required properties are present
+      // Check if all required properties are present according to RFC 6638
       const requiredProperties = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
-        'METHOD:CANCEL',
+        'METHOD:CANCEL',  // RFC 6638 requires METHOD:CANCEL
         'BEGIN:VEVENT',
-        `UID:${event.uid}`,
-        'DTSTART:',
-        'DTSTAMP:',
-        'SEQUENCE:',
-        'STATUS:CANCELLED',
+        `UID:${event.uid}`,  // Original UID must be preserved
+        'DTSTART:',  // Event must have start time
+        'DTSTAMP:',  // Current timestamp required
+        'SEQUENCE:',  // Sequence should be incremented
+        'STATUS:CANCELLED',  // Status must be set to CANCELLED
+        'ORGANIZER',  // Organizer information required
         'END:VEVENT',
         'END:VCALENDAR'
       ];
       
+      // Enhanced RFC 6638 checking - more specific validation
       const missingProperties = requiredProperties.filter(prop => {
         if (prop.endsWith(':')) {
-          // Just check if the property name exists for these
+          // Just check if the property name exists for these (partial match)
           return !processedIcs.includes(prop);
         } else {
-          // For others, look for exact match
+          // For others, look for exact match or includes match
           return !processedIcs.includes(prop);
         }
       });
@@ -216,13 +218,27 @@ export function registerRFC6638TestEndpoints(app: Express) {
         uid: event.uid,
         filename,
         rfc6638_compliance: {
-          hasMethod,
-          hasStatus,
-          uidMatches,
-          hasQuotes: hasQuotes,
-          sequenceNumber,
+          hasMethod, // Has METHOD:CANCEL header
+          hasStatus, // Has STATUS:CANCELLED
+          uidMatches, // Original UID preserved
+          hasQuotes: hasQuotes, // No surrounding quotes (should be false)
+          sequenceNumber, // Sequence number should be incremented
+          // Has all required RFC 6638 properties
           missingProperties,
-          isFullyCompliant: hasMethod && hasStatus && uidMatches && !hasQuotes && sequenceNumber !== null && missingProperties.length === 0
+          // Additional RFC 6638 specific checks
+          hasMethodCancel: processedIcs.includes('METHOD:CANCEL'),
+          hasStatusCancelled: processedIcs.includes('STATUS:CANCELLED'),
+          hasTimestamps: processedIcs.includes('DTSTAMP:') && 
+            (processedIcs.includes('CREATED:') || processedIcs.includes('LAST-MODIFIED:')),
+          // Overall compliance status
+          isFullyCompliant: hasMethod && 
+            hasStatus && 
+            uidMatches && 
+            !hasQuotes && 
+            sequenceNumber !== null && 
+            missingProperties.length === 0 &&
+            processedIcs.includes('METHOD:CANCEL') &&
+            processedIcs.includes('STATUS:CANCELLED')
         },
         originalIcsAvailable: !!originalIcs,
         cancellationIcs: processedIcs
