@@ -5,6 +5,7 @@ import CalendarDay from './CalendarDay';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Loader2 } from 'lucide-react';
 import type { Event } from '@shared/schema';
+import { parseRRULE } from '../../utils/rrule-sanitizer';
 
 interface CalendarGridProps {
   events: Event[];
