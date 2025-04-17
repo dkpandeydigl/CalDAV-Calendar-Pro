@@ -146,7 +146,8 @@ export class EnhancedEmailService {
       console.log(`[EnhancedEmailService] Validated UID ${validUID} for event ${data.eventId}`);
     } catch (error) {
       console.error('[EnhancedEmailService] Error validating event UID:', error);
-      throw new Error(`Failed to validate event UID: ${error.message || error}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to validate event UID: ${errorMessage}`);
     }
   }
 
