@@ -245,6 +245,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // ICS Formatting Test endpoint
+  app.post('/api/test-ics-formatting', isAuthenticated, async (req, res) => {
+    try {
+      const { eventId, icsData, sendRealEmails = false } = req.body;
+      let icsDataToTest = icsData;
+      
+      // If eventId is provided, get the event's raw ICS data
+      if (eventId && !icsData) {
+        const event = await storage.getEvent(eventId);
+        if (!event) {
+          return res.status(404).json({ error: 'Event not found' });
+        }
+        
+        if (!event.rawData) {
+          return res.status(400).json({ error: 'Event has no raw ICS data' });
+        }
+        
+        icsDataToTest = String(event.rawData);
+        console.log(`Testing ICS formatting for event ID ${eventId}`);
+      } else if (!icsData) {
+        return res.status(400).json({ error: 'Either eventId or icsData must be provided' });
+      }
+      
+      // Import the ICS formatter test utility
+      const { testIcsFormatting } = require('./ics-formatter-test');
+      
+      // Perform the test
+      const result = testIcsFormatting(icsDataToTest);
+      
+      // If sendRealEmails is true, also send a test email with the formatted ICS
+      if (sendRealEmails) {
+        // Initialize email service
+        await emailService.initialize(req.user!.id);
+        
+        // Get user email for testing
+        const user = await storage.getUser(req.user!.id);
+        if (!user || !user.email) {
+          return res.status(400).json({ 
+            error: 'User has no email address for test email',
+            testResult: result
+          });
+        }
+        
+        // Create test event data
+        const testEventData = {
+          eventId: eventId || 0,
+          uid: `test-${Date.now()}`,
+          title: 'ICS Format Test',
+          description: 'Test email for ICS formatting',
+          startDate: new Date(),
+          endDate: new Date(Date.now() + 3600000), // 1 hour later
+          organizer: {
+            email: user.email,
+            name: user.fullName || user.username
+          },
+          attendees: [
+            {
+              email: user.email,
+              name: user.fullName || user.username
+            }
+          ],
+          icsData: result.processed, // Use the processed ICS data
+        };
+        
+        // Send test email
+        const emailResult = await emailService.sendEventInvitation(req.user!.id, testEventData);
+        
+        // Return both test result and email result
+        return res.json({
+          testResult: result,
+          emailResult
+        });
+      }
+      
+      // Return just the test result if not sending emails
+      return res.json(result);
+    } catch (error) {
+      console.error('Error testing ICS formatting:', error);
+      return res.status(500).json({ error: String(error) });
+    }
+  });
+  
   // Test endpoint for double organizer cancellation fix 
   app.post('/api/test-organizer-fix', isAuthenticated, async (req, res) => {
     try {
