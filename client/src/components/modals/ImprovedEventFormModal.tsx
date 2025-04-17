@@ -121,6 +121,24 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     uid: event?.uid
   });
   
+  // Generate a UID for new events immediately when the form opens
+  // This ensures we use the SAME UID for preview and creation
+  const [initialEventUID, setInitialEventUID] = useState<string | null>(null);
+  
+  // Initialize a consistent UID when creating a new event
+  useEffect(() => {
+    if (open && !event && !initialEventUID) {
+      // For new events, generate a UID immediately
+      const newUID = generateUID();
+      setInitialEventUID(newUID);
+      console.log(`[ImprovedEventFormModal] Generated initial UID for new event: ${newUID}`);
+    } else if (open && event?.uid && !initialEventUID) {
+      // For existing events, use their UID
+      setInitialEventUID(event.uid);
+      console.log(`[ImprovedEventFormModal] Using existing event UID: ${event.uid}`);
+    }
+  }, [open, event, initialEventUID, generateUID]);
+  
   // Debug log for UID persistence
   useEffect(() => {
     if (persistedUID) {
@@ -128,9 +146,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         eventId: event?.id,
         eventUID: event?.uid,
         persistedUID,
+        initialEventUID
       });
     }
-  }, [persistedUID, event?.id, event?.uid]);
+  }, [persistedUID, event?.id, event?.uid, initialEventUID]);
   
   // Filter shared calendars to only include those with edit permissions
   // Filter shared calendars with edit permissions
@@ -215,6 +234,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           resources,
           // Include event ID for existing events
           eventId: event ? event.id : undefined,
+          // Always include our consistent UID to ensure the same UID is used for creation and updates
+          uid: initialEventUID || event?.uid || undefined,
           // Include recurrence rule if it exists
           recurrenceRule: recurrence.pattern !== 'None' ? {
             pattern: recurrence.pattern,
@@ -227,6 +248,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         }).then(previewResult => {
           if (previewResult && previewResult.html) {
             setEmailPreviewHtml(previewResult.html);
+            
+            // If we received a UID in the response, update our initialEventUID if needed
+            if (previewResult.uid && !initialEventUID) {
+              setInitialEventUID(previewResult.uid);
+              console.log(`Received UID from preview: ${previewResult.uid} - storing for consistency`);
+            }
           }
         }).catch(error => {
           console.error('Error generating preview on tab switch:', error);
