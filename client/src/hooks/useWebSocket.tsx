@@ -101,6 +101,7 @@ const useWebSocket = ({
             case 'resource':
             case 'attendee':
             case 'email':
+            case 'uid':
               // These are notification types - process them
               if (data.action && data.timestamp && data.data) {
                 const notification: WebSocketNotification = {
@@ -117,6 +118,11 @@ const useWebSocket = ({
                 // Call onMessage handler if provided
                 if (onMessage) {
                   onMessage(notification);
+                }
+                
+                // Log UID changes specifically
+                if (data.type === 'uid') {
+                  console.log(`UID ${data.action} notification received for event ${data.data.eventId}: ${data.data.uid}`);
                 }
               }
               break;
