@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { FC, ReactNode } from 'react';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { getCalendarDays, getWeekdayHeaders } from '@/lib/date-utils';
 import CalendarDay from './CalendarDay';
@@ -14,7 +14,7 @@ interface CalendarGridProps {
   onDayDoubleClick?: (date: Date) => void;
 }
 
-const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventClick, onDayDoubleClick }) => {
+const CalendarGrid: FC<CalendarGridProps> = ({ events, isLoading, onEventClick, onDayDoubleClick }): ReactNode => {
   const { currentDate, viewType, selectedTimezone } = useCalendarContext();
   const weekdayHeaders = getWeekdayHeaders();
   
@@ -332,160 +332,81 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
         try {
           // Parse the recurrence rule
           let recurrenceObj;
-          try {
-            if (typeof event.recurrenceRule === 'string') {
-              // Attempt to parse as JSON first
+          
+          if (typeof event.recurrenceRule === 'string') {
+            // Check if it's a JSON string first
+            if (event.recurrenceRule.startsWith('{') && event.recurrenceRule.endsWith('}')) {
               try {
                 recurrenceObj = JSON.parse(event.recurrenceRule);
+                console.log(`Successfully parsed recurrence rule as JSON:`, recurrenceObj);
               } catch (jsonError) {
-                // If it's not JSON, check if it's an iCalendar format (FREQ=DAILY;COUNT=3)
-                if (event.recurrenceRule.includes('FREQ=')) {
-                  try {
-                    // This is an iCalendar RRULE, convert it to our format
-                    const rrule = event.recurrenceRule;
-                    console.log(`Processing iCalendar RRULE: ${rrule}`);
-                    
-                    // Initialize with default values
-                    const recurrenceData: any = {
-                      pattern: 'Daily', // Default to daily
-                      interval: 1,
-                      weekdays: [],
-                      endType: 'After',
-                      occurrences: 10 // Default to 10 occurrences
-                    };
-                    
-                    // Extract frequency
-                    const freqMatch = rrule.match(/FREQ=([^;]+)/);
-                    if (freqMatch && freqMatch[1]) {
-                      const freq = freqMatch[1];
-                      if (freq === 'DAILY') recurrenceData.pattern = 'Daily';
-                      else if (freq === 'WEEKLY') recurrenceData.pattern = 'Weekly';
-                      else if (freq === 'MONTHLY') recurrenceData.pattern = 'Monthly';
-                      else if (freq === 'YEARLY') recurrenceData.pattern = 'Yearly';
-                      console.log(`Extracted FREQ=${freq}, setting pattern to ${recurrenceData.pattern}`);
-                    }
-                    
-                    // Extract interval
-                    const intervalMatch = rrule.match(/INTERVAL=(\d+)/);
-                    if (intervalMatch && intervalMatch[1]) {
-                      recurrenceData.interval = parseInt(intervalMatch[1], 10) || 1;
-                      console.log(`Extracted INTERVAL=${recurrenceData.interval}`);
-                    }
-                    
-                    // Extract count
-                    const countMatch = rrule.match(/COUNT=(\d+)/);
-                    if (countMatch && countMatch[1]) {
-                      recurrenceData.occurrences = parseInt(countMatch[1], 10) || 10;
-                      recurrenceData.endType = 'After';
-                      console.log(`Extracted COUNT=${recurrenceData.occurrences}, setting endType to ${recurrenceData.endType}`);
-                    }
-                    
-                    // Extract until
-                    const untilMatch = rrule.match(/UNTIL=([^;]+)/);
-                    if (untilMatch && untilMatch[1]) {
-                      // Parse iCalendar date format like 20250428T235959Z
-                      const untilStr = untilMatch[1];
-                      let untilDate;
-                      
-                      if (untilStr.includes('T')) {
-                        // Date with time
-                        const year = parseInt(untilStr.substring(0, 4), 10);
-                        const month = parseInt(untilStr.substring(4, 6), 10) - 1; // Month is 0-indexed
-                        const day = parseInt(untilStr.substring(6, 8), 10);
-                        const hour = parseInt(untilStr.substring(9, 11), 10);
-                        const minute = parseInt(untilStr.substring(11, 13), 10);
-                        const second = parseInt(untilStr.substring(13, 15), 10);
-                        
-                        untilDate = new Date(Date.UTC(year, month, day, hour, minute, second));
-                      } else {
-                        // Date only
-                        const year = parseInt(untilStr.substring(0, 4), 10);
-                        const month = parseInt(untilStr.substring(4, 6), 10) - 1;
-                        const day = parseInt(untilStr.substring(6, 8), 10);
-                        
-                        untilDate = new Date(Date.UTC(year, month, day));
-                      }
-                      
-                      recurrenceData.untilDate = untilDate.toISOString();
-                      recurrenceData.endType = 'Until';
-                      console.log(`Extracted UNTIL=${untilStr}, parsed to ${recurrenceData.untilDate}, setting endType to ${recurrenceData.endType}`);
-                    }
-                    
-                    // Extract BYDAY for weekly recurrences
-                    if (recurrenceData.pattern === 'Weekly') {
-                      const bydayMatch = rrule.match(/BYDAY=([^;]+)/);
-                      if (bydayMatch && bydayMatch[1]) {
-                        const days = bydayMatch[1].split(',');
-                        const dayMap: Record<string, string> = {
-                          'SU': 'Sunday',
-                          'MO': 'Monday',
-                          'TU': 'Tuesday',
-                          'WE': 'Wednesday',
-                          'TH': 'Thursday',
-                          'FR': 'Friday',
-                          'SA': 'Saturday'
-                        };
-                        
-                        recurrenceData.weekdays = days.map(day => dayMap[day] || day);
-                        console.log(`Extracted BYDAY=${bydayMatch[1]}, mapped to weekdays:`, recurrenceData.weekdays);
-                      }
-                    }
-                    
-                    // Store the original RRULE for reference
-                    recurrenceData.originalRrule = rrule;
-                    
-                    // Assign to recurrenceObj
-                    recurrenceObj = recurrenceData;
-                    
-                    console.log(`Successfully parsed iCalendar RRULE to:`, recurrenceObj);
-                  } catch (error) {
-                    console.error(`Error parsing iCalendar RRULE:`, error);
-                    // Create a fallback simple recurrence object that uses just the FREQ and COUNT
-                    try {
-                      console.log(`Attempting fallback RRULE parsing for: ${event.recurrenceRule}`);
-                      const simplifiedObj: any = {
-                        pattern: 'Daily',
-                        interval: 1,
-                        endType: 'After',
-                        occurrences: 3,
-                        weekdays: []
-                      };
-                      
-                      if (event.recurrenceRule.includes('FREQ=DAILY')) {
-                        simplifiedObj.pattern = 'Daily';
-                      } else if (event.recurrenceRule.includes('FREQ=WEEKLY')) {
-                        simplifiedObj.pattern = 'Weekly';
-                      } else if (event.recurrenceRule.includes('FREQ=MONTHLY')) {
-                        simplifiedObj.pattern = 'Monthly';
-                      } else if (event.recurrenceRule.includes('FREQ=YEARLY')) {
-                        simplifiedObj.pattern = 'Yearly';
-                      }
-                      
-                      const countMatch = event.recurrenceRule.match(/COUNT=(\d+)/);
-                      if (countMatch && countMatch[1]) {
-                        simplifiedObj.occurrences = parseInt(countMatch[1], 10);
-                      }
-                      
-                      recurrenceObj = simplifiedObj;
-                      console.log(`Applied fallback RRULE parsing:`, recurrenceObj);
-                    } catch (fallbackError) {
-                      console.error(`Fallback RRULE parsing also failed:`, fallbackError);
-                      throw error; // Re-throw the original error
-                    }
+                console.error(`Error parsing recurrence rule as JSON:`, jsonError);
+                // If JSON parsing fails, fall through to RRULE parsing
+              }
+            }
+            
+            // If we don't have a valid object yet, try to parse as an RRULE
+            if (!recurrenceObj && event.recurrenceRule.includes('FREQ=')) {
+              try {
+                // Use our sanitizer utility for proper cleaning and parsing of RRULE values
+                console.log(`Using RRULE sanitizer for: ${event.recurrenceRule}`);
+                
+                // Clean and parse the RRULE string
+                recurrenceObj = parseRRULE(event.recurrenceRule);
+                
+                if (!recurrenceObj) {
+                  console.error(`RRULE sanitizer failed to parse: ${event.recurrenceRule}`);
+                  throw new Error('Failed to parse RRULE with sanitizer');
+                }
+                
+                console.log(`Successfully sanitized and parsed RRULE to:`, recurrenceObj);
+              } catch (error) {
+                console.error(`Error parsing iCalendar RRULE:`, error);
+                // Create a fallback simple recurrence object that uses just the FREQ and COUNT
+                try {
+                  console.log(`Attempting fallback RRULE parsing for: ${event.recurrenceRule}`);
+                  const simplifiedObj: any = {
+                    pattern: 'Daily',
+                    interval: 1,
+                    endType: 'After',
+                    occurrences: 3,
+                    weekdays: []
+                  };
+                  
+                  if (event.recurrenceRule.includes('FREQ=DAILY')) {
+                    simplifiedObj.pattern = 'Daily';
+                  } else if (event.recurrenceRule.includes('FREQ=WEEKLY')) {
+                    simplifiedObj.pattern = 'Weekly';
+                  } else if (event.recurrenceRule.includes('FREQ=MONTHLY')) {
+                    simplifiedObj.pattern = 'Monthly';
+                  } else if (event.recurrenceRule.includes('FREQ=YEARLY')) {
+                    simplifiedObj.pattern = 'Yearly';
                   }
-                } else {
-                  // Not recognized format, log error and skip
-                  console.error(`Unrecognized recurrence rule format: ${event.recurrenceRule}`);
+                  
+                  const countMatch = event.recurrenceRule.match(/COUNT=(\d+)/);
+                  if (countMatch && countMatch[1]) {
+                    simplifiedObj.occurrences = parseInt(countMatch[1], 10);
+                  }
+                  
+                  recurrenceObj = simplifiedObj;
+                  console.log(`Applied fallback RRULE parsing:`, recurrenceObj);
+                } catch (fallbackError) {
+                  console.error(`Fallback RRULE parsing also failed:`, fallbackError);
+                  // Just return without setting recurrenceObj
                   return;
                 }
               }
-            } else {
-              // Object is already a recurrence object
-              recurrenceObj = event.recurrenceRule;
+            } else if (!recurrenceObj) {
+              // Not recognized format, log error and skip
+              console.error(`Unrecognized recurrence rule format: ${event.recurrenceRule}`);
+              return;
             }
-          } catch (e) {
-            console.error(`Error parsing recurrence rule for ${event.title}:`, e);
-            return; // Skip this event if we can't parse the rule
+          } else if (typeof event.recurrenceRule === 'object' && event.recurrenceRule !== null) {
+            // Object is already a recurrence object
+            recurrenceObj = event.recurrenceRule;
+          } else {
+            console.error(`Invalid recurrence rule type: ${typeof event.recurrenceRule}`);
+            return;
           }
           
           // Get the pattern, interval, weekdays, and end info
@@ -496,7 +417,12 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
           let occurrences = 10;
           let untilDate: string | undefined;
           
-          if (typeof recurrenceObj === 'object' && recurrenceObj !== null) {
+          if (!recurrenceObj) {
+            console.error(`No recurrence object found for event ${event.title}`);
+            return; // Skip this event if we don't have a recurrence object
+          }
+          
+          if (typeof recurrenceObj === 'object') {
             // It's an object, extract properties directly
             pattern = recurrenceObj.pattern || pattern;
             interval = recurrenceObj.interval || interval;
@@ -504,15 +430,9 @@ const CalendarGrid: React.FC<CalendarGridProps> = ({ events, isLoading, onEventC
             endType = recurrenceObj.endType || endType;
             occurrences = recurrenceObj.occurrences || occurrences;
             untilDate = recurrenceObj.untilDate;
-          } else if (typeof event.recurrenceRule === 'string') {
-            // We already processed this as an object in the previous try-catch block
-            // No need to process it again, but we should double-check a few things
-            
-            // Check if recurrenceObj was properly set - if not, we missed something
-            if (!recurrenceObj) {
-              console.error(`Failed to parse recurrence rule string properly: ${event.recurrenceRule}`);
-              return; // Skip this event
-            }
+          } else {
+            console.error(`Invalid recurrence object type: ${typeof recurrenceObj}`);
+            return; // Skip this event if the recurrence object is invalid
           }
           
           console.log('Parsed recurrence rule:', { pattern, interval, weekdays, endType, occurrences, untilDate });
