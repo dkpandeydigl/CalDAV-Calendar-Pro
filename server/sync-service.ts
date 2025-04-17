@@ -575,6 +575,25 @@ export class SyncService {
               // Check if we already have this event in our database
               const existingEvent = await storage.getEventByUID(caldavEvent.uid);
               
+              // If preserveLocalEvents flag is set, prioritize local events with 'pending' or 'error' status
+              // This ensures that newly created or modified events don't get overwritten during sync
+              if (options.preserveLocalEvents && existingEvent && 
+                  (existingEvent.syncStatus === 'pending' || existingEvent.syncStatus === 'error')) {
+                console.log(`Skipping server event with UID ${caldavEvent.uid} because there's a local event with syncStatus=${existingEvent.syncStatus} and preserveLocalEvents=true`);
+                
+                // Just update the etag to prevent future sync conflicts, but preserve all other local data
+                if (caldavEvent.etag && caldavEvent.etag !== existingEvent.etag) {
+                  await storage.updateEvent(existingEvent.id, { 
+                    etag: caldavEvent.etag,
+                    // Keep the current syncStatus
+                    syncStatus: existingEvent.syncStatus
+                  });
+                  console.log(`Updated etag for local event ${existingEvent.id} to prevent future sync conflicts`);
+                }
+                
+                continue; // Skip to next event to preserve local changes
+              }
+              
               // Convert the event data
               const eventData: Partial<InsertEvent> = {
                 uid: caldavEvent.uid,
@@ -861,6 +880,68 @@ export class SyncService {
                   
                   // Check if we already have this event in our database
                   const existingEvent = await storage.getEventByUID(caldavEvent.uid);
+
+                  // Check if this event was recently deleted locally
+                  // If preserveLocalDeletes flag is set, we need to check if this event exists locally
+                  if (options.preserveLocalDeletes && caldavEvent.uid && !existingEvent) {
+                    console.log(`Skipping event with UID ${caldavEvent.uid} because it doesn't exist locally and preserveLocalDeletes=true`);
+                    
+                    // If this event is on the server but not locally, we should delete it from the server
+                    // to ensure local deletions are propagated to the server during sync operations
+                    if (caldavEvent.url && job && job.connection) {
+                      try {
+                        console.log(`Attempting to delete event ${caldavEvent.uid} from server during sync`);
+                        
+                        // Create a DAV client with headers
+                        const davClient = new DAVClient({
+                          serverUrl: job.connection.url,
+                          credentials: {
+                            username: job.connection.username,
+                            password: job.connection.password
+                          },
+                          authMethod: 'Basic',
+                          defaultAccountType: 'caldav'
+                        });
+                        
+                        // Login to the server
+                        await davClient.login();
+                        
+                        // Delete the event using the URL from the caldavEvent
+                        await davClient.deleteCalendarObject({
+                          calendarObject: {
+                            url: caldavEvent.url,
+                            etag: caldavEvent.etag || ''
+                          }
+                        });
+                        
+                        console.log(`Successfully deleted event ${caldavEvent.uid} from server during sync`);
+                      } catch (deleteError) {
+                        console.error(`Failed to delete event ${caldavEvent.uid} from server during sync:`, deleteError);
+                        // Continue anyway - we'll skip this event during this sync
+                      }
+                    }
+                    
+                    continue; // Skip to next event
+                  }
+                  
+                  // If preserveLocalEvents flag is set, prioritize local events with 'pending' or 'error' status
+                  // This ensures that newly created or modified events don't get overwritten during sync
+                  if (options.preserveLocalEvents && existingEvent && 
+                      (existingEvent.syncStatus === 'pending' || existingEvent.syncStatus === 'error')) {
+                    console.log(`Skipping server event with UID ${caldavEvent.uid} because there's a local event with syncStatus=${existingEvent.syncStatus} and preserveLocalEvents=true`);
+                    
+                    // Just update the etag to prevent future sync conflicts, but preserve all other local data
+                    if (caldavEvent.etag && caldavEvent.etag !== existingEvent.etag) {
+                      await storage.updateEvent(existingEvent.id, { 
+                        etag: caldavEvent.etag,
+                        // Keep the current syncStatus
+                        syncStatus: existingEvent.syncStatus
+                      });
+                      console.log(`Updated etag for local event ${existingEvent.id} to prevent future sync conflicts`);
+                    }
+                    
+                    continue; // Skip to next event to preserve local changes
+                  }
                   
                   // Convert the event data
                   const eventData: Partial<InsertEvent> = {
