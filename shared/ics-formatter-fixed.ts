@@ -358,10 +358,112 @@ function escapeIcsSpecialChars(text: string): string {
  * @returns A properly formatted cancellation ICS
  */
 export function transformIcsForCancellation(originalIcs: string, eventData: any): string {
-  return sanitizeAndFormatICS(originalIcs, {
+  // If the input ICS data is malformed with incorrect line breaks
+  // First clean it up to have proper line breaks
+  let cleanedIcs = originalIcs;
+  
+  // Check if we have proper line breaks
+  if (!cleanedIcs.match(/\r?\n/) || cleanedIcs.includes('\r\n:')) {
+    console.log('Fixing malformed ICS data for cancellation with improper line breaks');
+    
+    // Remove any literal \r\n that should be actual line breaks
+    cleanedIcs = cleanedIcs.replace(/\\r\\n/g, '\r\n');
+    
+    // Clear out problematic line breaks in the wrong places
+    cleanedIcs = cleanedIcs.replace(/\r\n:/g, ':');
+    
+    // If still no proper line breaks, fully restructure the content
+    if (!cleanedIcs.match(/\r?\n/)) {
+      // Extract key properties
+      const uid = cleanedIcs.match(/UID:([^;:\r\n]+)/i)?.[1]?.trim() || eventData.uid;
+      const dtstart = cleanedIcs.match(/DTSTART:([^;:\r\n]+)/i)?.[1]?.trim();
+      const dtend = cleanedIcs.match(/DTEND:([^;:\r\n]+)/i)?.[1]?.trim();
+      const summary = cleanedIcs.match(/SUMMARY:([^;:\r\n]+)/i)?.[1]?.trim();
+      const organizer = cleanedIcs.match(/ORGANIZER[^:]*:([^;:\r\n]+)/i)?.[1]?.trim();
+      const organizerCN = cleanedIcs.match(/ORGANIZER;CN=([^;:\r\n]+)/i)?.[1]?.trim();
+      
+      // Extract attendees
+      const attendeeMatches = [...cleanedIcs.matchAll(/ATTENDEE[^:]*:([^;:\r\n]+)/gi)];
+      const attendees = attendeeMatches.map(match => {
+        const line = match[0];
+        
+        // Extract role, participation status and other parameters
+        const role = line.match(/ROLE=([^;:\r\n]+)/i)?.[1] || 'REQ-PARTICIPANT';
+        const partstat = line.match(/PARTSTAT=([^;:\r\n]+)/i)?.[1] || 'NEEDS-ACTION';
+        const cn = line.match(/CN=([^;:\r\n]+)/i)?.[1];
+        const email = line.match(/mailto:([^;:\r\n>\s]+)/i)?.[1];
+        
+        if (!email) return null;
+        
+        return {
+          role,
+          partstat,
+          cn,
+          email
+        };
+      }).filter(a => a !== null);
+      
+      // Reconstruct a clean ICS file
+      const lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+        'METHOD:CANCEL',
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        summary ? `SUMMARY:${summary}` : 'SUMMARY:CANCELLED EVENT',
+        dtstart ? `DTSTART:${dtstart}` : '',
+        dtend ? `DTEND:${dtend}` : '',
+        `DTSTAMP:${formatIcsDate(new Date())}`,
+        `SEQUENCE:${(parseInt(eventData.sequence || '0') + 1)}`,
+        'STATUS:CANCELLED'
+      ];
+      
+      // Add organizer
+      if (organizer) {
+        if (organizerCN) {
+          lines.push(`ORGANIZER;CN=${organizerCN}:${organizer}`);
+        } else {
+          lines.push(`ORGANIZER:${organizer}`);
+        }
+      }
+      
+      // Add attendees
+      attendees.forEach(attendee => {
+        if (!attendee) return;
+        
+        let line = 'ATTENDEE';
+        if (attendee.cn) line += `;CN=${attendee.cn}`;
+        line += `;ROLE=${attendee.role};PARTSTAT=${attendee.partstat}`;
+        line += `:mailto:${attendee.email}`;
+        
+        lines.push(line);
+      });
+      
+      // Close the event and calendar
+      lines.push('END:VEVENT');
+      lines.push('END:VCALENDAR');
+      
+      // Join with proper line endings
+      cleanedIcs = lines.filter(l => l).join('\r\n');
+    }
+  }
+  
+  // Now use the sanitizer on our cleaned ICS data
+  return sanitizeAndFormatICS(cleanedIcs, {
     method: 'CANCEL',
     status: 'CANCELLED',
     sequence: (parseInt(eventData.sequence || '0') + 1),
     preserveAttendees: true // Ensure all attendees are notified
   });
+}
+
+/**
+ * Format a date for iCalendar
+ */
+function formatIcsDate(date: Date): string {
+  return date.toISOString()
+    .replace(/[-:]/g, '')  // Remove dashes and colons
+    .replace(/\.\d{3}/, '') // Remove milliseconds
+    .replace(/Z$/, 'Z');    // Ensure Z stays at end
 }
