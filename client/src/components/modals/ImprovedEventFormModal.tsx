@@ -171,15 +171,6 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     }
   }, [open]);
   
-  // Clear email preview when form data changes to prevent stale previews
-  useEffect(() => {
-    if (open && previewData) {
-      clearPreview();
-      setEmailPreviewHtml(null);
-      console.log('[FORM CHANGE] Cleared email preview due to form field change');
-    }
-  }, [title, description, location, startDate, startTime, endDate, endTime, allDay, attendees, resources, calendarId]);
-  
   // Watch for tab changes to refresh email preview
   useEffect(() => {
     // When switching to the "emails" tab, validate the form and regenerate preview
@@ -247,6 +238,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const [attendeeInput, setAttendeeInput] = useState('');
   const [attendeeRole, setAttendeeRole] = useState<AttendeeRole>('Member');
   const [resources, setResources] = useState<Resource[]>([]);
+  
+  // Clear email preview when form data changes to prevent stale previews
+  useEffect(() => {
+    if (open && previewData) {
+      clearPreview();
+      setEmailPreviewHtml(null);
+      console.log('[FORM CHANGE] Cleared email preview due to form field change');
+    }
+  }, [title, description, location, startDate, startTime, endDate, endTime, allDay, attendees, resources, calendarId]);
   // Enhanced resource extraction function with deduplication
   const extractResourcesFromRawData = (eventData: any) => {
     if (!eventData) return [];
