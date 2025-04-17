@@ -672,27 +672,105 @@ export class EmailService {
   public generateEmailPreview(data: EventInvitationData): string {
     // Generate a simple HTML preview of the email
     try {
-      // Get the ICS data
-      const icsData = this.generateICSData(data);
+      // Validate that we have the required data
+      if (!data) {
+        throw new Error('No event data provided');
+      }
+
+      // Ensure we have a valid organizer structure
+      if (!data.organizer) {
+        data.organizer = {
+          email: 'calendar@example.com',
+          name: 'Calendar User'
+        };
+        console.warn('No organizer data provided, using default values');
+      } else if (typeof data.organizer === 'string') {
+        // Handle case where organizer is just an email string
+        data.organizer = {
+          email: data.organizer,
+          name: data.organizer
+        };
+      } else if (!data.organizer.email) {
+        // Handle case where organizer exists but has no email
+        data.organizer.email = 'calendar@example.com';
+        console.warn('No organizer email provided, using default value');
+      }
+
+      // Ensure attendees is always an array
+      if (!data.attendees) {
+        data.attendees = [];
+      } else if (typeof data.attendees === 'string') {
+        try {
+          data.attendees = JSON.parse(data.attendees);
+          if (!Array.isArray(data.attendees)) {
+            console.warn('Attendees parsed but is not an array, using empty array');
+            data.attendees = [];
+          }
+        } catch (e) {
+          console.warn('Failed to parse attendees JSON:', e);
+          data.attendees = [];
+        }
+      } else if (!Array.isArray(data.attendees)) {
+        data.attendees = [];
+      }
+
+      // Ensure resources is always an array
+      if (!data.resources) {
+        data.resources = [];
+      } else if (typeof data.resources === 'string') {
+        try {
+          data.resources = JSON.parse(data.resources);
+          if (!Array.isArray(data.resources)) {
+            console.warn('Resources parsed but is not an array, using empty array');
+            data.resources = [];
+          }
+        } catch (e) {
+          console.warn('Failed to parse resources JSON:', e);
+          data.resources = [];
+        }
+      } else if (!Array.isArray(data.resources)) {
+        data.resources = [];
+      }
       
-      // Format start and end dates
-      const startDate = new Date(data.startDate);
-      const endDate = new Date(data.endDate);
+      // Get the ICS data with error handling
+      let icsData = '';
+      try {
+        icsData = this.generateICSData(data);
+      } catch (icsError) {
+        console.error('Error generating ICS data:', icsError);
+        icsData = 'Error generating ICS data: ' + icsError.message;
+      }
       
-      // Format dates for display
-      const dateOptions: Intl.DateTimeFormatOptions = { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      };
+      // Format start and end dates with error handling
+      let formattedStart = 'Invalid date';
+      let formattedEnd = 'Invalid date';
       
-      const formattedStart = startDate.toLocaleString(undefined, dateOptions);
-      const formattedEnd = endDate.toLocaleString(undefined, dateOptions);
+      try {
+        const startDate = new Date(data.startDate || new Date());
+        const endDate = new Date(data.endDate || new Date());
+        
+        // Format dates for display
+        const dateOptions: Intl.DateTimeFormatOptions = { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        };
+        
+        if (!isNaN(startDate.getTime())) {
+          formattedStart = startDate.toLocaleString(undefined, dateOptions);
+        }
+        
+        if (!isNaN(endDate.getTime())) {
+          formattedEnd = endDate.toLocaleString(undefined, dateOptions);
+        }
+      } catch (dateError) {
+        console.error('Error formatting dates:', dateError);
+      }
       
-      // Create HTML template 
+      // Create HTML template with safe defaults
       let html = `
         <html>
         <head>
@@ -711,13 +789,14 @@ export class EmailService {
         </head>
         <body>
           <div class="header">
-            <div class="title">${data.title}</div>
+            <div class="title">${data.title || 'Untitled Event'}</div>
           </div>
           
           <div class="info">
             <p><span class="label">From:</span> ${formattedStart}</p>
             <p><span class="label">To:</span> ${formattedEnd}</p>
             <p><span class="label">Location:</span> ${data.location || 'No location specified'}</p>
+            <p><span class="label">Organizer:</span> ${data.organizer.name || data.organizer.email} &lt;${data.organizer.email}&gt;</p>
           </div>
           
           <div class="divider"></div>
@@ -729,7 +808,7 @@ export class EmailService {
       `;
       
       // Add attendees if present
-      if (data.attendees && data.attendees.length > 0) {
+      if (Array.isArray(data.attendees) && data.attendees.length > 0) {
         html += `
           <div class="divider"></div>
           <div class="attendees">
@@ -737,46 +816,22 @@ export class EmailService {
             <ul>
         `;
         
-        // Parse attendees if they're in JSON string format
-        let attendeeList = data.attendees;
-        if (typeof attendeeList === 'string') {
+        // Add each attendee with safe fallbacks
+        data.attendees.forEach(attendee => {
+          if (!attendee) return; // Skip null/undefined attendees
+          
           try {
-            attendeeList = JSON.parse(attendeeList);
-          } catch (e) {
-            console.warn('Failed to parse attendees JSON:', e);
-          }
-        }
-        
-        // Add each attendee
-        if (Array.isArray(attendeeList)) {
-          attendeeList.forEach(attendee => {
-            const name = attendee.name || attendee.email;
-            const email = attendee.email;
+            // Handle missing email safely
+            const email = attendee.email || 'No email';
+            const name = attendee.name || email;
             const role = attendee.role || 'Required';
-            html += `<li>${name} &lt;${email}&gt; (${role})</li>`;
-          });
-        }
-        
-        html += `
-            </ul>
-          </div>
-        `;
-      }
-      
-      // Add resources if present
-      if (data.resources && data.resources.length > 0) {
-        html += `
-          <div class="divider"></div>
-          <div class="resources">
-            <p><span class="label">Resources:</span></p>
-            <ul>
-        `;
-        
-        // Add each resource
-        data.resources.forEach(resource => {
-          const name = resource.name || resource.displayName || resource.id;
-          const type = resource.subType || resource.type || 'Resource';
-          html += `<li>${name} (${type})</li>`;
+            const status = attendee.status || 'No status';
+            
+            html += `<li>${name} &lt;${email}&gt; (${role} - ${status})</li>`;
+          } catch (attendeeError) {
+            console.warn('Error processing attendee:', attendeeError);
+            html += `<li>Error displaying attendee</li>`;
+          }
         });
         
         html += `
@@ -785,7 +840,50 @@ export class EmailService {
         `;
       }
       
-      // Add ICS data at the bottom
+      // Add resources if present
+      if (Array.isArray(data.resources) && data.resources.length > 0) {
+        html += `
+          <div class="divider"></div>
+          <div class="resources">
+            <p><span class="label">Resources:</span></p>
+            <ul>
+        `;
+        
+        // Add each resource with safe fallbacks
+        data.resources.forEach(resource => {
+          if (!resource) return; // Skip null/undefined resources
+          
+          try {
+            const id = resource.id || 'Unknown';
+            const name = resource.name || resource.displayName || id;
+            const type = resource.subType || resource.type || 'Resource';
+            const capacity = resource.capacity ? `Capacity: ${resource.capacity}` : '';
+            
+            html += `<li>${name} (${type}) ${capacity}</li>`;
+          } catch (resourceError) {
+            console.warn('Error processing resource:', resourceError);
+            html += `<li>Error displaying resource</li>`;
+          }
+        });
+        
+        html += `
+            </ul>
+          </div>
+        `;
+      }
+      
+      // Add status information if present
+      if (data.status) {
+        const statusClass = data.status === 'CANCELLED' ? 'color: red; font-weight: bold;' : '';
+        html += `
+          <div class="divider"></div>
+          <div class="status" style="${statusClass}">
+            <p><span class="label">Status:</span> ${data.status}</p>
+          </div>
+        `;
+      }
+      
+      // Add ICS data at the bottom with error handling
       html += `
           <div class="divider"></div>
           <div class="attachment">
@@ -795,6 +893,7 @@ export class EmailService {
           
           <div class="footer">
             <p>This is a preview of the email that will be sent to attendees.</p>
+            <p><small>Event UID: ${data.uid || 'No UID'}</small></p>
           </div>
         </body>
         </html>
