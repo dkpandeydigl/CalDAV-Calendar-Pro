@@ -154,9 +154,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const [allDay, setAllDay] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [isBusy, setIsBusy] = useState(true);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isNextDayAdjusted, setIsNextDayAdjusted] = useState<boolean>(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
   
   // Advanced form state
   const [activeTab, setActiveTab] = useState('basic');
