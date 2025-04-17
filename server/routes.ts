@@ -277,6 +277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Build test event data
       const eventData = {
+        eventId: 0, // Not a real event, just for testing
         uid,
         title: "Test Event for Organizer Fix",
         startDate: new Date(),
