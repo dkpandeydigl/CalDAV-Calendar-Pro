@@ -104,16 +104,34 @@ export class CentralUIDService {
   
   /**
    * Generate a new RFC-compliant UID for an event
+   * This is the ONLY method that should generate new UIDs in the entire application
    * 
+   * @param eventId Optional event ID to automatically store the UID association
    * @returns A globally unique identifier that's compliant with RFC 5545
    */
-  public generateUID(): string {
+  public generateUID(eventId?: number): string {
     // Use a more specific format that works well with CalDAV servers
     // This follows the format: event-timestamp-randomstring@domain
     // which is more readily recognizable and debuggable than a UUID
     const timestamp = Date.now();
     const randomPart = crypto.randomBytes(4).toString('hex');
-    return `event-${timestamp}-${randomPart}@caldavclient.local`;
+    const uid = `event-${timestamp}-${randomPart}@caldavclient.local`;
+    
+    // If an eventId is provided, immediately store this association
+    if (eventId) {
+      this.storeUID(eventId, uid)
+        .then(() => {
+          console.log(`[CentralUIDService] Generated and stored UID ${uid} for event ${eventId}`);
+        })
+        .catch(err => {
+          console.error(`[CentralUIDService] Failed to store generated UID for event ${eventId}:`, err);
+        });
+      
+      // Update cache immediately for performance
+      uidCache.set(eventId, uid);
+    }
+    
+    return uid;
   }
   
   /**
@@ -270,8 +288,11 @@ export class CentralUIDService {
   
   /**
    * Extract UID from raw ICS data
+   * This is the standard way to extract UIDs across the application
    */
   public extractUIDFromICS(icsData: string): string | null {
+    if (!icsData) return null;
+    
     try {
       // Enhanced UID extraction with more robust pattern
       const uidPattern = /UID:([^\r\n]+)/i;
@@ -332,25 +353,7 @@ export class CentralUIDService {
     return newUid;
   }
   
-  /**
-   * Extract UID from ICS data
-   * This provides a standard way to extract UIDs across the application
-   */
-  public extractUIDFromICS(icsData: string): string | null {
-    if (!icsData) return null;
-    
-    try {
-      // Extract UID using regex
-      const uidMatch = icsData.match(/UID:([^\r\n]+)/i);
-      if (uidMatch && uidMatch[1]) {
-        return uidMatch[1].trim();
-      }
-    } catch (error) {
-      console.error('[CentralUIDService] Error extracting UID from ICS data:', error);
-    }
-    
-    return null;
-  }
+  // This duplicate function is removed - we already have extractUIDFromICS above
 
   /**
    * Synchronize UIDs from external sources (e.g., CalDAV server)

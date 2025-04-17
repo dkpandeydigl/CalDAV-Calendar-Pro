@@ -944,6 +944,47 @@ export class EmailService {
     }
   }
 
+  /**
+   * Ensure we have a valid UID from centralUIDService before generating ICS data
+   * This function returns a Promise that resolves once we have a valid UID
+   */
+  public async ensureValidUID(data: EventInvitationData): Promise<string> {
+    // If we already have a UID, return it immediately
+    if (data.uid) {
+      return data.uid;
+    }
+    
+    try {
+      // Import centralUIDService
+      const { centralUIDService } = await import('./central-uid-service');
+      
+      // If we have an eventId, get or generate a UID for it
+      if (data.eventId) {
+        const validatedUid = await centralUIDService.validateEventUID(data.eventId);
+        console.log(`[EmailService] Retrieved validated UID ${validatedUid} for event ${data.eventId}`);
+        data.uid = validatedUid;
+        return validatedUid;
+      } else {
+        // Generate a new UID if we don't have an eventId
+        const newUid = centralUIDService.generateUID();
+        console.log(`[EmailService] Generated new UID ${newUid} for event without ID`);
+        data.uid = newUid;
+        return newUid;
+      }
+    } catch (error) {
+      console.error('[EmailService] Error ensuring valid UID:', error);
+      // Last resort fallback - this should never happen in production
+      const emergencyUid = `event-emergency-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@caldavclient.local`;
+      console.error(`[EmailService] Using EMERGENCY fallback UID: ${emergencyUid}`);
+      data.uid = emergencyUid;
+      return emergencyUid;
+    }
+  }
+  
+  /**
+   * Generate ICS data for an event
+   * This method ensures a consistent UID is used throughout the event lifecycle
+   */
   public generateICSData(data: EventInvitationData): string {
     // If there's already raw data available, modify it directly instead of using formatter
     if (data.rawData) {
@@ -1035,10 +1076,34 @@ export class EmailService {
     const status = data.status || (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED');
     const sequence = data.sequence || 0;
 
-    // Ensure we have a valid UID, generate one if undefined
+    // Ensure we have a valid UID, get from centralUIDService if undefined
     if (!data.uid) {
-      data.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@caldavclient.local`;
-      console.log(`Generated new UID for missing UID: ${data.uid}`);
+      // Import the centralUIDService for UID generation to maintain consistency
+      import('./central-uid-service').then(({ centralUIDService }) => {
+        // If we have an eventId, use it to get or create a consistent UID
+        if (data.eventId) {
+          centralUIDService.validateEventUID(data.eventId)
+            .then(validatedUid => {
+              console.log(`[EmailService] Retrieved UID ${validatedUid} for event ${data.eventId} from centralUIDService`);
+              data.uid = validatedUid;
+            })
+            .catch(err => {
+              console.error(`[EmailService] Error getting validated UID for event ${data.eventId}:`, err);
+              // Only generate a new UID as a last resort
+              data.uid = centralUIDService.generateUID();
+              console.warn(`[EmailService] Generated fallback UID: ${data.uid} - this should be stored if possible`);
+            });
+        } else {
+          // We don't have an eventId, generate a new UID
+          data.uid = centralUIDService.generateUID();
+          console.warn(`[EmailService] Generated new UID for event without ID: ${data.uid}`);
+        }
+      }).catch(err => {
+        console.error(`[EmailService] Error importing centralUIDService:`, err);
+        // Fallback only as a last resort
+        data.uid = `event-emergency-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@caldavclient.local`;
+        console.error(`[EmailService] EMERGENCY: Generated fallback UID without centralUIDService: ${data.uid}`);
+      });
     }
     
     console.log(`Generating new ICS with UID: ${data.uid}`);
