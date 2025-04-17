@@ -832,10 +832,12 @@ export class SyncService {
                     // Cast DAVObject to our CalDAVEvent interface for type safety
                     caldavEvent = event as unknown as CalDAVEvent;
                     
-                    // Generate UID if missing, before we skip anything
+                    // Generate UID if missing, using central UID service for consistency
                     if (!caldavEvent.uid) {
-                      console.warn(`Event is missing a UID, generating one for: ${caldavEvent.summary || 'Untitled Event'}`);
-                      caldavEvent.uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
+                      console.warn(`Event is missing a UID, generating a consistent one for: ${caldavEvent.summary || 'Untitled Event'}`);
+                      // Use the central UID service to generate a consistent UID
+                      caldavEvent.uid = centralUIDService.generateUID();
+                      console.log(`[SyncService] Generated new UID ${caldavEvent.uid} for sync event`);
                     }
                     
                     // Skip events that don't have essential data (summary, dates)

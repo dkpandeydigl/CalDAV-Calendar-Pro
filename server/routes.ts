@@ -2620,10 +2620,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Check if this is a client-side temporary UID (like "event-23@caldavclient.local")
       // or if it's missing entirely (then we need to generate a proper one)
       if (!uid || uid.match(/^event-\d+(@caldavclient\.local)?$/) || !uid.includes('@')) {
-        // Generate a proper CalDAV standard-compliant UID that will be preserved throughout the event lifecycle
-        // RFC 5545 requires UIDs to have a domain-part (after @) to ensure global uniqueness
-        uid = `event-${Date.now()}-${Math.random().toString(36).substring(2, 10)}@caldavclient.local`;
-        console.log(`[UID GENERATION] New RFC5545-compliant UID: ${uid} for event creation (replacing ${req.body.uid || 'missing uid'})`);
+        // Use the centralUIDService to ensure consistent UID generation
+        // This avoids the issue of multiple different UIDs for the same event
+        uid = centralUIDService.generateUID();
+        console.log(`[UID GENERATION] Using centralUIDService to generate consistent UID: ${uid} for event creation (replacing ${req.body.uid || 'missing uid'})`);
       } else {
         console.log(`[UID PRESERVATION] Using provided RFC5545-compliant UID: ${uid} for event creation`);
       }
@@ -4010,8 +4010,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           uid = await centralUIDService.getUID(eventId);
           if (!uid) {
             console.error(`[ERROR] No UID found for event ${eventId} in central service`);
-            // Fall back to the old pattern but log an error
-            uid = `event-${eventId}@caldavclient.local`;
+            // Use the centralUIDService to generate a consistent UID
+            uid = centralUIDService.generateUID();
+            console.log(`[RECOVERY] Generated consistent UID ${uid} for event ${eventId}`);
             // Store this UID for future reference
             await centralUIDService.storeUID(eventId, uid);
             console.log(`[RECOVERY] Stored generated UID ${uid} for event ${eventId}`);
@@ -4026,10 +4027,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       } else {
-        // For test/manual emails without an eventId, generate a new stable UID
-        // instead of relying on email service to generate one (causing inconsistencies)
-        uid = `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}@caldavclient.local`;
-        console.log(`[EmailEndpoint] Generated new UID ${uid} for manual email`);
+        // For test/manual emails without an eventId, still use the centralUIDService
+        // to ensure all UIDs in the system follow the same consistent pattern
+        uid = centralUIDService.generateUID("manual");
+        console.log(`[EmailEndpoint] Generated new manual UID ${uid} from centralUIDService for test/manual email`);
       }
       
       // If this is for an existing event, update the emailSent status
