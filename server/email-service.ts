@@ -422,10 +422,13 @@ export class EmailService {
       }
       
       // Build the email with attachments
+      // Process ICS data for attachment to ensure proper formatting
+      const processedIcsData = this.processIcsForAttachment(icsData);
+      
       const attachments = [
         {
           filename: `${data.uid || `event-${Date.now()}`}.ics`,
-          content: icsData,
+          content: processedIcsData,
           contentType: 'text/calendar'
         }
       ];
@@ -635,10 +638,13 @@ export class EmailService {
       }
       
       // Build the email with attachments
+      // Process ICS data for attachment to ensure proper formatting in email clients
+      const processedIcsData = this.processIcsForAttachment(icsData);
+      
       const attachments = [
         {
           filename: `${data.uid || `event-${Date.now()}`}.ics`,
-          content: icsData,
+          content: processedIcsData,
           contentType: 'text/calendar'
         }
       ];
