@@ -762,6 +762,20 @@ export class EmailService {
    * @param data Event data for the cancellation
    * @returns Properly formatted cancellation ICS
    */
+  /**
+   * Transform an ICS file for cancellation using RFC 6638 compliant generator
+   * 
+   * This is a critical function that ensures all event cancellations follow
+   * the RFC 6638 specification which requires:
+   * 1. METHOD:CANCEL property in the VCALENDAR component
+   * 2. STATUS:CANCELLED property in the VEVENT component
+   * 3. Incremented SEQUENCE number
+   * 4. Preservation of the original event UID
+   * 
+   * @param originalIcs Original ICS data
+   * @param data Event data for the cancellation
+   * @returns Properly formatted cancellation ICS
+   */
   transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
       console.log(`Using enhanced ICS cancellation generator for event with UID: ${data.uid}`);
@@ -805,9 +819,23 @@ export class EmailService {
           .trim();
       }
       
+      // CRITICAL FIX: Check for RFC 6638 compliance in the original ICS
+      // If METHOD:CANCEL or STATUS:CANCELLED are missing, we must ensure they're 
+      // in the final output regardless of what happens next
+      const hasMethodCancel = /METHOD:CANCEL/i.test(processedIcs);
+      const hasStatusCancelled = /STATUS:CANCELLED/i.test(processedIcs);
+      
+      if (!hasMethodCancel) {
+        console.log("RFC 6638 compliance issue: METHOD:CANCEL missing from original ICS");
+      }
+      
+      if (!hasStatusCancelled) {
+        console.log("RFC 6638 compliance issue: STATUS:CANCELLED missing from original ICS");
+      }
+      
       // Get UID from original ICS or data
       const uidMatch = processedIcs.match(/UID:([^\r\n]+)/i);
-      const originalUid = data.uid || (uidMatch ? uidMatch[1].trim() : null);
+      const originalUid = uidMatch ? uidMatch[1].trim() : data.uid;
       
       if (!originalUid) {
         console.error('No valid UID found for event cancellation');
@@ -815,9 +843,7 @@ export class EmailService {
       
       // Extract and use the original UID from the raw ICS data - this is critical for
       // maintaining UID consistency throughout the event lifecycle
-      const originalEventUid = originalUid || data.uid;
-      
-      console.log(`Preserving original event UID for cancellation: ${originalEventUid}`);
+      console.log(`Preserving original event UID for cancellation: ${originalUid}`);
       
       // Import our enhanced ICS cancellation generator
       const { generateCancellationIcs } = require('./enhanced-ics-cancellation');
@@ -825,7 +851,8 @@ export class EmailService {
       // Prepare event data for cancellation, ensuring we use the original event UID
       const cancellationData = {
         ...data,
-        uid: originalEventUid
+        uid: originalUid,
+        status: 'CANCELLED' // Always explicitly set status to CANCELLED
       };
       
       // Generate the cancellation ICS using our enhanced generator
@@ -834,13 +861,44 @@ export class EmailService {
       // Verify that the generated ICS contains required RFC 6638 properties
       const hasMethod = cancellationIcs.includes('METHOD:CANCEL');
       const hasStatus = cancellationIcs.includes('STATUS:CANCELLED');
-      const hasOriginalUid = cancellationIcs.includes(`UID:${originalEventUid}`);
+      const hasOriginalUid = cancellationIcs.includes(`UID:${originalUid}`);
       
       if (!hasMethod || !hasStatus || !hasOriginalUid) {
         console.error('Generated cancellation ICS is missing required properties:');
         if (!hasMethod) console.error('- Missing METHOD:CANCEL');
         if (!hasStatus) console.error('- Missing STATUS:CANCELLED');
-        if (!hasOriginalUid) console.error(`- UID mismatch: Expected ${originalEventUid}`);
+        if (!hasOriginalUid) console.error(`- UID mismatch: Expected ${originalUid}`);
+        
+        // CRITICAL FIX: If any RFC 6638 required properties are missing,
+        // we'll manually add them to ensure compliance
+        let fixedIcs = cancellationIcs;
+        
+        if (!hasMethod) {
+          // Add METHOD:CANCEL after VERSION if missing
+          fixedIcs = fixedIcs.replace(
+            /VERSION:[^\r\n]+(\r?\n)/i,
+            `VERSION:2.0$1METHOD:CANCEL$1`
+          );
+        }
+        
+        if (!hasStatus) {
+          // Add STATUS:CANCELLED after SEQUENCE if it exists
+          if (fixedIcs.includes('SEQUENCE:')) {
+            fixedIcs = fixedIcs.replace(
+              /SEQUENCE:[^\r\n]+(\r?\n)/i,
+              `SEQUENCE:${data.sequence || 1}$1STATUS:CANCELLED$1`
+            );
+          } else {
+            // Or add after UID otherwise
+            fixedIcs = fixedIcs.replace(
+              /UID:[^\r\n]+(\r?\n)/i,
+              `UID:${originalUid}$1STATUS:CANCELLED$1`
+            );
+          }
+        }
+        
+        console.log('Fixed missing RFC 6638 properties in cancellation ICS');
+        return fixedIcs;
       }
       
       return cancellationIcs;
@@ -850,16 +908,19 @@ export class EmailService {
       console.error('Original ICS:', originalIcs);
       
       // Fall back to basic cancellation format if enhanced generator fails
+      // This is our last resort to ensure valid cancellation ICS
       let uid = data.uid;
       try {
         const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
         if (uidMatch) {
           uid = uidMatch[1].trim();
+          console.log(`Fallback: Using original UID from ICS: ${uid}`);
         }
       } catch (e) {
         console.warn('Error extracting UID from original ICS, using event data UID:', e);
       }
       
+      // Always ensure the status is set to CANCELLED
       return this.generateICSData({
         ...data,
         uid,
