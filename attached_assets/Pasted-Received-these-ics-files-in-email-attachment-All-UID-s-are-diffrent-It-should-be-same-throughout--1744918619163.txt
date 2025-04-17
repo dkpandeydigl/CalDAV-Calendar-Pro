@@ -1,0 +1,64 @@
+Received these .ics files in email attachment, All UID's are diffrent. It should be same throughout the event lifecycle. Uisng centerlized uid system UID should be preserved. Email service should not allow to generate new UID. Cancelation .ics is still not working
+Find the issues and fix.When click button then first generate the cancellation .ics , send to email system to attach and send the email. If its complete then delete the event from server and local both.Fix the issues carefully once for all, do not only hit and try.
+
+First .ics file when event created
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Replit Calendar App//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:event-1744917767799-567a60b9@caldavclient.local
+DTSTAMP:20250417T192249Z
+DTSTART:20250420T033000Z
+DTEND:20250420T043000Z
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:20
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+ATTENDEE;ROLE=Member:mailto::pandey.dharmendra30@gmail.com
+END:VEVENT
+END:VCALENDAR
+
+Second .ics file when event updated
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Replit Calendar App//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:event-1744917836188-35def4e1@caldavclient.local
+DTSTAMP:20250417T192357Z
+DTSTART:20250420T033000Z
+DTEND:20250420T043000Z
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:20update
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+ATTENDEE;ROLE=Member:mailto::pandey.dharmendra30@gmail.com
+END:VEVENT
+END:VCALENDAR
+
+Third .ics file when event cancel
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//CalDAV Client//NONSGML v1.0//EN
+BEGIN:VEVENT
+UID:event-1744917772580-28x5ab7m@caldavclient.local
+SUMMARY:20update
+DTSTART:20250420T033000Z
+DTEND:20250420T043000Z
+DTSTAMP:20250417T192403Z
+CREATED:20250417T192256Z
+LAST-MODIFIED:20250417T192403Z
+SEQUENCE:1
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+ATTENDEE;ROLE=Member;PARTSTAT=NEEDS-ACTION;SCHEDULE-STATUS=3.7:
+ mailto:pandey.dharmendra30@gmail.com
+:
+END:VEVENT
+END:VCALENDAR
+
