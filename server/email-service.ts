@@ -679,11 +679,34 @@ export class EmailService {
 
       // Ensure we have a valid organizer structure
       if (!data.organizer) {
-        data.organizer = {
-          email: 'calendar@example.com',
-          name: 'Calendar User'
-        };
-        console.warn('No organizer data provided, using default values');
+        // Try to extract organizer from raw data if available
+        if (data.rawData) {
+          const rawDataStr = String(data.rawData);
+          const organizerMatch = rawDataStr.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
+          const organizerNameMatch = rawDataStr.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
+          
+          if (organizerMatch && organizerMatch[1]) {
+            data.organizer = {
+              email: organizerMatch[1].trim(),
+              name: organizerNameMatch && organizerNameMatch[1] ? organizerNameMatch[1].trim() : organizerMatch[1].trim()
+            };
+            console.log('Extracted organizer from raw data:', data.organizer);
+          } else {
+            // Default fallback
+            data.organizer = {
+              email: 'dk.pandey@xgenplus.com',
+              name: 'DK Pandey'
+            };
+            console.warn('Could not extract organizer from raw data, using active user default');
+          }
+        } else {
+          // Use active user default as backup
+          data.organizer = {
+            email: 'dk.pandey@xgenplus.com',
+            name: 'DK Pandey'
+          };
+          console.warn('No organizer data or raw data provided, using active user default');
+        }
       } else if (typeof data.organizer === 'string') {
         // Handle case where organizer is just an email string
         data.organizer = {
@@ -691,9 +714,24 @@ export class EmailService {
           name: data.organizer
         };
       } else if (!data.organizer.email) {
-        // Handle case where organizer exists but has no email
-        data.organizer.email = 'calendar@example.com';
-        console.warn('No organizer email provided, using default value');
+        // Try to extract from raw data first
+        if (data.rawData) {
+          const rawDataStr = String(data.rawData);
+          const organizerMatch = rawDataStr.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
+          
+          if (organizerMatch && organizerMatch[1]) {
+            data.organizer.email = organizerMatch[1].trim();
+            console.log('Extracted organizer email from raw data:', data.organizer.email);
+          } else {
+            // Default fallback
+            data.organizer.email = 'dk.pandey@xgenplus.com';
+            console.warn('Could not extract organizer email from raw data, using active user default');
+          }
+        } else {
+          // Use active user default
+          data.organizer.email = 'dk.pandey@xgenplus.com';
+          console.warn('No organizer email or raw data provided, using active user default');
+        }
       }
 
       // Ensure attendees is always an array
