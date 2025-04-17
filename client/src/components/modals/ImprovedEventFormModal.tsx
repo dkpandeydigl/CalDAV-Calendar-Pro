@@ -1453,6 +1453,59 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     }
   };
   
+  // Handle Cancel Event action - opens a dialog to confirm cancellation
+  const handleCancelEvent = () => {
+    // Only allow cancellation if there are attendees
+    if (!event || !event.id) {
+      return;
+    }
+    
+    if (attendees.length === 0) {
+      toast({
+        title: "Cannot Cancel Event",
+        description: "Event cancellation is only available for events with attendees.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Open the confirmation dialog
+    setShowCancelDialog(true);
+  };
+  
+  // Execute actual cancellation
+  const executeCancellation = async () => {
+    if (!event || !event.id || isCancelling) return;
+    
+    setIsCancelling(true);
+    
+    try {
+      // Call the cancelEvent mutation from useCalendarEvents hook
+      await cancelEvent(event.id);
+      setShowCancelDialog(false);
+      
+      toast({
+        title: "Event Canceled",
+        description: "The event has been canceled and attendees have been notified."
+      });
+      
+      // Refresh the events list
+      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
+      // Close the modal
+      onClose();
+    } catch (error: any) {
+      console.error('Error cancelling event:', error);
+      toast({
+        title: "Cancellation Failed",
+        description: error.message || "Failed to cancel the event. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+  
   return (
     <>
       <Dialog open={open} onOpenChange={open => {
