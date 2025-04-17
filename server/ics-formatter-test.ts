@@ -4,7 +4,7 @@
  * Service for testing ICS formatting fixes in the email service
  */
 
-import emailService from './email-service';
+import { emailService } from './email-service';
 
 /**
  * Result interface for ICS formatting tests
@@ -64,8 +64,8 @@ export function testIcsFormatting(icsData: string): IcsFormattingTestResult {
     fixes.push('Fixed double colon in ORGANIZER email address (mailto::)');
   }
 
-  // Process the ICS data
-  const processedIcsData = processIcsForAttachment(icsData);
+  // Process the ICS data using the email service
+  const processedIcsData = emailService.processIcsForAttachment(icsData);
   
   // Recheck for issues after processing
   const stillHasSequenceIssue = sequencePattern.test(processedIcsData);
