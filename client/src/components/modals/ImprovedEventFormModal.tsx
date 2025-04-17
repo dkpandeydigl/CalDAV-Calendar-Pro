@@ -170,6 +170,70 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       setActiveTab('basic');
     }
   }, [open]);
+  
+  // Watch for tab changes to refresh email preview
+  useEffect(() => {
+    // When switching to the "emails" tab, validate the form and regenerate preview
+    if (activeTab === 'emails') {
+      // Always clear previous preview data
+      clearPreview();
+      setEmailPreviewHtml(null);
+      
+      // Make sure we have valid form data
+      if (validateForm()) {
+        console.log('[EMAIL TAB] Generating fresh email preview');
+        
+        // Generate a fresh preview with current form data
+        let startDateTime, endDateTime;
+        
+        if (allDay) {
+          console.log(`[EMAIL TAB] Creating dates for all-day event`);
+          
+          // Use UTC dates for all-day events to avoid timezone issues
+          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+          startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+          
+          // For the end date, use the same approach
+          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+          
+          // Add one day to the end date per CalDAV convention for all-day events
+          endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+        } else {
+          // For regular events, use the date-time strings
+          startDateTime = new Date(`${startDate}T${startTime}:00`);
+          endDateTime = new Date(`${endDate}T${endTime}:00`);
+        }
+        
+        // Generate a fresh preview with current form data
+        generatePreview({
+          title,
+          description,
+          location,
+          startDate: startDateTime,
+          endDate: endDateTime,
+          attendees,
+          resources,
+          // Include event ID for existing events
+          eventId: event ? event.id : undefined,
+          // Include recurrence rule if it exists
+          recurrenceRule: recurrence.pattern !== 'None' ? {
+            pattern: recurrence.pattern,
+            interval: recurrence.interval,
+            weekdays: recurrence.weekdays,
+            endType: recurrence.endType,
+            occurrences: recurrence.occurrences,
+            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+          } : undefined
+        }).then(previewResult => {
+          if (previewResult && previewResult.html) {
+            setEmailPreviewHtml(previewResult.html);
+          }
+        }).catch(error => {
+          console.error('Error generating preview on tab switch:', error);
+        });
+      }
+    }
+  }, [activeTab]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [attendeeInput, setAttendeeInput] = useState('');
   const [attendeeRole, setAttendeeRole] = useState<AttendeeRole>('Member');
@@ -364,6 +428,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       resetForm();
       return;
     }
+    
+    // Clear email preview when modal opens
+    clearPreview();
+    setEmailPreviewHtml(null);
     
     // One-time initialization for the form when modal opens
     const initializeForm = () => {
