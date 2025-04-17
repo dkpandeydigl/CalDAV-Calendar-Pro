@@ -843,17 +843,32 @@ export class EnhancedEmailService {
 
   /**
    * Format a date and time for email display
+   * Safely handles different date formats
    */
-  private formatDateTimeForEmail(date: Date): string {
-    return new Intl.DateTimeFormat('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      timeZoneName: 'short'
-    }).format(date);
+  private formatDateTimeForEmail(date: any): string {
+    try {
+      // Ensure we have a valid Date object
+      const dateObj = date instanceof Date ? date : new Date(date);
+      
+      // Verify it's a valid date by checking if getTime() works
+      if (isNaN(dateObj.getTime())) {
+        throw new Error('Invalid date');
+      }
+      
+      return new Intl.DateTimeFormat('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        timeZoneName: 'short'
+      }).format(dateObj);
+    } catch (error) {
+      console.error('Error formatting date for email:', error, 'Date value was:', date);
+      // Return a fallback format in case of error
+      return String(date);
+    }
   }
 }
 
