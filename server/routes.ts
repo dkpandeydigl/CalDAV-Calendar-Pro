@@ -33,8 +33,10 @@ import { notificationService } from "./memory-notification-service";
 import { registerEmailTestEndpoints } from "./email-test-endpoint";
 import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
 import { registerCancellationTestEndpoints } from "./cancellation-test-endpoints";
-import { initializeWebSocketServer } from "./websocket-handler";
+import { initializeWebSocketServer as initializeOldWebSocketServer } from "./websocket-handler";
 import { initializeWebSocketNotificationService, WebSocketNotificationService, WebSocketNotification } from "./websocket-notifications";
+// Import our new WebSocket server implementation
+import { initializeWebSocketServer, broadcastMessage, sendToUser as wsSendToUser } from "./websocket-server";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 import { enhancedSyncService } from './enhanced-sync-service';
 import { testIcsFormatting } from './ics-formatter-test';
@@ -96,8 +98,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Create the HTTP server
   const httpServer = createServer(app);
   
-  // Initialize WebSocket server for real-time notifications
-  // This internally initializes the WebSocket notification service
+  // Initialize legacy WebSocket server for notification service
+  initializeOldWebSocketServer(httpServer);
+  
+  // Initialize our new dedicated WebSocket server on the /ws path
   initializeWebSocketServer(httpServer);
   
   // Initialize the WebSocket notification service for use with the broadcast function
@@ -120,6 +124,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register cancellation test endpoints for event management
   registerCancellationTestEndpoints(app);
   console.log('[express] Registered cancellation test endpoints for event management');
+  
+  // WebSocket test endpoint
+  app.post('/api/test-websocket', isAuthenticated, (req, res) => {
+    try {
+      const { userId, message, type = 'test', action = 'notification' } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ error: 'Message is required' });
+      }
+      
+      // Create a properly formatted message
+      const wsMessage = {
+        type,
+        action,
+        timestamp: Date.now(),
+        data: {
+          message,
+          sender: req.user?.username || 'System'
+        }
+      };
+      
+      if (userId) {
+        // Send to specific user
+        wsSendToUser(Number(userId), wsMessage);
+        return res.json({ 
+          success: true, 
+          details: `Message sent to user ${userId}`,
+          message: wsMessage
+        });
+      } else {
+        // Broadcast to all connected clients
+        broadcastMessage(wsMessage);
+        return res.json({ 
+          success: true, 
+          details: 'Message broadcast to all connected clients',
+          message: wsMessage
+        });
+      }
+    } catch (error) {
+      console.error('Error in WebSocket test endpoint:', error);
+      return res.status(500).json({ error: String(error) });
+    }
+  });
   
   // Test endpoint for verifying cancellation ICS transformation (no auth required)
   app.post('/api/test-cancellation-ics', async (req, res) => {
