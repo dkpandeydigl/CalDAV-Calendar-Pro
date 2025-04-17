@@ -174,29 +174,66 @@ export function formatContentLine(name: string, value: string, parameters: Recor
 }
 
 /**
- * Properly formats an iCalendar date-time value
+ * Properly formats an iCalendar date-time value with enhanced type and error handling
  * @param date The date to format
  * @param allDay Whether this is an all-day event
  * @returns Formatted date string for iCalendar
  */
-export function formatICalDate(date: Date | null | undefined, allDay: boolean = false): string {
-  // If date is null or undefined, use current date as fallback
-  if (!date) {
-    console.warn("Converting null/undefined date to current date");
-    date = new Date();
-  }
-  
-  // Verify that the date is valid
-  if (isNaN(date.getTime())) {
-    console.warn("Invalid date detected, using current date instead");
-    date = new Date();
-  }
+export function formatICalDate(date: any, allDay: boolean = false): string {
+  let dateObj: Date;
   
   try {
-    if (allDay) {
-      return date.toISOString().replace(/[-:]/g, '').split('T')[0];
+    // Handle null or undefined dates
+    if (date === null || date === undefined) {
+      console.warn("Converting null/undefined date to current date");
+      dateObj = new Date();
+    } 
+    // Handle string dates
+    else if (typeof date === 'string') {
+      try {
+        dateObj = new Date(date);
+        if (isNaN(dateObj.getTime())) {
+          console.warn(`Invalid string date: "${date}", using current date`);
+          dateObj = new Date();
+        }
+      } catch (e) {
+        console.warn(`Failed to parse string date "${date}", using current date`);
+        dateObj = new Date();
+      }
+    } 
+    // Handle number dates (timestamps)
+    else if (typeof date === 'number') {
+      try {
+        dateObj = new Date(date);
+        if (isNaN(dateObj.getTime())) {
+          console.warn(`Invalid numeric date: ${date}, using current date`);
+          dateObj = new Date();
+        }
+      } catch (e) {
+        console.warn(`Failed to create date from number ${date}, using current date`);
+        dateObj = new Date();
+      }
     }
-    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
+    // Handle Date objects
+    else if (date instanceof Date) {
+      if (isNaN(date.getTime())) {
+        console.warn(`Invalid Date object, using current date`);
+        dateObj = new Date();
+      } else {
+        dateObj = date;
+      }
+    } 
+    // Handle any other unexpected input
+    else {
+      console.warn(`Unexpected date type ${typeof date}, using current date`);
+      dateObj = new Date();
+    }
+    
+    // Generate the iCalendar format
+    if (allDay) {
+      return dateObj.toISOString().replace(/[-:]/g, '').split('T')[0];
+    }
+    return dateObj.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/g, '');
   } catch (error) {
     console.error("Error formatting date for iCalendar:", error);
     // Last resort fallback - use current time
