@@ -358,104 +358,198 @@ function escapeIcsSpecialChars(text: string): string {
  * @returns A properly formatted cancellation ICS
  */
 export function transformIcsForCancellation(originalIcs: string, eventData: any): string {
-  // If the input ICS data is malformed with incorrect line breaks
-  // First clean it up to have proper line breaks
-  let cleanedIcs = originalIcs;
-  
-  // Check if we have proper line breaks
-  if (!cleanedIcs.match(/\r?\n/) || cleanedIcs.includes('\r\n:')) {
-    console.log('Fixing malformed ICS data for cancellation with improper line breaks');
+  console.log('Creating RFC-compliant cancellation ICS');
+
+  // Extract important information from the original ICS
+  // We'll extract each piece separately using regex to handle various malformed inputs
+  let uid = '';
+  let summary = '';
+  let dtstart = '';
+  let dtend = '';
+  let dtstamp = formatIcsDate(new Date());
+  let created = '';
+  let lastModified = '';
+  let sequence = 0;
+  let organizerEmail = '';
+  let organizerName = '';
+  let attendees: Array<{email: string, name?: string, role?: string, partstat?: string}> = [];
+
+  // Extract UID (most critical - must be the same as original event)
+  const uidMatch = originalIcs.match(/UID:([^\r\n;]+)/i);
+  if (uidMatch && uidMatch[1]) {
+    uid = uidMatch[1].trim();
+  } else if (eventData.uid) {
+    uid = eventData.uid;
+  } else {
+    console.error('No UID found in original ICS or event data');
+    uid = `cancel-${Date.now()}@caldavclient.local`;
+  }
+
+  // Extract SUMMARY
+  const summaryMatch = originalIcs.match(/SUMMARY:([^\r\n]+)/i);
+  if (summaryMatch && summaryMatch[1]) {
+    summary = summaryMatch[1].trim();
+  } else if (eventData.title) {
+    summary = eventData.title;
+  } else {
+    summary = 'Cancelled Event';
+  }
+
+  // Extract DTSTART
+  const dtstartMatch = originalIcs.match(/DTSTART:([^\r\n]+)/i);
+  if (dtstartMatch && dtstartMatch[1]) {
+    dtstart = dtstartMatch[1].trim();
+  } else if (eventData.startDate) {
+    dtstart = formatIcsDate(new Date(eventData.startDate));
+  }
+
+  // Extract DTEND
+  const dtendMatch = originalIcs.match(/DTEND:([^\r\n]+)/i);
+  if (dtendMatch && dtendMatch[1]) {
+    dtend = dtendMatch[1].trim();
+  } else if (eventData.endDate) {
+    dtend = formatIcsDate(new Date(eventData.endDate));
+  }
+
+  // Extract CREATED
+  const createdMatch = originalIcs.match(/CREATED:([^\r\n]+)/i);
+  if (createdMatch && createdMatch[1]) {
+    created = createdMatch[1].trim();
+  } else {
+    created = dtstamp;
+  }
+
+  // Extract LAST-MODIFIED
+  const lastModifiedMatch = originalIcs.match(/LAST-MODIFIED:([^\r\n]+)/i);
+  if (lastModifiedMatch && lastModifiedMatch[1]) {
+    lastModified = lastModifiedMatch[1].trim();
+  } else {
+    lastModified = dtstamp;
+  }
+
+  // Extract SEQUENCE and increment it
+  const sequenceMatch = originalIcs.match(/SEQUENCE:([0-9]+)/i);
+  if (sequenceMatch && sequenceMatch[1]) {
+    sequence = parseInt(sequenceMatch[1], 10) + 1;
+  } else if (eventData.sequence) {
+    sequence = parseInt(eventData.sequence, 10) + 1;
+  } else {
+    sequence = 1; // Default for cancellation is 1
+  }
+
+  // Extract ORGANIZER info
+  const organizerMatch = originalIcs.match(/ORGANIZER(?:;CN=([^:]+))?:mailto:([^\r\n]+)/i);
+  if (organizerMatch) {
+    if (organizerMatch[1]) organizerName = organizerMatch[1].trim();
+    if (organizerMatch[2]) organizerEmail = organizerMatch[2].trim();
+  } else if (eventData.organizer) {
+    organizerEmail = eventData.organizer.email || '';
+    organizerName = eventData.organizer.name || '';
+  }
+
+  // Extract ATTENDEE info - handle all possible formats
+  const attendeeRegexes = [
+    /ATTENDEE(?:;([^:]+))?:mailto:([^\r\n]+)/gi,  // Standard format
+    /ATTENDEE(?:;([^:]+))?:\s*mailto:([^\r\n]+)/gi, // With space after colon
+    /ATTENDEE([^:]*):([^\r\n]+)/gi // Any format with colon
+  ];
+
+  let foundAttendees = false;
+  for (const regex of attendeeRegexes) {
+    // Use exec instead of matchAll for better compatibility
+    let match;
+    const matches = [];
+    while ((match = regex.exec(originalIcs)) !== null) {
+      matches.push(match);
+    }
     
-    // Remove any literal \r\n that should be actual line breaks
-    cleanedIcs = cleanedIcs.replace(/\\r\\n/g, '\r\n');
-    
-    // Clear out problematic line breaks in the wrong places
-    cleanedIcs = cleanedIcs.replace(/\r\n:/g, ':');
-    
-    // If still no proper line breaks, fully restructure the content
-    if (!cleanedIcs.match(/\r?\n/)) {
-      // Extract key properties
-      const uid = cleanedIcs.match(/UID:([^;:\r\n]+)/i)?.[1]?.trim() || eventData.uid;
-      const dtstart = cleanedIcs.match(/DTSTART:([^;:\r\n]+)/i)?.[1]?.trim();
-      const dtend = cleanedIcs.match(/DTEND:([^;:\r\n]+)/i)?.[1]?.trim();
-      const summary = cleanedIcs.match(/SUMMARY:([^;:\r\n]+)/i)?.[1]?.trim();
-      const organizer = cleanedIcs.match(/ORGANIZER[^:]*:([^;:\r\n]+)/i)?.[1]?.trim();
-      const organizerCN = cleanedIcs.match(/ORGANIZER;CN=([^;:\r\n]+)/i)?.[1]?.trim();
-      
-      // Extract attendees
-      const attendeeMatches = [...cleanedIcs.matchAll(/ATTENDEE[^:]*:([^;:\r\n]+)/gi)];
-      const attendees = attendeeMatches.map(match => {
-        const line = match[0];
+    if (matches.length > 0) {
+      foundAttendees = true;
+      matches.forEach(match => {
+        const params = match[1] || '';
+        let email = match[2].trim();
         
-        // Extract role, participation status and other parameters
-        const role = line.match(/ROLE=([^;:\r\n]+)/i)?.[1] || 'REQ-PARTICIPANT';
-        const partstat = line.match(/PARTSTAT=([^;:\r\n]+)/i)?.[1] || 'NEEDS-ACTION';
-        const cn = line.match(/CN=([^;:\r\n]+)/i)?.[1];
-        const email = line.match(/mailto:([^;:\r\n>\s]+)/i)?.[1];
-        
-        if (!email) return null;
-        
-        return {
-          role,
-          partstat,
-          cn,
-          email
-        };
-      }).filter(a => a !== null);
-      
-      // Reconstruct a clean ICS file
-      const lines = [
-        'BEGIN:VCALENDAR',
-        'VERSION:2.0',
-        'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
-        'METHOD:CANCEL',
-        'BEGIN:VEVENT',
-        `UID:${uid}`,
-        summary ? `SUMMARY:${summary}` : 'SUMMARY:CANCELLED EVENT',
-        dtstart ? `DTSTART:${dtstart}` : '',
-        dtend ? `DTEND:${dtend}` : '',
-        `DTSTAMP:${formatIcsDate(new Date())}`,
-        `SEQUENCE:${(parseInt(eventData.sequence || '0') + 1)}`,
-        'STATUS:CANCELLED'
-      ];
-      
-      // Add organizer
-      if (organizer) {
-        if (organizerCN) {
-          lines.push(`ORGANIZER;CN=${organizerCN}:${organizer}`);
-        } else {
-          lines.push(`ORGANIZER:${organizer}`);
+        // Sometimes email has mailto: prefix embedded
+        if (email.startsWith('mailto:')) {
+          email = email.substring(7);
         }
-      }
-      
-      // Add attendees
-      attendees.forEach(attendee => {
-        if (!attendee) return;
         
-        let line = 'ATTENDEE';
-        if (attendee.cn) line += `;CN=${attendee.cn}`;
-        line += `;ROLE=${attendee.role};PARTSTAT=${attendee.partstat}`;
-        line += `:mailto:${attendee.email}`;
+        // Extract role, name and partstat if present
+        const roleMatch = params.match(/ROLE=([^;]+)/i);
+        const cnMatch = params.match(/CN=([^;]+)/i);
+        const partstatMatch = params.match(/PARTSTAT=([^;]+)/i);
         
-        lines.push(line);
+        attendees.push({
+          email,
+          name: cnMatch ? cnMatch[1] : undefined,
+          role: roleMatch ? roleMatch[1] : 'REQ-PARTICIPANT',
+          partstat: partstatMatch ? partstatMatch[1] : 'NEEDS-ACTION'
+        });
       });
-      
-      // Close the event and calendar
-      lines.push('END:VEVENT');
-      lines.push('END:VCALENDAR');
-      
-      // Join with proper line endings
-      cleanedIcs = lines.filter(l => l).join('\r\n');
+      break; // Stop after finding attendees with one regex
     }
   }
-  
-  // Now use the sanitizer on our cleaned ICS data
-  return sanitizeAndFormatICS(cleanedIcs, {
-    method: 'CANCEL',
-    status: 'CANCELLED',
-    sequence: (parseInt(eventData.sequence || '0') + 1),
-    preserveAttendees: true // Ensure all attendees are notified
+
+  // If no attendees found in ICS, use the ones from eventData
+  if (!foundAttendees && eventData.attendees && eventData.attendees.length > 0) {
+    eventData.attendees.forEach((att: any) => {
+      attendees.push({
+        email: att.email,
+        name: att.name,
+        role: att.role || 'REQ-PARTICIPANT',
+        partstat: att.status || 'NEEDS-ACTION'
+      });
+    });
+  }
+
+  // Build a clean, RFC-compliant cancellation ICS
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+    'METHOD:CANCEL',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `SUMMARY:${summary}`,
+    dtstart ? `DTSTART:${dtstart}` : '',
+    dtend ? `DTEND:${dtend}` : '',
+    `DTSTAMP:${dtstamp}`,
+    created ? `CREATED:${created}` : '',
+    `LAST-MODIFIED:${dtstamp}`,
+    `SEQUENCE:${sequence}`,
+    'STATUS:CANCELLED'
+  ].filter(line => line);
+
+  // Add organizer
+  if (organizerEmail) {
+    if (organizerName) {
+      lines.push(`ORGANIZER;CN=${organizerName}:mailto:${organizerEmail}`);
+    } else {
+      lines.push(`ORGANIZER:mailto:${organizerEmail}`);
+    }
+  }
+
+  // Add attendees
+  attendees.forEach(att => {
+    let line = 'ATTENDEE';
+    
+    // Add parameters in consistent order
+    if (att.name) line += `;CN=${att.name}`;
+    if (att.role) line += `;ROLE=${att.role}`;
+    if (att.partstat) line += `;PARTSTAT=${att.partstat}`;
+    
+    // Ensure the email has mailto: prefix
+    line += `:mailto:${att.email}`;
+    
+    lines.push(line);
   });
+
+  // Close the components
+  lines.push('END:VEVENT');
+  lines.push('END:VCALENDAR');
+
+  // Join with CRLF as required by RFC 5545
+  return lines.join('\r\n');
 }
 
 /**
