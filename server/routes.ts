@@ -36,6 +36,7 @@ import { initializeWebSocketServer } from "./websocket-handler";
 import { initializeWebSocketNotificationService, WebSocketNotificationService, WebSocketNotification } from "./websocket-notifications";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 import { enhancedSyncService } from './enhanced-sync-service';
+import { testIcsFormatting } from './ics-formatter-test';
 
 // Initialize the WebSocket notification service for use throughout the app
 let websocketNotificationService: WebSocketNotificationService;
@@ -268,10 +269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: 'Either eventId or icsData must be provided' });
       }
       
-      // Import the ICS formatter test utility
-      const { testIcsFormatting } = require('./ics-formatter-test');
-      
-      // Perform the test
+      // Perform the test using imported testIcsFormatting function
       const result = testIcsFormatting(icsDataToTest);
       
       // If sendRealEmails is true, also send a test email with the formatted ICS
