@@ -4026,8 +4026,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       } else {
-        // For test emails, leave uid undefined - the email service will generate one properly
-        uid = undefined;
+        // For test/manual emails without an eventId, generate a new stable UID
+        // instead of relying on email service to generate one (causing inconsistencies)
+        uid = `manual-${Date.now()}-${Math.random().toString(36).substr(2, 9)}@caldavclient.local`;
+        console.log(`[EmailEndpoint] Generated new UID ${uid} for manual email`);
       }
       
       // If this is for an existing event, update the emailSent status

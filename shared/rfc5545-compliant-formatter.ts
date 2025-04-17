@@ -13,7 +13,6 @@
  */
 
 import { EventInvitationData, Attendee, Resource } from '../server/enhanced-email-service';
-import { v4 as uuidv4 } from 'uuid';
 
 // Constants for RFC 5545 compliance
 const LINE_LENGTH_LIMIT = 75; // RFC 5545 specifies line length limit
