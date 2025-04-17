@@ -28,11 +28,13 @@ interface EmailPreviewData {
   resources?: Resource[]; // Add resources to preview data
   eventId?: number; // Optional event ID if sending emails for an existing event
   recurrenceRule?: string | object; // Add recurrence rule
+  uid?: string; // Store the UID for consistent event identification
 }
 
 interface EmailPreviewResponse {
   html: string;
-  ics: string;
+  ics?: string;
+  uid?: string; // Add UID to the response interface
 }
 
 interface SendEmailResponse {
@@ -84,8 +86,15 @@ export function useEmailPreview() {
       }
     },
     onSuccess: (data) => {
+      // Store the response data including the UID
       setPreviewData(data);
       setPreviewError(null);
+      
+      if (data.uid) {
+        console.log(`Received UID from email preview: ${data.uid}`);
+      } else {
+        console.log('No UID received in preview response');
+      }
     },
     onError: (error) => {
       console.error('Failed to generate email preview:', error);
@@ -183,9 +192,22 @@ export function useEmailPreview() {
       return Promise.reject(error);
     }
     
-    // Send email
+    // Send email with UID from preview (if available)
     try {
-      const result = await sendEmailMutation.mutateAsync(data);
+      // Include the UID from preview data in the email request
+      const dataWithUid = {
+        ...data,
+        uid: previewData?.uid // Add the UID from preview response
+      };
+      
+      // Log UID consistency for debugging
+      if (previewData?.uid) {
+        console.log(`Sending email with UID from preview: ${previewData.uid}`);
+      } else {
+        console.log('No UID found in preview data, sending without UID');
+      }
+      
+      const result = await sendEmailMutation.mutateAsync(dataWithUid);
       return result;
     } catch (error) {
       console.error('Email sending error:', error);
