@@ -82,6 +82,7 @@ export class EnhancedEmailService {
   private configPath = path.join(process.cwd(), 'email-config.json');
 
   constructor() {
+    // Try to load config from file
     this.loadConfig();
   }
 
@@ -89,13 +90,11 @@ export class EnhancedEmailService {
     try {
       if (fs.existsSync(this.configPath)) {
         const configData = fs.readFileSync(this.configPath, 'utf8');
-        this.config = JSON.parse(configData);
+        const config = JSON.parse(configData);
         
         if (this.initTransporter()) {
           this.initialized = true;
-          console.log('Enhanced Email service initialized with config from file');
-        } else {
-          console.log('Failed to initialize enhanced email transporter with config from file');
+          console.log('Enhanced Email service initialized from config file');
         }
       } else {
         console.log('Enhanced Email config file not found');
@@ -109,7 +108,7 @@ export class EnhancedEmailService {
     if (!this.config) {
       return false;
     }
-
+    
     try {
       this.transporter = nodemailer.createTransport({
         host: this.config.host,
@@ -134,7 +133,13 @@ export class EnhancedEmailService {
    */
   private validateEventUID(data: EventInvitationData): void {
     if (!data.uid) {
-      throw new Error('Event UID is required for email operations. This ensures proper event lifecycle tracking.');
+      throw new Error('Event must have a UID to send emails');
+    }
+    
+    // In a real implementation, we would check the UID against a central service
+    // For now, we'll just ensure the UID is not empty
+    if (data.uid.trim() === '') {
+      throw new Error('Event UID cannot be empty');
     }
   }
 
@@ -142,21 +147,21 @@ export class EnhancedEmailService {
    * Update or configure the email service
    */
   public updateConfig(config: SmtpConfig): boolean {
+    this.config = config;
+    
+    // Save to file for persistence
     try {
-      this.config = config;
-      
-      // Save config to file
       fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2));
-      
-      // Initialize transporter with new config
-      const result = this.initTransporter();
-      this.initialized = result;
-      
-      return result;
     } catch (error) {
-      console.error('Error updating enhanced email config:', error);
-      return false;
+      console.error('Error saving enhanced email config:', error);
     }
+    
+    if (this.initTransporter()) {
+      this.initialized = true;
+      return true;
+    }
+    
+    return false;
   }
 
   /**
@@ -178,17 +183,18 @@ export class EnhancedEmailService {
    * This uses the RFC 5545 compliant formatter
    */
   public generateICSData(data: EventInvitationData): string {
-    // Ensure the event has a UID before generating ICS data
-    this.validateEventUID(data);
+    const formatOptions = {
+      method: data.method || 'REQUEST',
+      status: data.status,
+      sequence: data.sequence
+    };
     
-    // Generate ICS data using the RFC 5545 compliant formatter
-    const icsData = formatRFC5545Event(data);
+    const icsData = formatRFC5545Event(data, formatOptions);
     
     // Validate the generated ICS data
     const validationResult = validateICSData(icsData);
     if (!validationResult.valid) {
-      console.error('Generated ICS data is not valid:', validationResult.errors);
-      throw new Error(`Invalid ICS data generated: ${validationResult.errors.join(', ')}`);
+      console.warn('Generated ICS data has validation issues:', validationResult.errors);
     }
     
     return icsData;
@@ -212,8 +218,10 @@ export class EnhancedEmailService {
       // Ensure the event has a UID before sending emails
       this.validateEventUID(data);
       
-      // Generate ICS data for the invitation
+      // Default method for invitations is REQUEST
       const method = data.method || 'REQUEST';
+      
+      // Generate ICS data using RFC 5545 compliant formatter
       const icsData = this.generateICSData({
         ...data,
         method,
@@ -230,7 +238,9 @@ export class EnhancedEmailService {
       const htmlContent = this.generateInvitationEmailContent(data);
       
       // Send emails to all attendees
-      const sendPromises = data.attendees.map(async (attendee) => {
+      const sendPromises: Promise<any>[] = [];
+      
+      for (const attendee of data.attendees) {
         const mailOptions = {
           from: this.config?.from,
           to: attendee.email,
@@ -243,12 +253,14 @@ export class EnhancedEmailService {
           }
         };
         
-        return this.transporter?.sendMail(mailOptions);
-      });
+        if (this.transporter) {
+          sendPromises.push(this.transporter.sendMail(mailOptions));
+        }
+      }
       
       // Send emails to resource admins if applicable
       if (data.resources && data.resources.length > 0) {
-        data.resources.forEach((resource) => {
+        for (const resource of data.resources) {
           const adminEmail = resource.adminEmail || resource.email;
           if (adminEmail) {
             const resourceHtml = this.generateResourceRequestEmailContent(data, resource);
@@ -265,12 +277,16 @@ export class EnhancedEmailService {
               }
             };
             
-            sendPromises.push(this.transporter?.sendMail(resourceMailOptions));
+            if (this.transporter) {
+              sendPromises.push(this.transporter.sendMail(resourceMailOptions));
+            }
           }
-        });
+        }
       }
       
-      await Promise.all(sendPromises);
+      if (sendPromises.length > 0) {
+        await Promise.all(sendPromises);
+      }
       
       return {
         success: true,
@@ -322,7 +338,9 @@ export class EnhancedEmailService {
       const htmlContent = this.generateCancellationEmailContent(cancelData);
       
       // Send emails to all attendees
-      const sendPromises = data.attendees.map(async (attendee) => {
+      const sendPromises: Promise<any>[] = [];
+      
+      for (const attendee of data.attendees) {
         const mailOptions = {
           from: this.config?.from,
           to: attendee.email,
@@ -335,12 +353,14 @@ export class EnhancedEmailService {
           }
         };
         
-        return this.transporter?.sendMail(mailOptions);
-      });
+        if (this.transporter) {
+          sendPromises.push(this.transporter.sendMail(mailOptions));
+        }
+      }
       
       // Send emails to resource admins if applicable
       if (data.resources && data.resources.length > 0) {
-        data.resources.forEach((resource) => {
+        for (const resource of data.resources) {
           const adminEmail = resource.adminEmail || resource.email;
           if (adminEmail) {
             const resourceHtml = this.generateResourceCancellationEmailContent(data, resource);
@@ -357,12 +377,16 @@ export class EnhancedEmailService {
               }
             };
             
-            sendPromises.push(this.transporter?.sendMail(resourceMailOptions));
+            if (this.transporter) {
+              sendPromises.push(this.transporter.sendMail(resourceMailOptions));
+            }
           }
-        });
+        }
       }
       
-      await Promise.all(sendPromises);
+      if (sendPromises.length > 0) {
+        await Promise.all(sendPromises);
+      }
       
       return {
         success: true,
@@ -413,7 +437,9 @@ export class EnhancedEmailService {
       const htmlContent = this.generateUpdateEmailContent(updateData);
       
       // Send emails to all attendees
-      const sendPromises = data.attendees.map(async (attendee) => {
+      const sendPromises: Promise<any>[] = [];
+      
+      for (const attendee of data.attendees) {
         const mailOptions = {
           from: this.config?.from,
           to: attendee.email,
@@ -426,12 +452,14 @@ export class EnhancedEmailService {
           }
         };
         
-        return this.transporter?.sendMail(mailOptions);
-      });
+        if (this.transporter) {
+          sendPromises.push(this.transporter.sendMail(mailOptions));
+        }
+      }
       
       // Send emails to resource admins if applicable
       if (data.resources && data.resources.length > 0) {
-        data.resources.forEach((resource) => {
+        for (const resource of data.resources) {
           const adminEmail = resource.adminEmail || resource.email;
           if (adminEmail) {
             const resourceHtml = this.generateResourceUpdateEmailContent(data, resource);
@@ -448,12 +476,16 @@ export class EnhancedEmailService {
               }
             };
             
-            sendPromises.push(this.transporter?.sendMail(resourceMailOptions));
+            if (this.transporter) {
+              sendPromises.push(this.transporter.sendMail(resourceMailOptions));
+            }
           }
-        });
+        }
       }
       
-      await Promise.all(sendPromises);
+      if (sendPromises.length > 0) {
+        await Promise.all(sendPromises);
+      }
       
       return {
         success: true,
@@ -668,12 +700,13 @@ export class EnhancedEmailService {
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
         <h2 style="color: #cc0000;">Resource Cancellation: ${data.title}</h2>
-        <p style="color: #666;">A resource request for a resource you manage has been cancelled:</p>
+        <p style="color: #666;">A resource you manage is no longer needed for the following cancelled event:</p>
         
         <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 15px 0; text-decoration: line-through;">
           <p><strong>Resource:</strong> ${resource.name || resource.displayName || 'Unnamed Resource'} (${resource.subType || resource.type || 'Unknown Type'})</p>
           <p><strong>When:</strong> ${startTime} - ${endTime}</p>
           ${data.location ? `<p><strong>Where:</strong> ${data.location}</p>` : ''}
+          ${data.description ? `<p><strong>Description:</strong> ${data.description}</p>` : ''}
           <p><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
         </div>
         
@@ -697,13 +730,14 @@ export class EnhancedEmailService {
     
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
-        <h2 style="color: #0066cc;">Resource Request Updated: ${data.title}</h2>
-        <p style="color: #666;">A resource request for a resource you manage has been updated:</p>
+        <h2 style="color: #0066cc;">Resource Update: ${data.title}</h2>
+        <p style="color: #666;">A resource you manage has been requested for an updated event:</p>
         
         <div style="background-color: #f9f9f9; padding: 15px; border-radius: 5px; margin: 15px 0;">
           <p><strong>Resource:</strong> ${resource.name || resource.displayName || 'Unnamed Resource'} (${resource.subType || resource.type || 'Unknown Type'})</p>
           <p><strong>When:</strong> ${startTime} - ${endTime}</p>
           ${data.location ? `<p><strong>Where:</strong> ${data.location}</p>` : ''}
+          ${data.description ? `<p><strong>Description:</strong> ${data.description}</p>` : ''}
           <p><strong>Organizer:</strong> ${data.organizer.name || data.organizer.email}</p>
         </div>
         
@@ -723,16 +757,17 @@ export class EnhancedEmailService {
    * Format a date and time for email display
    */
   private formatDateTimeForEmail(date: Date): string {
-    return date.toLocaleString('en-US', {
+    return new Intl.DateTimeFormat('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric',
       hour: 'numeric',
       minute: 'numeric',
-      hour12: true
-    });
+      timeZoneName: 'short'
+    }).format(date);
   }
 }
 
+// Export a singleton instance
 export const enhancedEmailService = new EnhancedEmailService();
