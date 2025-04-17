@@ -33,7 +33,7 @@ import { notificationService } from "./memory-notification-service";
 import { registerEmailTestEndpoints } from "./email-test-endpoint";
 import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
 import { initializeWebSocketServer } from "./websocket-handler";
-import { initializeWebSocketNotificationService, WebSocketNotificationService } from "./websocket-notifications";
+import { initializeWebSocketNotificationService, WebSocketNotificationService, WebSocketNotification } from "./websocket-notifications";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 import { enhancedSyncService } from './enhanced-sync-service';
 
@@ -43,7 +43,14 @@ let websocketNotificationService: WebSocketNotificationService;
 // Helper function to broadcast messages to users
 function broadcastToUser(userId: number, message: any) {
   if (websocketNotificationService) {
-    websocketNotificationService.sendToUser(userId, message);
+    // Create a properly formatted notification object
+    const notification: WebSocketNotification = {
+      type: message.type || 'system', 
+      action: message.action || 'info',
+      timestamp: Date.now(),
+      data: message
+    };
+    websocketNotificationService.broadcastToUser(userId, notification);
   } else {
     console.warn('WebSocket notification service not initialized yet');
   }
@@ -90,6 +97,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize WebSocket server for real-time notifications
   // This internally initializes the WebSocket notification service
   initializeWebSocketServer(httpServer);
+  
+  // Initialize the WebSocket notification service for use with the broadcast function
+  websocketNotificationService = initializeWebSocketNotificationService(httpServer);
   
   console.log('[express] WebSocket server initialization handled in routes.ts');
   
@@ -5046,9 +5056,12 @@ END:VCALENDAR`;
       const notification = await notificationService.createNotification(testNotification);
       
       // Send the notification through WebSocket if available
-      await websocketNotificationService.sendToUser(userId, {
+      await websocketNotificationService.sendNotification({
         type: 'notification',
-        data: notification
+        action: 'created',
+        timestamp: Date.now(),
+        data: notification,
+        sourceUserId: null
       });
       
       res.status(201).json(notification);
