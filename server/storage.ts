@@ -14,6 +14,14 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { DatabaseStorage } from './database-storage';
 
+// Interface for UID mappings
+export interface UIDMapping {
+  eventId: number;
+  uid: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface IStorage {
   // Initialize database
   initializeDatabase(): Promise<void>;
@@ -47,6 +55,14 @@ export interface IStorage {
   updateEvent(id: number, event: Partial<Event>): Promise<Event | undefined>;
   deleteEvent(id: number): Promise<boolean>;
   deleteEventsByCalendarId(calendarId: number): Promise<boolean>; // Delete all events in a calendar
+  
+  // UID Persistence methods
+  getAllUIDs(): Promise<UIDMapping[]>;
+  getUIDByEventId(eventId: number): Promise<UIDMapping | undefined>;
+  getEventIdByUID(uid: string): Promise<UIDMapping | undefined>;
+  storeUID(mapping: UIDMapping): Promise<UIDMapping>;
+  updateUID(eventId: number, uid: string): Promise<UIDMapping | undefined>;
+  deleteUID(eventId: number): Promise<boolean>;
   
   // Server connection methods
   getServerConnection(userId: number): Promise<ServerConnection | undefined>;

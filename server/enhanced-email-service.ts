@@ -1,14 +1,16 @@
 /**
- * Enhanced Email Service With UID Enforcement
+ * Enhanced Email Service With Central UID Service Integration
  * 
  * This version of the email service ensures that events have proper UIDs
- * by checking for their existence before generating emails.
+ * by integrating with the Central UID Service to validate and retrieve
+ * the correct UIDs before generating emails.
  */
 
 import nodemailer from 'nodemailer';
 import fs from 'fs';
 import path from 'path';
-import { formatRFC5545Event, validateICSData, extractUIDFromICS } from '../shared/rfc5545-compliant-formatter';
+import { formatRFC5545Event, validateICSData } from '../shared/rfc5545-compliant-formatter';
+import { centralUIDService } from './central-uid-service';
 
 export interface SmtpConfig {
   host: string;
