@@ -3928,17 +3928,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       await emailService.initialize(userId);
       
-      // Note: We no longer need this section as ensureValidUID in emailService handles all UID validation 
-      // and will use centralUIDService directly. This makes the code more maintainable and consistent.
-      // The emailService.generateEmailPreview method will automatically call ensureValidUID
+      console.log('[EMAIL PREVIEW] Incoming request with eventId:', req.body.eventId, 'and original UID:', req.body.uid);
+      
+      // Before generating the preview, ensure we validate and get a consistent UID from centralUIDService
+      // Create a copy of the request body to avoid mutating the original
+      const previewData = { ...req.body };
+      
+      // Validate UID through centralUIDService
+      const { centralUIDService } = await import('./central-uid-service');
+      
+      // If we have an eventId, ALWAYS validate or generate a consistent UID for it
+      let validatedUid = previewData.uid;
+      
+      if (previewData.eventId) {
+        validatedUid = await centralUIDService.validateEventUID(previewData.eventId, previewData.uid);
+        console.log(`[EMAIL PREVIEW] Validated UID ${validatedUid} for event ${previewData.eventId}`);
+        
+        // Update the request data with validated UID
+        previewData.uid = validatedUid;
+      } else if (!previewData.uid) {
+        // If we don't have an eventId or a UID, generate a new one
+        validatedUid = centralUIDService.generateUID();
+        console.log(`[EMAIL PREVIEW] Generated new UID ${validatedUid} for event without ID`);
+        
+        // Update the request data with new UID
+        previewData.uid = validatedUid;
+      }
       
       // Generate preview HTML with ensured UID consistency
       // This uses the centralUIDService internally via ensureValidUID method
-      const previewHtml = await emailService.generateEmailPreview(req.body);
+      const previewHtml = await emailService.generateEmailPreview(previewData);
+      
+      // Important: Return the validated UID, not the original one from the request
       res.setHeader('Content-Type', 'application/json');
       res.json({ 
         html: previewHtml,
-        uid: req.body.uid  // Include the UID in the response so client can use it
+        uid: validatedUid  // Return the validated/generated UID so client can use it consistently
       });
     } catch (err) {
       console.error("Error generating email preview:", err);
