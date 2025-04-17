@@ -1347,10 +1347,17 @@ export class EmailService {
       return modifiedIcs;
     }
     
-    // Build a new ICS file from scratch (only for new events)
-    const method = data.status === 'CANCELLED' ? 'CANCEL' : 'REQUEST';
-    const status = data.status || (method === 'CANCEL' ? 'CANCELLED' : 'CONFIRMED');
+    // Build a new ICS file from scratch
+    // RFC 6638 COMPLIANCE CHECK: If this is a cancellation, ensure METHOD=CANCEL and STATUS=CANCELLED
+    const isCancellation = data.status === 'CANCELLED';
+    const method = isCancellation ? 'CANCEL' : 'REQUEST';
+    const status = isCancellation ? 'CANCELLED' : (data.status || 'CONFIRMED');
     const sequence = data.sequence || 0;
+    
+    // Log explicit information about cancellation status for debugging
+    if (isCancellation) {
+      console.log(`GENERATING CANCELLATION ICS: METHOD=${method}, STATUS=${status}, SEQUENCE=${sequence}, UID=${data.uid || 'pending'}`);
+    }
 
     // Ensure we have a valid UID, get from centralUIDService if undefined
     if (!data.uid) {
