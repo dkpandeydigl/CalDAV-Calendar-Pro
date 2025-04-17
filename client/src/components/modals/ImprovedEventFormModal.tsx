@@ -1406,21 +1406,29 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           // For existing events, always use the existing UID
           eventUID = event.uid;
           console.log(`Using existing event UID: ${eventUID}`);
+        } else if (initialEventUID) {
+          // CRITICAL FIX: For new events, use the UID we generated when the form was opened
+          // This ensures consistent UID from creation through all updates
+          eventUID = initialEventUID;
+          console.log(`Using initial UID generated at form open: ${eventUID}`);
         } else if (persistedUID) {
-          // For new events with a persisted UID already available, use it
+          // Fallback to persisted UID if initialEventUID somehow isn't available
           eventUID = persistedUID;
-          console.log(`Using persisted UID from IndexedDB: ${eventUID}`);
+          console.log(`Fallback: Using persisted UID from IndexedDB: ${eventUID}`);
         } else {
-          // For completely new events without a stored UID, generate a new one
-          // and store it for future reference
+          // Last resort: For completely new events without any UID, generate a new one
           eventUID = generateUID();
-          console.log(`Generated new UID for event: ${eventUID}`);
+          console.log(`Last resort: Generated new UID for event: ${eventUID}`);
         }
 
         // Log the UID source for debugging
         console.log(`Final event UID (${event ? 'update' : 'create'}): ${eventUID}`, {
-          source: event?.uid ? 'existing' : (persistedUID ? 'persisted' : 'generated'),
+          source: event?.uid 
+            ? 'existing' 
+            : (initialEventUID ? 'initialGenerated' : (persistedUID ? 'persisted' : 'lastResortGenerated')),
           eventId: event?.id,
+          initialEventUID,
+          persistedUID
         });
 
         // Validate that we have a valid UID
@@ -2554,6 +2562,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                           resources,
                           // Include event ID for existing events
                           eventId: event ? event.id : undefined,
+                          // Always include our consistent UID to ensure the same UID is used for creation and updates
+                          uid: initialEventUID || event?.uid || undefined,
                           // Include recurrence rule if it exists
                           recurrenceRule: recurrence.pattern !== 'None' ? {
                             pattern: recurrence.pattern,
@@ -2567,6 +2577,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                         
                         generatePreview(previewParams)
                           .then(previewResult => {
+                            // If we received a UID in the response, update our initialEventUID if needed
+                            if (previewResult?.uid && !initialEventUID) {
+                              setInitialEventUID(previewResult.uid);
+                              console.log(`Received UID from event preview: ${previewResult.uid} - storing for consistency`);
+                            }
+                            
                             if (previewResult && previewResult.html) {
                               setEmailPreviewHtml(previewResult.html);
                             }
@@ -2696,6 +2712,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       resources,
                       // Include event ID for existing events
                       eventId: event ? event.id : undefined,
+                      // Always include our consistent UID to ensure the same UID is used for creation and updates
+                      uid: initialEventUID || event?.uid || undefined,
                       // Include recurrence rule if it exists
                       recurrenceRule: recurrence.pattern !== 'None' ? {
                         pattern: recurrence.pattern,
