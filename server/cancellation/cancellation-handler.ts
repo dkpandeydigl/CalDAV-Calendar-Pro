@@ -218,10 +218,6 @@ export function generateCancellationIcs(originalIcs: string, eventData: EventInv
 }
 
 /**
- * Creates a minimal cancellation ICS if we don't have the original
- * This is a fallback method only used in error scenarios
- */
-/**
  * Creates a minimal RFC 6638 compliant cancellation ICS
  * This is either used as a fallback method or when rebuilding a non-compliant ICS
  * 
