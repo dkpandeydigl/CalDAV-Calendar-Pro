@@ -59,9 +59,14 @@ export interface CancellationEventData {
  */
 export function generateCancellationIcs(originalIcs: string, eventData: CancellationEventData): string {
   console.log(`=== GENERATING RFC 6638 COMPLIANT CANCELLATION ICS ===`);
-  console.log(`Event UID: ${eventData.uid}`);
   
-  // If we have the original ICS, use it as a base and modify it to ensure compliance
+  // Always log the current UID being used for cancellation
+  console.log(`Using event UID for cancellation: ${eventData.uid}`);
+  
+  let finalUid = eventData.uid;
+  let icsData = '';
+  
+  // If we have the original ICS, try to use it as a base for the cancellation
   if (originalIcs && originalIcs.trim().length > 0) {
     try {
       // Preprocess the ICS data to fix common issues
@@ -103,43 +108,51 @@ export function generateCancellationIcs(originalIcs: string, eventData: Cancella
       
       // Extract original UID - this is critical for RFC 6638 compliance
       const uidMatch = processedIcs.match(/UID:([^\r\n]+)/i);
+      
       if (uidMatch && uidMatch[1]) {
-        // Use the original UID if found, otherwise fall back to the provided UID
-        const originalUid = uidMatch[1].trim();
-        console.log(`Found original UID: ${originalUid}`);
+        const extractedUid = uidMatch[1].trim();
         
-        // RFC 6638 COMPLIANCE REQUIREMENTS
-        // Extract essential information from original ICS
-        const originalSequence = extractSequence(processedIcs);
-        
-        // Handle sequence number - ensure it's treated as a number and incremented
-        // RFC 6638 requires that SEQUENCE be incremented for cancellations
-        const newSequence = typeof originalSequence === 'number' ? 
-          (originalSequence + 1) : 
-          (eventData.sequence ? Number(eventData.sequence) + 1 : 1);
-        
-        // Extract X-properties to preserve them
-        const xProperties = extractXProperties(processedIcs);
-        
-        // Extract CREATED and LAST-MODIFIED from original ICS if possible
-        const createdMatch = processedIcs.match(/CREATED:([^\r\n]+)/i);
-        const lastModifiedMatch = processedIcs.match(/LAST-MODIFIED:([^\r\n]+)/i);
-        
-        const createdTime = createdMatch ? createdMatch[1] : formatICalDate(new Date());
-        const currentTime = formatICalDate(new Date());
-        
-        // Create the cancellation ICS according to RFC 6638
-        // The following properties are REQUIRED for RFC 6638 compliance:
-        // 1. METHOD:CANCEL in VCALENDAR component
-        // 2. STATUS:CANCELLED in VEVENT component 
-        // 3. Original UID must be preserved
-        // 4. SEQUENCE must be incremented
-        let icsData = `BEGIN:VCALENDAR
+        // Log if we found a different UID than the one provided
+        if (extractedUid !== eventData.uid) {
+          console.log(`⚠️ UID mismatch detected! Extracted: ${extractedUid}, Provided: ${eventData.uid}`);
+          console.log(`Using the provided UID for consistency: ${eventData.uid}`);
+        } else {
+          console.log(`✓ Original UID verified: ${extractedUid}`);
+        }
+      }
+      
+      // RFC 6638 COMPLIANCE REQUIREMENTS
+      // Extract essential information from original ICS
+      const originalSequence = extractSequence(processedIcs);
+      
+      // Handle sequence number - ensure it's treated as a number and incremented
+      // RFC 6638 requires that SEQUENCE be incremented for cancellations
+      const newSequence = typeof originalSequence === 'number' ? 
+        (originalSequence + 1) : 
+        (eventData.sequence ? Number(eventData.sequence) + 1 : 1);
+      
+      // Extract X-properties to preserve them
+      const xProperties = extractXProperties(processedIcs);
+      
+      // Extract CREATED and LAST-MODIFIED from original ICS if possible
+      const createdMatch = processedIcs.match(/CREATED:([^\r\n]+)/i);
+      const lastModifiedMatch = processedIcs.match(/LAST-MODIFIED:([^\r\n]+)/i);
+      
+      const createdTime = createdMatch ? createdMatch[1] : formatICalDate(new Date());
+      const currentTime = formatICalDate(new Date());
+      
+      // Create the cancellation ICS according to RFC 6638
+      // The following properties are REQUIRED for RFC 6638 compliance:
+      // 1. METHOD:CANCEL in VCALENDAR component
+      // 2. STATUS:CANCELLED in VEVENT component 
+      // 3. Original UID must be preserved
+      // 4. SEQUENCE must be incremented
+      icsData = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//CalDAV Client//NONSGML v1.0//EN
 METHOD:CANCEL
 BEGIN:VEVENT
-UID:${originalUid}
+UID:${finalUid}
 SUMMARY:CANCELLED: ${escapeICalString(eventData.title || 'Cancelled Event')}
 DTSTART:${formatICalDate(eventData.startDate)}
 DTEND:${formatICalDate(eventData.endDate)}
@@ -230,31 +243,33 @@ STATUS:CANCELLED
         // Close the VEVENT and VCALENDAR
         icsData += `END:VEVENT\r\nEND:VCALENDAR`;
         
-        console.log(`Successfully generated RFC 6638 compliant cancellation ICS for event: ${originalUid}`);
+        console.log(`Successfully generated RFC 6638 compliant cancellation ICS for event: ${finalUid}`);
         return icsData;
-      } else {
-        // No valid UID found in original ICS, fall back to creating a compliant cancellation
-        console.warn(`No valid UID found in original ICS, using provided UID: ${eventData.uid}`);
-      }
+      
     } catch (error) {
       console.error("Error parsing original ICS, falling back to basic cancellation:", error);
+      // Fall through to basic cancellation below
     }
   }
   
-  // If we couldn't process the original ICS, create a minimal RFC 6638 compliant cancellation
-  console.log(`Creating minimal RFC 6638 compliant cancellation ICS for event: ${eventData.uid}`);
+  // If we couldn't process the original ICS or if there was none,
+  // create a minimal but fully RFC 6638 compliant cancellation ICS
+  console.log(`Creating minimal RFC 6638 compliant cancellation ICS for event: ${finalUid}`);
   
-  // Ensure we have a valid sequence number
+  // Ensure we have a valid sequence number (increment if provided)
   const sequenceNumber = eventData.sequence ? Number(eventData.sequence) + 1 : 1;
   const currentTime = formatICalDate(new Date());
   
   // Create a minimal but fully compliant cancellation ICS
-  let icsData = `BEGIN:VCALENDAR
+  // CRITICAL FIX: Log the UID being used to help debug any inconsistencies
+  console.log(`[ICS Cancellation] Using event UID for cancellation: ${finalUid}`);
+  
+  icsData = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//CalDAV Client//NONSGML v1.0//EN
 METHOD:CANCEL
 BEGIN:VEVENT
-UID:${eventData.uid}
+UID:${finalUid}
 SUMMARY:CANCELLED: ${escapeICalString(eventData.title || 'Cancelled Event')}
 DTSTART:${formatICalDate(eventData.startDate)}
 DTEND:${formatICalDate(eventData.endDate)}

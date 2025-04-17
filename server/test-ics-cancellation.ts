@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from 'express';
-import { generateCancellationIcs } from './enhanced-ics-cancellation';
+import { generateCancellationIcs } from './enhanced-ics-cancellation-fixed';
 import { emailService } from './email-service';
 
 /**

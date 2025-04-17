@@ -17,7 +17,7 @@ function isAuthenticated(req: Request, res: Response, next: NextFunction) {
   return res.status(401).json({ message: "Not authenticated" });
 }
 import { emailService } from './email-service';
-import { generateCancellationIcs } from './enhanced-ics-cancellation';
+import { generateCancellationIcs } from './enhanced-ics-cancellation-fixed';
 
 /**
  * Register endpoints for testing RFC 6638 compliant event cancellation
