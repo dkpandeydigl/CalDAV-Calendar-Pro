@@ -2519,11 +2519,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
               <Button
                 variant="outline"
                 onClick={onClose}
-                disabled={isSubmitting || isDeleting || isEmailSending}
+                disabled={isSubmitting || isDeleting || isEmailSending || isCancelling}
                 type="button"
                 className="border border-primary/20 hover:bg-primary/5 transition-all"
               >
-                Cancel
+                Close
               </Button>
               
               {/* Show Send Mail button for both new and existing events with attendees */}
