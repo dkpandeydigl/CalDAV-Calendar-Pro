@@ -813,17 +813,37 @@ export class EmailService {
         console.error('No valid UID found for event cancellation');
       }
       
+      // Extract and use the original UID from the raw ICS data - this is critical for
+      // maintaining UID consistency throughout the event lifecycle
+      const originalEventUid = originalUid || data.uid;
+      
+      console.log(`Preserving original event UID for cancellation: ${originalEventUid}`);
+      
       // Import our enhanced ICS cancellation generator
       const { generateCancellationIcs } = require('./enhanced-ics-cancellation');
       
-      // Prepare event data for cancellation
+      // Prepare event data for cancellation, ensuring we use the original event UID
       const cancellationData = {
         ...data,
-        uid: originalUid || data.uid
+        uid: originalEventUid
       };
       
       // Generate the cancellation ICS using our enhanced generator
-      return generateCancellationIcs(processedIcs, cancellationData);
+      const cancellationIcs = generateCancellationIcs(processedIcs, cancellationData);
+      
+      // Verify that the generated ICS contains required RFC 6638 properties
+      const hasMethod = cancellationIcs.includes('METHOD:CANCEL');
+      const hasStatus = cancellationIcs.includes('STATUS:CANCELLED');
+      const hasOriginalUid = cancellationIcs.includes(`UID:${originalEventUid}`);
+      
+      if (!hasMethod || !hasStatus || !hasOriginalUid) {
+        console.error('Generated cancellation ICS is missing required properties:');
+        if (!hasMethod) console.error('- Missing METHOD:CANCEL');
+        if (!hasStatus) console.error('- Missing STATUS:CANCELLED');
+        if (!hasOriginalUid) console.error(`- UID mismatch: Expected ${originalEventUid}`);
+      }
+      
+      return cancellationIcs;
       
     } catch (error) {
       console.error('Error using enhanced ICS cancellation generator:', error);
@@ -1173,7 +1193,12 @@ export class EmailService {
   
   /**
    * Generate ICS data for an event
-   * This method ensures a consistent UID is used throughout the event lifecycle
+   * 
+   * This method ensures a consistent UID is used throughout the event lifecycle by:
+   * 1. Extracting and preserving the original UID from raw data if available
+   * 2. Using the centralized UID from the event data if no raw data is available
+   * 3. Ensuring METHOD and STATUS fields are set appropriately for the event type
+   * 4. Incrementing SEQUENCE values as required by RFC 6638
    */
   public generateICSData(data: EventInvitationData): string {
     // If there's already raw data available, modify it directly instead of using formatter

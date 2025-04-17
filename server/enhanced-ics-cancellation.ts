@@ -80,6 +80,11 @@ export function generateCancellationIcs(originalIcs: string, eventData: Cancella
   const currentTime = formatICalDate(new Date());
   
   // Create the cancellation ICS according to RFC 6638
+  // The following properties are REQUIRED for RFC 6638 compliance:
+  // 1. METHOD:CANCEL in VCALENDAR component
+  // 2. STATUS:CANCELLED in VEVENT component 
+  // 3. Original UID must be preserved
+  // 4. SEQUENCE must be incremented
   let icsData = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//CalDAV Client//NONSGML v1.0//EN
