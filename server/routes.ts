@@ -3928,28 +3928,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       await emailService.initialize(userId);
       
-      // Make sure we have a valid UID before generating preview
-      if (!req.body.uid) {
-        // Use central UID service to generate a UID if missing
-        const eventId = req.body.eventId || Date.now();
-        const storedUid = await centralUIDService.getUID(eventId);
-        
-        if (storedUid) {
-          req.body.uid = storedUid;
-          console.log(`Using stored UID for email preview: ${storedUid}`);
-        } else {
-          // Generate a new UID if none exists
-          req.body.uid = centralUIDService.generateUID();
-          console.log(`Generated new UID for email preview: ${req.body.uid}`);
-          
-          // Store this new UID if we have an event ID
-          if (req.body.eventId) {
-            await centralUIDService.storeUID(req.body.eventId, req.body.uid);
-          }
-        }
-      }
+      // Note: We no longer need this section as ensureValidUID in emailService handles all UID validation 
+      // and will use centralUIDService directly. This makes the code more maintainable and consistent.
+      // The emailService.generateEmailPreview method will automatically call ensureValidUID
       
-      const previewHtml = emailService.generateEmailPreview(req.body);
+      // Generate preview HTML with ensured UID consistency
+      // This uses the centralUIDService internally via ensureValidUID method
+      const previewHtml = await emailService.generateEmailPreview(req.body);
       res.setHeader('Content-Type', 'application/json');
       res.json({ 
         html: previewHtml,
