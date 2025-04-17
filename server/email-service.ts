@@ -55,6 +55,43 @@ export interface EventInvitationData {
 export class EmailService {
   private transporter: nodemailer.Transporter | null = null;
   private config: SmtpConfig | null = null;
+  
+  /**
+   * Apply proper line folding to ICS data according to RFC 5545
+   * Lines longer than 75 characters should be folded
+   * @param icsData The original ICS data
+   * @returns Properly folded ICS data
+   */
+  private applyIcsLineFolding(icsData: string): string {
+    if (!icsData) return '';
+    
+    try {
+      const lines = icsData.split(/\r?\n/);
+      const foldedLines: string[] = [];
+      
+      for (const line of lines) {
+        if (line.length <= 75) {
+          foldedLines.push(line);
+          continue;
+        }
+        
+        // Fold the line according to RFC 5545 (max 75 chars per line, continuation lines start with space)
+        let currentLine = line;
+        while (currentLine.length > 75) {
+          const foldedPart = currentLine.substring(0, 75);
+          currentLine = currentLine.substring(75);
+          foldedLines.push(foldedPart);
+          foldedLines.push(` ${currentLine}`);
+          break; // Only fold once to avoid over-processing
+        }
+      }
+      
+      return foldedLines.join('\r\n');
+    } catch (error) {
+      console.error('Error applying ICS line folding:', error);
+      return icsData; // Return original as fallback
+    }
+  }
 
   /**
    * Initialize the email service with SMTP configuration for a specific user
@@ -648,12 +685,32 @@ export class EmailService {
       
       console.log(`Preserving original UID in cancellation: ${originalUid}`);
       
-      // Create a modified version of the original ICS with only necessary changes
-      // This preserves all original formatting and attributes
-      let modifiedIcs = originalIcs
+      // First, ensure the ICS has proper line breaks
+      // This fixes the issue where cancelled event ICS files show all data in one line
+      let normalizedIcs = originalIcs;
+      
+      // If the ICS doesn't have proper line breaks, add them
+      if (!normalizedIcs.match(/\r?\n/)) {
+        console.warn('ICS data has no line breaks - fixing format for RFC 5545 compliance');
+        // Insert proper line breaks after each ICS field
+        normalizedIcs = normalizedIcs
+          .replace(/;/g, '\r\n;')
+          .replace(/:/g, ':\r\n')
+          .replace(/END:VEVENT/g, '\r\nEND:VEVENT')
+          .replace(/END:VCALENDAR/g, '\r\nEND:VCALENDAR')
+          .replace(/BEGIN:VEVENT/g, '\r\nBEGIN:VEVENT')
+          .replace(/BEGIN:VCALENDAR/g, 'BEGIN:VCALENDAR\r\n')
+          // Fix any double line breaks created
+          .replace(/\r\n\r\n/g, '\r\n')
+          // Normalize attribute lines
+          .replace(/\r\n([^:;]+):/g, '\r\n$1:')
+          .replace(/\r\n([^:;]+);/g, '\r\n$1;');
+      }
+      
+      // Create a modified version of the normalized ICS with only necessary changes
+      let modifiedIcs = normalizedIcs
         // Change METHOD to CANCEL
         .replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL') 
-        // If METHOD doesn't exist, we'll add it later
         // Change STATUS to CANCELLED
         .replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED')
         // Update SEQUENCE
@@ -682,6 +739,10 @@ export class EmailService {
           );
         }
       }
+      
+      // Final check for proper line folding (RFC 5545 compliance)
+      // ICS lines shouldn't be longer than 75 characters
+      modifiedIcs = this.applyIcsLineFolding(modifiedIcs);
       
       return modifiedIcs;
     } catch (error) {
@@ -999,23 +1060,31 @@ export class EmailService {
    * This function returns a Promise that resolves once we have a valid UID
    */
   public async ensureValidUID(data: EventInvitationData): Promise<string> {
-    // If we already have a UID, return it immediately
-    if (data.uid) {
-      return data.uid;
-    }
-    
     try {
       // Import centralUIDService
       const { centralUIDService } = await import('./central-uid-service');
       
-      // If we have an eventId, get or generate a UID for it
+      // If we have an eventId, ALWAYS get or generate a UID for it from central service
+      // regardless of whether we already have a UID in data
       if (data.eventId) {
-        const validatedUid = await centralUIDService.validateEventUID(data.eventId);
+        // This is the critical fix: Always validate UID through central service even if data already has a UID
+        const validatedUid = await centralUIDService.validateEventUID(data.eventId, data.uid);
+        
+        if (data.uid && data.uid !== validatedUid) {
+          console.warn(`[EmailService] UID MISMATCH DETECTED: Event ${data.eventId}`);
+          console.warn(`[EmailService] Provided: ${data.uid}, Validated: ${validatedUid}`);
+          console.warn(`[EmailService] Using validated UID from centralUIDService for consistency`);
+        }
+        
         console.log(`[EmailService] Retrieved validated UID ${validatedUid} for event ${data.eventId}`);
         data.uid = validatedUid;
         return validatedUid;
+      } else if (data.uid) {
+        // If we don't have an eventId but do have a UID, use it but log a warning
+        console.warn(`[EmailService] Using provided UID ${data.uid} for event without ID - cannot validate`);
+        return data.uid;
       } else {
-        // Generate a new UID if we don't have an eventId
+        // Generate a new UID if we don't have an eventId or a UID
         const newUid = centralUIDService.generateUID();
         console.log(`[EmailService] Generated new UID ${newUid} for event without ID`);
         data.uid = newUid;
@@ -1023,6 +1092,13 @@ export class EmailService {
       }
     } catch (error) {
       console.error('[EmailService] Error ensuring valid UID:', error);
+      
+      // If we already have a UID, use it despite the validation error
+      if (data.uid) {
+        console.warn(`[EmailService] Using existing UID ${data.uid} after validation error`);
+        return data.uid;
+      }
+      
       // Last resort fallback - this should never happen in production
       const emergencyUid = `event-emergency-${Date.now()}-${Math.random().toString(36).substring(2, 11)}@caldavclient.local`;
       console.error(`[EmailService] Using EMERGENCY fallback UID: ${emergencyUid}`);
