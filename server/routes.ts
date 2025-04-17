@@ -3940,6 +3940,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // EMAIL SENDING API  
   // Register enhanced cancellation test endpoints
   registerCancellationTestEndpoint(app);
+  
+  // TEST ENDPOINT FOR ICS FORMAT FIXES (no authentication required)
+  app.post("/api/test-ics-format", async (req, res) => {
+    try {
+      // Use direct imports since we already have these imported at the top
+      const { sanitizeAndFormatICS } = await import('./ical-utils');
+      const { centralUIDService } = await import('./central-uid-service');
+      
+      // Generate a UID if not provided
+      const eventId = req.body.eventId || Date.now();
+      let uid = req.body.uid;
+      
+      if (!uid) {
+        uid = centralUIDService.generateUID();
+        console.log(`Generated new UID for test: ${uid}`);
+        
+        // Store this new UID if we have an event ID
+        if (req.body.eventId) {
+          await centralUIDService.storeUID(req.body.eventId, uid);
+        }
+      }
+      
+      // Create a test ICS with common formatting issues
+      const testIcsWithIssues = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test Calendar App//EN
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').replace(/\.[0-9]{3}/, '')}Z
+DTSTART:20250521T033000Z
+DTEND:20250521T043000Z
+SUMMARY:${req.body.title || "Test Event"}
+DESCRIPTION:${req.body.description || "Test Description"}
+LOCATION:${req.body.location || "Test Location"}
+ORGANIZER;CN=test@example.com:mailto:test@example.com
+ATTENDEE;ROLE=Secretary:mailto::attendee@example.com
+ATTENDEE;CUTYPE=RESOURCE;CN=Resource Name;RESOURCE-TYPE=Conference Room;X-RESOURCE-ID=resource-123;X-RESOURCE-CAPACITY=10:mailto::resource@example.com
+RRULE:FREQ=DAILY;COUNT=2mailto:something@wrong.com
+END:VEVENT
+END:VCALENDAR`;
+      
+      // Fix the formatting issues using our sanitizeAndFormatICS function
+      const fixedIcs = sanitizeAndFormatICS(testIcsWithIssues, {
+        method: 'REQUEST',
+        status: 'CONFIRMED',
+        sequence: 0
+      });
+      
+      // Return both versions for comparison
+      res.json({
+        originalIcs: testIcsWithIssues,
+        fixedIcs: fixedIcs,
+        uid: uid
+      });
+    } catch (error) {
+      console.error("Error in test-ics-format endpoint:", error);
+      res.status(500).json({ 
+        message: "An error occurred", 
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
 
   app.post("/api/send-email", isAuthenticated, async (req, res) => {
     try {

@@ -866,14 +866,27 @@ export function sanitizeAndFormatICS(icsData: string, options: { method?: string
     result = result.replace('PRODID:', `METHOD:${options.method}\r\nPRODID:`);
   }
   
-  // Fix missing STATUS
+  // Fix missing STATUS - add after UID line similar to SEQUENCE
   if (options.status && !result.includes('STATUS:')) {
-    result = result.replace('UID:', `UID:\r\nSTATUS:${options.status}\r\n`);
+    const uidRegex = /(UID:.*(?:\r\n|\n|$))/;
+    if (uidRegex.test(result)) {
+      result = result.replace(uidRegex, `$1STATUS:${options.status}\r\n`);
+    } else {
+      // Fallback if UID line not found
+      result = result.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nSTATUS:${options.status}`);
+    }
   }
   
-  // Fix missing SEQUENCE
+  // Fix missing SEQUENCE - add it after the UID line, not in the middle of it
   if (options.sequence !== undefined && !result.includes('SEQUENCE:')) {
-    result = result.replace('UID:', `UID:\r\nSEQUENCE:${options.sequence}\r\n`);
+    // Replace entire UID line with itself + SEQUENCE
+    const uidRegex = /(UID:.*(?:\r\n|\n|$))/;
+    if (uidRegex.test(result)) {
+      result = result.replace(uidRegex, `$1SEQUENCE:${options.sequence}\r\n`);
+    } else {
+      // Fallback if UID line not found
+      result = result.replace('BEGIN:VEVENT', `BEGIN:VEVENT\r\nSEQUENCE:${options.sequence}`);
+    }
   }
   
   // Fix non-standard RESOURCE-TYPE properties (should have X- prefix)
