@@ -131,15 +131,22 @@ export class EnhancedEmailService {
    * Validate that the event has a proper UID
    * This is critical for ensuring event lifecycle integrity
    */
-  private validateEventUID(data: EventInvitationData): void {
-    if (!data.uid) {
-      throw new Error('Event must have a UID to send emails');
+  private async validateEventUID(data: EventInvitationData): Promise<void> {
+    if (!data.eventId) {
+      throw new Error('Event must have an ID to validate UID');
     }
     
-    // In a real implementation, we would check the UID against a central service
-    // For now, we'll just ensure the UID is not empty
-    if (data.uid.trim() === '') {
-      throw new Error('Event UID cannot be empty');
+    try {
+      // Use the central UID service to get the correct UID for this event
+      const validUID = await centralUIDService.validateEventUID(data.eventId, data.uid);
+      
+      // Update the data with the validated UID (this might be different from what was passed in)
+      data.uid = validUID;
+      
+      console.log(`[EnhancedEmailService] Validated UID ${validUID} for event ${data.eventId}`);
+    } catch (error) {
+      console.error('[EnhancedEmailService] Error validating event UID:', error);
+      throw new Error(`Failed to validate event UID: ${error.message || error}`);
     }
   }
 
@@ -216,7 +223,7 @@ export class EnhancedEmailService {
 
     try {
       // Ensure the event has a UID before sending emails
-      this.validateEventUID(data);
+      await this.validateEventUID(data);
       
       // Default method for invitations is REQUEST
       const method = data.method || 'REQUEST';
@@ -320,7 +327,7 @@ export class EnhancedEmailService {
 
     try {
       // Ensure the event has a UID before sending emails
-      this.validateEventUID(data);
+      await this.validateEventUID(data);
       
       // Set the status to CANCELLED
       const cancelData = {
@@ -420,7 +427,7 @@ export class EnhancedEmailService {
 
     try {
       // Ensure the event has a UID before sending emails
-      this.validateEventUID(data);
+      await this.validateEventUID(data);
       
       // Set the method to REQUEST for updates
       const updateData = {
@@ -513,7 +520,7 @@ export class EnhancedEmailService {
   ): Promise<EmailResult> {
     try {
       // Ensure the event has a UID before generating preview
-      this.validateEventUID(data);
+      await this.validateEventUID(data);
       
       let icsData: string;
       let htmlContent: string;
