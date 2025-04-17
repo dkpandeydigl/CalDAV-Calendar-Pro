@@ -2863,6 +2863,45 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Alert Dialog for cancel event confirmation */}
+      <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Event</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel this event? 
+              This will notify all {attendees.length} attendee{attendees.length !== 1 ? 's' : ''} that the event has been cancelled.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={() => setShowCancelDialog(false)}
+              disabled={isCancelling}
+            >
+              No, Keep Event
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={executeCancellation}
+              disabled={isCancelling}
+              className="bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              {isCancelling ? 
+                <div className="flex items-center">
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  <span>Cancelling...</span>
+                </div>
+               : 
+                <div className="flex items-center">
+                  <Ban className="h-4 w-4 mr-1" />
+                  <span>Yes, Cancel Event</span>
+                </div>
+              }
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };
