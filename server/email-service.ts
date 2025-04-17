@@ -65,6 +65,34 @@ export class EmailService {
    * @param icsData The raw ICS data to process
    * @returns Properly formatted ICS data
    */
+  /**
+   * Format a date for use in a filename (YYYYMMDD format)
+   * @param date The date to format
+   * @returns Formatted date string in YYYYMMDD format
+   */
+  formatDateForFilename(date: Date | string | number): string {
+    try {
+      const d = new Date(date);
+      if (isNaN(d.getTime())) {
+        return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      }
+      return d.toISOString().slice(0, 10).replace(/-/g, '');
+    } catch (e) {
+      console.error('Error formatting date for filename:', e);
+      return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    }
+  }
+
+  /**
+   * Process ICS data to fix common formatting issues for attachments
+   * - Fixes literal \r\n strings in ICS data
+   * - Handles ICS data that appears as a single line
+   * - Fixes corrupted SEQUENCE fields with mailto: appended
+   * - Removes any surrounding quotes from the ICS data
+   * 
+   * @param icsData The raw ICS data to process
+   * @returns Properly formatted ICS data
+   */
   processIcsForAttachment(icsData: string): string {
     // Ensure data is a string
     if (typeof icsData !== 'string') {
@@ -72,6 +100,12 @@ export class EmailService {
     }
     
     let processedIcsData = icsData;
+    
+    // Remove any surrounding quotes
+    if (processedIcsData.startsWith('"') && processedIcsData.endsWith('"')) {
+      console.log('[EmailService] Removing surrounding quotes from ICS data');
+      processedIcsData = processedIcsData.substring(1, processedIcsData.length - 1);
+    }
     
     // Check if ICS data contains literal \r\n strings instead of actual line breaks
     if (processedIcsData.includes('\\r\\n') || !processedIcsData.includes('\r\n')) {
@@ -641,9 +675,20 @@ export class EmailService {
       // Process ICS data for attachment to ensure proper formatting in email clients
       const processedIcsData = this.processIcsForAttachment(icsData);
       
+      // Generate a standardized filename for the cancellation ICS
+      // Use format: "cancelled-event-title-YYYYMMDD.ics" for better readability
+      const formattedDate = this.formatDateForFilename(data.startDate);
+      const sanitizedTitle = (data.title || 'event')
+        .replace(/[^a-zA-Z0-9]/g, '-')
+        .replace(/-{2,}/g, '-')
+        .toLowerCase()
+        .substring(0, 30); // Limit title length in filename
+      
+      const icsFilename = `cancelled-${sanitizedTitle}-${formattedDate}.ics`;
+      
       const attachments = [
         {
-          filename: `${data.uid || `event-${Date.now()}`}.ics`,
+          filename: icsFilename,
           content: processedIcsData,
           contentType: 'text/calendar'
         }

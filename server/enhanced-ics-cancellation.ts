@@ -1,8 +1,18 @@
 /**
  * Enhanced ICS Cancellation Generator
  * 
- * Properly formats ICS files for event cancellations according to RFC 5545
- * Ensures consistency with update ICS files and preserves all required fields
+ * Properly formats ICS files for event cancellations according to RFC 6638
+ * This ensures conformance with the CalDAV Scheduling Extensions specification
+ * which builds upon the core RFC 5545 iCalendar standard for event cancellation.
+ * 
+ * Key features:
+ * - METHOD:CANCEL is used in the iCalendar component
+ * - STATUS:CANCELLED is set on the event
+ * - SEQUENCE number is incremented per the specification
+ * - UID is preserved from the original event
+ * - All required timestamp fields (CREATED, DTSTAMP, LAST-MODIFIED) are included
+ * - Original resource and attendee information is maintained
+ * - No surrounding quotes are added to the ICS file
  */
 
 /**
@@ -39,19 +49,22 @@ export interface CancellationEventData {
 /**
  * Generate a standardized cancellation ICS file
  * 
- * This approach preserves the original UID and correctly formats the ICS according to RFC 5545
- * for maximum compatibility across email clients.
+ * This approach preserves the original UID and correctly formats the ICS according to RFC 6638
+ * (CalDAV Scheduling Extensions) which builds upon RFC 5545 for maximum compatibility across
+ * email clients and calendar servers.
  * 
  * @param originalIcs The original ICS data from the event
  * @param eventData Event data for the cancellation
  * @returns Properly formatted ICS file for cancellation
  */
 export function generateCancellationIcs(originalIcs: string, eventData: CancellationEventData): string {
-  console.log(`Generating RFC 5545 compliant cancellation ICS for event: ${eventData.uid}`);
+  console.log(`Generating RFC 6638 compliant cancellation ICS for event: ${eventData.uid}`);
   
   // Extract essential information from original ICS
   const originalSequence = extractSequence(originalIcs);
-  // Handle sequence number - ensure it's treated as a number
+  
+  // Handle sequence number - ensure it's treated as a number and incremented
+  // RFC 6638 requires that SEQUENCE be incremented for cancellations
   const newSequence = typeof originalSequence === 'number' ? 
     (originalSequence + 1) : 
     (eventData.sequence ? Number(eventData.sequence) + 1 : 1);
@@ -59,7 +72,14 @@ export function generateCancellationIcs(originalIcs: string, eventData: Cancella
   // Extract X-properties to preserve them
   const xProperties = extractXProperties(originalIcs);
   
-  // Create the cancellation ICS
+  // Extract CREATED and LAST-MODIFIED from original ICS if possible
+  const createdMatch = originalIcs.match(/CREATED:([^\r\n]+)/i);
+  const lastModifiedMatch = originalIcs.match(/LAST-MODIFIED:([^\r\n]+)/i);
+  
+  const createdTime = createdMatch ? createdMatch[1] : formatICalDate(new Date());
+  const currentTime = formatICalDate(new Date());
+  
+  // Create the cancellation ICS according to RFC 6638
   let icsData = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//CalDAV Client//NONSGML v1.0//EN
@@ -69,7 +89,9 @@ UID:${eventData.uid}
 SUMMARY:${escapeICalString(eventData.title || 'Cancelled Event')}
 DTSTART:${formatICalDate(eventData.startDate)}
 DTEND:${formatICalDate(eventData.endDate)}
-DTSTAMP:${formatICalDate(new Date())}
+DTSTAMP:${currentTime}
+CREATED:${createdTime}
+LAST-MODIFIED:${currentTime}
 SEQUENCE:${newSequence}
 STATUS:CANCELLED
 `;
