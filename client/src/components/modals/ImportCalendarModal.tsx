@@ -339,172 +339,172 @@ export default function ImportCalendarModal({
         ) : (
           <div className="flex-1 overflow-auto">
             {importStep === 'upload' ? (
-            <div className="py-4 flex flex-col items-center justify-center min-h-[300px]">
-              <div className="w-full max-w-md p-6 border-2 border-dashed border-neutral-300 rounded-lg text-center">
-                <UploadCloud className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-neutral-900 mb-2">Upload Calendar File</h3>
-                <p className="text-sm text-neutral-500 mb-4">
-                  Select an iCalendar (.ics) file to import events from
-                </p>
-                
-                <div className="flex flex-col gap-4">
-                  <input
-                    type="file"
-                    accept=".ics"
-                    className="hidden"
-                    id="calendar-file"
-                    onChange={handleFileChange}
-                  />
-                  <label 
-                    htmlFor="calendar-file" 
-                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm bg-primary text-primary-foreground hover:bg-primary/90 focus:outline-none cursor-pointer"
-                  >
-                    Choose File
-                  </label>
+              <div className="py-4 flex flex-col items-center justify-center min-h-[300px]">
+                <div className="w-full max-w-md p-6 border-2 border-dashed border-neutral-300 rounded-lg text-center">
+                  <UploadCloud className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-neutral-900 mb-2">Upload Calendar File</h3>
+                  <p className="text-sm text-neutral-500 mb-4">
+                    Select an iCalendar (.ics) file to import events from
+                  </p>
                   
-                  {file && (
-                    <div className="text-sm text-neutral-800 bg-neutral-100 p-2 rounded">
-                      Selected: {file.name}
-                    </div>
-                  )}
-                  
-                  {parseError && (
-                    <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
-                      {parseError}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="py-4">
-              <div className="mb-4">
-                <div className="flex justify-between items-center mb-2">
-                  <Label htmlFor="calendar-select">Select calendar to import into:</Label>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-8 px-2"
-                    onClick={handleRefreshCalendars}
-                    disabled={isRefreshingCalendars}
-                  >
-                    <RefreshCw className={`h-4 w-4 mr-1 ${isRefreshingCalendars ? 'animate-spin' : ''}`} />
-                    Refresh
-                  </Button>
-                </div>
-                
-                {!user ? (
-                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-2 border border-amber-200">
-                    <span className="font-medium">Authentication required:</span> You must be logged in to access your calendars.
-                  </div>
-                ) : isLoadingCalendars ? (
-                  <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Loading calendars...
-                  </div>
-                ) : calendarError ? (
-                  <div className="text-sm text-destructive bg-destructive/10 p-3 rounded mb-2">
-                    Error loading calendars: {calendarError.message || 'Failed to load calendars'}
-                  </div>
-                ) : calendars.length === 0 ? (
-                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-2 border border-amber-200">
-                    No calendars found. Please refresh or create a new calendar.
-                  </div>
-                ) : (
-                  <Select value={selectedCalendarId} onValueChange={setSelectedCalendarId}>
-                    <SelectTrigger id="calendar-select" className="w-full" type="button">
-                      <SelectValue placeholder="Select a calendar" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {calendars.map((calendar: Calendar) => (
-                        <SelectItem key={calendar.id} value={String(calendar.id)}>
-                          <div className="flex items-center">
-                            <span 
-                              className="inline-block h-3 w-3 rounded-full mr-2" 
-                              style={{ backgroundColor: calendar.color }} 
-                            />
-                            {calendar.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              
-              <div className="flex items-center space-x-2 mb-4">
-                <Checkbox 
-                  id="replace-existing"
-                  checked={replaceExisting}
-                  onCheckedChange={(checked) => setReplaceExisting(checked as boolean)}
-                />
-                <Label 
-                  htmlFor="replace-existing"
-                  className="cursor-pointer text-sm"
-                >
-                  Replace existing events with same UID
-                </Label>
-              </div>
-              
-              <div className="bg-white border rounded-md shadow-sm mb-4">
-                <div className="p-3 border-b flex justify-between items-center bg-neutral-50">
-                  <div className="text-sm font-medium">
-                    {parsedEvents.length} events found in file
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => handleToggleAll(true)}
+                  <div className="flex flex-col gap-4">
+                    <input
+                      type="file"
+                      accept=".ics"
+                      className="hidden"
+                      id="calendar-file"
+                      onChange={handleFileChange}
+                    />
+                    <label 
+                      htmlFor="calendar-file" 
+                      className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm bg-primary text-primary-foreground hover:bg-primary/90 focus:outline-none cursor-pointer"
                     >
-                      Select All
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => handleToggleAll(false)}
-                    >
-                      Deselect All
-                    </Button>
-                  </div>
-                </div>
-                
-                <div className="max-h-[300px] overflow-y-auto">
-                  {parsedEvents.map((event, index) => (
-                    <div 
-                      key={index} 
-                      className={`p-3 border-b flex items-start ${
-                        event.selected ? 'bg-primary/5' : ''
-                      }`}
-                    >
-                      <Checkbox 
-                        id={`event-${index}`}
-                        checked={event.selected}
-                        onCheckedChange={() => handleToggleEvent(index)}
-                        className="mt-1"
-                      />
-                      <div className="ml-3 flex-1">
-                        <Label 
-                          htmlFor={`event-${index}`}
-                          className="font-medium cursor-pointer"
-                        >
-                          {event.summary || 'Untitled Event'}
-                        </Label>
-                        <div className="text-sm text-neutral-600 mt-1">
-                          {formatEventDate(event.startDate, event.endDate, event.allDay)}
-                        </div>
-                        {event.location && (
-                          <div className="text-sm text-neutral-500 mt-1">
-                            Location: {event.location}
-                          </div>
-                        )}
+                      Choose File
+                    </label>
+                    
+                    {file && (
+                      <div className="text-sm text-neutral-800 bg-neutral-100 p-2 rounded">
+                        Selected: {file.name}
                       </div>
-                    </div>
-                  ))}
+                    )}
+                    
+                    {parseError && (
+                      <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
+                        {parseError}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="py-4">
+                <div className="mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <Label htmlFor="calendar-select">Select calendar to import into:</Label>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 px-2"
+                      onClick={handleRefreshCalendars}
+                      disabled={isRefreshingCalendars}
+                    >
+                      <RefreshCw className={`h-4 w-4 mr-1 ${isRefreshingCalendars ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </Button>
+                  </div>
+                  
+                  {!user ? (
+                    <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-2 border border-amber-200">
+                      <span className="font-medium">Authentication required:</span> You must be logged in to access your calendars.
+                    </div>
+                  ) : isLoadingCalendars ? (
+                    <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Loading calendars...
+                    </div>
+                  ) : calendarError ? (
+                    <div className="text-sm text-destructive bg-destructive/10 p-3 rounded mb-2">
+                      Error loading calendars: {calendarError.message || 'Failed to load calendars'}
+                    </div>
+                  ) : calendars.length === 0 ? (
+                    <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-2 border border-amber-200">
+                      No calendars found. Please refresh or create a new calendar.
+                    </div>
+                  ) : (
+                    <Select value={selectedCalendarId} onValueChange={setSelectedCalendarId}>
+                      <SelectTrigger id="calendar-select" className="w-full" type="button">
+                        <SelectValue placeholder="Select a calendar" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {calendars.map((calendar: Calendar) => (
+                          <SelectItem key={calendar.id} value={String(calendar.id)}>
+                            <div className="flex items-center">
+                              <span 
+                                className="inline-block h-3 w-3 rounded-full mr-2" 
+                                style={{ backgroundColor: calendar.color }} 
+                              />
+                              {calendar.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                
+                <div className="flex items-center space-x-2 mb-4">
+                  <Checkbox 
+                    id="replace-existing"
+                    checked={replaceExisting}
+                    onCheckedChange={(checked) => setReplaceExisting(checked as boolean)}
+                  />
+                  <Label 
+                    htmlFor="replace-existing"
+                    className="cursor-pointer text-sm"
+                  >
+                    Replace existing events with same UID
+                  </Label>
+                </div>
+                
+                <div className="bg-white border rounded-md shadow-sm mb-4">
+                  <div className="p-3 border-b flex justify-between items-center bg-neutral-50">
+                    <div className="text-sm font-medium">
+                      {parsedEvents.length} events found in file
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleToggleAll(true)}
+                      >
+                        Select All
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleToggleAll(false)}
+                      >
+                        Deselect All
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div className="max-h-[300px] overflow-y-auto">
+                    {parsedEvents.map((event, index) => (
+                      <div 
+                        key={index} 
+                        className={`p-3 border-b flex items-start ${
+                          event.selected ? 'bg-primary/5' : ''
+                        }`}
+                      >
+                        <Checkbox 
+                          id={`event-${index}`}
+                          checked={event.selected}
+                          onCheckedChange={() => handleToggleEvent(index)}
+                          className="mt-1"
+                        />
+                        <div className="ml-3 flex-1">
+                          <Label 
+                            htmlFor={`event-${index}`}
+                            className="font-medium cursor-pointer"
+                          >
+                            {event.summary || 'Untitled Event'}
+                          </Label>
+                          <div className="text-sm text-neutral-600 mt-1">
+                            {formatEventDate(event.startDate, event.endDate, event.allDay)}
+                          </div>
+                          {event.location && (
+                            <div className="text-sm text-neutral-500 mt-1">
+                              Location: {event.location}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
         
