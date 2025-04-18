@@ -1,9 +1,10 @@
-import { db, pool } from './db';
-import { and, inArray, ne } from 'drizzle-orm/expressions';
-import { calendars } from '../shared/schema';
+import { db } from './db';
+import { and, inArray, ne, eq, or } from 'drizzle-orm';
+import { calendars, calendarSharing } from '../shared/schema';
 
 /**
- * Fixed implementation of getSharedCalendars that uses raw SQL to avoid the missing column issue
+ * Fixed implementation of getSharedCalendars that uses the Drizzle ORM properly
+ * This version uses the correct table schema and field names
  */
 export async function getSharedCalendars(userId: number, storage: any): Promise<any[]> {
   try {
@@ -14,64 +15,39 @@ export async function getSharedCalendars(userId: number, storage: any): Promise<
       return [];
     }
     
-    console.log(`SHARING: Looking for calendars shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'none'}`);
+    console.log(`Looking for calendars shared with user ID: ${userId}, username: ${user.username}, email: ${user.email || 'none'}`);
     
     try {
-      // Build the SQL query parameters
-      const params: any[] = [];
-      params.push(userId);
+      // Build query conditions for shared calendars using drizzle-orm
+      const conditions = [];
       
-      // Add email condition if available
-      let emailCondition = '';
+      // Condition 1: Shared directly with user ID
+      conditions.push(eq(calendarSharing.sharedWithUserId, userId));
+      
+      // Condition 2: Shared with user's email if available
       if (user.email && user.email.trim() !== '') {
-        params.push(user.email);
-        emailCondition = 'OR shared_with_email = $2';
+        conditions.push(eq(calendarSharing.sharedWithEmail, user.email));
       }
       
-      // Add username as email condition if it's an email address
-      let usernameCondition = '';
+      // Condition 3: Shared with username if it's an email address
       if (user.username && user.username.includes('@')) {
-        params.push(user.username);
-        usernameCondition = 'OR shared_with_email = $' + params.length;
+        conditions.push(eq(calendarSharing.sharedWithEmail, user.username));
       }
       
-      // Execute the raw SQL query that doesn't rely on sharedByUserId
-      const query = `
-        SELECT * FROM calendar_sharing 
-        WHERE shared_with_user_id = $1
-        ${emailCondition}
-        ${usernameCondition}
-      `;
+      // Execute the query using Drizzle ORM
+      const sharingRecords = await db.select()
+        .from(calendarSharing)
+        .where(or(...conditions));
       
-      console.log('Executing SQL query:', query, 'with params:', params);
+      console.log(`Found ${sharingRecords.length} sharing records for user ${user.username}`);
       
-      // Execute query using the shared pool from db.ts
-      const result = await pool.query(query, params);
-      let records: any[] = [];
-      
-      // Handle different response formats that neonDb might return
-      if (Array.isArray(result)) {
-        if (result.length === 0) {
-          console.log('No shared calendars found (array format)');
-          return [];
-        }
-        records = result;
-      } else if (result && typeof result === 'object' && 'rows' in result && Array.isArray(result.rows)) {
-        if (result.rows.length === 0) {
-          console.log('No shared calendars found (rows format)');
-          return [];
-        }
-        records = result.rows;
-      } else {
-        console.log('No shared calendars found (unknown format)');
+      if (sharingRecords.length === 0) {
         return [];
       }
       
-      console.log(`Found ${records.length} calendar sharing records`);
-      
       // Extract calendar IDs from sharing records
       const calendarIds = Array.from(new Set(
-        records.map((record: any) => record.calendar_id)
+        sharingRecords.map((record) => record.calendarId)
       ));
       
       // Fetch the actual calendar objects
@@ -79,7 +55,7 @@ export async function getSharedCalendars(userId: number, storage: any): Promise<
         .from(calendars)
         .where(
           and(
-            inArray(calendars.id, calendarIds as number[]),
+            inArray(calendars.id, calendarIds),
             ne(calendars.userId, userId)
           )
         );
@@ -88,16 +64,16 @@ export async function getSharedCalendars(userId: number, storage: any): Promise<
       
       // Create a map of permissions for each calendar
       const permissionMap = new Map(
-        records.map((record: any) => [record.calendar_id, record.permission_level])
+        sharingRecords.map((record) => [record.calendarId, record.permissionLevel])
       );
       
       // Create a map to get the sharing record ID for each calendar (for permission management)
       const sharingIdMap = new Map(
-        records.map((record: any) => [record.calendar_id, record.id])
+        sharingRecords.map((record) => [record.calendarId, record.id])
       );
       
       // Add owner info and permissions to each calendar
-      const enhancedCalendarsPromises = sharedCalendars.map(async (calendar: any) => {
+      const enhancedCalendarsPromises = sharedCalendars.map(async (calendar) => {
         // Get owner information
         const owner = await storage.getUser(calendar.userId);
         
@@ -117,11 +93,11 @@ export async function getSharedCalendars(userId: number, storage: any): Promise<
       return await Promise.all(enhancedCalendarsPromises);
       
     } catch (dbError) {
-      console.error('Database error in fixed getSharedCalendars:', dbError);
+      console.error('Database error in getSharedCalendars:', dbError);
       return [];
     }
   } catch (error) {
-    console.error('Error in fixed getSharedCalendars:', error);
+    console.error('Error in getSharedCalendars:', error);
     return [];
   }
 }
