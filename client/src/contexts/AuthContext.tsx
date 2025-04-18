@@ -66,6 +66,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   
   // Force refresh function to manually trigger data reload
   const forceRefreshUserData = useCallback(() => {
+    console.log('AuthContext: Force refreshing user data');
+    // Invalidate important queries
+    queryClient.invalidateQueries({ queryKey: ['/api/user'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/calendars/events'] });
     console.log('Manual force refresh of all user data requested');
     
     // Force a full query client reset
