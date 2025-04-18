@@ -354,6 +354,25 @@ export function registerExportRoutes(app: Express) {
           recurrenceRule = recurrenceRule.split(/mailto:|mailto/)[0];
         }
         
+        // Determine organizer information
+        let organizer = null;
+        try {
+          if (event.organizer) {
+            if (typeof event.organizer === 'string') {
+              organizer = JSON.parse(event.organizer);
+            } else {
+              organizer = event.organizer;
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to parse organizer:', err);
+          // Provide a default organizer if parsing fails
+          organizer = {
+            email: 'calendar-app@example.com',
+            name: 'Calendar App'
+          };
+        }
+        
         // Use enhanced createBasicICS function for consistent RFC 5545 formatting with all event details
         icsContent = createBasicICS({
           title: event.title,
@@ -365,7 +384,7 @@ export function registerExportRoutes(app: Express) {
           attendees,
           resources,
           recurrenceRule,
-          organizer: event.organizer || {
+          organizer: organizer || {
             email: 'calendar-app@example.com',
             name: 'Calendar App'
           }
@@ -526,15 +545,26 @@ export function registerExportRoutes(app: Express) {
         'X-WR-CALDESC:Exported Calendar'
       ];
       
-      // Add each event
+      // Add each event with full details including attendees, resources and proper formatting
       for (const event of allEvents) {
+        // Ensure we have a properly formatted UID with domain
         const safeUid = event.uid?.includes('@') ? event.uid : `${event.uid || `event-${Date.now()}`}@caldavclient.local`;
         const startDate = formatICALDate(new Date(event.startDate));
         const endDate = formatICALDate(new Date(event.endDate));
         
+        // Use current time for created/modified timestamps as these might not be in the event object
+        // This prevents TypeScript errors while maintaining functionality
+        const createDate = now;
+        const lastModified = now;
+        
         lines.push('BEGIN:VEVENT');
         lines.push(`UID:${safeUid}`);
         lines.push(`DTSTAMP:${now}`);
+        
+        // Add created and last modified timestamps
+        lines.push(`CREATED:${createDate}`);
+        lines.push(`LAST-MODIFIED:${lastModified}`);
+        
         lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
         lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
         lines.push(`SUMMARY:${event.title}`);
@@ -556,8 +586,112 @@ export function registerExportRoutes(app: Express) {
           lines.push(`LOCATION:${event.location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
         }
         
+        // Add sequence number
+        lines.push(`SEQUENCE:${event.sequence || 0}`);
+        
+        // Handle recurrence rule if present - IMPORTANT: Sanitize the rule properly
+        if (event.recurrenceRule) {
+          // Remove any malformed "mailto" content that might be in the rule
+          let cleanedRule = event.recurrenceRule;
+          
+          // Rigorous cleaning of RRULE
+          if (cleanedRule.includes('mailto')) {
+            // Split at first occurrence of mailto and keep only what comes before
+            cleanedRule = cleanedRule.split(/mailto/)[0];
+          }
+          
+          // Make sure rule doesn't contain any colon except at the beginning
+          if (cleanedRule.indexOf(':') > 0) {
+            cleanedRule = cleanedRule.split(':')[0];
+          }
+          
+          // If the rule is valid, add it
+          if (cleanedRule && cleanedRule.startsWith('FREQ=')) {
+            lines.push(`RRULE:${cleanedRule}`);
+          }
+        }
+        
+        // Process attendees if present
+        let attendees = [];
+        try {
+          if (event.attendees) {
+            if (typeof event.attendees === 'string') {
+              attendees = JSON.parse(event.attendees);
+            } else if (Array.isArray(event.attendees)) {
+              attendees = event.attendees;
+            }
+            
+            for (const attendee of attendees) {
+              if (!attendee || !attendee.email) continue;
+              
+              let attendeeStr = 'ATTENDEE';
+              
+              if (attendee.name) {
+                attendeeStr += `;CN=${attendee.name}`;
+              }
+              
+              if (attendee.role) {
+                attendeeStr += `;ROLE=${attendee.role}`;
+              } else {
+                attendeeStr += `;ROLE=REQ-PARTICIPANT`;
+              }
+              
+              if (attendee.status) {
+                attendeeStr += `;PARTSTAT=${attendee.status}`;
+              } else {
+                attendeeStr += `;PARTSTAT=NEEDS-ACTION`;
+              }
+              
+              attendeeStr += `:mailto:${attendee.email}`;
+              lines.push(attendeeStr);
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to parse attendees:', err);
+        }
+        
+        // Process resources if present
+        let resources = [];
+        try {
+          if (event.resources) {
+            if (typeof event.resources === 'string') {
+              resources = JSON.parse(event.resources);
+            } else if (Array.isArray(event.resources)) {
+              resources = event.resources;
+            }
+            
+            for (const resource of resources) {
+              if (!resource || !resource.email) continue;
+              
+              let resourceStr = 'ATTENDEE;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT';
+              
+              if (resource.name) {
+                resourceStr += `;CN=${resource.name}`;
+              }
+              
+              if (resource.type) {
+                resourceStr += `;X-RESOURCE-TYPE=${resource.type}`;
+              }
+              
+              if (resource.capacity) {
+                resourceStr += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
+              }
+              
+              resourceStr += `:mailto:${resource.email}`;
+              lines.push(resourceStr);
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to parse resources:', err);
+        }
+        
         if (event.allDay) {
           lines.push('X-MICROSOFT-CDO-ALLDAYEVENT:TRUE');
+        }
+        
+        // Add custom property for calendar color if available
+        if (event.calendarColor) {
+          lines.push(`X-CALDAV-COLOR:${event.calendarColor}`);
         }
         
         lines.push('END:VEVENT');
@@ -688,15 +822,24 @@ export function registerExportRoutes(app: Express) {
         'X-WR-CALDESC:Exported Calendar'
       ];
       
-      // Add each event
+      // Add each event with attendees, resources, and proper formatting
       for (const event of allEvents) {
-        const safeUid = event.uid.includes('@') ? event.uid : `${event.uid}@caldavclient.local`;
+        // Ensure properly formatted UID
+        const safeUid = event.uid?.includes('@') ? event.uid : `${event.uid || `event-${Date.now()}`}@caldavclient.local`;
         const startDate = formatICALDate(new Date(event.startDate));
         const endDate = formatICALDate(new Date(event.endDate));
+        // Use current timestamp for created/modified for consistency and to prevent TypeScript errors
+        const createDate = now;
+        const lastModified = now;
         
         lines.push('BEGIN:VEVENT');
         lines.push(`UID:${safeUid}`);
         lines.push(`DTSTAMP:${now}`);
+        
+        // Add created and last modified timestamps if available
+        lines.push(`CREATED:${createDate}`);
+        lines.push(`LAST-MODIFIED:${lastModified}`);
+        
         lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
         lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
         lines.push(`SUMMARY:${event.title}`);
@@ -706,15 +849,119 @@ export function registerExportRoutes(app: Express) {
         }
         
         if (event.description) {
-          lines.push(`DESCRIPTION:${event.description.replace(/\n/g, '\\n')}`);
+          const formattedDesc = event.description
+            .replace(/\n/g, '\\n')  // Line breaks
+            .replace(/,/g, '\\,')   // Commas
+            .replace(/;/g, '\\;');  // Semicolons
+          
+          lines.push(`DESCRIPTION:${formattedDesc}`);
         }
         
         if (event.location) {
-          lines.push(`LOCATION:${event.location}`);
+          lines.push(`LOCATION:${event.location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
+        }
+        
+        // Add sequence number
+        lines.push(`SEQUENCE:${event.sequence || 0}`);
+        
+        // Add and sanitize recurrence rule if present
+        if (event.recurrenceRule) {
+          // Remove any malformed "mailto" content
+          let cleanedRule = event.recurrenceRule;
+          
+          // Rigorous cleaning of RRULE
+          if (cleanedRule.includes('mailto')) {
+            // Split at first occurrence of mailto and keep only what comes before
+            cleanedRule = cleanedRule.split(/mailto/)[0];
+          }
+          
+          // Make sure rule doesn't contain any colon except at the beginning
+          if (cleanedRule.indexOf(':') > 0) {
+            cleanedRule = cleanedRule.split(':')[0];
+          }
+          
+          // Add the rule if it's valid
+          if (cleanedRule && cleanedRule.startsWith('FREQ=')) {
+            lines.push(`RRULE:${cleanedRule}`);
+          }
+        }
+        
+        // Process attendees if present
+        let attendees = [];
+        try {
+          if (event.attendees) {
+            if (typeof event.attendees === 'string') {
+              attendees = JSON.parse(event.attendees);
+            } else if (Array.isArray(event.attendees)) {
+              attendees = event.attendees;
+            }
+            
+            for (const attendee of attendees) {
+              if (!attendee || !attendee.email) continue;
+              
+              let attendeeStr = 'ATTENDEE';
+              
+              if (attendee.name) {
+                attendeeStr += `;CN=${attendee.name}`;
+              }
+              
+              if (attendee.role) {
+                attendeeStr += `;ROLE=${attendee.role}`;
+              } else {
+                attendeeStr += `;ROLE=REQ-PARTICIPANT`;
+              }
+              
+              if (attendee.status) {
+                attendeeStr += `;PARTSTAT=${attendee.status}`;
+              } else {
+                attendeeStr += `;PARTSTAT=NEEDS-ACTION`;
+              }
+              
+              attendeeStr += `:mailto:${attendee.email}`;
+              lines.push(attendeeStr);
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to parse attendees:', err);
+        }
+        
+        // Process resources if present
+        let resources = [];
+        try {
+          if (event.resources) {
+            if (typeof event.resources === 'string') {
+              resources = JSON.parse(event.resources);
+            } else if (Array.isArray(event.resources)) {
+              resources = event.resources;
+            }
+            
+            for (const resource of resources) {
+              if (!resource || !resource.email) continue;
+              
+              let resourceStr = 'ATTENDEE;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT';
+              
+              if (resource.name) {
+                resourceStr += `;CN=${resource.name}`;
+              }
+              
+              if (resource.type) {
+                resourceStr += `;X-RESOURCE-TYPE=${resource.type}`;
+              }
+              
+              if (resource.capacity) {
+                resourceStr += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
+              }
+              
+              resourceStr += `:mailto:${resource.email}`;
+              lines.push(resourceStr);
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to parse resources:', err);
         }
         
         if (event.allDay) {
-          lines.push(`X-MICROSOFT-CDO-ALLDAYEVENT:TRUE`);
+          lines.push('X-MICROSOFT-CDO-ALLDAYEVENT:TRUE');
         }
         
         lines.push('END:VEVENT');
