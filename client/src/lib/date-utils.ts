@@ -17,14 +17,38 @@ export const formatTime = (date: Date | string): string => {
   return format(dateObj, 'h:mm a');
 };
 
-// Format date and time as "Monday, September 4, 2023"
-export const formatDayOfWeekDate = (date: Date | string): string => {
+// Format date and time as "Monday, September 4, 2023" with timezone support
+export const formatDayOfWeekDate = (date: Date | string, timezone?: string): string => {
   const dateObj = typeof date === 'string' ? parseISO(date) : date;
+  
+  if (timezone) {
+    try {
+      // Use Intl.DateTimeFormat to format the date in the specified timezone
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      });
+      return formatter.format(dateObj);
+    } catch (error) {
+      console.error(`Error formatting date with timezone ${timezone}:`, error);
+      // Fall back to default formatting if there's an error
+    }
+  }
+  
+  // Default format without timezone or if there was an error
   return format(dateObj, 'EEEE, MMMM d, yyyy');
 };
 
-// Format date and time range for event display
-export const formatEventTimeRange = (start: Date | string, end: Date | string, allDay: boolean = false): string => {
+// Format date and time range for event display with timezone support
+export const formatEventTimeRange = (
+  start: Date | string, 
+  end: Date | string, 
+  allDay: boolean = false,
+  timezone?: string
+): string => {
   const startDate = typeof start === 'string' ? parseISO(start) : start;
   const endDate = typeof end === 'string' ? parseISO(end) : end;
 
@@ -32,13 +56,71 @@ export const formatEventTimeRange = (start: Date | string, end: Date | string, a
     return 'All Day';
   }
   
+  // Format time with timezone support
+  const formatTimeWithTZ = (date: Date): string => {
+    if (timezone) {
+      try {
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: timezone,
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: true
+        });
+        return formatter.format(date);
+      } catch (error) {
+        console.error(`Error formatting time with timezone ${timezone}:`, error);
+      }
+    }
+    // Default format without timezone or if there was an error
+    return formatTime(date);
+  };
+  
+  // Format full date with timezone support
+  const formatFullDateWithTZ = (date: Date): string => {
+    if (timezone) {
+      try {
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: timezone,
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric'
+        });
+        return formatter.format(date);
+      } catch (error) {
+        console.error(`Error formatting date with timezone ${timezone}:`, error);
+      }
+    }
+    // Default format without timezone or if there was an error
+    return formatFullDate(date);
+  };
+  
+  // Check if same day in the specified timezone
+  const isSameDayInTZ = (date1: Date, date2: Date): boolean => {
+    if (timezone) {
+      try {
+        const options: Intl.DateTimeFormatOptions = { 
+          timeZone: timezone,
+          day: 'numeric' as const,
+          month: 'numeric' as const,
+          year: 'numeric' as const
+        };
+        const formatter = new Intl.DateTimeFormat('en-US', options);
+        return formatter.format(date1) === formatter.format(date2);
+      } catch (error) {
+        console.error(`Error checking same day in timezone ${timezone}:`, error);
+      }
+    }
+    // Default check without timezone or if there was an error
+    return isSameDay(startDate, endDate);
+  };
+  
   // Same day event
-  if (isSameDay(startDate, endDate)) {
-    return `${formatTime(startDate)} - ${formatTime(endDate)}`;
+  if (isSameDayInTZ(startDate, endDate)) {
+    return `${formatTimeWithTZ(startDate)} - ${formatTimeWithTZ(endDate)}`;
   }
   
   // Multi-day event
-  return `${formatFullDate(startDate)} ${formatTime(startDate)} - ${formatFullDate(endDate)} ${formatTime(endDate)}`;
+  return `${formatFullDateWithTZ(startDate)} ${formatTimeWithTZ(startDate)} - ${formatFullDateWithTZ(endDate)} ${formatTimeWithTZ(endDate)}`;
 };
 
 // Get week day headers for calendar grid
