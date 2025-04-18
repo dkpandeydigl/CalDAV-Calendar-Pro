@@ -364,12 +364,26 @@ export default function ImportCalendarModal({
           forceRefresh: true
         });
         console.log("Sync request completed");
+        
+        // Add a small delay to allow the sync to process
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Call our new endpoint to explicitly mark events as synced
+        console.log("Explicitly marking events as synced...");
+        const markSyncedResponse = await apiRequest('POST', `/api/calendars/${calendarId}/mark-events-synced`);
+        
+        if (!markSyncedResponse.ok) {
+          console.warn("Failed to mark events as synced:", await markSyncedResponse.text());
+        } else {
+          const markSyncedResult = await markSyncedResponse.json();
+          console.log(`Successfully marked ${markSyncedResult.updated} events as synced`);
+        }
       } catch (syncError) {
-        console.error("Error triggering sync:", syncError);
+        console.error("Error during sync process:", syncError);
       }
       
-      // Add a small delay to allow the sync to process
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Add another small delay after marking as synced
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Invalidate the events cache to trigger a refetch with updated statuses
       console.log("Invalidating event caches to refresh state...");

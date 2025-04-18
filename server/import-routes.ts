@@ -452,8 +452,24 @@ END:VCALENDAR`,
       }
       
       // Add an explicit endpoint to update event sync status
+      
+      res.json({
+        message: `Imported ${importedCount} events`,
+        imported: importedCount,
+        total: events.length,
+        errors: errors.length > 0 ? errors : undefined
+      });
+      
+    } catch (error) {
+      console.error("Error importing events:", error);
+      res.status(500).json({ 
+        message: "Failed to import events", 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
   
-  // New route to force update event sync status
+  // New endpoint to force mark events as synced
   app.post("/api/calendars/:calendarId/mark-events-synced", isAuthenticated, async (req, res) => {
     try {
       if (!req.user) {
@@ -462,6 +478,15 @@ END:VCALENDAR`,
       
       const userId = (req.user as User).id;
       const calendarId = Number(req.params.calendarId);
+      
+      // Check if user has access to this calendar
+      const userCalendars = await storage.getCalendars(userId);
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      const targetCalendar = [...userCalendars, ...sharedCalendars].find(cal => cal.id === calendarId);
+      
+      if (!targetCalendar) {
+        return res.status(403).json({ message: "You don't have access to this calendar" });
+      }
       
       // Get all events for the specified calendar
       const events = await storage.getEvents(calendarId);
@@ -502,22 +527,6 @@ END:VCALENDAR`,
       console.error("Error marking events as synced:", error);
       res.status(500).json({ 
         message: "Failed to mark events as synced", 
-        error: error instanceof Error ? error.message : String(error) 
-      });
-    }
-  });
-      
-      res.json({
-        message: `Imported ${importedCount} events`,
-        imported: importedCount,
-        total: events.length,
-        errors: errors.length > 0 ? errors : undefined
-      });
-      
-    } catch (error) {
-      console.error("Error importing events:", error);
-      res.status(500).json({ 
-        message: "Failed to import events", 
         error: error instanceof Error ? error.message : String(error) 
       });
     }
