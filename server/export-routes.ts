@@ -47,6 +47,201 @@ export function registerExportRoutes(app: Express) {
     }
   });
   
+  // New direct export endpoint with robust authentication and error handling
+  app.get("/api/export-direct", isAuthenticated, async (req, res) => {
+    try {
+      if (!req.isAuthenticated() || !req.user) {
+        console.error('User not authenticated when accessing export-direct');
+        return res.status(401).json({ message: 'Authentication required. Please log in and try again.' });
+      }
+      
+      const userId = (req.user as User).id;
+      console.log(`[EXPORT] Direct calendar export requested by user ID: ${userId}`);
+      
+      // Get the calendar IDs from the query string
+      const calendarIds = req.query.ids 
+        ? String(req.query.ids)
+            .split(',')
+            .map(id => {
+              const num = parseInt(id.trim(), 10);
+              return isNaN(num) ? null : num;
+            })
+            .filter((id): id is number => id !== null)
+        : [];
+      
+      // Date filters (optional)
+      const startDate = req.query.startDate ? new Date(String(req.query.startDate)) : null;
+      const endDate = req.query.endDate ? new Date(String(req.query.endDate)) : null;
+      
+      if (calendarIds.length === 0) {
+        console.error(`[EXPORT] No valid calendar IDs provided by user ${userId}`);
+        return res.status(400).json({ message: 'No calendars selected for export' });
+      }
+      
+      console.log(`[EXPORT] Requested calendars: ${calendarIds.join(', ')} for user ${userId}`);
+      
+      // Get user's calendars
+      const userCalendars = await storage.getCalendars(userId);
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      
+      console.log(`[EXPORT] Found ${userCalendars.length} owned calendars and ${sharedCalendars.length} shared calendars`);
+      
+      // Map for quick lookup
+      const calendarMap = new Map();
+      [...userCalendars, ...sharedCalendars].forEach(cal => {
+        calendarMap.set(cal.id, cal);
+      });
+      
+      // Check if user has access to requested calendars
+      const accessibleCalendarIds = new Set([
+        ...userCalendars.map(cal => cal.id),
+        ...sharedCalendars.map(cal => cal.id)
+      ]);
+      
+      // Filter requested calendars by user's accessible calendars
+      const validCalendarIds = calendarIds.filter(id => accessibleCalendarIds.has(id));
+      
+      if (validCalendarIds.length === 0) {
+        console.error(`[EXPORT] User ${userId} attempted to export ${calendarIds.length} calendars but has access to none`);
+        return res.status(403).json({ 
+          message: 'You do not have permission to export any of the selected calendars' 
+        });
+      }
+      
+      console.log(`[EXPORT] Processing ${validCalendarIds.length} valid calendars out of ${calendarIds.length} requested`);
+      
+      // Gather events from all selected calendars
+      const allEvents = [];
+      
+      for (const calendarId of validCalendarIds) {
+        const calendar = calendarMap.get(calendarId);
+        if (!calendar) {
+          console.warn(`[EXPORT] Calendar ${calendarId} not found in map`);
+          continue;
+        }
+        
+        // Get all events for this calendar
+        const events = await storage.getEvents(calendarId);
+        console.log(`[EXPORT] Retrieved ${events.length} events from calendar: ${calendar.name} (ID: ${calendarId})`);
+        
+        // Filter by date if needed
+        let filteredEvents = events;
+        if (startDate && endDate) {
+          filteredEvents = events.filter(event => {
+            const eventStart = new Date(event.startDate);
+            const eventEnd = new Date(event.endDate);
+            return (eventStart >= startDate && eventStart <= endDate) || 
+                  (eventEnd >= startDate && eventEnd <= endDate) ||
+                  (eventStart <= startDate && eventEnd >= endDate);
+          });
+          console.log(`[EXPORT] Filtered to ${filteredEvents.length} events within date range`);
+        }
+        
+        // Add calendar info to each event
+        allEvents.push(...filteredEvents.map(event => ({
+          ...event,
+          calendarName: calendar.name,
+          calendarColor: calendar.color
+        })));
+      }
+      
+      if (allEvents.length === 0) {
+        console.warn(`[EXPORT] No events found to export for user ${userId}`);
+        return res.status(404).json({ message: 'No events found to export in the selected calendars' });
+      }
+      
+      console.log(`[EXPORT] Generating ICS file with ${allEvents.length} events`);
+      
+      // Generate .ics file content
+      const now = formatICALDate(new Date());
+      
+      let calendarName = 'Exported Calendars';
+      if (validCalendarIds.length === 1) {
+        calendarName = calendarMap.get(validCalendarIds[0])?.name || 'Exported Calendar';
+      }
+      
+      // Standard iCalendar headers
+      let lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        `X-WR-CALNAME:${calendarName}`,
+        'X-WR-CALDESC:Exported from CalDAV Client'
+      ];
+      
+      // Add each event to the iCalendar file
+      for (const event of allEvents) {
+        const safeUid = event.uid?.includes('@') ? event.uid : `${event.uid || `event-${Date.now()}`}@caldavclient.local`;
+        const startDate = formatICALDate(new Date(event.startDate));
+        const endDate = formatICALDate(new Date(event.endDate));
+        
+        lines.push('BEGIN:VEVENT');
+        lines.push(`UID:${safeUid}`);
+        lines.push(`DTSTAMP:${now}`);
+        lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
+        lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
+        lines.push(`SUMMARY:${event.title}`);
+        
+        if (event.calendarName) {
+          lines.push(`CATEGORIES:${event.calendarName}`);
+        }
+        
+        if (event.description) {
+          // Format description properly for iCalendar
+          const formattedDesc = event.description
+            .replace(/\n/g, '\\n')  // Line breaks
+            .replace(/,/g, '\\,')   // Commas
+            .replace(/;/g, '\\;');  // Semicolons
+          
+          lines.push(`DESCRIPTION:${formattedDesc}`);
+        }
+        
+        if (event.location) {
+          lines.push(`LOCATION:${event.location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
+        }
+        
+        if (event.allDay) {
+          lines.push('X-MICROSOFT-CDO-ALLDAYEVENT:TRUE');
+        }
+        
+        // Add custom property for calendar color if available
+        if (event.calendarColor) {
+          lines.push(`X-CALDAV-COLOR:${event.calendarColor}`);
+        }
+        
+        lines.push('END:VEVENT');
+      }
+      
+      lines.push('END:VCALENDAR');
+      
+      // Use our shared formatter to ensure proper line folding and character encoding
+      const icalContent = formatICS(lines);
+      
+      // Set filename
+      let filename = 'calendars_export.ics';
+      if (validCalendarIds.length === 1) {
+        const safeCalendarName = calendarName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        filename = `calendar_${safeCalendarName}.ics`;
+      }
+      
+      // Set response headers for file download
+      res.setHeader('Content-Type', 'text/calendar');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(icalContent);
+      
+      console.log(`[EXPORT] Successfully exported ${allEvents.length} events for user ${userId}`);
+      
+    } catch (error) {
+      console.error('[EXPORT] Error generating calendar export:', error);
+      res.status(500).json({ 
+        message: 'Failed to export calendars', 
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+  
   /**
    * Download event as properly formatted ICS file
    * Ensures proper line break handling and character encoding

@@ -86,78 +86,88 @@ export default function ExportCalendarModal({
     try {
       setIsExporting(true);
       
-      console.log('Starting export process for calendars:', selectedCalendarIds);
+      console.log('Starting direct download export process for calendars:', selectedCalendarIds);
       
-      // First try the debug endpoint to diagnose issues
-      console.log('Checking calendar IDs using debug endpoint');
-      const debugResponse = await fetch(`/api/debug-export?ids=${selectedCalendarIds.join(',')}`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
-      const debugData = await debugResponse.json();
-      console.log('Debug data:', debugData);
+      // Use the fetch API for direct download approach
+      const queryParams = new URLSearchParams();
+      queryParams.set('ids', selectedCalendarIds.join(','));
       
-      // Create a hidden form to submit the export request
-      console.log('Creating form-based export request');
-      const form = document.createElement('form');
-      form.method = 'GET';
-      form.action = '/api/calendars/export';
-      form.target = '_blank';
-      
-      // Add calendar IDs as a hidden input
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = 'ids';
-      input.value = selectedCalendarIds.join(',');
-      form.appendChild(input);
-      
-      // Add date filters if needed
       if (showDateFilter && startDate && endDate) {
-        const startInput = document.createElement('input');
-        startInput.type = 'hidden';
-        startInput.name = 'startDate';
-        startInput.value = startDate.toISOString();
-        form.appendChild(startInput);
-        
-        const endInput = document.createElement('input');
-        endInput.type = 'hidden';
-        endInput.name = 'endDate';
-        endInput.value = endDate.toISOString();
-        form.appendChild(endInput);
+        queryParams.set('startDate', startDate.toISOString());
+        queryParams.set('endDate', endDate.toISOString());
       }
       
-      // Submit the form
-      document.body.appendChild(form);
+      // Export URL with query parameters
+      const exportUrl = `/api/export-direct?${queryParams.toString()}`;
+      console.log('Using direct export URL:', exportUrl);
       
-      // Before submitting, validate that session is valid
-      const validateSession = await fetch('/api/user', {
-        credentials: 'include',
+      // Create a hidden anchor element
+      const downloadLink = document.createElement('a');
+      downloadLink.style.display = 'none';
+      document.body.appendChild(downloadLink);
+      
+      // Make the request using the Fetch API
+      const response = await fetch(exportUrl, {
+        method: 'GET',
+        credentials: 'include', // Include cookies for authentication
         headers: {
-          'Cache-Control': 'no-cache'
-        }
+          'Accept': 'text/calendar',
+          'Cache-Control': 'no-cache',
+        },
       });
       
-      if (!validateSession.ok) {
-        console.error('Session validation failed:', await validateSession.text());
-        throw new Error('Authentication error - please refresh the page and try again');
+      if (!response.ok) {
+        let errorMessage = 'Failed to export calendars';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          // If not JSON, try to get text
+          errorMessage = await response.text() || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
       
-      // Submit the form to trigger download
-      form.submit();
+      // Get the blob from the response
+      const blob = await response.blob();
       
-      // Remove the form afterward
-      setTimeout(() => {
-        document.body.removeChild(form);
-      }, 100);
+      // Create a download URL
+      const downloadUrl = window.URL.createObjectURL(blob);
+      
+      // Set up the download link
+      downloadLink.href = downloadUrl;
+      
+      // Get filename from Content-Disposition header if available
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = 'calendar_export.ics';
+      
+      if (contentDisposition) {
+        const filenameMatch = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+        }
+      } else if (validCalendarIds.length === 1) {
+        // Use calendar name if single calendar
+        const calendar = allCalendars.find(cal => cal.id === validCalendarIds[0]);
+        if (calendar) {
+          const safeCalendarName = calendar.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+          filename = `calendar_${safeCalendarName}.ics`;
+        }
+      }
+      
+      downloadLink.download = filename;
+      
+      // Trigger the download
+      downloadLink.click();
+      
+      // Clean up
+      window.URL.revokeObjectURL(downloadUrl);
+      document.body.removeChild(downloadLink);
       
       // Show success message
       toast({
-        title: "Export started",
-        description: "Your calendar export should download shortly",
+        title: "Export successful",
+        description: "Your calendar is downloading",
       });
       
       onOpenChange(false);
