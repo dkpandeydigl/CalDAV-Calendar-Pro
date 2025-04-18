@@ -1,4 +1,4 @@
-import { FC, useState, useRef, useEffect } from 'react';
+import { FC, useState, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -178,45 +178,49 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   
   // Group shared calendars by owner with enhanced owner identification
-  const groupedSharedCalendars = filteredSharedCalendars.reduce((acc, calendar) => {
-    // Get owner email with multiple fallbacks to ensure we always have a value
-    let ownerEmail = 'Unknown';
-    
-    // Debug log to see what's coming from the server
-    console.log("Calendar owner data:", 
-                calendar.name, 
-                "owner:", calendar.owner, 
-                "ownerEmail:", calendar.ownerEmail);
-    
-    // Use a better cascade of fallbacks for owner email
-    if (calendar.owner?.email && calendar.owner.email !== 'undefined' && calendar.owner.email !== 'null') {
-      ownerEmail = calendar.owner.email;
-    } else if (calendar.ownerEmail && calendar.ownerEmail !== 'undefined' && calendar.ownerEmail !== 'null') {
-      ownerEmail = calendar.ownerEmail;
-    } else if (calendar.owner?.username && calendar.owner.username !== 'undefined' && calendar.owner.username !== 'null') {
-      ownerEmail = calendar.owner.username;
-    } else if (calendar.userId && ownerEmailsById.has(calendar.userId)) {
-      const cachedOwnerEmail = ownerEmailsById.get(calendar.userId);
-      if (cachedOwnerEmail) {
-        ownerEmail = cachedOwnerEmail;
+  const groupedSharedCalendars = useMemo(() => {
+    return filteredSharedCalendars.reduce((acc, calendar) => {
+      // Get owner email with multiple fallbacks to ensure we always have a value
+      let ownerEmail = 'Unknown';
+      
+      // Debug log to see what's coming from the server
+      console.log("Calendar owner data:", 
+                  calendar.name, 
+                  "owner:", calendar.owner, 
+                  "ownerEmail:", calendar.ownerEmail,
+                  "userId:", calendar.userId,
+                  "cached email:", calendar.userId ? ownerEmailsById.get(calendar.userId) : 'No userId');
+      
+      // Use a better cascade of fallbacks for owner email
+      if (calendar.owner?.email && calendar.owner.email !== 'undefined' && calendar.owner.email !== 'null') {
+        ownerEmail = calendar.owner.email;
+      } else if (calendar.ownerEmail && calendar.ownerEmail !== 'undefined' && calendar.ownerEmail !== 'null') {
+        ownerEmail = calendar.ownerEmail;
+      } else if (calendar.owner?.username && calendar.owner.username !== 'undefined' && calendar.owner.username !== 'null') {
+        ownerEmail = calendar.owner.username;
+      } else if (calendar.userId && ownerEmailsById.has(calendar.userId)) {
+        const cachedOwnerEmail = ownerEmailsById.get(calendar.userId);
+        if (cachedOwnerEmail) {
+          ownerEmail = cachedOwnerEmail;
+        }
       }
-    }
-
-    // If we still have 'Unknown', try one more time with calendar's userId
-    if (ownerEmail === 'Unknown' && calendar.userId) {
-      // Just use the userId directly without updating state during render
-      ownerEmail = `User ${calendar.userId}`;
-    }
-    
-    // Create the group if it doesn't exist
-    if (!acc[ownerEmail]) {
-      acc[ownerEmail] = [];
-    }
-    
-    // Add calendar to the appropriate group
-    acc[ownerEmail].push(calendar);
-    return acc;
-  }, {} as Record<string, typeof filteredSharedCalendars>);
+  
+      // If we still have 'Unknown', try one more time with calendar's userId
+      if (ownerEmail === 'Unknown' && calendar.userId) {
+        // Just use the userId directly without updating state during render
+        ownerEmail = `User ${calendar.userId}`;
+      }
+      
+      // Create the group if it doesn't exist
+      if (!acc[ownerEmail]) {
+        acc[ownerEmail] = [];
+      }
+      
+      // Add calendar to the appropriate group
+      acc[ownerEmail].push(calendar);
+      return acc;
+    }, {} as Record<string, typeof filteredSharedCalendars>);
+  }, [filteredSharedCalendars, ownerEmailsById]);
   
   // Log grouped calendars for debugging
   useEffect(() => {
@@ -1021,7 +1025,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                       <div className="w-full space-y-1">
                         {Object.entries(groupedSharedCalendars)
                           .sort(([emailA], [emailB]) => emailA.toLowerCase().localeCompare(emailB.toLowerCase()))
-                          .map(([ownerEmail, ownerCalendars]) => (
+                          .map(([ownerEmail, ownerCalendars]: [string, SharedCalendar[]]) => (
                           <div 
                             key={ownerEmail} 
                             className="border rounded-md mb-2 overflow-hidden"
@@ -1029,7 +1033,11 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                             {/* Group Header - always visible */}
                             <div 
                               className={`py-2 px-3 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors ${expandedOwnerEmail === ownerEmail ? 'bg-gray-50' : 'bg-white'}`}
-                              onClick={(e) => handleToggleGroupExpansion(ownerEmail, e)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleToggleGroupExpansion(ownerEmail, e);
+                              }}
                             >
                               <div className="flex items-center space-x-2">
                                 {expandedOwnerEmail === ownerEmail ? 
@@ -1037,7 +1045,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                   <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
                                 }
                                 <div className="text-xs text-left truncate max-w-[160px]">
-                                  <span className="font-medium" title={ownerEmail}>
+                                  <span className="font-medium text-blue-600" title={ownerEmail}>
                                     {ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' 
                                       ? ownerEmail 
                                       : 'Unknown owner'}
@@ -1075,8 +1083,8 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                               <div className="px-3 pb-2 pt-1 border-t border-gray-100 bg-white">
                                 <div className="pl-5 space-y-1">
                                   {ownerCalendars
-                                    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
-                                    .map(calendar => renderCalendarItem(calendar, true))}
+                                    .sort((a: SharedCalendar, b: SharedCalendar) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+                                    .map((calendar: SharedCalendar) => renderCalendarItem(calendar, true))}
                                 </div>
                               </div>
                             )}
