@@ -51,15 +51,26 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       // This ensures the new user doesn't see the previous user's data
       console.log(`User authenticated: ${data.username} (ID: ${data.id})`);
       
-      // Invalidate shared calendars query to trigger a fresh fetch for the new user
-      // Use the new user ID in the query key
-      queryClient.invalidateQueries({ 
-        queryKey: ['/api/shared-calendars', data.id] 
-      });
-      
-      // Also invalidate other user-specific queries as needed
-      queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      // IMPORTANT: We need to wait a moment to ensure all query keys are properly registered 
+      // before invalidating them, otherwise the queries won't reload properly
+      setTimeout(() => {
+        console.log('Refreshing all user data with forced invalidation');
+        
+        // Invalidate shared calendars query to trigger a fresh fetch for the new user
+        // Use the new user ID in the query key
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/shared-calendars'] 
+        });
+        
+        // Also invalidate other user-specific queries as needed
+        queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+        
+        // Force refetch of all critical queries
+        queryClient.refetchQueries({ queryKey: ['/api/calendars'] });
+        queryClient.refetchQueries({ queryKey: ['/api/shared-calendars'] });
+        queryClient.refetchQueries({ queryKey: ['/api/events'] });
+      }, 500);
     } else if (isError) {
       // User logged out or auth error
       setUser(null);
