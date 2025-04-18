@@ -1,5 +1,5 @@
 import { Notification, NotificationFilter, notificationTypeEnum } from '../shared/schema';
-import { storage } from './memory-storage';
+import { storage } from './storage';
 
 /**
  * Memory Notification Service

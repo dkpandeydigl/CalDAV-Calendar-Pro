@@ -9,7 +9,7 @@
  */
 
 import { DAVClient } from 'tsdav';
-import { storage } from './memory-storage';
+import { storage } from './storage';
 import { syncService } from './sync-service';
 import { preserveOrGenerateUID, registerUIDMapping } from './uid-management';
 import { Event, InsertEvent, ServerConnection } from '../shared/schema';

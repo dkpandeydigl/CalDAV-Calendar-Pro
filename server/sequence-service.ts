@@ -6,7 +6,7 @@
  * is critical for event changes to be properly recognized by calendar clients.
  */
 
-import { storage } from './memory-storage';
+import { storage } from './storage';
 import { extractSequenceFromICal } from './ical-utils';
 
 class SequenceService {

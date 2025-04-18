@@ -5,7 +5,7 @@
  * the CalDAV server password to ensure email invitations work properly.
  */
 
-import { storage } from './memory-storage';
+import { storage } from './storage';
 
 /**
  * Synchronizes the user's SMTP password with their CalDAV password
