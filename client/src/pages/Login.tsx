@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 const loginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
+  caldavServerUrl: z.string().min(1, 'CalDAV server URL is required').default('https://zpush.ajaydata.com/davical/'),
 });
 
 const registerSchema = loginSchema.extend({
