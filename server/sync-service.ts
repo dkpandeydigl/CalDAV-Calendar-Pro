@@ -3309,7 +3309,22 @@ export class SyncService {
                 });
                 
                 if (!putResponse.ok) {
-                  throw new Error(`PUT failed: ${putResponse.status} ${putResponse.statusText}`);
+                  // Special handling for 412 Precondition Failed errors
+                  if (putResponse.status === 412) {
+                    console.log(`PUT received 412 Precondition Failed - resource likely exists already or has changed. Will attempt to refresh and retry.`);
+                    
+                    // Flag the event for refresh next time
+                    await storage.updateEvent(event.id, {
+                      syncStatus: 'needs_refresh',
+                      lastSyncAttempt: new Date()
+                    });
+                    
+                    // Continue to the next event instead of throwing
+                    console.log(`Marked event ${event.id} for refresh next cycle`);
+                    continue;
+                  } else {
+                    throw new Error(`PUT failed: ${putResponse.status} ${putResponse.statusText}`);
+                  }
                 }
                 
                 // Get the ETag from the response headers
