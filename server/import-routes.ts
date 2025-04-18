@@ -337,8 +337,8 @@ export function registerImportRoutes(app: Express) {
             busyStatus: "busy",
             attendees: [],
             resources: [],
-            // Generate minimal ICS data for the event
-            rawData: JSON.stringify(`BEGIN:VCALENDAR
+            // Generate minimal ICS data for the event - store directly as string, no JSON.stringify needed
+            rawData: `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Import Tool//EN
 CALSCALE:GREGORIAN
@@ -352,7 +352,7 @@ ${event.description ? 'DESCRIPTION:' + event.description.replace(/\n/g, '\\n') :
 ${event.location ? 'LOCATION:' + event.location : ''}
 SEQUENCE:0
 END:VEVENT
-END:VCALENDAR`),
+END:VCALENDAR`,
             emailSent: 'not_sent',
             emailError: null
           };
