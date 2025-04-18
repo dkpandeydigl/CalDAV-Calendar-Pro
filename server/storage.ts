@@ -34,6 +34,7 @@ export interface IStorage {
   
   // Calendar methods
   getCalendars(userId: number): Promise<Calendar[]>;
+  getAllCalendars(): Promise<Calendar[]>; // Get all calendars (for debugging)
   getCalendar(id: number): Promise<Calendar | undefined>;
   createCalendar(calendar: InsertCalendar): Promise<Calendar>;
   updateCalendar(id: number, calendar: Partial<Calendar>): Promise<Calendar | undefined>;
@@ -281,6 +282,10 @@ export class MemStorage implements IStorage {
     return Array.from(this.calendarsMap.values()).filter(
       (calendar) => calendar.userId === userId
     );
+  }
+  
+  async getAllCalendars(): Promise<Calendar[]> {
+    return Array.from(this.calendarsMap.values());
   }
   
   async getCalendar(id: number): Promise<Calendar | undefined> {
