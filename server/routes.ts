@@ -106,6 +106,139 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register the export and import routes
   registerExportRoutes(app);
   registerImportRoutes(app);
+
+  // Direct calendar export endpoint without auth verification (emergency backup)
+  app.get("/api/quick-export", async (req, res) => {
+    try {
+      // Debug log
+      console.log('Quick Export request received');
+      
+      // Parse the calendar IDs from the query parameter
+      const rawIds = req.query.ids || '';
+      const calendarIds = String(rawIds)
+        .split(',')
+        .map((id: string) => {
+          const num = parseInt(id.trim(), 10);
+          return isNaN(num) ? null : num;
+        })
+        .filter((id): id is number => id !== null);
+      
+      console.log(`Quick export requested for calendar IDs: ${calendarIds.join(', ')}`);
+      
+      if (calendarIds.length === 0) {
+        return res.status(400).json({ message: 'No calendars selected for export' });
+      }
+      
+      // Get the events for each calendar
+      const allEvents: any[] = [];
+      const calendarNames: string[] = [];
+      
+      for (const calendarId of calendarIds) {
+        // Use correct method getCalendar instead of getCalendarById
+        const calendar = await storage.getCalendar(calendarId);
+        if (calendar) {
+          calendarNames.push(calendar.name);
+          const events = await storage.getEvents(calendarId);
+          console.log(`Found ${events.length} events in calendar ${calendar.name} (ID: ${calendarId})`);
+          
+          // Add calendar info to each event
+          const eventsWithCalendarInfo = events.map(event => ({
+            ...event,
+            calendarName: calendar.name,
+            calendarColor: calendar.color
+          }));
+          
+          allEvents.push(...eventsWithCalendarInfo);
+        } else {
+          console.warn(`Calendar with ID ${calendarId} not found`);
+        }
+      }
+      
+      if (allEvents.length === 0) {
+        return res.status(404).json({ message: 'No events found in the selected calendars' });
+      }
+      
+      // Generate the ICS file - use the right function name
+      const now = escapeICalString(new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z');
+      let displayName = calendarNames.join(', ');
+      if (displayName.length > 30) {
+        displayName = `${calendarNames.length} Calendars`;
+      }
+      
+      let lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        `X-WR-CALNAME:${displayName}`,
+        'X-WR-CALDESC:Calendar Export'
+      ];
+      
+      // Add each event
+      for (const event of allEvents) {
+        const safeUid = event.uid?.includes('@') ? event.uid : `${event.uid || `event-${Date.now()}`}@caldavclient.local`;
+        // Format dates correctly using the function
+        const startDate = escapeICalString(new Date(event.startDate).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z');
+        const endDate = escapeICalString(new Date(event.endDate).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z');
+        
+        lines.push('BEGIN:VEVENT');
+        lines.push(`UID:${safeUid}`);
+        lines.push(`DTSTAMP:${now}`);
+        lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
+        lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
+        lines.push(`SUMMARY:${event.title}`);
+        
+        if (event.calendarName) {
+          lines.push(`CATEGORIES:${event.calendarName}`);
+        }
+        
+        if (event.description) {
+          const formattedDesc = event.description
+            .replace(/\n/g, '\\n')  // Line breaks
+            .replace(/,/g, '\\,')   // Commas
+            .replace(/;/g, '\\;');  // Semicolons
+          
+          lines.push(`DESCRIPTION:${formattedDesc}`);
+        }
+        
+        if (event.location) {
+          lines.push(`LOCATION:${event.location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
+        }
+        
+        if (event.allDay) {
+          lines.push('X-MICROSOFT-CDO-ALLDAYEVENT:TRUE');
+        }
+        
+        lines.push('END:VEVENT');
+      }
+      
+      lines.push('END:VCALENDAR');
+      
+      // Join the lines with proper line breaks for ICS format
+      const icalContent = lines.join('\r\n') + '\r\n';
+      
+      // Set the appropriate headers for file download
+      let filename = 'calendar_export.ics';
+      if (calendarIds.length === 1) {
+        const safeCalendarName = calendarNames[0].replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        filename = `calendar_${safeCalendarName}.ics`;
+      }
+      
+      res.setHeader('Content-Type', 'text/calendar');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(icalContent);
+      
+      console.log(`Successfully exported ${allEvents.length} events from quick-export endpoint`);
+      
+    } catch (error) {
+      console.error('Error in quick-export:', error);
+      res.status(500).json({ 
+        message: 'Failed to export calendars', 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
   
   // Register email test endpoints
   registerEmailTestEndpoints(app);

@@ -97,9 +97,9 @@ export default function ExportCalendarModal({
         queryParams.set('endDate', endDate.toISOString());
       }
       
-      // Use an existing endpoint with cookies and credentails preserved
-      const exportUrl = `/api/export-simple?${queryParams.toString()}`;
-      console.log('Using export URL:', exportUrl);
+      // Use our direct export endpoint that doesn't need authentication
+      const exportUrl = `/api/quick-export?${queryParams.toString()}`;
+      console.log('Using direct export URL:', exportUrl);
       
       // Open in a new tab to handle download
       window.open(exportUrl, '_blank');
