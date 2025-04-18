@@ -59,6 +59,82 @@ export class EmailService {
   private config: SmtpConfig | null = null;
   
   /**
+   * Ensures the ICS file complies with RFC 5546 for email scheduling
+   * 
+   * @param icsData The ICS data to check and fix
+   * @param method The scheduling method (REQUEST, CANCEL, etc.)
+   * @returns The compliant ICS data
+   */
+  private ensureRFC5546Compliance(icsData: string, method: string): string {
+    console.log(`[EmailService] Performing RFC 5546 compliance checks for ${method}`);
+    
+    // Create a working copy
+    let compliantIcs = icsData;
+    
+    // Ensure METHOD is correct
+    if (!compliantIcs.includes(`METHOD:${method}`)) {
+      compliantIcs = compliantIcs.replace(/METHOD:[^\r\n]+/i, `METHOD:${method}`);
+      // If METHOD doesn't exist, add it
+      if (!compliantIcs.includes('METHOD:')) {
+        compliantIcs = compliantIcs.replace(
+          /VERSION:2.0(\r?\n)/i,
+          `VERSION:2.0$1METHOD:${method}$1`
+        );
+      }
+    }
+    
+    // For CANCEL method, ensure STATUS:CANCELLED is present
+    if (method === 'CANCEL' && !compliantIcs.includes('STATUS:CANCELLED')) {
+      if (compliantIcs.includes('STATUS:')) {
+        compliantIcs = compliantIcs.replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED');
+      } else {
+        // Add STATUS after SEQUENCE or UID if no STATUS exists
+        if (compliantIcs.includes('SEQUENCE:')) {
+          compliantIcs = compliantIcs.replace(
+            /SEQUENCE:[^\r\n]+(\r?\n)/i,
+            match => `${match}STATUS:CANCELLED$1`
+          );
+        } else if (compliantIcs.includes('UID:')) {
+          compliantIcs = compliantIcs.replace(
+            /UID:[^\r\n]+(\r?\n)/i,
+            match => `${match}STATUS:CANCELLED$1`
+          );
+        }
+      }
+    }
+    
+    // For REQUEST method, ensure STATUS is either CONFIRMED or TENTATIVE
+    if (method === 'REQUEST' && compliantIcs.includes('STATUS:')) {
+      const statusMatch = compliantIcs.match(/STATUS:([^\r\n]+)/i);
+      if (statusMatch) {
+        const currentStatus = statusMatch[1];
+        if (currentStatus !== 'CONFIRMED' && currentStatus !== 'TENTATIVE') {
+          compliantIcs = compliantIcs.replace(/STATUS:[^\r\n]+/i, 'STATUS:CONFIRMED');
+        }
+      }
+    }
+    
+    // Fix PARTSTAT parameter for ATTENDEE properties according to RFC 5546
+    if (method === 'REQUEST' && compliantIcs.match(/ATTENDEE[^:]*:[^\r\n]+/)) {
+      // All attendees in a REQUEST should have PARTSTAT=NEEDS-ACTION if none is specified
+      compliantIcs = compliantIcs.replace(
+        /ATTENDEE([^:]*):([^\r\n]+)/g,
+        (match, params, value) => {
+          if (!params.includes('PARTSTAT=')) {
+            return `ATTENDEE${params};PARTSTAT=NEEDS-ACTION:${value}`;
+          }
+          return match;
+        }
+      );
+    }
+    
+    // Fix double colons in mailto again (final safety check)
+    compliantIcs = compliantIcs.replace(/mailto::([^\r\n]+)/g, 'mailto:$1');
+    
+    return compliantIcs;
+  }
+  
+  /**
    * Apply proper line folding to ICS data according to RFC 5545
    * Lines longer than 75 characters should be folded
    * @param icsData The original ICS data
@@ -1436,11 +1512,14 @@ END:VEVENT
 END:VCALENDAR`;
 
     // Process through our improved formatter to ensure proper formatting
-    return sanitizeAndFormatICS(icsContent, {
+    const formattedICS = sanitizeAndFormatICS(icsContent, {
       method: method,
       status: status,
       sequence: sequence
     });
+    
+    // Add final RFC 5546 compliance checks for email attachments
+    return this.ensureRFC5546Compliance(formattedICS, method);
   }
 }
 

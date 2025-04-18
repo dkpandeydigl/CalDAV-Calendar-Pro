@@ -692,6 +692,54 @@ export function transformIcsForCancellation(originalIcs: string, eventData: any)
     icsData = icsData.replace(/\r\n mailto:/g, 'mailto:');
   }
   
+  // Fix double colons in mailto values
+  if (icsData.includes('mailto::')) {
+    console.log('Fixing double colons in mailto references');
+    icsData = icsData.replace(/mailto::([^\r\n]+)/g, 'mailto:$1');
+  }
+  
+  // Fix RRULE corruption with mailto
+  if (icsData.includes('RRULE:') && icsData.includes('RRULE:') && icsData.match(/RRULE:.*mailto/)) {
+    console.log('Fixing corrupted RRULE with mailto content');
+    // Extract the RRULE line
+    const rruleMatch = icsData.match(/RRULE:[^\r\n]*/);
+    if (rruleMatch) {
+      const rruleLine = rruleMatch[0];
+      // If there's a mailto or colon in the RRULE, clean it
+      if (rruleLine.includes('mailto:') || rruleLine.includes(';mailto')) {
+        // Split at the first occurrence of mailto and keep only the part before
+        const cleanRrule = 'RRULE:' + rruleLine.substring(6).split(/mailto:|;mailto/)[0];
+        icsData = icsData.replace(rruleLine, cleanRrule);
+      }
+    }
+  }
+  
+  // Ensure all required components according to RFC 5545
+  const requiredComponents = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'BEGIN:VEVENT',
+    'UID:',
+    'DTSTAMP:',
+    'DTSTART:',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ];
+  
+  // Check if any required components are missing
+  const missingComponents = requiredComponents.filter(component => {
+    // Special case for components that need to check for prefix only
+    if (component.endsWith(':')) {
+      return !icsData.includes(component);
+    }
+    return !icsData.includes(component);
+  });
+  
+  if (missingComponents.length > 0) {
+    console.warn('Missing required components in ICS file:', missingComponents);
+    // We can't fix missing core components, but we'll log it
+  }
+  
   return icsData;
 }
 
