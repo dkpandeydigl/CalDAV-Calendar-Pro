@@ -1,4 +1,4 @@
-import { ChangeEvent, FC, useState, useEffect } from 'react';
+import { ChangeEvent, FC, useState, useEffect, useCallback } from 'react';
 import { 
   Dialog, 
   DialogContent, 
@@ -62,6 +62,9 @@ export default function ImportCalendarModal({
   
   // State for calendar fetch status
   const [isRefreshingCalendars, setIsRefreshingCalendars] = useState(false);
+  
+  // State for auth verification
+  const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
   
   // Effect to set default calendar when calendars are loaded
   useEffect(() => {
