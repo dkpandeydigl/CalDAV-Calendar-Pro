@@ -158,17 +158,26 @@ export function registerExportRoutes(app: Express) {
   // Calendar Export API - new implementation completely bypassing database calls
   app.get("/api/export-simple", isAuthenticated, async (req, res) => {
     try {
+      if (!req.isAuthenticated() || !req.user) {
+        console.error('User not authenticated when accessing export-simple');
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+      
       console.log('Using simple export endpoint');
       const userId = (req.user as User).id;
+      console.log(`Simple calendar export requested by user ID: ${userId}`);
       
       // Get all events for the user without calendar database lookups
       const userCalendars = await storage.getCalendars(userId);
       const sharedCalendars = await storage.getSharedCalendars(userId);
       
+      console.log(`Found ${userCalendars.length} owned calendars and ${sharedCalendars.length} shared calendars`);
+      
       const allCalendars = [...userCalendars, ...sharedCalendars];
       
       // If no calendars are available, return an error
       if (allCalendars.length === 0) {
+        console.error(`No calendars found for user ID ${userId}`);
         return res.status(404).json({ message: 'No calendars found for user' });
       }
       
@@ -252,7 +261,13 @@ export function registerExportRoutes(app: Express) {
   // Original Calendar Export API
   app.get("/api/calendars/export", isAuthenticated, async (req, res) => {
     try {
+      if (!req.isAuthenticated() || !req.user) {
+        return res.status(401).json({ message: 'Authentication required' });
+      }
+      
       const userId = (req.user as User).id;
+      
+      console.log(`Calendar export requested by user ID: ${userId}`);
       
       // Safely convert string IDs to numbers and filter out any NaN values
       const calendarIds = req.query.ids 
@@ -293,8 +308,16 @@ export function registerExportRoutes(app: Express) {
       const validCalendarIds = calendarIds.filter(id => accessibleCalendarIds.has(id));
       
       if (validCalendarIds.length === 0) {
-        return res.status(403).json({ message: 'You do not have permission to export these calendars' });
+        console.error(`User ${userId} attempted to export calendars ${calendarIds.join(', ')} but has no permission for any of them`);
+        console.error(`User has access to calendars: ${Array.from(accessibleCalendarIds).join(', ')}`);
+        return res.status(403).json({ 
+          message: 'You do not have permission to export these calendars',
+          attemptedCalendarIds: calendarIds,
+          accessibleCalendarIds: Array.from(accessibleCalendarIds)
+        });
       }
+      
+      console.log(`Proceeding with export for validated calendar IDs: ${validCalendarIds.join(', ')}`);
       
       // Generate iCalendar content
       const mergedEvents = [];

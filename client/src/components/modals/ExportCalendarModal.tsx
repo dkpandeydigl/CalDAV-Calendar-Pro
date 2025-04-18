@@ -86,31 +86,77 @@ export default function ExportCalendarModal({
     try {
       setIsExporting(true);
       
-      // We'll try a different approach using the new simplified endpoint
-      console.log('Using simplified export approach');
+      console.log('Starting export process for calendars:', selectedCalendarIds);
       
       // First try the debug endpoint to diagnose issues
-      const debugResponse = await fetch(`/api/debug-export?ids=${selectedCalendarIds.join(',')}`);
+      console.log('Checking calendar IDs using debug endpoint');
+      const debugResponse = await fetch(`/api/debug-export?ids=${selectedCalendarIds.join(',')}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
       const debugData = await debugResponse.json();
       console.log('Debug data:', debugData);
       
-      // Use our simplified export endpoint instead
-      const exportUrl = '/api/export-simple';
+      // Create a hidden form to submit the export request
+      console.log('Creating form-based export request');
+      const form = document.createElement('form');
+      form.method = 'GET';
+      form.action = '/api/calendars/export';
+      form.target = '_blank';
       
-      // Make a test fetch request first to check for errors
-      const testResponse = await fetch(exportUrl);
+      // Add calendar IDs as a hidden input
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'ids';
+      input.value = selectedCalendarIds.join(',');
+      form.appendChild(input);
       
-      if (!testResponse.ok) {
-        const errorData = await testResponse.json();
-        throw new Error(errorData.message || 'Failed to export calendars');
+      // Add date filters if needed
+      if (showDateFilter && startDate && endDate) {
+        const startInput = document.createElement('input');
+        startInput.type = 'hidden';
+        startInput.name = 'startDate';
+        startInput.value = startDate.toISOString();
+        form.appendChild(startInput);
+        
+        const endInput = document.createElement('input');
+        endInput.type = 'hidden';
+        endInput.name = 'endDate';
+        endInput.value = endDate.toISOString();
+        form.appendChild(endInput);
       }
       
-      // If the test was successful, open the URL for download
-      window.open(exportUrl, '_blank');
+      // Submit the form
+      document.body.appendChild(form);
+      
+      // Before submitting, validate that session is valid
+      const validateSession = await fetch('/api/user', {
+        credentials: 'include',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      });
+      
+      if (!validateSession.ok) {
+        console.error('Session validation failed:', await validateSession.text());
+        throw new Error('Authentication error - please refresh the page and try again');
+      }
+      
+      // Submit the form to trigger download
+      form.submit();
+      
+      // Remove the form afterward
+      setTimeout(() => {
+        document.body.removeChild(form);
+      }, 100);
       
       // Show success message
       toast({
-        title: "Export successful",
+        title: "Export started",
         description: "Your calendar export should download shortly",
       });
       
