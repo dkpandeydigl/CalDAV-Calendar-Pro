@@ -1069,6 +1069,9 @@ export class EmailService {
       // Import centralUIDService
       const { centralUIDService } = await import('./central-uid-service');
       
+      // FIXED: Critical fix for ensuring proper UID consistency across email attachments
+      // Each event must have a unique UID that persists throughout its lifecycle
+      
       // If we have an eventId, ALWAYS get or generate a UID for it from central service
       // regardless of whether we already have a UID in data
       if (data.eventId) {
@@ -1082,7 +1085,19 @@ export class EmailService {
         }
         
         console.log(`[EmailService] Retrieved validated UID ${validatedUid} for event ${data.eventId}`);
+        
+        // CRITICAL: Update the data object with the correct UID to ensure it's used in all attachments
         data.uid = validatedUid;
+        
+        // Force a database update to ensure this UID is persisted
+        try {
+          await centralUIDService.storeUID(data.eventId, validatedUid);
+          console.log(`[EmailService] Ensured UID ${validatedUid} is stored for event ${data.eventId}`);
+        } catch (storeError) {
+          console.error(`[EmailService] Error storing validated UID for event ${data.eventId}:`, storeError);
+          // Continue even if storage fails - we still have the correct UID for this operation
+        }
+        
         return validatedUid;
       } else if (data.uid) {
         // If we don't have an eventId but do have a UID, use it but log a warning
