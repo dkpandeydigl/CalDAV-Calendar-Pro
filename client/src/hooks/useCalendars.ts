@@ -9,13 +9,22 @@ export const useCalendars = () => {
   const { toast } = useToast();
   const { user } = useAuth();
 
+  // Enhanced logging for user authentication state in useCalendars
+  console.log(`useCalendars hook: User authentication state:`, {
+    isAuthenticated: !!user,
+    userId: user?.id || 'not authenticated',
+    username: user?.username || 'not authenticated'
+  });
+
   const calendarsQuery = useQuery<Calendar[]>({
     queryKey: ['/api/calendars'],
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty for graceful auth handling
     // Only run this query if the user is authenticated
     enabled: !!user,
     staleTime: 30000, // 30 seconds
-    refetchOnWindowFocus: true // Refetch when window gains focus to keep data fresh
+    refetchOnWindowFocus: true, // Refetch when window gains focus to keep data fresh
+    retry: 2, // Retry failed requests twice
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000) // Exponential backoff
   });
 
   const createCalendarMutation = useMutation({

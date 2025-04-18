@@ -3,6 +3,7 @@ import {
   useQuery,
   useMutation,
   UseMutationResult,
+  QueryClient
 } from "@tanstack/react-query";
 import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
@@ -35,7 +36,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryFn: getQueryFn({ on401: "returnNull" }),
   });
 
-  const loginMutation = useMutation({
+  // Login mutation
+  const loginMutation = useMutation<SelectUser, Error, LoginData>({
     mutationFn: async (credentials: LoginData) => {
       console.log("Login mutation called with credentials:", {
         username: credentials.username,
@@ -51,13 +53,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           caldavServerUrl: credentials.caldavServerUrl || "https://zpush.ajaydata.com/davical/"
         };
 
+        // Clear existing cookies for clean authentication
+        const existingCookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+        console.log('Existing cookies before login:', existingCookies.length ? existingCookies.join(', ') : 'None');
+
         // Enhanced fetch with specific options for session handling
         const res = await fetch("/api/login", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "X-Requested-With": "XMLHttpRequest", // Helps identify AJAX requests
-            "Accept": "application/json" 
+            "Accept": "application/json",
+            "Cache-Control": "no-cache, no-store, must-revalidate" 
           },
           body: JSON.stringify(requestData),
           credentials: "include", // Critical for session cookies
@@ -77,60 +84,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Get the response data
         let userData;
+        
         try {
           userData = await res.json();
           console.log("Login response received:", {
             status: res.status,
             userData: userData ? { id: userData.id, username: userData.username } : null
           });
-        } catch (parseError) {
-          console.error("Failed to parse login response as JSON:", parseError);
-          // If we can't parse the response as JSON but the status was 200,
-          // we'll try to verify the session is valid by making a request to /api/auth-check
-          const authCheckResponse = await fetch("/api/auth-check", {
+          
+          // Add delay before re-fetching user data to ensure session propagation
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Verify session is properly set with a follow-up request
+          const verifyRes = await fetch("/api/user", {
             credentials: "include",
+            headers: {
+              "X-Requested-With": "XMLHttpRequest",
+              "Cache-Control": "no-cache, no-store, must-revalidate"
+            },
             cache: "no-cache"
           });
           
-          if (authCheckResponse.ok) {
-            const authStatus = await authCheckResponse.json();
-            console.log("Auth check after login:", authStatus);
-            
-            if (authStatus.status === "authenticated" && authStatus.details.userId) {
-              // If we're authenticated, make a request to get the user data
-              const userResponse = await fetch("/api/user", {
-                credentials: "include",
-                cache: "no-cache"
-              });
-              
-              if (userResponse.ok) {
-                userData = await userResponse.json();
-                console.log("Retrieved user data after login:", userData);
-              } else {
-                console.error("Failed to get user data after login");
-                throw new Error("Login succeeded but failed to get user data");
-              }
-            } else {
-              throw new Error("Login seemed to succeed but authentication check failed");
+          console.log("Verification request status:", verifyRes.status);
+          
+          if (!verifyRes.ok) {
+            console.warn("Session verification failed despite successful login");
+          }
+        } catch (parseError) {
+          console.error("Failed to parse login response as JSON:", parseError);
+          
+          // If we can't parse the response as JSON but the status was 200,
+          // try to verify the session is valid by making a direct user request
+          const authCheckResponse = await fetch("/api/user", {
+            credentials: "include",
+            cache: "no-cache",
+            headers: {
+              "X-Requested-With": "XMLHttpRequest",
+              "Accept": "application/json",
+              "Cache-Control": "no-cache, no-store, must-revalidate"
             }
+          });
+          
+          if (authCheckResponse.ok) {
+            userData = await authCheckResponse.json();
+            console.log("User data fetched after login:", userData ? { 
+              id: userData.id, 
+              username: userData.username 
+            } : null);
           } else {
-            throw new Error("Login response was not valid JSON and authentication check failed");
+            console.error("Failed to fetch user data after login");
+            throw new Error("Login succeeded but failed to retrieve user data.");
           }
         }
         
+        // Return the user data
         return userData;
       } catch (error) {
         console.error("Login request failed:", error);
         throw error;
       }
     },
-    onSuccess: (user: SelectUser) => {
-      console.log("Login success, user data:", { id: user.id, username: user.username });
+    onSuccess: (userData) => {
+      console.log("Login success, user data:", { id: userData.id, username: userData.username });
       
       // Set loading state to true to show overlay
       setIsPostLoginLoading(true);
       
-      queryClient.setQueryData(["/api/user"], user);
+      queryClient.setQueryData(["/api/user"], userData);
       
       // Automatically fetch calendars and connection data after login
       queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
@@ -150,8 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsPostLoginLoading(false);
           }, 5000);
         })
-        .catch(error => {
-          console.error("Failed to sync after login:", error);
+        .catch(err => {
+          console.error("Failed to sync after login:", err);
           
           // Refresh data anyway even if sync fails
           queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
@@ -166,20 +186,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       toast({
         title: "Login successful",
-        description: `Welcome back, ${user.username}!`,
+        description: `Welcome back, ${userData.username}!`,
       });
     },
-    onError: (error: Error) => {
+    onError: (err) => {
       toast({
         title: "Login failed",
-        description: error.message,
+        description: err.message,
         variant: "destructive",
       });
     },
   });
 
-  const registerMutation = useMutation({
-    mutationFn: async (credentials: InsertUser & { caldavServerUrl?: string }) => {
+  // Registration mutation
+  const registerMutation = useMutation<SelectUser, Error, InsertUser & { caldavServerUrl?: string }>({
+    mutationFn: async (credentials) => {
       console.log("Register mutation called with credentials:", {
         username: credentials.username,
         hasPassword: !!credentials.password,
@@ -229,35 +250,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (parseError) {
           console.error("Failed to parse registration response as JSON:", parseError);
           // If we can't parse the response as JSON but the status was 200/201,
-          // we'll try to verify the session is valid by making a request to /api/auth-check
-          const authCheckResponse = await fetch("/api/auth-check", {
+          // we'll try to verify the session is valid by making a request to /api/user directly
+          const userResponse = await fetch("/api/user", {
             credentials: "include",
-            cache: "no-cache"
+            cache: "no-cache",
+            headers: {
+              "X-Requested-With": "XMLHttpRequest",
+              "Accept": "application/json",
+              "Cache-Control": "no-cache, no-store, must-revalidate"
+            }
           });
           
-          if (authCheckResponse.ok) {
-            const authStatus = await authCheckResponse.json();
-            console.log("Auth check after registration:", authStatus);
-            
-            if (authStatus.status === "authenticated" && authStatus.details.userId) {
-              // If we're authenticated, make a request to get the user data
-              const userResponse = await fetch("/api/user", {
-                credentials: "include",
-                cache: "no-cache"
-              });
-              
-              if (userResponse.ok) {
-                userData = await userResponse.json();
-                console.log("Retrieved user data after registration:", userData);
-              } else {
-                console.error("Failed to get user data after registration");
-                throw new Error("Registration succeeded but failed to get user data");
-              }
-            } else {
-              throw new Error("Registration seemed to succeed but authentication check failed");
-            }
+          if (userResponse.ok) {
+            userData = await userResponse.json();
+            console.log("Retrieved user data after registration:", userData);
           } else {
-            throw new Error("Registration response was not valid JSON and authentication check failed");
+            console.error("Failed to get user data after registration");
+            throw new Error("Registration seemed to succeed but failed to get user data");
           }
         }
         
@@ -267,13 +276,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     },
-    onSuccess: (user: SelectUser) => {
-      console.log("Registration success, user data:", { id: user.id, username: user.username });
+    onSuccess: (userData) => {
+      console.log("Registration success, user data:", { id: userData.id, username: userData.username });
       
       // Set loading state to true to show overlay
       setIsPostLoginLoading(true);
       
-      queryClient.setQueryData(["/api/user"], user);
+      queryClient.setQueryData(["/api/user"], userData);
       
       // Automatically fetch calendars and connection data after registration
       queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
@@ -293,8 +302,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsPostLoginLoading(false);
           }, 5000);
         })
-        .catch(error => {
-          console.error("Failed to sync after registration:", error);
+        .catch(err => {
+          console.error("Failed to sync after registration:", err);
           
           // Refresh data anyway even if sync fails
           queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
@@ -309,99 +318,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       toast({
         title: "Registration successful",
-        description: `Welcome, ${user.username}!`,
+        description: `Welcome, ${userData.username}!`,
       });
     },
-    onError: (error: Error) => {
+    onError: (err) => {
       toast({
         title: "Registration failed",
-        description: error.message,
+        description: err.message,
         variant: "destructive",
       });
     },
   });
 
-  const logoutMutation = useMutation({
+  // Logout mutation
+  const logoutMutation = useMutation<void, Error, void>({
     mutationFn: async () => {
-      console.log("Logging out user...");
+      console.log("Logout mutation called");
       
-      try {
-        // Use direct fetch for logout to ensure proper session cleanup
-        const res = await fetch("/api/logout", {
-          method: "POST",
-          headers: {
-            "X-Requested-With": "XMLHttpRequest",
-            "Content-Type": "application/json"
-          },
-          credentials: "include",
-          mode: "same-origin",
-          cache: "no-cache"
-        });
-        
-        if (!res.ok) {
-          const errorText = await res.text();
-          console.error(`Logout failed with status ${res.status}:`, errorText);
-          throw new Error(errorText || `Logout failed with status: ${res.status}`);
-        }
-        
-        // Check for session cookies after logout (should be cleared)
-        const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
-        console.log('Cookies after logout:', cookies.length ? cookies.join(', ') : 'None');
-        
-        // Additional check to verify we're truly logged out
-        try {
-          const authCheckResponse = await fetch("/api/auth-check", {
-            credentials: "include",
-            cache: "no-cache"
-          });
-          
-          if (authCheckResponse.ok) {
-            const authStatus = await authCheckResponse.json();
-            console.log("Auth check after logout:", authStatus);
-            
-            if (authStatus.status === "authenticated") {
-              console.warn("Still authenticated after logout, forcing page reload to clear state");
-            }
-          }
-        } catch (checkError) {
-          console.error("Error checking authentication status after logout:", checkError);
-        }
-        
-        // Explicitly refresh the page to fully clear state after logout
-        setTimeout(() => {
-          window.location.href = '/auth';
-        }, 500);
-        
-        return undefined; // Return void for proper typing
-      } catch (error) {
-        console.error("Logout error:", error);
-        
-        // Even if logout fails, force a page reload to clear client state
-        setTimeout(() => {
-          window.location.href = '/auth';
-        }, 1000);
-        
-        throw error;
-      }
+      // First, check the current authentication state
+      const beforeLogoutCookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+      console.log('Cookies before logout:', beforeLogoutCookies.length ? beforeLogoutCookies.join(', ') : 'None');
+      
+      await apiRequest("POST", "/api/logout");
+      
+      // Check cookies after logout to verify session was cleared
+      const afterLogoutCookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+      console.log('Cookies after logout:', afterLogoutCookies.length ? afterLogoutCookies.join(', ') : 'None');
     },
     onSuccess: () => {
-      console.log("Logout successful, clearing all cached data");
-      
       // Clear user data from cache
       queryClient.setQueryData(["/api/user"], null);
       
-      // Clear all queries to prevent data leakage between users
-      queryClient.clear();
+      // Clear other data that shouldn't be accessible after logout
+      queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/shared-calendars"] });
       
+      console.log("Logout successful");
       toast({
-        title: "Logged out successfully",
+        title: "Logout successful",
+        description: "You have been successfully logged out.",
       });
     },
-    onError: (error: Error) => {
-      console.error("Logout error:", error);
+    onError: (err) => {
+      console.error("Logout failed:", err);
       toast({
         title: "Logout failed",
-        description: error.message,
+        description: err.message,
         variant: "destructive",
       });
     },
@@ -410,13 +373,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user: user ?? null,
+        user,
         isLoading,
         error,
         loginMutation,
         logoutMutation,
         registerMutation,
-        isPostLoginLoading,
+        isPostLoginLoading
       }}
     >
       {children}
@@ -429,17 +392,5 @@ export function useAuth() {
   if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
-  
-  // Add logging for debugging auth state
-  if (context.user) {
-    console.log(`[Auth] User is authenticated: ${context.user.username} (ID: ${context.user.id})`);
-  } else if (context.isLoading) {
-    console.log(`[Auth] Authentication state is loading...`);
-  } else if (context.error) {
-    console.log(`[Auth] Authentication error: ${context.error.message}`);
-  } else {
-    console.log(`[Auth] No authenticated user`);
-  }
-  
   return context;
 }

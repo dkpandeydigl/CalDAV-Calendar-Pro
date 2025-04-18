@@ -21,23 +21,35 @@ export async function apiRequest(
   console.log(`Making ${method} request to ${url}`, data ? 'with data' : 'without data');
   
   try {
+    const headers: Record<string, string> = {
+      ...(data ? { "Content-Type": "application/json" } : {}),
+      "X-Requested-With": "XMLHttpRequest", // Helps servers identify AJAX requests
+      "Accept": "application/json",
+      "Cache-Control": "no-cache, no-store, must-revalidate", // Strong cache busting
+      "Pragma": "no-cache" // Legacy cache busting for HTTP 1.0
+    };
+    
+    // Enhanced request with improved cache control and session handling
     const res = await fetch(url, {
       method,
-      headers: {
-        ...(data ? { "Content-Type": "application/json" } : {}),
-        "X-Requested-With": "XMLHttpRequest" // Helps some servers identify AJAX requests
-      },
+      headers,
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include", // Include cookies for cross-origin requests
       mode: "same-origin", // Ensures cookies are sent for same-origin requests
-      cache: "no-cache" // Prevents caching to ensure fresh responses
+      cache: "no-cache", // Prevents caching to ensure fresh responses
+      redirect: "follow" // Follow any redirects (like after login)
     });
 
+    // Enhanced logging for authentication endpoints
     if (method === 'POST' && (url === '/api/login' || url === '/api/register')) {
       console.log(`Auth request to ${url} completed with status: ${res.status}`);
       // Log cookies for debugging (not the values, just existence)
       const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
-      console.log('Cookies present after auth:', cookies.length ? cookies.join(', ') : '');
+      console.log('Cookies present after auth:', cookies.length ? cookies.join(', ') : 'None');
+      
+      // Check for presence of session cookie specifically
+      const hasSessionCookie = cookies.some(c => c.includes('sid'));
+      console.log('Session cookie present:', hasSessionCookie);
       
       // For 5xx server errors, provide more detailed error information
       if (res.status >= 500) {
@@ -48,6 +60,38 @@ export async function apiRequest(
           throw new Error(`Server error (${res.status}): ${errorText}`);
         } catch (textError) {
           throw new Error(`Server error (${res.status}): Unable to read response`);
+        }
+      }
+    }
+    
+    // For calendar retrieval endpoints, add enhanced logging
+    if (url.includes('/api/calendars')) {
+      console.log(`Calendar request to ${url} completed with status: ${res.status}`);
+      
+      if (res.status === 401) {
+        console.error(`Authentication error for calendar request to ${url}`);
+        console.log('Current cookies:', document.cookie ? 'Present' : 'None');
+        
+        // Try to get status of authentication in separate request
+        try {
+          const authCheckPromise = fetch('/api/user', { 
+            credentials: 'include',
+            cache: 'no-cache',
+            headers: { 
+              "X-Requested-With": "XMLHttpRequest",
+              "Accept": "application/json"
+            }
+          });
+          
+          // Add timeout to avoid hanging
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Auth check timed out')), 3000)
+          );
+          
+          const authCheckRes = await Promise.race([authCheckPromise, timeoutPromise]) as Response;
+          console.log(`Auth check completed with status: ${authCheckRes.status}`);
+        } catch (authCheckError) {
+          console.error('Failed to check authentication status:', authCheckError);
         }
       }
     }
@@ -84,7 +128,10 @@ export const getQueryFn: <T>(options: {
       res = await fetch(url, {
         method: 'GET',
         headers: {
-          "X-Requested-With": "XMLHttpRequest"
+          "X-Requested-With": "XMLHttpRequest",
+          "Accept": "application/json",
+          "Cache-Control": "no-cache, no-store, must-revalidate", // Strong cache control
+          "Pragma": "no-cache" // Legacy cache busting
         },
         credentials: "include",
         mode: "same-origin",
@@ -92,21 +139,75 @@ export const getQueryFn: <T>(options: {
       });
       
       // Enhanced debugging for specific calendar endpoint
-      if (url === '/api/calendars') {
-        console.log(`[Calendar API] Response status: ${res.status}`);
+      if (url === '/api/calendars' || url.includes('/calendars')) {
+        console.log(`[Calendar API] Response status: ${res.status} for ${url}`);
         
         // Log session state
         const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
         console.log('[Calendar API] Available cookies:', cookies.length ? cookies.join(', ') : 'none');
         
+        // Check for session cookie specifically
+        const hasSessionCookie = cookies.some(c => c.includes('sid'));
+        console.log('[Calendar API] Session cookie present:', hasSessionCookie);
+        
+        // For auth errors, try to fix by refreshing auth status
+        if (res.status === 401) {
+          console.log('[Calendar API] Authentication error, attempting to verify session status');
+          
+          try {
+            // Try to re-validate session with user endpoint
+            const authCheckRes = await fetch('/api/user', {
+              credentials: 'include',
+              cache: 'no-cache',
+              headers: {
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json",
+                "Cache-Control": "no-cache, no-store, must-revalidate"
+              }
+            });
+            
+            console.log(`[Calendar API] Auth check returned: ${authCheckRes.status}`);
+            
+            // If auth check succeeded, try the original request again
+            if (authCheckRes.ok) {
+              console.log('[Calendar API] Auth check succeeded, retrying calendar request');
+              
+              // Retry the original request
+              const retryRes = await fetch(url, {
+                method: 'GET',
+                headers: {
+                  "X-Requested-With": "XMLHttpRequest",
+                  "Accept": "application/json",
+                  "Cache-Control": "no-cache, no-store, must-revalidate"
+                },
+                credentials: "include",
+                mode: "same-origin",
+                cache: "no-cache"
+              });
+              
+              console.log(`[Calendar API] Retry request returned: ${retryRes.status}`);
+              
+              // If retry succeeded, use that response instead
+              if (retryRes.ok) {
+                console.log('[Calendar API] Retry succeeded');
+                res = retryRes;
+              }
+            }
+          } catch (authCheckErr) {
+            console.error('[Calendar API] Auth check failed:', authCheckErr);
+          }
+        }
+        
         // Try to get a brief look at the response body without consuming it
-        const clonedRes = res.clone();
-        try {
-          const text = await clonedRes.text();
-          const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
-          console.log(`[Calendar API] Response preview: ${preview}`);
-        } catch (err) {
-          console.error('[Calendar API] Could not preview response', err);
+        if (res.ok) {
+          const clonedRes = res.clone();
+          try {
+            const text = await clonedRes.text();
+            const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
+            console.log(`[Calendar API] Response preview: ${preview}`);
+          } catch (err) {
+            console.error('[Calendar API] Could not preview response', err);
+          }
         }
       }
 
