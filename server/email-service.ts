@@ -652,136 +652,82 @@ export class EmailService {
    */
   transformIcsForCancellation(originalIcs: string, data: EventInvitationData): string {
     try {
-      // CRITICAL: Extract the original UID exactly as is
-      const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
-      if (!uidMatch) {
-        console.error('No UID found in original ICS data, using validated UID from centralUIDService');
-      }
+      // Use the standardized shared implementation from ics-formatter-fixed.ts
+      console.log('[EmailService] Using RFC 5545 compliant cancellation formatter from shared/ics-formatter-fixed.ts');
       
-      // IMPORTANT: We now prioritize the validated UID from centralUIDService 
-      // This ensures consistent UIDs are used throughout the entire event lifecycle
-      const originalUid = data.uid || (uidMatch ? uidMatch[1].trim() : null);
+      // Create the event data to pass to the shared function
+      const cancellationData = {
+        uid: data.uid,
+        sequence: data.sequence,
+        organizer: data.organizer
+      };
       
-      if (!originalUid) {
-        console.error('No valid UID found or provided for event cancellation');
-        // Note: This shouldn't happen as we now validate UIDs before calling this function
-      }
+      // Call the shared function that will handle all formatting concerns
+      const cancellationIcs = transformIcsForCancellation(originalIcs, cancellationData);
       
-      if (!originalUid) {
-        console.error('Could not determine UID for event cancellation, this will cause synchronization issues');
-      }
-      
-      // Parse the current sequence from the original ICS if available
-      const sequenceMatch = originalIcs.match(/SEQUENCE:(\d+)/i);
-      const currentSequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
-      const newSequence = currentSequence + 1;
-      
-      // Parse the original ORGANIZER and organizer name if available
-      const organizerMatch = originalIcs.match(/ORGANIZER[^:]*:mailto:([^\r\n]+)/i);
-      const organizerEmail = organizerMatch ? organizerMatch[1] : data.organizer.email;
-      
-      const organizerNameMatch = originalIcs.match(/ORGANIZER;CN=([^:;]+)[^:]*:/i);
-      const organizerName = organizerNameMatch ? organizerNameMatch[1] : data.organizer.name;
-      
-      console.log(`Preserving original UID in cancellation: ${originalUid}`);
-      
-      // First, ensure the ICS has proper line breaks
-      // This fixes the issue where cancelled event ICS files show all data in one line
-      let normalizedIcs = originalIcs;
-      
-      // If the ICS doesn't have proper line breaks, add them
-      if (!normalizedIcs.match(/\r?\n/)) {
-        console.warn('ICS data has no line breaks - fixing format for RFC 5545 compliance');
-        // Insert proper line breaks after each ICS field
-        normalizedIcs = normalizedIcs
-          .replace(/;/g, '\r\n;')
-          .replace(/:/g, ':\r\n')
-          .replace(/END:VEVENT/g, '\r\nEND:VEVENT')
-          .replace(/END:VCALENDAR/g, '\r\nEND:VCALENDAR')
-          .replace(/BEGIN:VEVENT/g, '\r\nBEGIN:VEVENT')
-          .replace(/BEGIN:VCALENDAR/g, 'BEGIN:VCALENDAR\r\n')
-          // Fix any double line breaks created
-          .replace(/\r\n\r\n/g, '\r\n')
-          // Normalize attribute lines
-          .replace(/\r\n([^:;]+):/g, '\r\n$1:')
-          .replace(/\r\n([^:;]+);/g, '\r\n$1;');
-      }
-      
-      // Create a modified version of the normalized ICS with only necessary changes
-      let modifiedIcs = normalizedIcs
-        // Change METHOD to CANCEL
-        .replace(/METHOD:[^\r\n]+/i, 'METHOD:CANCEL') 
-        // Change STATUS to CANCELLED
-        .replace(/STATUS:[^\r\n]+/i, 'STATUS:CANCELLED')
-        // Update SEQUENCE
-        .replace(/SEQUENCE:\d+/i, `SEQUENCE:${newSequence}`);
-      
-      // Add METHOD if it doesn't exist (after VERSION line)
-      if (!modifiedIcs.includes('METHOD:')) {
-        modifiedIcs = modifiedIcs.replace(
-          /VERSION:[^\r\n]+(\r?\n)/i, 
-          `VERSION:2.0$1METHOD:CANCEL$1`
-        );
-      }
-      
-      // Add STATUS if it doesn't exist (after SEQUENCE or UID if SEQUENCE doesn't exist)
-      if (!modifiedIcs.includes('STATUS:')) {
-        if (modifiedIcs.includes('SEQUENCE:')) {
-          modifiedIcs = modifiedIcs.replace(
-            /SEQUENCE:[^\r\n]+(\r?\n)/i,
-            `SEQUENCE:${newSequence}$1STATUS:CANCELLED$1`
-          );
-        } else {
-          // Add after UID if SEQUENCE doesn't exist
-          modifiedIcs = modifiedIcs.replace(
-            /UID:[^\r\n]+(\r?\n)/i,
-            `UID:${originalUid}$1SEQUENCE:${newSequence}$1STATUS:CANCELLED$1`
-          );
-        }
-      }
-      
-      // Final check for proper line folding (RFC 5545 compliance)
-      // ICS lines shouldn't be longer than 75 characters
-      modifiedIcs = this.applyIcsLineFolding(modifiedIcs);
-      
-      return modifiedIcs;
+      console.log('[EmailService] Successfully generated RFC-compliant cancellation ICS');
+      return cancellationIcs;
     } catch (error) {
       console.error('Error transforming ICS for cancellation:', error);
       console.error('Original ICS:', originalIcs);
       
-      // As a last resort, generate a new ICS but ensure we use the exact same UID as the original
-      // First try to extract UID from original ICS data
-      let uid = data.uid;
       try {
-        const uidMatch = originalIcs.match(/UID:([^\r\n]+)/i);
-        if (uidMatch) {
-          uid = uidMatch[1].trim();
+        // Even in the fallback case, use the proper RFC 5545 structure
+        console.error('Creating fallback cancellation ICS with RFC 5545 compliant format');
+        
+        const uid = data.uid || originalIcs.match(/UID:([^\r\n]+)/i)?.[1]?.trim() || `cancel-${Date.now()}@caldavclient.local`;
+        const sequence = (data.sequence ? parseInt(data.sequence.toString(), 10) : 0) + 1;
+        
+        // Build a clean, RFC-compliant cancellation ICS as fallback
+        const lines = [
+          'BEGIN:VCALENDAR',
+          'VERSION:2.0',
+          'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+          'METHOD:CANCEL',
+          'BEGIN:VEVENT',
+          `UID:${uid}`,
+          `SUMMARY:${data.title || 'Cancelled Event'}`,
+          `DTSTART:${formatICalDate(data.startDate)}`,
+          `DTEND:${formatICalDate(data.endDate)}`,
+          `DTSTAMP:${formatICalDate(new Date())}`,
+          `SEQUENCE:${sequence}`,
+          'STATUS:CANCELLED'
+        ];
+        
+        // Add organizer if available
+        if (data.organizer && data.organizer.email) {
+          if (data.organizer.name) {
+            lines.push(`ORGANIZER;CN=${data.organizer.name}:mailto:${data.organizer.email}`);
+          } else {
+            lines.push(`ORGANIZER:mailto:${data.organizer.email}`);
+          }
         }
-      } catch (e) {
-        console.error('Failed to extract UID from original ICS while generating fallback:', e);
+        
+        // Add attendees if available
+        if (data.attendees && data.attendees.length > 0) {
+          data.attendees.forEach(att => {
+            if (att && att.email) {
+              let line = 'ATTENDEE';
+              if (att.name) line += `;CN=${att.name}`;
+              line += `;ROLE=${att.role || 'REQ-PARTICIPANT'};PARTSTAT=NEEDS-ACTION`;
+              line += `:mailto:${att.email}`;
+              lines.push(line);
+            }
+          });
+        }
+        
+        // Close the components
+        lines.push('END:VEVENT');
+        lines.push('END:VCALENDAR');
+        
+        // Join with proper line breaks and return
+        return lines.join('\r\n');
+      } catch (fallbackError) {
+        console.error('Critical error creating fallback cancellation ICS:', fallbackError);
+        
+        // Ultimate fallback - simplified but standards-compliant cancellation ICS
+        return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:CANCEL\r\nBEGIN:VEVENT\r\nUID:${data.uid || `cancel-${Date.now()}`}\r\nSTATUS:CANCELLED\r\nSEQUENCE:1\r\nEND:VEVENT\r\nEND:VCALENDAR`;
       }
-      
-      // Since we can't return a Promise here, we need to return a basic template instead
-      // The caller will need to handle generating full ICS data
-      console.error('Returning basic cancellation template due to transformation error');
-      
-      const now = formatICalDate(new Date());
-      
-      return `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//Replit Calendar App//EN
-CALSCALE:GREGORIAN
-METHOD:CANCEL
-BEGIN:VEVENT
-UID:${uid}
-DTSTAMP:${now}
-DTSTART:${formatICalDate(data.startDate)}
-DTEND:${formatICalDate(data.endDate)}
-SEQUENCE:${(data.sequence || 0) + 1}
-STATUS:CANCELLED
-SUMMARY:${data.title || "Untitled Event"}
-END:VEVENT
-END:VCALENDAR`;
     }
   }
   
