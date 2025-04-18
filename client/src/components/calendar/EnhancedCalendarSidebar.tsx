@@ -123,8 +123,8 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   const [calendarViewMode, setCalendarViewMode] = useState<'list' | 'compact'>('list');
   const [sharedCalendarViewMode, setSharedCalendarViewMode] = useState<'list' | 'compact'>('list');
   
-  // State for tracking which shared calendar group is expanded (only one at a time)
-  const [expandedOwnerEmail, setExpandedOwnerEmail] = useState<string | null>(null);
+  // State for tracking which shared calendar groups are expanded (multiple can be expanded)
+  const [expandedOwnerEmails, setExpandedOwnerEmails] = useState<Set<string>>(new Set());
   
   // Inherit other state variables from original implementation
   const [showAddCalendar, setShowAddCalendar] = useState(false);
@@ -183,23 +183,26 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     return acc;
   }, {} as Record<string, typeof filteredSharedCalendars>);
   
-  // Initialize expanded email if not already set and we have shared calendars
+  // Initialize with all groups expanded by default
   useEffect(() => {
-    if (expandedOwnerEmail === null && Object.keys(groupedSharedCalendars).length > 0) {
-      // Set the first group as expanded by default
-      setExpandedOwnerEmail(Object.keys(groupedSharedCalendars)[0]);
+    if (expandedOwnerEmails.size === 0 && Object.keys(groupedSharedCalendars).length > 0) {
+      // Set all groups as expanded by default
+      const allOwnerEmails = new Set(Object.keys(groupedSharedCalendars));
+      setExpandedOwnerEmails(allOwnerEmails);
     }
-  }, [expandedOwnerEmail, groupedSharedCalendars]);
+  }, [expandedOwnerEmails, groupedSharedCalendars]);
   
-  // Function to handle expanding a group (collapses any previously expanded group)
+  // Function to toggle a group's expansion state
   const handleToggleGroupExpansion = (ownerEmail: string) => {
-    if (expandedOwnerEmail === ownerEmail) {
-      // If clicking the already expanded group, collapse it
-      setExpandedOwnerEmail(null);
-    } else {
-      // Otherwise, expand the clicked group and collapse others
-      setExpandedOwnerEmail(ownerEmail);
-    }
+    setExpandedOwnerEmails(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(ownerEmail)) {
+        newSet.delete(ownerEmail);
+      } else {
+        newSet.add(ownerEmail);
+      }
+      return newSet;
+    });
   };
   
   // Function to check duplicate calendar name (reuse from original)
@@ -898,7 +901,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                           >
                             {/* Group Header - always visible */}
                             <div 
-                              className={`py-2 px-3 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors ${expandedOwnerEmail === ownerEmail ? 'bg-gray-50' : 'bg-white'}`}
+                              className={`py-2 px-3 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors ${expandedOwnerEmails.has(ownerEmail) ? 'bg-gray-50' : 'bg-white'}`}
                               onClick={() => handleToggleGroupExpansion(ownerEmail)}
                             >
                               <div className="flex items-center space-x-2">
