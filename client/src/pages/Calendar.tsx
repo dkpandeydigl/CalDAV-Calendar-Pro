@@ -22,7 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
-import { Loader2, RefreshCcw, Trash, Calendar as CalendarIcon } from 'lucide-react';
+import { Loader2, RefreshCcw, RefreshCw, Trash, Calendar as CalendarIcon } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 

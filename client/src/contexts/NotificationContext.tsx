@@ -80,12 +80,12 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     
     try {
       setLoading(true);
-      const response = await apiRequest<Notification[]>('/api/notifications');
-      setNotifications(response);
+      const response = await apiRequest('/api/notifications');
+      setNotifications(response as Notification[]);
       
       // Also update unread count
-      const countResponse = await apiRequest<{ count: number }>('/api/notifications/count');
-      setUnreadCount(countResponse.count);
+      const countResponse = await apiRequest('/api/notifications/count');
+      setUnreadCount((countResponse as any).count || 0);
       
       setError(null);
     } catch (err) {
@@ -99,11 +99,11 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Mark a notification as read
   const markAsRead = useCallback(async (id: number) => {
     try {
-      const response = await apiRequest<{ success: boolean; unreadCount: number }>(`/api/notifications/${id}/read`, {
+      const response = await apiRequest(`/api/notifications/${id}/read`, {
         method: 'PATCH'
       });
       
-      if (response.success) {
+      if ((response as any).success) {
         // Update notifications list
         setNotifications(prev => 
           prev.map(notification => 
@@ -114,7 +114,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         );
         
         // Update unread count
-        setUnreadCount(response.unreadCount);
+        setUnreadCount((response as any).unreadCount || 0);
       }
     } catch (err) {
       console.error('Error marking notification as read:', err);
@@ -129,11 +129,11 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Mark all notifications as read
   const markAllAsRead = useCallback(async () => {
     try {
-      const response = await apiRequest<{ success: boolean }>('/api/notifications/mark-all-read', {
+      const response = await apiRequest('/api/notifications/mark-all-read', {
         method: 'POST'
       });
       
-      if (response.success) {
+      if ((response as any).success) {
         // Update notifications list
         setNotifications(prev => 
           prev.map(notification => ({ ...notification, isRead: true }))
@@ -155,18 +155,18 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Dismiss a notification
   const dismissNotification = useCallback(async (id: number) => {
     try {
-      const response = await apiRequest<{ success: boolean; unreadCount: number }>(`/api/notifications/${id}/dismiss`, {
+      const response = await apiRequest(`/api/notifications/${id}/dismiss`, {
         method: 'PATCH'
       });
       
-      if (response.success) {
+      if ((response as any).success) {
         // Update notifications list by removing the dismissed notification
         setNotifications(prev => 
           prev.filter(notification => notification.id !== id)
         );
         
         // Update unread count
-        setUnreadCount(response.unreadCount);
+        setUnreadCount((response as any).unreadCount || 0);
       }
     } catch (err) {
       console.error('Error dismissing notification:', err);
@@ -181,11 +181,11 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Mark action taken on a notification
   const markActionTaken = useCallback(async (id: number) => {
     try {
-      const response = await apiRequest<{ success: boolean; unreadCount: number }>(`/api/notifications/${id}/action-taken`, {
+      const response = await apiRequest(`/api/notifications/${id}/action-taken`, {
         method: 'PATCH'
       });
       
-      if (response.success) {
+      if ((response as any).success) {
         // Update notifications list
         setNotifications(prev => 
           prev.map(notification => 
@@ -196,7 +196,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         );
         
         // Update unread count
-        setUnreadCount(response.unreadCount);
+        setUnreadCount((response as any).unreadCount || 0);
       }
     } catch (err) {
       console.error('Error marking action taken:', err);
@@ -211,12 +211,12 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   // Create a test notification (for development purposes)
   const createTestNotification = useCallback(async () => {
     try {
-      const response = await apiRequest<Notification>('/api/notifications/test', {
+      const response = await apiRequest('/api/notifications/test', {
         method: 'POST'
       });
       
       // Add the new notification to the list
-      setNotifications(prev => [response, ...prev]);
+      setNotifications(prev => [(response as Notification), ...prev]);
       
       // Update unread count
       setUnreadCount(prev => prev + 1);
@@ -255,44 +255,79 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         
         // Determine the WebSocket protocol based on current HTTP protocol
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const currentHost = window.location.host;
         const wsPath = useFallbackPath ? '/ws' : '/api/ws';
-        
-        // Handle different environments appropriately
-        let wsUrl;
         
         // Add userId parameter for authentication
         const userIdParam = user?.id ? `?userId=${user.id}` : '';
         
-        // Simplified URL creation - use the same format for all environments
-        // This will automatically handle protocol, host, and port correctly
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl = `${wsProtocol}//${window.location.host}${wsPath}${userIdParam}`;
-        console.log(`Creating WebSocket URL: ${wsUrl}${useFallbackPath ? ' (fallback path)' : ' (primary path)'}`);
-        
+        let wsUrl = '';
         const connectionAttempt = reconnectAttempts + 1;
-        console.log(`🔄 NotificationContext: Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
         
-        ws = new WebSocket(wsUrl);
+        // Ultra simplified WebSocket URL creation with error protection
+        try {
+          const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsHost = window.location.host; // Includes port if non-standard
+          wsUrl = `${wsProtocol}//${wsHost}${wsPath}${userIdParam}`;
+            
+          console.log(`Creating WebSocket URL: ${wsUrl}${useFallbackPath ? ' (fallback path)' : ' (primary path)'}`);
+          console.log(`🔄 NotificationContext: Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}`);
+          
+          // Create WebSocket with the simplified URL
+          ws = new WebSocket(wsUrl);
+        } catch (err) {
+          console.error('❌ Critical error creating WebSocket URL:', err);
+          // If we fail even with the fallback URL, try direct absolute URL as last resort
+          if (useFallbackPath) {
+            try {
+              const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+              const fallbackUrl = `${protocol}//${window.location.hostname}:5000/ws${userIdParam}`;
+              console.log('🆘 Last resort WebSocket URL:', fallbackUrl);
+              ws = new WebSocket(fallbackUrl);
+            } catch (lastError) {
+              console.error('💥 All WebSocket connection attempts failed:', lastError);
+              return; // Exit to prevent further errors
+            }
+          }
+        }
         
+        // Only continue if we have a valid WebSocket
+        if (!ws) return;
+        
+        // Add event handlers
         ws.onopen = () => {
-          console.log('✅ WebSocket connected for notifications');
+          const socketUrl = ws?.url || 'unknown';
+          console.log(`✅ WebSocket connected for notifications: ${socketUrl}`);
           reconnectAttempts = 0; // Reset reconnect attempts counter
           
-          // Request initial notifications list if the socket is ready
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ 
-              type: 'get_notifications',
-              userId: user.id
-            }));
-            console.log('Sent get_notifications request');
-            
-            // Also send authentication
-            ws.send(JSON.stringify({ 
-              type: 'auth', 
-              userId: user.id, 
-              timestamp: new Date().toISOString() 
-            }));
+          // Since we now have a good connection, store this path preference for future reconnects
+          const usingFallbackPath = socketUrl.includes('/ws') && !socketUrl.includes('/api/ws');
+          localStorage.setItem('websocket_preferred_path', usingFallbackPath ? '/ws' : '/api/ws');
+          localStorage.setItem('websocket_last_success_time', Date.now().toString());
+          localStorage.setItem('websocket_last_success_url', socketUrl);
+          
+          try {
+            // Request initial notifications list if the socket is ready
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              // First send authentication
+              ws.send(JSON.stringify({
+                type: 'auth',
+                userId: user.id,
+                timestamp: Date.now()
+              }));
+              
+              // Then request notifications after a short delay
+              setTimeout(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({
+                    type: 'get_notifications',
+                    userId: user.id
+                  }));
+                  console.log('✉️ Sent get_notifications request');
+                }
+              }, 500);
+            }
+          } catch (err) {
+            console.error('⚠️ Error sending initial WebSocket messages:', err);
           }
         };
         
@@ -304,7 +339,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             if (data.type === 'new_notification') {
               // Add new notification to the list
               setNotifications(prev => [data.notification, ...prev]);
-              setUnreadCount(data.unreadCount);
+              setUnreadCount(data.unreadCount || 0);
               
               // Show toast notification
               toast({
@@ -314,11 +349,11 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             } 
             else if (data.type === 'notifications') {
               // Update notifications list
-              setNotifications(data.notifications);
+              setNotifications(data.notifications || []);
             }
             else if (data.type === 'notification_count') {
               // Update unread count
-              setUnreadCount(data.count);
+              setUnreadCount(data.count || 0);
             }
           } catch (err) {
             console.error('Error processing WebSocket message:', err);
@@ -406,8 +441,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         clearTimeout(reconnectTimer);
       }
     };
-  // Removed webSocket from dependency array to prevent infinite re-renders
-  }, [isAuthenticated, user, toast]);
+  }, [isAuthenticated, user, toast, webSocket]);
 
   // Fetch notifications when user logs in
   useEffect(() => {
