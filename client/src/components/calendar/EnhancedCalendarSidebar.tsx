@@ -229,6 +229,8 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     .filter(cal => cal.userId)
     .map(cal => cal.userId);
   
+  console.log("Getting user details for IDs:", uniqueUserIds);
+  
   // Use our custom hook to fetch user details
   const { 
     userDetailsMap, 
@@ -252,6 +254,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                           userDetail.username || 
                           `User ${id}`;
         updatedMap.set(id, emailToUse);
+        console.log(`Mapped user ID ${id} to ${emailToUse}`);
       }
     });
     
