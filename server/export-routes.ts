@@ -546,7 +546,7 @@ export function registerExportRoutes(app: Express) {
     }
   });
   
-  // Calendar Export API - new implementation completely bypassing database calls
+  // Calendar Export API - new implementation with parameters for filtering
   app.get("/api/export-simple", isAuthenticated, async (req, res) => {
     try {
       if (!req.isAuthenticated() || !req.user) {
@@ -557,6 +557,27 @@ export function registerExportRoutes(app: Express) {
       console.log('Using simple export endpoint');
       const userId = (req.user as User).id;
       console.log(`Simple calendar export requested by user ID: ${userId}`);
+      
+      // Parse requested calendar IDs
+      const requestedIds = req.query.ids ? 
+        String(req.query.ids)
+          .split(',')
+          .map(id => {
+            const num = parseInt(id.trim(), 10);
+            return isNaN(num) ? null : num;
+          })
+          .filter((id): id is number => id !== null)
+        : [];
+        
+      console.log(`Received request for specific calendar IDs: ${requestedIds.join(', ')}`);
+      
+      // Date filters (optional)
+      const startDate = req.query.startDate ? new Date(String(req.query.startDate)) : null;
+      const endDate = req.query.endDate ? new Date(String(req.query.endDate)) : null;
+      
+      if (startDate && endDate) {
+        console.log(`Filtering events between ${startDate.toISOString()} and ${endDate.toISOString()}`);
+      }
       
       // Get all events for the user without calendar database lookups
       const userCalendars = await storage.getCalendars(userId);
@@ -572,12 +593,39 @@ export function registerExportRoutes(app: Express) {
         return res.status(404).json({ message: 'No calendars found for user' });
       }
       
-      // Get all events from all user's calendars
+      // Filter by requested IDs if provided
+      const calendarsToExport = requestedIds.length > 0 
+        ? allCalendars.filter(cal => requestedIds.includes(cal.id))
+        : allCalendars;
+        
+      console.log(`Exporting ${calendarsToExport.length} out of ${allCalendars.length} available calendars`);
+      
+      if (calendarsToExport.length === 0) {
+        console.error(`None of the requested calendars (${requestedIds.join(', ')}) are available for user ${userId}`);
+        return res.status(404).json({ message: 'The selected calendars are not available for export' });
+      }
+      
+      // Get all events from selected calendars
       const allEvents = [];
       
-      for (const calendar of allCalendars) {
+      for (const calendar of calendarsToExport) {
+        console.log(`Getting events for calendar ${calendar.name} (ID: ${calendar.id})`);
         const events = await storage.getEvents(calendar.id);
-        allEvents.push(...events.map(event => ({
+        
+        // Filter by date if needed
+        let filteredEvents = events;
+        if (startDate && endDate) {
+          filteredEvents = events.filter(event => {
+            const eventStart = new Date(event.startDate);
+            const eventEnd = new Date(event.endDate);
+            return (eventStart >= startDate && eventStart <= endDate) || 
+                  (eventEnd >= startDate && eventEnd <= endDate) ||
+                  (eventStart <= startDate && eventEnd >= endDate);
+          });
+          console.log(`Filtered ${events.length} down to ${filteredEvents.length} events within date range`);
+        }
+        
+        allEvents.push(...filteredEvents.map(event => ({
           ...event,
           calendarName: calendar.name
         })));
