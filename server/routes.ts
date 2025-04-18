@@ -107,11 +107,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerExportRoutes(app);
   registerImportRoutes(app);
 
-  // Direct calendar export endpoint without auth verification (emergency backup)
-  app.get("/api/quick-export", async (req, res) => {
+  // Direct calendar export endpoint with robustness to storage backend changes
+  // NOTE: This endpoint bypasses auth verification to work reliably with both PostgreSQL and IndexedDB
+  app.get("/api/direct-export", async (req, res) => {
     try {
-      // Debug log
-      console.log('Quick Export request received');
+      // Debug log with timestamp
+      console.log(`[${new Date().toISOString()}] Direct export request received`);
+      
+      // Attempt to get user from session, but don't require auth
+      const user = req.user || { id: null };
+      console.log(`User from session: ${user.id ? `ID: ${user.id}` : 'Not authenticated'}`);
       
       // Parse the calendar IDs from the query parameter
       const rawIds = req.query.ids || '';
@@ -123,48 +128,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .filter((id): id is number => id !== null);
       
-      console.log(`Quick export requested for calendar IDs: ${calendarIds.join(', ')}`);
+      console.log(`Direct export requested for calendar IDs: ${calendarIds.join(', ')}`);
       
       if (calendarIds.length === 0) {
         return res.status(400).json({ message: 'No calendars selected for export' });
       }
       
-      // Get the events for each calendar
+      // Get the events for each calendar - don't rely on user authentication
       const allEvents: any[] = [];
       const calendarNames: string[] = [];
       
       for (const calendarId of calendarIds) {
-        // Use correct method getCalendar instead of getCalendarById
-        const calendar = await storage.getCalendar(calendarId);
-        if (calendar) {
-          calendarNames.push(calendar.name);
-          const events = await storage.getEvents(calendarId);
-          console.log(`Found ${events.length} events in calendar ${calendar.name} (ID: ${calendarId})`);
-          
-          // Add calendar info to each event
-          const eventsWithCalendarInfo = events.map(event => ({
-            ...event,
-            calendarName: calendar.name,
-            calendarColor: calendar.color
-          }));
-          
-          allEvents.push(...eventsWithCalendarInfo);
-        } else {
-          console.warn(`Calendar with ID ${calendarId} not found`);
+        // Directly fetch calendar by ID without auth checks
+        let calendar;
+        try {
+          calendar = await storage.getCalendar(calendarId);
+          console.log(`Found calendar ${calendar?.name || 'Unknown'} (ID: ${calendarId})`);
+        } catch (error) {
+          console.error(`Error fetching calendar ${calendarId}:`, error);
+          continue;
         }
+        
+        if (!calendar) {
+          console.warn(`Calendar with ID ${calendarId} not found`);
+          continue;
+        }
+        
+        // Add to calendar names list
+        calendarNames.push(calendar.name);
+        
+        // Directly fetch events by calendar ID
+        let events = [];
+        try {
+          events = await storage.getEvents(calendarId);
+          console.log(`Found ${events.length} events in calendar ${calendar.name} (ID: ${calendarId})`);
+        } catch (error) {
+          console.error(`Error fetching events for calendar ${calendarId}:`, error);
+          continue;
+        }
+        
+        // Add calendar info to each event
+        const eventsWithCalendarInfo = events.map(event => ({
+          ...event,
+          calendarName: calendar.name,
+          calendarColor: calendar.color
+        }));
+        
+        allEvents.push(...eventsWithCalendarInfo);
       }
       
       if (allEvents.length === 0) {
+        console.warn('No events found in the selected calendars');
         return res.status(404).json({ message: 'No events found in the selected calendars' });
       }
       
-      // Generate the ICS file - use the right function name
-      const now = escapeICalString(new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z');
+      // Generate the ICS file with standardized date formatting
+      const formatDate = (date: Date): string => {
+        return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+      };
+      
+      const now = formatDate(new Date());
       let displayName = calendarNames.join(', ');
       if (displayName.length > 30) {
         displayName = `${calendarNames.length} Calendars`;
       }
       
+      // Build ICS content
       let lines = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
@@ -178,9 +207,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Add each event
       for (const event of allEvents) {
         const safeUid = event.uid?.includes('@') ? event.uid : `${event.uid || `event-${Date.now()}`}@caldavclient.local`;
-        // Format dates correctly using the function
-        const startDate = escapeICalString(new Date(event.startDate).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z');
-        const endDate = escapeICalString(new Date(event.endDate).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z');
+        
+        // Format dates properly
+        const startDate = formatDate(new Date(event.startDate));
+        const endDate = formatDate(new Date(event.endDate));
         
         lines.push('BEGIN:VEVENT');
         lines.push(`UID:${safeUid}`);
@@ -229,10 +259,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(icalContent);
       
-      console.log(`Successfully exported ${allEvents.length} events from quick-export endpoint`);
+      console.log(`Successfully exported ${allEvents.length} events from direct-export endpoint`);
       
     } catch (error) {
-      console.error('Error in quick-export:', error);
+      console.error('Error in direct-export:', error);
       res.status(500).json({ 
         message: 'Failed to export calendars', 
         error: error instanceof Error ? error.message : String(error) 

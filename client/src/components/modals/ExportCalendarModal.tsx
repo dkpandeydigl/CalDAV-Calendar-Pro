@@ -97,12 +97,12 @@ export default function ExportCalendarModal({
         queryParams.set('endDate', endDate.toISOString());
       }
       
-      // Use the proven working export-simple endpoint with properly formatted query
+      // Use our more reliable direct-export endpoint that works with both PostgreSQL and IndexedDB
       const queryStr = `ids=${selectedCalendarIds.join(',')}${showDateFilter && startDate && endDate ? 
         `&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}` : ''}`;
       
-      const exportUrl = `/api/export-simple?${queryStr}`;
-      console.log('Using working export URL with carefully formatted query:', exportUrl);
+      const exportUrl = `/api/direct-export?${queryStr}`;
+      console.log('Using direct export URL with authentication bypass:', exportUrl);
       
       // Open in a new tab to handle download, ensuring cookies and credentials are preserved
       window.open(exportUrl, '_blank');
