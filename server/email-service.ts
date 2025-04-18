@@ -383,9 +383,13 @@ export class EmailService {
       }
       
       // Build the email with attachments
+      // Clean UID for filename to prevent showing complete ICS content in filename
+      const cleanFilenameUid = cleanUidForFilename(data.uid || `event-${Date.now()}`);
+      console.log(`[EmailService] Using cleaned UID for invitation filename: ${cleanFilenameUid}`);
+      
       const attachments = [
         {
-          filename: `${data.uid || `event-${Date.now()}`}.ics`,
+          filename: `${cleanFilenameUid}.ics`,
           content: icsData,
           contentType: 'text/calendar'
         }
@@ -612,9 +616,13 @@ export class EmailService {
       }
       
       // Build the email with attachments
+      // Clean UID for filename to prevent showing complete ICS content in filename
+      const cleanFilenameUid = cleanUidForFilename(data.uid || `event-${Date.now()}`);
+      console.log(`[EmailService] Using cleaned UID for cancellation filename: ${cleanFilenameUid}`);
+      
       const attachments = [
         {
-          filename: `${data.uid || `event-${Date.now()}`}.ics`,
+          filename: `${cleanFilenameUid}.ics`,
           content: icsData,
           contentType: 'text/calendar'
         }
