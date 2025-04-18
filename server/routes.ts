@@ -24,6 +24,7 @@ import { syncSmtpPasswordWithCalDAV } from "./smtp-sync-utility";
 import { z } from "zod";
 import { registerExportRoutes } from "./export-routes";
 import { registerImportRoutes } from "./import-routes";
+import { registerUserLookupRoutes } from "./user-lookup-routes";
 import fetch from "node-fetch";
 import { escapeICalString, formatICalDate, formatContentLine, formatRecurrenceRule, generateICalEvent } from "./ical-utils";
 import { syncService } from "./sync-service";
@@ -103,9 +104,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   console.log('[express] WebSocket server initialization handled in routes.ts');
   
-  // Register the export and import routes
+  // Register the export, import, and user lookup routes
   registerExportRoutes(app);
   registerImportRoutes(app);
+  registerUserLookupRoutes(app);
 
   // Direct calendar export endpoint with robustness to storage backend changes
   // NOTE: This endpoint bypasses auth verification to work reliably with both PostgreSQL and IndexedDB
