@@ -212,6 +212,8 @@ export function setupAuth(app: Express) {
     secret: process.env.SESSION_SECRET || "calendar-app-secret",
     resave: true, // Ensure session is saved on each request
     saveUninitialized: true, // Ensure new sessions are saved
+    store: storage.sessionStore, // Use our storage's session store for persistence
+    name: 'caldav.sid', // Use a unique name for our session cookie
     cookie: {
       secure: false, // Set to false for development in Replit
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week

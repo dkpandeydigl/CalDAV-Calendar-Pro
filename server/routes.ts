@@ -806,13 +806,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
   
   // USERS API
-  app.get("/api/user", (req, res) => {
-    if (req.isAuthenticated()) {
-      res.json(req.user);
-    } else {
-      res.status(401).json({ message: "Not authenticated" });
-    }
-  });
+  // The /api/user endpoint is already defined in auth.ts
+  // This duplicate definition has been removed to prevent conflicts
   
   app.put("/api/user/fullname", isAuthenticated, async (req, res) => {
     try {
