@@ -535,6 +535,51 @@ export function setupAuth(app: Express) {
               // Continue login process even if connection update fails
             }
             
+            // Try to get CalDAV user information for profile update
+            try {
+              // Get user info from CalDAV server to update profile
+              const caldavUserInfo = typeof isCalDAVValid === 'object' ? isCalDAVValid : null;
+              
+              // Update profile with display name and email from CalDAV if available
+              if (caldavUserInfo) {
+                // Use type that matches the database schema
+                let userUpdates: {
+                  fullName?: string | null;
+                  email?: string | null;
+                } = {};
+                let needsUpdate = false;
+                
+                // Update display name if available from CalDAV and different from current
+                if (caldavUserInfo.displayName && 
+                    (!existingUser.fullName || existingUser.fullName !== caldavUserInfo.displayName)) {
+                  userUpdates.fullName = caldavUserInfo.displayName;
+                  console.log(`Updating display name for ${username} from CalDAV: ${caldavUserInfo.displayName}`);
+                  needsUpdate = true;
+                }
+                
+                // Update email if available from CalDAV and different from current
+                if (caldavUserInfo.email && 
+                    (!existingUser.email || existingUser.email !== caldavUserInfo.email)) {
+                  userUpdates.email = caldavUserInfo.email;
+                  console.log(`Updating email for ${username} from CalDAV: ${caldavUserInfo.email}`);
+                  needsUpdate = true;
+                }
+                
+                // Apply updates if needed
+                if (needsUpdate) {
+                  await storage.updateUser(existingUser.id, userUpdates);
+                  console.log(`Updated profile information for ${username} with CalDAV data`);
+                  
+                  // Note: we don't need to refresh the user object here.
+                  // The changes have been saved to the database and will be available in future requests.
+                  // The current authentication process will continue with the existing user object.
+                }
+              }
+            } catch (profileUpdateError) {
+              console.error(`Error updating profile for ${username} from CalDAV data:`, profileUpdateError);
+              // Continue login process even if profile update fails
+            }
+            
             // Update user's password hash if it's different
             try {
               const isStoredPasswordValid = await comparePasswords(password, existingUser.password);
