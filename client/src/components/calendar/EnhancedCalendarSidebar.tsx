@@ -123,8 +123,8 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   const [calendarViewMode, setCalendarViewMode] = useState<'list' | 'compact'>('list');
   const [sharedCalendarViewMode, setSharedCalendarViewMode] = useState<'list' | 'compact'>('list');
   
-  // State for tracking which shared calendar groups are expanded (multiple can be expanded)
-  const [expandedOwnerEmails, setExpandedOwnerEmails] = useState<Set<string>>(new Set());
+  // State for tracking which shared calendar group is expanded (only one at a time)
+  const [expandedOwnerEmail, setExpandedOwnerEmail] = useState<string | null>(null);
   
   // Cache for mapping user IDs to owner emails
   const [ownerEmailsById, setOwnerEmailsById] = useState<Map<number, string>>(new Map());
@@ -220,8 +220,8 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   // Log grouped calendars for debugging
   useEffect(() => {
     console.log("Grouped shared calendars:", groupedSharedCalendars);
-    console.log("Expanded owner emails:", expandedOwnerEmails);
-  }, [groupedSharedCalendars, expandedOwnerEmails]);
+    console.log("Expanded owner email:", expandedOwnerEmail);
+  }, [groupedSharedCalendars, expandedOwnerEmail]);
   
   // Process user IDs and update owner email cache
   useEffect(() => {
@@ -253,21 +253,20 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     }
   }, [filteredSharedCalendars, ownerEmailsById]);
   
-  // Initialize with all groups expanded by default
+  // Initialize with first group expanded by default
   useEffect(() => {
     const ownerKeys = Object.keys(groupedSharedCalendars);
     
-    // Only initialize if we have calendars but no expanded groups
-    if (expandedOwnerEmails.size === 0 && ownerKeys.length > 0) {
-      console.log("Setting initial expanded owner emails:", ownerKeys);
-      // Set all groups as expanded by default
-      const allOwnerEmails = new Set(ownerKeys);
-      setExpandedOwnerEmails(allOwnerEmails);
+    // Only initialize if we have calendars but no expanded group
+    if (expandedOwnerEmail === null && ownerKeys.length > 0) {
+      console.log("Setting initial expanded owner email:", ownerKeys[0]);
+      // Set first group as expanded by default
+      setExpandedOwnerEmail(ownerKeys[0]);
     }
-  }, [expandedOwnerEmails, groupedSharedCalendars]);
+  }, [expandedOwnerEmail, groupedSharedCalendars]);
   
   // Function to toggle a group's expansion state
-  // Now only allows one group to be expanded at a time
+  // Only allows one group to be expanded at a time
   const handleToggleGroupExpansion = (ownerEmail: string, e?: React.MouseEvent) => {
     // Stop propagation if event is provided
     if (e) {
@@ -275,16 +274,16 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     }
 
     console.log(`Toggling expansion for owner: ${ownerEmail}`, 
-                `Current state: ${expandedOwnerEmails.has(ownerEmail) ? 'expanded' : 'collapsed'}`);
+                `Current state: ${expandedOwnerEmail === ownerEmail ? 'expanded' : 'collapsed'}`);
     
     // If the group is already expanded, collapse it
     // If it's collapsed, collapse all others and expand only this one
-    if (expandedOwnerEmails.has(ownerEmail)) {
+    if (expandedOwnerEmail === ownerEmail) {
       console.log(`Collapsing group: ${ownerEmail}`);
-      setExpandedOwnerEmails(new Set());
+      setExpandedOwnerEmail(null);
     } else {
       console.log(`Expanding group: ${ownerEmail}, collapsing all others`);
-      setExpandedOwnerEmails(new Set([ownerEmail]));
+      setExpandedOwnerEmail(ownerEmail);
     }
   };
   
@@ -996,11 +995,11 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                           >
                             {/* Group Header - always visible */}
                             <div 
-                              className={`py-2 px-3 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors ${expandedOwnerEmails.has(ownerEmail) ? 'bg-gray-50' : 'bg-white'}`}
+                              className={`py-2 px-3 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors ${expandedOwnerEmail === ownerEmail ? 'bg-gray-50' : 'bg-white'}`}
                               onClick={(e) => handleToggleGroupExpansion(ownerEmail, e)}
                             >
                               <div className="flex items-center space-x-2">
-                                {expandedOwnerEmails.has(ownerEmail) ? 
+                                {expandedOwnerEmail === ownerEmail ? 
                                   <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : 
                                   <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
                                 }
