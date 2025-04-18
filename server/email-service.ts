@@ -7,7 +7,8 @@ import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
 import { 
   sanitizeAndFormatICS, 
   transformIcsForCancellation,
-  deepCleanIcsData
+  deepCleanIcsData,
+  cleanUidForFilename
 } from '../shared/ics-formatter-fixed';
 
 export interface Attendee {

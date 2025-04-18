@@ -5,6 +5,31 @@
  * for consistent calendar interoperability.
  */
 
+/**
+ * Clean a UID string to ensure it's suitable for use in filenames and other contexts
+ * Removes any embedded parameters, line breaks, or other non-filename-friendly characters
+ * 
+ * @param uid The raw UID string to clean
+ * @returns A clean UID string suitable for filenames
+ */
+export function cleanUidForFilename(uid: string): string {
+  if (!uid) return `event-${Date.now()}`;
+  
+  // First split at any whitespace, quotes, backslashes, or line breaks
+  let cleanUid = uid.split(/[\s\\"\r\n;]/)[0];
+  
+  // If it's an email-like UID, extract just the part up to the domain
+  const domainMatch = cleanUid.match(/^([^@]+@[^.]+\.[^\\]+)/);
+  if (domainMatch) {
+    cleanUid = domainMatch[1];
+  }
+  
+  // Remove any remaining invalid filename characters
+  cleanUid = cleanUid.replace(/[<>:"/\\|?*\r\n]+/g, '');
+  
+  return cleanUid;
+}
+
 export type ICSFormattingOptions = {
   uid?: string;
   method?: 'REQUEST' | 'CANCEL' | 'REPLY' | string;
