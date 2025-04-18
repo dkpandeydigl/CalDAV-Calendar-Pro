@@ -28,20 +28,58 @@ interface User {
   username: string;
 }
 
-// Enhanced middleware to check if user is authenticated
+// Enhanced middleware to check if user is authenticated - using the same implementation as routes.ts
 function isAuthenticated(req: Request, res: Response, next: NextFunction) {
-  console.log("Authentication check for", req.path);
-  console.log("isAuthenticated():", req.isAuthenticated());
-  console.log("Session ID:", req.sessionID);
-  console.log("User object exists:", !!req.user);
+  // Enhanced logging for authentication debugging
+  const path = req.path;
+  const method = req.method;
+  console.log(`Auth check [${method} ${path}]`, {
+    isAuthenticated: req.isAuthenticated(),
+    hasSession: !!req.session,
+    sessionID: req.sessionID,
+    hasUser: !!req.user,
+    userID: req.user?.id,
+    username: req.user?.username,
+    cookies: req.headers.cookie ? 'Present' : 'None',
+    cookieCount: req.headers.cookie ? req.headers.cookie.split(';').length : 0,
+  });
   
-  if (req.user && req.isAuthenticated()) {
-    console.log("User authenticated:", (req.user as any).id, (req.user as any).username);
+  if (req.isAuthenticated()) {
+    // Log successful authentication with more details
+    console.log(`User ${req.user!.id} (${req.user!.username}) authenticated for ${method} ${path}`);
     return next();
   }
   
-  console.log("Authentication failed - returning 401");
-  res.status(401).json({ message: "Not authenticated" });
+  // Enhanced error handling and debugging for failed authentication
+  console.log(`Authentication failed for ${method} ${path}`);
+  
+  // Check for specific authentication issues
+  if (!req.session) {
+    console.error("No session object found");
+    return res.status(401).json({ message: "Session error. Please try again." });
+  }
+  
+  if (!req.headers.cookie) {
+    console.error("No cookies present in request");
+    return res.status(401).json({ message: "No session cookies found. Please enable cookies in your browser." });
+  }
+  
+  // Try to recover the session if it exists but user is not logged in
+  if (req.session && req.sessionID) {
+    console.log(`Attempting to recover session: ${req.sessionID}`);
+    
+    // Regenerate the session to clear any corrupt state
+    req.session.regenerate((err) => {
+      if (err) {
+        console.error("Failed to regenerate session:", err);
+      } else {
+        console.log("Session regenerated successfully");
+      }
+      res.status(401).json({ message: "Not authenticated. Please log in again." });
+    });
+  } else {
+    res.status(401).json({ message: "Not authenticated" });
+  }
 }
 
 interface ICSEvent {
