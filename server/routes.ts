@@ -780,23 +780,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   function isAuthenticated(req: Request, res: Response, next: NextFunction) {
-    // Log session information for debugging
-    console.log("Session check: isAuthenticated() called");
-    console.log("Session data:", {
+    // Enhanced logging for authentication debugging
+    const path = req.path;
+    const method = req.method;
+    console.log(`Auth check [${method} ${path}]`, {
+      isAuthenticated: req.isAuthenticated(),
       hasSession: !!req.session,
       sessionID: req.sessionID,
       hasUser: !!req.user,
       userID: req.user?.id,
-      authenticated: req.isAuthenticated()
+      username: req.user?.username,
+      cookies: req.headers.cookie ? 'Present' : 'None',
+      cookieCount: req.headers.cookie ? req.headers.cookie.split(';').length : 0,
     });
     
     if (req.isAuthenticated()) {
+      // Log successful authentication with more details
+      console.log(`User ${req.user!.id} (${req.user!.username}) authenticated for ${method} ${path}`);
       return next();
     }
     
-    // More detailed error response
-    console.log("Authentication failed: User not authenticated");
-    res.status(401).json({ message: "Not authenticated" });
+    // Enhanced error handling and debugging for failed authentication
+    console.log(`Authentication failed for ${method} ${path}`);
+    
+    // Check for specific authentication issues
+    if (!req.session) {
+      console.error("No session object found");
+      return res.status(401).json({ message: "Session error. Please try again." });
+    }
+    
+    if (!req.headers.cookie) {
+      console.error("No cookies present in request");
+      return res.status(401).json({ message: "No session cookies found. Please enable cookies in your browser." });
+    }
+    
+    // Try to recover the session if it exists but user is not logged in
+    if (req.session && req.sessionID) {
+      console.log(`Attempting to recover session: ${req.sessionID}`);
+      
+      // Regenerate the session to clear any corrupt state
+      req.session.regenerate((err) => {
+        if (err) {
+          console.error("Failed to regenerate session:", err);
+        } else {
+          console.log("Session regenerated successfully");
+        }
+        res.status(401).json({ message: "Not authenticated. Please log in again." });
+      });
+    } else {
+      res.status(401).json({ message: "Not authenticated" });
+    }
   }
   
   function handleZodError(err: unknown, res: Response) {

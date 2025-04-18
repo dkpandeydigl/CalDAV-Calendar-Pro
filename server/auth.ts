@@ -207,17 +207,17 @@ async function verifyCalDAVCredentials(
 }
 
 export function setupAuth(app: Express) {
-  // Enhanced session configuration for better persistence
+  // Enhanced session configuration with more robust settings
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "calendar-app-secret-key",
+    secret: process.env.SESSION_SECRET || "calendar-app-secret-key-enhanced-version",
     resave: true, // Force the session to be saved back to the store
-    saveUninitialized: false, // Don't create session until something stored
+    saveUninitialized: true, // Allow uninitialized sessions to help with first login
     store: storage.sessionStore, // Use our storage's session store for persistence
     name: 'caldav_app.sid', // Use a distinct name to avoid conflicts
     rolling: true, // Forces a cookie set on every response
     cookie: {
       secure: false, // Allow both HTTP and HTTPS for development purposes
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
+      maxAge: 1000 * 60 * 60 * 24 * 14, // 2 weeks for longer persistence
       httpOnly: true, // Prevents client-side JS from reading the cookie
       sameSite: 'lax', // Allows cross-site requests with some restrictions
       path: '/', // Ensure cookie is available across all paths
