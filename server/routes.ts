@@ -204,25 +204,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'X-WR-CALDESC:Calendar Export'
       ];
       
-      // Add each event
+      // Add each event with complete information
       for (const event of allEvents) {
         const safeUid = event.uid?.includes('@') ? event.uid : `${event.uid || `event-${Date.now()}`}@caldavclient.local`;
         
         // Format dates properly
         const startDate = formatDate(new Date(event.startDate));
         const endDate = formatDate(new Date(event.endDate));
+        const creationDate = event.createdAt ? formatDate(new Date(event.createdAt)) : now;
+        const modifiedDate = event.updatedAt ? formatDate(new Date(event.updatedAt)) : now;
         
         lines.push('BEGIN:VEVENT');
         lines.push(`UID:${safeUid}`);
         lines.push(`DTSTAMP:${now}`);
+        lines.push(`CREATED:${creationDate}`);
+        lines.push(`LAST-MODIFIED:${modifiedDate}`);
         lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
         lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
         lines.push(`SUMMARY:${event.title}`);
         
+        // Add calendar category
         if (event.calendarName) {
           lines.push(`CATEGORIES:${event.calendarName}`);
         }
         
+        // Add description with proper formatting
         if (event.description) {
           const formattedDesc = event.description
             .replace(/\n/g, '\\n')  // Line breaks
@@ -232,12 +238,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
           lines.push(`DESCRIPTION:${formattedDesc}`);
         }
         
+        // Add location if available
         if (event.location) {
           lines.push(`LOCATION:${event.location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
         }
         
+        // Add all-day flag
         if (event.allDay) {
           lines.push('X-MICROSOFT-CDO-ALLDAYEVENT:TRUE');
+        }
+        
+        // Add sequence number
+        const sequence = event.sequence || 0;
+        lines.push(`SEQUENCE:${sequence}`);
+        
+        // Add recurrence rule if present
+        if (event.recurrenceRule) {
+          // Clean any potentially malformed RRULE
+          let cleanedRule = event.recurrenceRule;
+          if (cleanedRule.includes('mailto:')) {
+            cleanedRule = cleanedRule.split('mailto:')[0];
+          }
+          if (cleanedRule.includes(';CN=')) {
+            cleanedRule = cleanedRule.split(';CN=')[0];
+          }
+          lines.push(`RRULE:${cleanedRule}`);
+        }
+        
+        // Add organizer if available
+        if (event.organizer) {
+          const organizerEmail = event.organizer.email || 'unknown@example.com';
+          const organizerName = event.organizer.name || '';
+          if (organizerName) {
+            lines.push(`ORGANIZER;CN=${organizerName}:mailto:${organizerEmail}`);
+          } else {
+            lines.push(`ORGANIZER:mailto:${organizerEmail}`);
+          }
+        }
+        
+        // Add attendees
+        if (event.attendees && Array.isArray(event.attendees)) {
+          for (const attendee of event.attendees) {
+            if (!attendee || !attendee.email) continue;
+            
+            const role = attendee.role || 'REQ-PARTICIPANT';
+            const name = attendee.name || '';
+            const status = attendee.status || 'NEEDS-ACTION';
+            
+            let attendeeLine = `ATTENDEE`;
+            if (name) attendeeLine += `;CN=${name}`;
+            attendeeLine += `;ROLE=${role};PARTSTAT=${status}`;
+            attendeeLine += `:mailto:${attendee.email}`;
+            
+            lines.push(attendeeLine);
+          }
+        }
+        
+        // Add resources
+        if (event.resources && Array.isArray(event.resources)) {
+          for (const resource of event.resources) {
+            if (!resource) continue;
+            
+            const email = resource.email || resource.adminEmail || '';
+            if (!email) continue;
+            
+            let resourceLine = `ATTENDEE`;
+            if (resource.name) resourceLine += `;CN=${resource.name}`;
+            resourceLine += `;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT`;
+            
+            if (resource.type || resource.subType) {
+              resourceLine += `;X-RESOURCE-TYPE=${resource.type || resource.subType}`;
+            }
+            
+            if (resource.capacity) {
+              resourceLine += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
+            }
+            
+            if (resource.adminName) {
+              resourceLine += `;X-ADMIN-NAME=${resource.adminName}`;
+            }
+            
+            resourceLine += `:mailto:${email}`;
+            
+            lines.push(resourceLine);
+          }
+        }
+        
+        // Add any raw data properties that may be missing
+        if (event.rawData && typeof event.rawData === 'string') {
+          try {
+            // Extract any properties from rawData that we might have missed
+            const rawLines = event.rawData.split(/\r?\n/);
+            const includedProps = new Set([
+              'UID', 'DTSTART', 'DTEND', 'SUMMARY', 'DESCRIPTION', 'LOCATION', 
+              'CREATED', 'DTSTAMP', 'LAST-MODIFIED', 'SEQUENCE', 'RRULE',
+              'ORGANIZER', 'ATTENDEE', 'CATEGORIES'
+            ]);
+            
+            for (const line of rawLines) {
+              const propName = line.split(':')[0]?.split(';')[0];
+              if (propName && !includedProps.has(propName) && 
+                  !line.startsWith('BEGIN:') && !line.startsWith('END:')) {
+                lines.push(line);
+              }
+            }
+          } catch (err) {
+            console.log(`Could not parse raw data for event ${event.id}: ${err}`);
+          }
         }
         
         lines.push('END:VEVENT');
