@@ -293,8 +293,19 @@ function CalendarContent() {
   const [cacheVersion, setCacheVersion] = useState(0);
   const { events: rawEvents, isLoading: isEventsLoading, refetch, deleteEvent } = useCalendarEvents(viewStartDate, viewEndDate);
   
+  // Force loading state to true for a brief period after component mounts
+  const [initialLoadingComplete, setInitialLoadingComplete] = useState(false);
+  useEffect(() => {
+    // Always show loading state when component first mounts
+    const timer = setTimeout(() => {
+      setInitialLoadingComplete(true);
+    }, 1500); // Show loading for at least 1.5 seconds
+    
+    return () => clearTimeout(timer);
+  }, []);
+  
   // Combined loading state for all data
-  const isLoading = isEventsLoading || isCalendarsLoading || isSharedCalendarsLoading;
+  const isLoading = isEventsLoading || isCalendarsLoading || isSharedCalendarsLoading || !initialLoadingComplete;
   
   // Use useMemo to ensure filteredEvents only updates when rawEvents or cacheVersion changes
   const events = useMemo(() => {
@@ -486,18 +497,21 @@ function CalendarContent() {
             </div>
           </div>
           
-          {isLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : (
-            <>
-              {viewType === 'year' && <YearView events={events} onEventClick={handleEventClick} />}
-              {viewType === 'month' && <CalendarGrid events={events} isLoading={isLoading || isSyncing} onEventClick={handleEventClick} onDayDoubleClick={handleCreateEvent} />}
-              {viewType === 'week' && <WeekView events={events} onEventClick={handleEventClick} />}
-              {viewType === 'day' && <DayView events={events} onEventClick={handleEventClick} />}
-            </>
-          )}
+          {/* Always render the calendar views, but add a clear loading indicator overlay when loading */}
+          <div className="relative">
+            {isLoading && (
+              <div className="absolute inset-0 bg-white/80 z-10 flex justify-center items-center">
+                <div className="flex flex-col items-center">
+                  <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                  <div className="text-lg font-medium text-primary">Loading calendars and events...</div>
+                </div>
+              </div>
+            )}
+            {viewType === 'year' && <YearView events={events} onEventClick={handleEventClick} />}
+            {viewType === 'month' && <CalendarGrid events={events} isLoading={isLoading || isSyncing} onEventClick={handleEventClick} onDayDoubleClick={handleCreateEvent} />}
+            {viewType === 'week' && <WeekView events={events} onEventClick={handleEventClick} />}
+            {viewType === 'day' && <DayView events={events} onEventClick={handleEventClick} />}
+          </div>
         </main>
       </div>
       
