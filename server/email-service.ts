@@ -786,7 +786,10 @@ export class EmailService {
       };
       
       // Call the shared function that will handle all formatting concerns
-      const cancellationIcs = transformIcsForCancellation(originalIcs, cancellationData);
+      let cancellationIcs = transformIcsForCancellation(originalIcs, cancellationData);
+      
+      // Apply final RFC 5546 compliance check for email attachments
+      cancellationIcs = this.ensureRFC5546Compliance(cancellationIcs, 'CANCEL');
       
       console.log('[EmailService] Successfully generated RFC-compliant cancellation ICS');
       return cancellationIcs;
@@ -858,15 +861,37 @@ export class EmailService {
         lines.push('END:VEVENT');
         lines.push('END:VCALENDAR');
         
-        // Join with proper line breaks and return
-        return lines.join('\r\n');
+        // Join with proper line breaks
+        let fallbackIcs = lines.join('\r\n');
+        
+        // Apply RFC 5546 compliance checks even to fallback ICS
+        fallbackIcs = this.ensureRFC5546Compliance(fallbackIcs, 'CANCEL');
+        
+        return fallbackIcs;
       } catch (fallbackError) {
         console.error('Critical error creating fallback cancellation ICS:', fallbackError);
         
         // Ultimate fallback - simplified but standards-compliant cancellation ICS
         // Make sure even in this emergency case we have a clean UID
         const emergencyUid = data.uid ? data.uid.split(/[\s\\"\r\n]/)[0] : `cancel-${Date.now()}@caldavclient.local`;
-        return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:CANCEL\r\nBEGIN:VEVENT\r\nUID:${emergencyUid}\r\nSTATUS:CANCELLED\r\nSEQUENCE:1\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+        // Helper function to format date for iCalendar
+const formatICalDate = (date: Date): string => {
+  return date.toISOString()
+    .replace(/[-:]/g, '')  // Remove dashes and colons
+    .replace(/\.\d{3}/, '') // Remove milliseconds
+    .split('.')[0] + 'Z';  // Ensure Z stays at end
+};
+
+const emergencyIcs = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:CANCEL\r\nBEGIN:VEVENT\r\nUID:${emergencyUid}\r\nDTSTAMP:${formatICalDate(new Date())}\r\nSTATUS:CANCELLED\r\nSEQUENCE:1\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+        
+        try {
+          // Try to apply RFC 5546 compliance even to emergency ICS
+          return this.ensureRFC5546Compliance(emergencyIcs, 'CANCEL');
+        } catch (finalError) {
+          console.error('Could not apply RFC 5546 compliance to emergency ICS:', finalError);
+          // Return the emergencyIcs as is if we can't apply compliance
+          return emergencyIcs;
+        }
       }
     }
   }
