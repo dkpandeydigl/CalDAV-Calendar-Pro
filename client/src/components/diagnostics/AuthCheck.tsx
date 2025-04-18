@@ -72,7 +72,7 @@ export function AuthCheck() {
         
         {statusData && (
           <div className="space-y-4">
-            <Alert variant={statusData.status === 'authenticated' ? 'default' : 'warning'}>
+            <Alert variant={statusData.status === 'authenticated' ? 'default' : 'destructive'}>
               {statusData.status === 'authenticated' ? (
                 <CheckCircleIcon className="h-4 w-4" />
               ) : (

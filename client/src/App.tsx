@@ -5,6 +5,7 @@ import { queryClient } from "@/lib/queryClient";
 import NotFound from "@/pages/not-found";
 import Calendar from "@/pages/Calendar";
 import AuthPage from "@/pages/auth-page";
+import Help from "@/pages/Help";
 import { NotificationsPage } from "@/pages/NotificationsPage";
 import WebSocketTestPage from "@/pages/WebSocketTestPage";
 import WebSocketDebugPage from "@/pages/WebSocketDebugPage";
@@ -24,6 +25,7 @@ function Router() {
     <Switch>
       <Route path="/auth" component={AuthPage} />
       <Route path="/login" component={AuthPage} /> {/* Alias for /auth */}
+      <Route path="/help" component={Help} /> {/* Help page doesn't require authentication */}
       <Route path="/notifications">
         {() => <ProtectedRoute component={NotificationsPage} />}
       </Route>
