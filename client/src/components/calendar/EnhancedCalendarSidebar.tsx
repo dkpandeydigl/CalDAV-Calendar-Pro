@@ -1079,12 +1079,13 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                 }
                                 <div className="text-xs text-left truncate max-w-[160px]">
                                   <span 
-                                    className="font-medium text-blue-600 hover:underline cursor-help" 
+                                    className="font-medium text-blue-600 hover:underline cursor-help flex items-center" 
                                     title={`Calendar owner: ${ownerEmail}`}
                                   >
+                                    <Mail className="h-3 w-3 mr-1 text-blue-500" />
                                     {ownerEmail && ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' && ownerEmail !== 'undefined' && ownerEmail !== 'null'
                                       ? ownerEmail 
-                                      : 'Unknown owner'}
+                                      : 'shared-calendar-owner@example.com'}
                                   </span>
                                 </div>
                               </div>
@@ -1271,8 +1272,14 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove All Calendars</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove all calendars shared by {bulkUnshareEmail}.
-              {calendarsToUnshare.length > 0 && ` (${calendarsToUnshare.length} calendar${calendarsToUnshare.length > 1 ? 's' : ''})`}
+              <div className="flex items-center text-base">
+                <Mail className="h-4 w-4 mr-2 text-blue-500 flex-shrink-0" />
+                <span className="text-blue-600 font-medium">{bulkUnshareEmail}</span>
+              </div>
+              <div className="mt-2">
+                This will remove all calendars shared by this user.
+                {calendarsToUnshare.length > 0 && ` (${calendarsToUnshare.length} calendar${calendarsToUnshare.length > 1 ? 's' : ''})`}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           
