@@ -194,7 +194,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
       ownerEmail = calendar.ownerEmail;
     } else if (calendar.owner?.username && calendar.owner.username !== 'undefined' && calendar.owner.username !== 'null') {
       ownerEmail = calendar.owner.username;
-    } else if (calendar.userId && calendar.userId !== ownerEmailsById.get(calendar.userId)) {
+    } else if (calendar.userId && ownerEmailsById.has(calendar.userId)) {
       const cachedOwnerEmail = ownerEmailsById.get(calendar.userId);
       if (cachedOwnerEmail) {
         ownerEmail = cachedOwnerEmail;
@@ -203,8 +203,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
 
     // If we still have 'Unknown', try one more time with calendar's userId
     if (ownerEmail === 'Unknown' && calendar.userId) {
-      // Store this mapping for future use
-      setOwnerEmailsById(prev => new Map(prev).set(calendar.userId, `User ${calendar.userId}`));
+      // Just use the userId directly without updating state during render
       ownerEmail = `User ${calendar.userId}`;
     }
     
@@ -223,6 +222,36 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     console.log("Grouped shared calendars:", groupedSharedCalendars);
     console.log("Expanded owner emails:", expandedOwnerEmails);
   }, [groupedSharedCalendars, expandedOwnerEmails]);
+  
+  // Process user IDs and update owner email cache
+  useEffect(() => {
+    // Get unique user IDs from shared calendars
+    const userIds = new Set(filteredSharedCalendars
+      .filter(cal => cal.userId)
+      .map(cal => cal.userId));
+    
+    console.log("Shared calendars user IDs:", Array.from(userIds));
+    
+    // Map each user ID to a default value if not already in the map
+    userIds.forEach(userId => {
+      if (userId && !ownerEmailsById.has(userId)) {
+        setOwnerEmailsById(prev => new Map(prev).set(userId, `User ${userId}`));
+      }
+    });
+    
+    // Log all shared calendars details for debugging
+    if (filteredSharedCalendars.length > 0) {
+      console.log("Shared calendars details:", 
+        filteredSharedCalendars.map(cal => ({
+          id: cal.id,
+          name: cal.name,
+          userId: cal.userId,
+          ownerEmail: cal.ownerEmail,
+          owner: cal.owner
+        }))
+      );
+    }
+  }, [filteredSharedCalendars, ownerEmailsById]);
   
   // Initialize with all groups expanded by default
   useEffect(() => {
