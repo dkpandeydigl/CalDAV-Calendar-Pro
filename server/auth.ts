@@ -210,13 +210,13 @@ export function setupAuth(app: Express) {
   // Enhanced session configuration with more robust settings
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "calendar-app-secret-key-enhanced-version",
-    resave: true, // Force the session to be saved back to the store
-    saveUninitialized: true, // Allow uninitialized sessions to help with first login
+    resave: false, // Don't save unmodified sessions
+    saveUninitialized: false, // Don't create session until something stored
     store: storage.sessionStore, // Use our storage's session store for persistence
     name: 'caldav_app.sid', // Use a distinct name to avoid conflicts
     rolling: true, // Forces a cookie set on every response
     cookie: {
-      secure: false, // Allow both HTTP and HTTPS for development purposes
+      secure: process.env.NODE_ENV === 'production', // Secure in production, allow HTTP in dev
       maxAge: 1000 * 60 * 60 * 24 * 14, // 2 weeks for longer persistence
       httpOnly: true, // Prevents client-side JS from reading the cookie
       sameSite: 'lax', // Allows cross-site requests with some restrictions
@@ -466,26 +466,44 @@ export function setupAuth(app: Express) {
     }),
   );
 
-  passport.serializeUser((user, done) => {
-    console.log(`Serializing user to session: ${user.id} (${user.username})`);
-    done(null, user.id);
+  passport.serializeUser((user: Express.User, done) => {
+    try {
+      console.log(`Serializing user to session: ${user.id} (${user.username})`);
+      done(null, user.id);
+    } catch (error) {
+      console.error("Error during user serialization:", error);
+      done(error, null);
+    }
   });
   
   passport.deserializeUser(async (id: number, done) => {
     try {
       console.log(`Deserializing user from session ID: ${id}`);
-      const user = await storage.getUser(id);
+      
+      if (!id || isNaN(Number(id))) {
+        console.error(`Invalid user ID in session: ${id}`);
+        return done(null, false);
+      }
+      
+      const user = await storage.getUser(Number(id));
       
       if (!user) {
         console.error(`User with ID ${id} not found during deserialization`);
         return done(null, false);
       }
       
+      // Clean up sensitive data that shouldn't be in the session
+      const { password, ...userWithoutPassword } = user;
+      const safeUser = {
+        ...userWithoutPassword,
+        password: "[FILTERED]" // Include a placeholder to maintain expected shape
+      };
+      
       console.log(`User ${id} (${user.username}) successfully deserialized from session`);
-      done(null, user);
+      done(null, safeUser as Express.User);
     } catch (error) {
       console.error(`Error deserializing user ${id}:`, error);
-      done(error);
+      done(error, null);
     }
   });
 
@@ -810,52 +828,63 @@ export function setupAuth(app: Express) {
           return next(err);
         }
         
-        // Add a flag to the session to indicate successful login
-        req.session.loggedIn = true;
-        req.session.loginTime = new Date().toISOString();
-        
-        // Ensure session is saved immediately and only respond after session is saved
-        req.session.save((saveErr) => {
-          if (saveErr) {
-            console.error("Session save error:", saveErr);
-            return next(saveErr);
-          }
-          
-          console.log(`User ${user.username} session established. Session ID: ${req.session.id}`);
-          console.log(`Session cookie: ${req.headers.cookie ? 'Present' : 'Not present'}`);
-          console.log(`Session data: loggedIn=${req.session.loggedIn}, loginTime=${req.session.loginTime}`);
-        });
-        
         try {
-          // Get the updated connection (after it was created/updated above)
-          const userId = user.id;
-          const connection = await storage.getServerConnection(userId);
+          // Add custom data to session for debugging
+          (req.session as any).loginSuccess = true;
+          (req.session as any).loginTimestamp = Date.now();
+          (req.session as any).username = user.username;
           
-          // Synchronize SMTP password with CalDAV password to ensure email invitations work
+          console.log(`User ${user.username} session established. Session ID: ${req.sessionID}`);
+          console.log(`Session cookie: ${req.headers.cookie ? 'Present' : 'Not present'}`);
+          
+          // Ensure session is saved immediately before proceeding
+          await new Promise<void>((resolve, reject) => {
+            req.session.save((saveErr) => {
+              if (saveErr) {
+                console.error("Session save error:", saveErr);
+                reject(saveErr);
+              } else {
+                resolve();
+              }
+            });
+          });
+          
           try {
-            const smtpSyncResult = await syncSmtpPasswordWithCalDAV(userId);
-            if (smtpSyncResult) {
-              console.log(`Successfully synchronized SMTP password with CalDAV password for user ${user.username}`);
-            } else {
-              console.log(`No SMTP password synchronization needed for user ${user.username}`);
+            // Get the updated connection (after it was created/updated above)
+            const userId = user.id;
+            const connection = await storage.getServerConnection(userId);
+            
+            // Synchronize SMTP password with CalDAV password to ensure email invitations work
+            try {
+              const smtpSyncResult = await syncSmtpPasswordWithCalDAV(userId);
+              if (smtpSyncResult) {
+                console.log(`Successfully synchronized SMTP password with CalDAV password for user ${user.username}`);
+              } else {
+                console.log(`No SMTP password synchronization needed for user ${user.username}`);
+              }
+            } catch (smtpSyncError) {
+              console.error(`Error synchronizing SMTP password for user ${user.username}:`, smtpSyncError);
+              // Don't fail login if SMTP sync fails
             }
-          } catch (smtpSyncError) {
-            console.error(`Error synchronizing SMTP password for user ${user.username}:`, smtpSyncError);
-            // Don't fail login if SMTP sync fails
+            
+            // Set up background sync for this user's session
+            if (connection) {
+              await syncService.setupSyncForUser(userId, connection);
+              console.log(`Started sync service for user ${user.username}`);
+            }
+          } catch (syncError) {
+            console.error("Error setting up sync service:", syncError);
+            // Don't fail the login if sync setup fails
           }
           
-          // Set up background sync for this user's session
-          if (connection) {
-            await syncService.setupSyncForUser(userId, connection);
-            console.log(`Started sync service for user ${user.username}`);
-          }
-        } catch (syncError) {
-          console.error("Error setting up sync service:", syncError);
-          // Don't fail the login if sync setup fails
+          // Always send user data to client, even if sync fails
+          const { password, ...userWithoutPassword } = user as Express.User;
+          res.status(200).json(userWithoutPassword);
+          
+        } catch (error) {
+          console.error("Error during login process:", error);
+          next(error);
         }
-        
-        const { password, ...userWithoutPassword } = user as Express.User;
-        res.status(200).json(userWithoutPassword);
       });
     })(req, res, next);
   });

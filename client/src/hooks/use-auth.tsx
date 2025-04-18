@@ -34,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   } = useQuery<SelectUser | null, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
+    select: (data) => data || null, // Ensure data is never undefined, always null when not available
   });
 
   // Login mutation
@@ -370,10 +371,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  // Ensure user is never undefined for type safety
+  const safeUser = user === undefined ? null : user;
+  
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: safeUser,
         isLoading,
         error,
         loginMutation,
