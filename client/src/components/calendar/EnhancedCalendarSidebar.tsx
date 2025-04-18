@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/collapsible";
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { useCalendars } from '@/hooks/useCalendars';
+import { useUserDetails } from '@/hooks/useUserDetails';
 
 import { Calendar } from '@shared/schema';
 import { 
@@ -223,56 +224,50 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     console.log("Expanded owner email:", expandedOwnerEmail);
   }, [groupedSharedCalendars, expandedOwnerEmail]);
   
-  // Process user IDs and update owner email cache
+  // Extract all unique user IDs from the shared calendars
+  const uniqueUserIds = filteredSharedCalendars
+    .filter(cal => cal.userId)
+    .map(cal => cal.userId);
+  
+  // Use our custom hook to fetch user details
+  const { 
+    userDetailsMap, 
+    isLoading: isLoadingUserDetails 
+  } = useUserDetails(uniqueUserIds);
+  
+  // Update our owner emails map whenever user details change
   useEffect(() => {
-    // Get unique user IDs from shared calendars
-    const userIds = new Set(filteredSharedCalendars
-      .filter(cal => cal.userId)
-      .map(cal => cal.userId));
+    console.log("User details received:", userDetailsMap);
     
-    console.log("Shared calendars user IDs:", Array.from(userIds));
+    // Create a new map from the user details
+    const updatedMap = new Map<number, string>();
     
-    // Fetch actual owner information for any users not in our cache
-    const fetchMissingOwnerInfo = async () => {
-      const missingUserIds = Array.from(userIds).filter(userId => 
-        userId && !ownerEmailsById.has(userId)
-      );
-      
-      if (missingUserIds.length === 0) return;
-      
-      console.log("Fetching owner information for user IDs:", missingUserIds);
-      
-      try {
-        const response = await apiRequest('GET', `/api/users/details?ids=${missingUserIds.join(',')}`);
-        const userDetails = await response.json();
-        
-        // Update our cache with real email addresses
-        const updatedMap = new Map(ownerEmailsById);
-        
-        userDetails.forEach(user => {
-          if (user.id) {
-            const emailToUse = user.email || user.username || `User ${user.id}`;
-            updatedMap.set(user.id, emailToUse);
-          }
-        });
-        
-        setOwnerEmailsById(updatedMap);
-      } catch (error) {
-        console.error("Error fetching owner information:", error);
-        
-        // Fall back to default values if API fails
-        const updatedMap = new Map(ownerEmailsById);
-        missingUserIds.forEach(userId => {
-          if (userId && !updatedMap.has(userId)) {
-            updatedMap.set(userId, `User ${userId}`);
-          }
-        });
-        
-        setOwnerEmailsById(updatedMap);
+    // Add all user details to our map
+    Object.entries(userDetailsMap).forEach(([userId, userDetail]) => {
+      const id = Number(userId);
+      if (!isNaN(id) && userDetail) {
+        // Prefer email, then displayName, then username, finally fall back to User ID
+        const emailToUse = userDetail.email || 
+                          userDetail.displayName || 
+                          userDetail.username || 
+                          `User ${id}`;
+        updatedMap.set(id, emailToUse);
       }
-    };
+    });
     
-    fetchMissingOwnerInfo();
+    // Only update state if we have new data
+    if (updatedMap.size > 0) {
+      setOwnerEmailsById(prevMap => {
+        const combinedMap = new Map(prevMap);
+        
+        // Add all entries from updatedMap to combinedMap
+        updatedMap.forEach((value, key) => {
+          combinedMap.set(key, value);
+        });
+        
+        return combinedMap;
+      });
+    }
     
     // Log all shared calendars details for debugging
     if (filteredSharedCalendars.length > 0) {
@@ -286,7 +281,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
         }))
       );
     }
-  }, [filteredSharedCalendars, ownerEmailsById]);
+  }, [userDetailsMap, filteredSharedCalendars]);
   
   // Initialize with first group expanded by default
   useEffect(() => {

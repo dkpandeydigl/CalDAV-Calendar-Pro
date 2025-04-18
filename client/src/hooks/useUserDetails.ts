@@ -17,7 +17,7 @@ interface UserDetails {
 export function useUserDetails(userIds: number[]) {
   // Filter out duplicate IDs and create a stable query key
   const uniqueUserIds = useMemo(() => 
-    [...new Set(userIds.filter(id => id !== undefined && id !== null))], 
+    Array.from(new Set(userIds.filter(id => id !== undefined && id !== null))), 
     [userIds]
   );
 
@@ -34,7 +34,7 @@ export function useUserDetails(userIds: number[]) {
     refetch
   } = useQuery<UserDetails[]>({
     queryKey: ['/api/users/details', queryParam],
-    queryFn: getQueryFn(),
+    queryFn: getQueryFn({ on401: 'returnNull' }),
     enabled: uniqueUserIds.length > 0, // Only run query if we have user IDs
     retry: 1, // Retry once if failed
     staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
