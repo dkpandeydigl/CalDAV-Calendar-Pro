@@ -454,11 +454,29 @@ export function transformIcsForCancellation(originalIcs: string, eventData: any)
   let attendees: Array<{email: string, name?: string, role?: string, partstat?: string}> = [];
 
   // Extract UID (most critical - must be the same as original event)
-  const uidMatch = originalIcs.match(/UID:([^\r\n;]+)/i);
+  // CRITICAL FIX: We need to be very careful about how we parse the UID
+  // The regex needs to strictly match only until the first \r\n or quoted sequence
+  const uidRegex = /UID:([^"\r\n]+)/i;
+  const uidMatch = originalIcs.match(uidRegex);
+  
   if (uidMatch && uidMatch[1]) {
-    uid = uidMatch[1].trim();
+    // Check if there are any embedded escape sequences or other ICS properties
+    const extractedUid = uidMatch[1].trim();
+    
+    // Clean up the UID - remove any trailing characters after @ symbol and domain
+    // Most UIDs end with something like "@caldavclient.local" or "@example.com"
+    const domainMatch = extractedUid.match(/^([^@]+@[^.]+\.[^\\]+)/);
+    if (domainMatch) {
+      uid = domainMatch[1];
+      console.log(`Extracted and cleaned UID from original ICS: ${uid}`);
+    } else {
+      // If no domain pattern found, just take everything up to any special characters
+      uid = extractedUid.split(/[\s\\"\r\n]/)[0];
+      console.log(`Extracted partial UID from original ICS: ${uid}`);
+    }
   } else if (eventData.uid) {
     uid = eventData.uid;
+    console.log(`Using provided UID from event data: ${uid}`);
   } else {
     console.error('No UID found in original ICS or event data');
     uid = `cancel-${Date.now()}@caldavclient.local`;

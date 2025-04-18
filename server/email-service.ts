@@ -484,9 +484,14 @@ export class EmailService {
           icsData = deepCleanIcsData(icsData);
           
           // Final check to ensure the validated UID is used
-          if (!icsData.includes(`UID:${data.uid}`)) {
-            console.warn(`[EmailService] UID not found in transformed ICS, inserting validated UID: ${data.uid}`);
-            icsData = icsData.replace(/UID:[^\r\n]+/i, `UID:${data.uid}`);
+          // But first, make sure that our data.uid is actually a clean, proper UID
+          const cleanUid = data.uid.split(/[\s\\"\r\n]/)[0];
+          
+          if (!icsData.includes(`UID:${cleanUid}`)) {
+            console.warn(`[EmailService] UID not found in transformed ICS, inserting cleaned UID: ${cleanUid}`);
+            icsData = icsData.replace(/UID:[^\r\n]+/i, `UID:${cleanUid}`);
+          } else {
+            console.log(`[EmailService] Found valid UID in transformed ICS: ${cleanUid}`);
           }
         } else {
           // Generate new ICS data with cancelled status
@@ -688,7 +693,22 @@ export class EmailService {
         // Even in the fallback case, use the proper RFC 5545 structure
         console.error('Creating fallback cancellation ICS with RFC 5545 compliant format');
         
-        const uid = data.uid || originalIcs.match(/UID:([^\r\n]+)/i)?.[1]?.trim() || `cancel-${Date.now()}@caldavclient.local`;
+        // Clean up the UID to avoid the issue with appending raw data
+        let extractedUid = '';
+        if (data.uid) {
+          // Clean up the UID - just take the part before any whitespace or special chars
+          extractedUid = data.uid.split(/[\s\\"\r\n]/)[0];
+        } else {
+          // Try to extract from original ICS with a safer regex
+          const uidMatch = originalIcs.match(/UID:([^"\r\n]+)/i);
+          if (uidMatch && uidMatch[1]) {
+            extractedUid = uidMatch[1].trim().split(/[\s\\"\r\n]/)[0];
+          } else {
+            extractedUid = `cancel-${Date.now()}@caldavclient.local`;
+          }
+        }
+        
+        const uid = extractedUid;
         const sequence = (data.sequence ? parseInt(data.sequence.toString(), 10) : 0) + 1;
         
         // Build a clean, RFC-compliant cancellation ICS as fallback
@@ -739,7 +759,9 @@ export class EmailService {
         console.error('Critical error creating fallback cancellation ICS:', fallbackError);
         
         // Ultimate fallback - simplified but standards-compliant cancellation ICS
-        return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:CANCEL\r\nBEGIN:VEVENT\r\nUID:${data.uid || `cancel-${Date.now()}`}\r\nSTATUS:CANCELLED\r\nSEQUENCE:1\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+        // Make sure even in this emergency case we have a clean UID
+        const emergencyUid = data.uid ? data.uid.split(/[\s\\"\r\n]/)[0] : `cancel-${Date.now()}@caldavclient.local`;
+        return `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:CANCEL\r\nBEGIN:VEVENT\r\nUID:${emergencyUid}\r\nSTATUS:CANCELLED\r\nSEQUENCE:1\r\nEND:VEVENT\r\nEND:VCALENDAR`;
       }
     }
   }
