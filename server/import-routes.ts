@@ -7,6 +7,17 @@ import { InsertEvent, Calendar } from "@shared/schema";
 // Use dynamic import for node-ical
 import * as ical from 'node-ical';
 
+// Helper function to format date to iCalendar format
+function formatDateToICal(date: Date, allDay: boolean = false): string {
+  if (allDay) {
+    // For all-day events, return YYYYMMDD
+    return date.toISOString().replace(/[-:]/g, '').split('T')[0];
+  } else {
+    // For timed events, return YYYYMMDDTHHmmssZ
+    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  }
+}
+
 // Set up multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -326,7 +337,22 @@ export function registerImportRoutes(app: Express) {
             busyStatus: "busy",
             attendees: [],
             resources: [],
-            rawData: {},
+            // Generate minimal ICS data for the event
+            rawData: JSON.stringify(`BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Import Tool//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:${event.uid || uuidv4()}
+SUMMARY:${event.summary || "Untitled Event"}
+DTSTAMP:${formatDateToICal(new Date())}
+DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${formatDateToICal(new Date(event.startDate), event.allDay)}
+DTEND${event.allDay ? ';VALUE=DATE' : ''}:${formatDateToICal(new Date(event.endDate), event.allDay)}
+${event.description ? 'DESCRIPTION:' + event.description.replace(/\n/g, '\\n') : ''}
+${event.location ? 'LOCATION:' + event.location : ''}
+SEQUENCE:0
+END:VEVENT
+END:VCALENDAR`),
             emailSent: 'not_sent',
             emailError: null
           };
