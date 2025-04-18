@@ -354,40 +354,24 @@ export function registerExportRoutes(app: Express) {
           recurrenceRule = recurrenceRule.split(/mailto:|mailto/)[0];
         }
         
-        // Determine organizer information
-        let organizer = null;
-        try {
-          if (event.organizer) {
-            if (typeof event.organizer === 'string') {
-              organizer = JSON.parse(event.organizer);
-            } else {
-              organizer = event.organizer;
-            }
-          }
-        } catch (err) {
-          console.warn('Failed to parse organizer:', err);
-          // Provide a default organizer if parsing fails
-          organizer = {
-            email: 'calendar-app@example.com',
-            name: 'Calendar App'
-          };
-        }
+        // Use default organizer information since event might not have organizer property
+        const defaultOrganizer = {
+          email: 'calendar-app@example.com',
+          name: 'Calendar App'
+        };
         
         // Use enhanced createBasicICS function for consistent RFC 5545 formatting with all event details
         icsContent = createBasicICS({
           title: event.title,
           startDate,
           endDate,
-          description: event.description || '',
-          location: event.location || '',
-          uid: event.uid || `event-${Date.now()}`,
+          description: event.description ? String(event.description) : '',
+          location: event.location ? String(event.location) : '',
+          uid: event.uid ? String(event.uid) : `event-${Date.now()}`,
           attendees,
           resources,
-          recurrenceRule,
-          organizer: organizer || {
-            email: 'calendar-app@example.com',
-            name: 'Calendar App'
-          }
+          recurrenceRule: recurrenceRule || undefined,
+          organizer: defaultOrganizer
         });
       }
       
@@ -586,8 +570,8 @@ export function registerExportRoutes(app: Express) {
           lines.push(`LOCATION:${event.location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
         }
         
-        // Add sequence number
-        lines.push(`SEQUENCE:${event.sequence || 0}`);
+        // Add sequence number with default value
+        lines.push('SEQUENCE:0');
         
         // Handle recurrence rule if present - IMPORTANT: Sanitize the rule properly
         if (event.recurrenceRule) {
@@ -861,8 +845,8 @@ export function registerExportRoutes(app: Express) {
           lines.push(`LOCATION:${event.location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
         }
         
-        // Add sequence number
-        lines.push(`SEQUENCE:${event.sequence || 0}`);
+        // Add sequence number with default value 0
+        lines.push('SEQUENCE:0');
         
         // Add and sanitize recurrence rule if present
         if (event.recurrenceRule) {
@@ -1124,6 +1108,8 @@ export function registerExportRoutes(app: Express) {
         lines.push('BEGIN:VEVENT');
         lines.push(`UID:${safeUid}`);
         lines.push(`DTSTAMP:${now}`);
+        lines.push(`CREATED:${now}`);
+        lines.push(`LAST-MODIFIED:${now}`);
         lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
         lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
         lines.push(`SUMMARY:${event.summary}`);
@@ -1139,6 +1125,9 @@ export function registerExportRoutes(app: Express) {
         if (event.location) {
           lines.push(`LOCATION:${event.location}`);
         }
+        
+        // Add sequence number with default value
+        lines.push('SEQUENCE:0');
         
         if (event.allDay) {
           lines.push(`X-MICROSOFT-CDO-ALLDAYEVENT:TRUE`);
