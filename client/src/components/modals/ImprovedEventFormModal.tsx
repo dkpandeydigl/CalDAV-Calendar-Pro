@@ -139,6 +139,16 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     }
   }, [open, event, initialEventUID, generateUID]);
   
+  // CRITICAL FIX: Reset initialEventUID when modal is closed
+  // This prevents UID reuse across different events
+  useEffect(() => {
+    if (!open) {
+      // Reset initialEventUID when modal closes to ensure a fresh UID for the next event
+      setInitialEventUID(null);
+      console.log(`[ImprovedEventFormModal] Modal closed, cleared initialEventUID to prevent UID reuse`);
+    }
+  }, [open]);
+  
   // Debug log for UID persistence
   useEffect(() => {
     if (persistedUID) {
