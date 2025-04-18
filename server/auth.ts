@@ -207,17 +207,17 @@ async function verifyCalDAVCredentials(
 }
 
 export function setupAuth(app: Express) {
-  // Enhanced session configuration with more robust settings
+  // Enhanced session configuration with more robust settings for better persistence
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "calendar-app-secret-key-enhanced-version",
-    resave: false, // Don't save unmodified sessions
+    resave: true, // Save session on every request to avoid timeouts
     saveUninitialized: false, // Don't create session until something stored
     store: storage.sessionStore, // Use our storage's session store for persistence
     name: 'caldav_app.sid', // Use a distinct name to avoid conflicts
-    rolling: true, // Forces a cookie set on every response
+    rolling: true, // Forces a cookie set on every response, keeps session alive
     cookie: {
       secure: process.env.NODE_ENV === 'production', // Secure in production, allow HTTP in dev
-      maxAge: 1000 * 60 * 60 * 24 * 14, // 2 weeks for longer persistence
+      maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days for longer persistence
       httpOnly: true, // Prevents client-side JS from reading the cookie
       sameSite: 'lax', // Allows cross-site requests with some restrictions
       path: '/', // Ensure cookie is available across all paths
@@ -681,7 +681,7 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/login", async (req, res, next) => {
+  app.post("/api/login", (req, res, next) => {
     const { username, password, caldavServerUrl } = req.body;
     
     // Add enhanced logging for debugging
@@ -696,7 +696,8 @@ export function setupAuth(app: Express) {
       return res.status(400).json({ message: "Username and password are required" });
     }
     
-    passport.authenticate("local", async (err: Error | null, user: Express.User | false, info: { message: string } | undefined) => {
+    // Basic passport authentication
+    passport.authenticate("local", (err: Error | null, user: Express.User | false, info: { message: string } | undefined) => {
       if (err) {
         console.error('Authentication error in passport strategy:', err);
         return next(err);
@@ -706,185 +707,43 @@ export function setupAuth(app: Express) {
         console.log(`Authentication failed for user ${username}: ${info?.message || 'Unknown reason'}`);
         return res.status(401).json({ message: info?.message || "Invalid username or password" });
       }
-
-      // App login successful, now check CalDAV credentials
-      try {
-        console.log(`Verifying CalDAV credentials for ${username} at ${caldavServerUrl || 'default URL'}`);
-        
-        // Add timeout to CalDAV verification to prevent hanging requests
-        const caldavPromise = verifyCalDAVCredentials(
-          caldavServerUrl,
-          username,
-          password
-        );
-        
-        // Create a timeout promise
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error("CalDAV server connection timed out")), 15000); // 15 second timeout
-        });
-        
-        // Race the promises
-        const caldavResult = await Promise.race([caldavPromise, timeoutPromise]);
-        
-        if (!caldavResult || (typeof caldavResult === 'boolean' && !caldavResult)) {
-          console.log(`CalDAV verification failed for ${username} at ${caldavServerUrl || 'default URL'}`);
-          return res.status(400).json({ 
-            message: "Invalid CalDAV credentials. Please check your server URL, username and password." 
-          });
-        }
-        
-        console.log(`CalDAV verification successful for ${username}`);
-        
-        
-        // Extract user info from the CalDAV server response
-        const caldavUserInfo = typeof caldavResult === 'object' ? caldavResult : null;
-        
-        // Check if user already has a server connection
-        const userId = user.id;
-        const existingConnection = await storage.getServerConnection(userId);
-        
-        // Update user profile with CalDAV info if available
-        const updateData: Partial<User> = {};
-        
-        // First try to get data from CalDAV server response
-        if (caldavUserInfo) {
-          // Update full name if available from CalDAV
-          if (caldavUserInfo.displayName && (!user.fullName || user.fullName.trim() === '')) {
-            updateData.fullName = caldavUserInfo.displayName;
-            console.log(`Updating user fullName to ${caldavUserInfo.displayName} from CalDAV`);
-          }
-          
-          // Update email if available from CalDAV
-          if (caldavUserInfo.email && (!user.email || user.email.trim() === '')) {
-            updateData.email = caldavUserInfo.email;
-            console.log(`Updating user email to ${caldavUserInfo.email} from CalDAV`);
-          }
-        }
-        
-        // If no full name from CalDAV but it's missing, generate one from email/username
-        if (!updateData.fullName && (!user.fullName || user.fullName.trim() === '')) {
-          // Use email to generate name if available
-          const emailToUse = user.email || username;
-          if (emailToUse && emailToUse.includes('@')) {
-            // Extract name part from email (before @)
-            const namePart = emailToUse.split('@')[0];
-            if (namePart) {
-              // Convert name formats like "john.doe" or "johndoe" to "John Doe"
-              const formattedName = namePart
-                .replace(/\./g, ' ')  // Replace dots with spaces
-                .replace(/_/g, ' ')   // Replace underscores with spaces
-                .split(' ')
-                .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-                .join(' ');
-                
-              updateData.fullName = formattedName;
-              console.log(`Generated full name from email: ${formattedName}`);
-            }
-          }
-        }
-        
-        // Apply updates if any fields changed
-        if (Object.keys(updateData).length > 0) {
-          await storage.updateUser(userId, updateData);
-          console.log(`Updated user profile with new data`);
-          
-          // Also update the user object in memory so changes reflect immediately
-          Object.assign(user, updateData);
-        }
-        
-        if (existingConnection) {
-          // Update existing connection
-          await storage.updateServerConnection(existingConnection.id, {
-            url: caldavServerUrl,
-            username: username,
-            password: password,
-            status: "connected"
-          });
-          console.log(`Updated server connection for user ${user.username}`);
-        } else {
-          // Create new server connection
-          await storage.createServerConnection({
-            userId: userId,
-            url: caldavServerUrl,
-            username: username,
-            password: password,
-            autoSync: true,
-            syncInterval: 15,
-            status: "connected"
-          });
-          console.log(`Created server connection for user ${user.username}`);
-        }
-      } catch (error) {
-        console.error("Error with CalDAV credentials:", error);
-        return res.status(400).json({
-          message: "Failed to verify CalDAV credentials. Please check your server URL, username and password."
-        });
-      }
       
-      // Login and server connection successful
-      req.login(user, async (err) => {
-        if (err) {
-          console.error("Login session error:", err);
-          return next(err);
+      // Regenerate session before login to prevent session fixation
+      req.session.regenerate((regErr) => {
+        if (regErr) {
+          console.error("Session regeneration error:", regErr);
+          return res.status(500).json({ message: "Session error during login" });
         }
         
-        try {
+        // Log the user in with the fresh session
+        req.login(user, (loginErr) => {
+          if (loginErr) {
+            console.error("Login error after session regeneration:", loginErr);
+            return next(loginErr);
+          }
+          
           // Add custom data to session for debugging
           (req.session as any).loginSuccess = true;
           (req.session as any).loginTimestamp = Date.now();
           (req.session as any).username = user.username;
           
-          console.log(`User ${user.username} session established. Session ID: ${req.sessionID}`);
-          console.log(`Session cookie: ${req.headers.cookie ? 'Present' : 'Not present'}`);
+          console.log(`User ${user.username} (${user.id}) authenticated and session established. ID: ${req.sessionID}`);
           
-          // Ensure session is saved immediately before proceeding
-          await new Promise<void>((resolve, reject) => {
-            req.session.save((saveErr) => {
-              if (saveErr) {
-                console.error("Session save error:", saveErr);
-                reject(saveErr);
-              } else {
-                resolve();
-              }
-            });
+          // Ensure session is saved
+          req.session.save((saveErr) => {
+            if (saveErr) {
+              console.error("Session save error:", saveErr);
+              return res.status(500).json({ message: "Session save error during login" });
+            }
+            
+            // Successfully authenticated
+            console.log(`Session saved successfully for user ${user.username}`);
+            
+            // Return user data without password
+            const { password, ...userWithoutPassword } = user;
+            res.status(200).json(userWithoutPassword);
           });
-          
-          try {
-            // Get the updated connection (after it was created/updated above)
-            const userId = user.id;
-            const connection = await storage.getServerConnection(userId);
-            
-            // Synchronize SMTP password with CalDAV password to ensure email invitations work
-            try {
-              const smtpSyncResult = await syncSmtpPasswordWithCalDAV(userId);
-              if (smtpSyncResult) {
-                console.log(`Successfully synchronized SMTP password with CalDAV password for user ${user.username}`);
-              } else {
-                console.log(`No SMTP password synchronization needed for user ${user.username}`);
-              }
-            } catch (smtpSyncError) {
-              console.error(`Error synchronizing SMTP password for user ${user.username}:`, smtpSyncError);
-              // Don't fail login if SMTP sync fails
-            }
-            
-            // Set up background sync for this user's session
-            if (connection) {
-              await syncService.setupSyncForUser(userId, connection);
-              console.log(`Started sync service for user ${user.username}`);
-            }
-          } catch (syncError) {
-            console.error("Error setting up sync service:", syncError);
-            // Don't fail the login if sync setup fails
-          }
-          
-          // Always send user data to client, even if sync fails
-          const { password, ...userWithoutPassword } = user as Express.User;
-          res.status(200).json(userWithoutPassword);
-          
-        } catch (error) {
-          console.error("Error during login process:", error);
-          next(error);
-        }
+        });
       });
     })(req, res, next);
   });
