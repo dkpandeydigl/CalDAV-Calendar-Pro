@@ -1009,7 +1009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             try {
               // Import sync service and force an immediate sync
               const { syncService } = await import('./sync-service');
-              await syncService.synchronizeUser(userId, { 
+              await syncService.syncNow(userId, { 
                 forceRefresh: true,
                 calendarId: null,
                 isGlobalSync: true,
