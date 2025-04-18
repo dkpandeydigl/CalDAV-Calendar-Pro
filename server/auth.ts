@@ -849,9 +849,15 @@ export function setupAuth(app: Express) {
 
   app.post("/api/logout", (req, res, next) => {
     const userId = req.user?.id;
+    const username = req.user?.username;
+    
+    console.log(`Logout requested for user: ${username} (${userId})`);
     
     req.logout(async (err) => {
-      if (err) return next(err);
+      if (err) {
+        console.error("Error during logout:", err);
+        return next(err);
+      }
       
       // Handle sync service cleanup on logout
       if (userId) {
@@ -863,7 +869,19 @@ export function setupAuth(app: Express) {
         }
       }
       
-      res.sendStatus(200);
+      // Explicitly destroy the session to ensure complete cleanup
+      req.session.destroy((destroyErr) => {
+        if (destroyErr) {
+          console.error("Error destroying session during logout:", destroyErr);
+          // Continue with the response anyway
+        } else {
+          console.log(`Session destroyed for user ${username} (${userId})`);
+        }
+        
+        // Clear the cookie on the client side as well
+        res.clearCookie('connect.sid');
+        res.status(200).json({ success: true, message: "Logged out successfully" });
+      });
     });
   });
 

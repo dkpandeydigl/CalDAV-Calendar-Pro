@@ -56,7 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-Requested-With": "XMLHttpRequest" // Helps identify AJAX requests
+            "X-Requested-With": "XMLHttpRequest", // Helps identify AJAX requests
+            "Accept": "application/json" 
           },
           body: JSON.stringify(requestData),
           credentials: "include", // Critical for session cookies
@@ -74,11 +75,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
         console.log('Cookies after login:', cookies.length ? cookies.join(', ') : 'None');
 
-        const userData = await res.json();
-        console.log("Login response received:", {
-          status: res.status,
-          userData: userData ? { id: userData.id, username: userData.username } : null
-        });
+        // Get the response data
+        let userData;
+        try {
+          userData = await res.json();
+          console.log("Login response received:", {
+            status: res.status,
+            userData: userData ? { id: userData.id, username: userData.username } : null
+          });
+        } catch (parseError) {
+          console.error("Failed to parse login response as JSON:", parseError);
+          // If we can't parse the response as JSON but the status was 200,
+          // we'll try to verify the session is valid by making a request to /api/auth-check
+          const authCheckResponse = await fetch("/api/auth-check", {
+            credentials: "include",
+            cache: "no-cache"
+          });
+          
+          if (authCheckResponse.ok) {
+            const authStatus = await authCheckResponse.json();
+            console.log("Auth check after login:", authStatus);
+            
+            if (authStatus.status === "authenticated" && authStatus.details.userId) {
+              // If we're authenticated, make a request to get the user data
+              const userResponse = await fetch("/api/user", {
+                credentials: "include",
+                cache: "no-cache"
+              });
+              
+              if (userResponse.ok) {
+                userData = await userResponse.json();
+                console.log("Retrieved user data after login:", userData);
+              } else {
+                console.error("Failed to get user data after login");
+                throw new Error("Login succeeded but failed to get user data");
+              }
+            } else {
+              throw new Error("Login seemed to succeed but authentication check failed");
+            }
+          } else {
+            throw new Error("Login response was not valid JSON and authentication check failed");
+          }
+        }
+        
         return userData;
       } catch (error) {
         console.error("Login request failed:", error);
@@ -160,7 +199,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-Requested-With": "XMLHttpRequest"
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json"
           },
           body: JSON.stringify(requestData),
           credentials: "include",
@@ -178,11 +218,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
         console.log('Cookies after registration:', cookies.length ? cookies.join(', ') : 'None');
 
-        const userData = await res.json();
-        console.log("Registration response received:", {
-          status: res.status,
-          userData: userData ? { id: userData.id, username: userData.username } : null
-        });
+        // Get the response data
+        let userData;
+        try {
+          userData = await res.json();
+          console.log("Registration response received:", {
+            status: res.status,
+            userData: userData ? { id: userData.id, username: userData.username } : null
+          });
+        } catch (parseError) {
+          console.error("Failed to parse registration response as JSON:", parseError);
+          // If we can't parse the response as JSON but the status was 200/201,
+          // we'll try to verify the session is valid by making a request to /api/auth-check
+          const authCheckResponse = await fetch("/api/auth-check", {
+            credentials: "include",
+            cache: "no-cache"
+          });
+          
+          if (authCheckResponse.ok) {
+            const authStatus = await authCheckResponse.json();
+            console.log("Auth check after registration:", authStatus);
+            
+            if (authStatus.status === "authenticated" && authStatus.details.userId) {
+              // If we're authenticated, make a request to get the user data
+              const userResponse = await fetch("/api/user", {
+                credentials: "include",
+                cache: "no-cache"
+              });
+              
+              if (userResponse.ok) {
+                userData = await userResponse.json();
+                console.log("Retrieved user data after registration:", userData);
+              } else {
+                console.error("Failed to get user data after registration");
+                throw new Error("Registration succeeded but failed to get user data");
+              }
+            } else {
+              throw new Error("Registration seemed to succeed but authentication check failed");
+            }
+          } else {
+            throw new Error("Registration response was not valid JSON and authentication check failed");
+          }
+        }
+        
         return userData;
       } catch (error) {
         console.error("Registration request failed:", error);
@@ -247,34 +325,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: async () => {
       console.log("Logging out user...");
       
-      // Use direct fetch for logout to ensure proper session cleanup
-      const res = await fetch("/api/logout", {
-        method: "POST",
-        headers: {
-          "X-Requested-With": "XMLHttpRequest",
-          "Content-Type": "application/json"
-        },
-        credentials: "include",
-        mode: "same-origin",
-        cache: "no-cache"
-      });
-      
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error(`Logout failed with status ${res.status}:`, errorText);
-        throw new Error(errorText || `Logout failed with status: ${res.status}`);
+      try {
+        // Use direct fetch for logout to ensure proper session cleanup
+        const res = await fetch("/api/logout", {
+          method: "POST",
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/json"
+          },
+          credentials: "include",
+          mode: "same-origin",
+          cache: "no-cache"
+        });
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error(`Logout failed with status ${res.status}:`, errorText);
+          throw new Error(errorText || `Logout failed with status: ${res.status}`);
+        }
+        
+        // Check for session cookies after logout (should be cleared)
+        const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+        console.log('Cookies after logout:', cookies.length ? cookies.join(', ') : 'None');
+        
+        // Additional check to verify we're truly logged out
+        try {
+          const authCheckResponse = await fetch("/api/auth-check", {
+            credentials: "include",
+            cache: "no-cache"
+          });
+          
+          if (authCheckResponse.ok) {
+            const authStatus = await authCheckResponse.json();
+            console.log("Auth check after logout:", authStatus);
+            
+            if (authStatus.status === "authenticated") {
+              console.warn("Still authenticated after logout, forcing page reload to clear state");
+            }
+          }
+        } catch (checkError) {
+          console.error("Error checking authentication status after logout:", checkError);
+        }
+        
+        // Explicitly refresh the page to fully clear state after logout
+        setTimeout(() => {
+          window.location.href = '/auth';
+        }, 500);
+        
+        return undefined; // Return void for proper typing
+      } catch (error) {
+        console.error("Logout error:", error);
+        
+        // Even if logout fails, force a page reload to clear client state
+        setTimeout(() => {
+          window.location.href = '/auth';
+        }, 1000);
+        
+        throw error;
       }
-      
-      // Check for session cookies after logout (should be cleared)
-      const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
-      console.log('Cookies after logout:', cookies.length ? cookies.join(', ') : 'None');
-      
-      // Explicitly refresh the page to fully clear state after logout
-      setTimeout(() => {
-        window.location.href = '/auth';
-      }, 500);
-      
-      return undefined; // Return void for proper typing
     },
     onSuccess: () => {
       console.log("Logout successful, clearing all cached data");
