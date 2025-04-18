@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { validateICSData } from '../shared/rfc5545-compliant-formatter';
 import { centralUIDService } from './central-uid-service';
+import { sequenceService } from './sequence-service';
 import { 
   generateNewEventICS, 
   generateUpdatedEventICS, 
@@ -256,11 +257,15 @@ export class EnhancedEmailService {
       // Default method for invitations is REQUEST
       const method = data.method || 'REQUEST';
       
+      // Get the sequence number from the sequence service or use 0 for new events
+      const sequence = data.sequence || await sequenceService.getCurrentSequence(data.uid, data.rawData) || 0;
+      console.log(`[EnhancedEmailService] Using sequence ${sequence} for new invitation with UID ${data.uid}`);
+      
       // Generate ICS data using the centralized ICS service
       const icsData = data.icsData || generateNewEventICS({
         ...data,
         method,
-        sequence: data.sequence || 0
+        sequence
       }, data.rawData || null);
       
       // Extract UID from generated ICS data as a double-check
@@ -357,13 +362,18 @@ export class EnhancedEmailService {
       // Ensure the event has a UID before sending emails
       await this.validateEventUID(data);
       
+      // Get the next sequence number from the sequence service
+      const currentSequence = await sequenceService.getCurrentSequence(data.uid, data.rawData);
+      const nextSequence = await sequenceService.getNextSequence(data.uid, data.rawData);
+      console.log(`[EnhancedEmailService] Using sequence ${nextSequence} (was ${currentSequence}) for cancellation with UID ${data.uid}`);
+      
       // Set the status to CANCELLED
       const cancelData = {
         ...data,
         status: 'CANCELLED',
         method: 'CANCEL',
-        // Increment sequence for cancellation
-        sequence: (data.sequence || 0) + 1
+        // Use the next sequence number from the sequence service
+        sequence: nextSequence
       };
       
       // Generate ICS data for the cancellation using the centralized ICS service
@@ -457,12 +467,17 @@ export class EnhancedEmailService {
       // Ensure the event has a UID before sending emails
       await this.validateEventUID(data);
       
+      // Get the next sequence number from the sequence service
+      const currentSequence = await sequenceService.getCurrentSequence(data.uid, data.rawData);
+      const nextSequence = await sequenceService.getNextSequence(data.uid, data.rawData);
+      console.log(`[EnhancedEmailService] Using sequence ${nextSequence} (was ${currentSequence}) for update with UID ${data.uid}`);
+      
       // Set the method to REQUEST for updates
       const updateData = {
         ...data,
         method: 'REQUEST',
-        // Increment sequence for updates
-        sequence: (data.sequence || 0) + 1
+        // Use the next sequence number from the sequence service
+        sequence: nextSequence
       };
       
       // Generate ICS data for the update using the centralized ICS service
