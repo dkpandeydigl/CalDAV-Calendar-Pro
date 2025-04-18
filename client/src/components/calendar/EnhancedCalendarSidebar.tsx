@@ -41,6 +41,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Search,
   Filter,
   X,
@@ -181,6 +182,25 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     acc[ownerEmail].push(calendar);
     return acc;
   }, {} as Record<string, typeof filteredSharedCalendars>);
+  
+  // Initialize expanded email if not already set and we have shared calendars
+  useEffect(() => {
+    if (expandedOwnerEmail === null && Object.keys(groupedSharedCalendars).length > 0) {
+      // Set the first group as expanded by default
+      setExpandedOwnerEmail(Object.keys(groupedSharedCalendars)[0]);
+    }
+  }, [expandedOwnerEmail, groupedSharedCalendars]);
+  
+  // Function to handle expanding a group (collapses any previously expanded group)
+  const handleToggleGroupExpansion = (ownerEmail: string) => {
+    if (expandedOwnerEmail === ownerEmail) {
+      // If clicking the already expanded group, collapse it
+      setExpandedOwnerEmail(null);
+    } else {
+      // Otherwise, expand the clicked group and collapse others
+      setExpandedOwnerEmail(ownerEmail);
+    }
+  };
   
   // Function to check duplicate calendar name (reuse from original)
   const checkDuplicateCalendarName = async (name: string, excludeId?: number): Promise<boolean> => {
@@ -866,58 +886,70 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   )}
                   
                   <div className="space-y-3">
-                    {/* Group calendars by owner email */}
+                    {/* Group calendars by owner email - Improved UI with single group expansion */}
                     {Object.entries(groupedSharedCalendars).length > 0 ? (
-                      <Accordion 
-                        type="multiple" 
-                        className="w-full" 
-                        defaultValue={Object.keys(groupedSharedCalendars).map(email => `item-${email}`)}
-                      >
+                      <div className="w-full space-y-1">
                         {Object.entries(groupedSharedCalendars)
                           .sort(([emailA], [emailB]) => emailA.toLowerCase().localeCompare(emailB.toLowerCase()))
                           .map(([ownerEmail, ownerCalendars]) => (
-                          <AccordionItem 
+                          <div 
                             key={ownerEmail} 
-                            value={`item-${ownerEmail}`}
-                            className="border-b-0 mb-1"
+                            className="border rounded-md mb-2 overflow-hidden"
                           >
-                            <AccordionTrigger className="py-1 hover:no-underline">
-                              <div className="flex justify-between items-center w-full">
-                                <span className="text-xs text-left truncate max-w-[160px]">
+                            {/* Group Header - always visible */}
+                            <div 
+                              className={`py-2 px-3 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors ${expandedOwnerEmail === ownerEmail ? 'bg-gray-50' : 'bg-white'}`}
+                              onClick={() => handleToggleGroupExpansion(ownerEmail)}
+                            >
+                              <div className="flex items-center space-x-2">
+                                {expandedOwnerEmail === ownerEmail ? 
+                                  <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : 
+                                  <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
+                                }
+                                <div className="text-xs text-left truncate max-w-[160px]">
                                   <span className="italic">Shared by:</span>{' '}
                                   <span className="font-medium">{ownerEmail}</span>
-                                </span>
-                                
+                                </div>
+                              </div>
+                              
+                              <div className="flex items-center space-x-2">
                                 {/* Badge with count */}
                                 <Badge 
                                   variant="outline" 
-                                  className="ml-1 text-[10px] px-1 py-0 h-4 rounded-full"
+                                  className="text-[10px] px-1 py-0 h-4 rounded-full"
                                 >
                                   {ownerCalendars.length}
                                 </Badge>
-                              </div>
-                            </AccordionTrigger>
-                            <AccordionContent className="pt-0">
-                              <div className="pl-2 space-y-1">
-                                {ownerCalendars
-                                  .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
-                                  .map(calendar => renderCalendarItem(calendar, true))}
-                              </div>
-                              <div className="mt-1 text-right">
+                                
+                                {/* Remove all button - always visible */}
                                 <Button
                                   variant="ghost"
-                                  size="sm"
-                                  className="h-6 text-xs text-red-600 hover:text-red-700 p-0"
-                                  onClick={() => handleOpenBulkUnshareDialog(ownerEmail, ownerCalendars)}
+                                  size="icon"
+                                  className="h-5 w-5 text-red-500 hover:text-red-700"
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Prevent expanding/collapsing
+                                    handleOpenBulkUnshareDialog(ownerEmail, ownerCalendars);
+                                  }}
+                                  title={`Remove all calendars from ${ownerEmail}`}
                                 >
-                                  <Trash2 className="mr-1 h-3 w-3" />
-                                  Remove all
+                                  <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
-                            </AccordionContent>
-                          </AccordionItem>
+                            </div>
+                            
+                            {/* Group Content - only visible when expanded */}
+                            {expandedOwnerEmail === ownerEmail && (
+                              <div className="px-3 pb-2 pt-1 border-t border-gray-100 bg-white">
+                                <div className="pl-5 space-y-1">
+                                  {ownerCalendars
+                                    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+                                    .map(calendar => renderCalendarItem(calendar, true))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         ))}
-                      </Accordion>
+                      </div>
                     ) : (
                       <div className="text-sm text-gray-500 py-2">
                         No shared calendars
