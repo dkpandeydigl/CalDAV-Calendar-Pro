@@ -1,4 +1,4 @@
-import { ChangeEvent, FC, useState, useEffect, useCallback } from 'react';
+import React, { ChangeEvent, FC, useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Dialog, 
   DialogContent, 
@@ -18,7 +18,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Calendar } from '@shared/schema';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/use-auth';
-import { useSharedCalendars } from '@/hooks/useSharedCalendars';
+import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
 
 interface ImportCalendarModalProps {
   open: boolean;
@@ -41,8 +41,27 @@ export default function ImportCalendarModal({
   onOpenChange
 }: ImportCalendarModalProps) {
   const { calendars, isLoading: isLoadingCalendars, error: calendarError } = useCalendars();
+  const { sharedCalendars, isLoading: isLoadingSharedCalendars } = useSharedCalendars();
   const { user } = useAuth();
   const { toast } = useToast();
+  
+  // Combine user's calendars and shared calendars with edit permission
+  const allCalendars = useMemo(() => {
+    // Make sure sharedCalendars is defined before filtering
+    const editableSharedCalendars = sharedCalendars
+      ? sharedCalendars
+          .filter(cal => cal.permissionLevel === 'edit')
+          .map(cal => ({
+            ...cal,
+            sharedBy: cal.owner?.username || 'Unknown'
+          }))
+      : [];
+      
+    return [
+      ...calendars.map(cal => ({ ...cal, isShared: false })),
+      ...editableSharedCalendars
+    ];
+  }, [calendars, sharedCalendars]);
 
   // State for file input
   const [file, setFile] = useState<File | null>(null);
@@ -109,12 +128,13 @@ export default function ImportCalendarModal({
   
   // Effect to set default calendar when calendars are loaded
   useEffect(() => {
-    if (calendars.length > 0 && !selectedCalendarId && importStep === 'select') {
-      const defaultCalendar = calendars.find(cal => cal.isPrimary) || calendars[0];
+    if (allCalendars.length > 0 && !selectedCalendarId && importStep === 'select') {
+      // First try to find the primary calendar, then just use the first one
+      const defaultCalendar = allCalendars.find(cal => cal.isPrimary) || allCalendars[0];
       setSelectedCalendarId(String(defaultCalendar.id));
       console.log(`Setting default calendar to ${defaultCalendar.name} (ID: ${defaultCalendar.id})`);
     }
-  }, [calendars, selectedCalendarId, importStep]);
+  }, [allCalendars, selectedCalendarId, importStep]);
   
   // Refresh calendars from server
   const handleRefreshCalendars = () => {
@@ -199,8 +219,8 @@ export default function ImportCalendarModal({
       setImportStep('select');
       
       // Set default calendar if there are any calendars
-      if (calendars.length > 0 && !selectedCalendarId) {
-        const defaultCalendar = calendars.find(cal => cal.isPrimary) || calendars[0];
+      if (allCalendars.length > 0 && !selectedCalendarId) {
+        const defaultCalendar = allCalendars.find(cal => cal.isPrimary) || allCalendars[0];
         setSelectedCalendarId(String(defaultCalendar.id));
       }
     } catch (error) {
@@ -400,7 +420,7 @@ export default function ImportCalendarModal({
                     <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-2 border border-amber-200">
                       <span className="font-medium">Authentication required:</span> You must be logged in to access your calendars.
                     </div>
-                  ) : isLoadingCalendars ? (
+                  ) : isLoadingCalendars || isLoadingSharedCalendars ? (
                     <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Loading calendars...
@@ -409,7 +429,7 @@ export default function ImportCalendarModal({
                     <div className="text-sm text-destructive bg-destructive/10 p-3 rounded mb-2">
                       Error loading calendars: {calendarError.message || 'Failed to load calendars'}
                     </div>
-                  ) : calendars.length === 0 ? (
+                  ) : allCalendars.length === 0 ? (
                     <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-2 border border-amber-200">
                       No calendars found. Please refresh or create a new calendar.
                     </div>
@@ -419,6 +439,10 @@ export default function ImportCalendarModal({
                         <SelectValue placeholder="Select a calendar" />
                       </SelectTrigger>
                       <SelectContent>
+                        {/* Personal calendars section */}
+                        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                          Personal Calendars
+                        </div>
                         {calendars.map((calendar: Calendar) => (
                           <SelectItem key={calendar.id} value={String(calendar.id)}>
                             <div className="flex items-center">
@@ -430,6 +454,31 @@ export default function ImportCalendarModal({
                             </div>
                           </SelectItem>
                         ))}
+                        
+                        {/* Shared calendars section (if any are available) */}
+                        {sharedCalendars && sharedCalendars.filter(cal => cal.permissionLevel === 'edit').length > 0 && (
+                          <>
+                            <div className="px-2 py-1.5 mt-1 text-xs font-medium text-muted-foreground border-t">
+                              Shared Calendars (with edit access)
+                            </div>
+                            {sharedCalendars
+                              .filter(cal => cal.permissionLevel === 'edit')
+                              .map(shared => (
+                                <SelectItem key={`shared-${shared.id}`} value={String(shared.id)}>
+                                  <div className="flex items-center">
+                                    <span 
+                                      className="inline-block h-3 w-3 rounded-full mr-2" 
+                                      style={{ backgroundColor: shared.color }} 
+                                    />
+                                    <span>{shared.name}</span>
+                                    <span className="ml-1.5 text-xs text-muted-foreground">
+                                      (from {shared.owner?.username || 'Unknown'})
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                            ))}
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   )}
