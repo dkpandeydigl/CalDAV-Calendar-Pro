@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import multer from "multer";
 import { storage } from "./storage";
 import { v4 as uuidv4 } from "uuid";
-import { InsertEvent } from "@shared/schema";
+import { InsertEvent, Calendar } from "@shared/schema";
 
 // Use dynamic import for node-ical
 import * as ical from 'node-ical';
@@ -168,31 +168,35 @@ export function registerImportRoutes(app: Express) {
       console.log("User calendars:", userCalendars.map(c => ({ id: c.id, name: c.name })));
       console.log("Shared calendars:", sharedCalendars.map(c => ({ id: c.id, name: c.name })));
       
-      // First try to find the calendar directly by ID
-      const calendarById = await storage.getCalendarById(calendarId);
-      if (!calendarById) {
-        console.log("Calendar not found by ID:", calendarId);
-        return res.status(404).json({ message: "Calendar not found" });
-      }
-      
       // Find the target calendar and check permissions
       const targetCalendar = [...userCalendars, ...sharedCalendars].find(
         cal => cal.id === calendarId
       );
       
-      // If the calendar exists but the user doesn't have it in their list, they don't have access
+      // If the calendar doesn't exist in the user's calendars or shared calendars, they don't have access
       if (!targetCalendar) {
-        console.log("Calendar exists but user doesn't have access:", calendarId);
-        console.log(`Calendar owner ID: ${calendarById.userId}, User ID: ${userId}`);
+        console.log("Calendar not found in user's calendars:", calendarId);
+        console.log(`User ID: ${userId}, Available calendars:`, 
+          [...userCalendars, ...sharedCalendars].map(c => ({ id: c.id, name: c.name })));
         
-        if (calendarById.userId === userId) {
-          console.log("This is user's own calendar but not in their list - this is a data consistency issue");
-          // Since this is the user's own calendar, we'll allow the operation despite the inconsistency
-          return res.status(403).json({ 
-            message: "Calendar access issue detected. Please refresh your browser and try again." 
-          });
-        } else {
+        // Check if any calendar exists with this ID in the system
+        // Use the Map.values() approach since getAllCalendars isn't available
+        const allCalendars = [...await storage.getCalendars(0), ...await storage.getAllCalendarSharings()
+          .then(sharings => Promise.all(
+            sharings.map(s => storage.getCalendar(s.calendarId))
+          ))
+          .then(calendars => calendars.filter(Boolean) as Calendar[])
+        ];
+        
+        console.log(`Collected ${allCalendars.length} calendars to check`);
+        const calendarExists = allCalendars.some(cal => cal?.id === calendarId);
+        
+        if (calendarExists) {
+          console.log("Calendar exists in system but user doesn't have access:", calendarId);
           return res.status(403).json({ message: "You don't have access to this calendar" });
+        } else {
+          console.log("Calendar doesn't exist in system:", calendarId);
+          return res.status(404).json({ message: "Calendar not found" });
         }
       }
       
