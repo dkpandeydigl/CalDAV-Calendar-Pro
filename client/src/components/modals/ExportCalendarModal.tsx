@@ -88,48 +88,21 @@ export default function ExportCalendarModal({
       
       console.log('Starting server-generated export for calendars:', selectedCalendarIds);
       
-      // Generate a simple form and submit it directly
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/api/calendars/export-post';
-      form.target = '_blank';
+      // Use direct window.open with GET parameters
+      const queryParams = new URLSearchParams();
+      queryParams.set('ids', selectedCalendarIds.join(','));
       
-      // Add hidden fields for the calendar IDs
-      const idsInput = document.createElement('input');
-      idsInput.type = 'hidden';
-      idsInput.name = 'calendarIds';
-      idsInput.value = selectedCalendarIds.join(',');
-      form.appendChild(idsInput);
-      
-      // Add CSRF token if available
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      if (csrfToken) {
-        const csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = '_csrf';
-        csrfInput.value = csrfToken;
-        form.appendChild(csrfInput);
-      }
-      
-      // Add date range inputs if applicable
       if (showDateFilter && startDate && endDate) {
-        const startInput = document.createElement('input');
-        startInput.type = 'hidden';
-        startInput.name = 'startDate';
-        startInput.value = startDate.toISOString();
-        form.appendChild(startInput);
-        
-        const endInput = document.createElement('input');
-        endInput.type = 'hidden';
-        endInput.name = 'endDate';
-        endInput.value = endDate.toISOString();
-        form.appendChild(endInput);
+        queryParams.set('startDate', startDate.toISOString());
+        queryParams.set('endDate', endDate.toISOString());
       }
       
-      // Append the form to the document, submit it, and remove it
-      document.body.appendChild(form);
-      form.submit();
-      document.body.removeChild(form);
+      // Use an existing endpoint with cookies and credentails preserved
+      const exportUrl = `/api/export-simple?${queryParams.toString()}`;
+      console.log('Using export URL:', exportUrl);
+      
+      // Open in a new tab to handle download
+      window.open(exportUrl, '_blank');
       
       // Show success message
       toast({
