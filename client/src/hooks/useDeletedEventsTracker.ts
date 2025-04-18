@@ -226,12 +226,159 @@ export function useDeletedEventsTracker() {
     return false;
   }, [deletedEvents]);
   
+  // Untrack a deleted event (used when reimporting)
+  const untrackDeletedEvent = useCallback((event: Event | Partial<Event>) => {
+    if (!event.id && !event.uid && !event.title) {
+      console.warn("Cannot untrack event without ID, UID, or title");
+      return false;
+    }
+    
+    // Flag to track if we found an event to untrack
+    let foundEvent = false;
+    
+    // Create a new map without the event
+    setDeletedEvents(prevMap => {
+      const newMap = new Map(prevMap);
+      
+      // Remove by ID if provided
+      if (event.id && newMap.has(event.id)) {
+        newMap.delete(event.id);
+        foundEvent = true;
+        console.log(`Untracked deleted event by ID: ${event.id}`);
+      }
+      
+      // Also remove by UID match
+      if (event.uid) {
+        for (const [id, eventInfo] of newMap.entries()) {
+          if (eventInfo.uid === event.uid) {
+            newMap.delete(id);
+            foundEvent = true;
+            console.log(`Untracked deleted event by UID: ${event.uid}`);
+          }
+        }
+      }
+      
+      // Also remove by title and start date if available
+      if (event.title && event.startDate) {
+        const eventStartTime = new Date(event.startDate).getTime();
+        
+        for (const [id, eventInfo] of newMap.entries()) {
+          if (eventInfo.title === event.title && eventInfo.startDateISO) {
+            const deletedStartTime = new Date(eventInfo.startDateISO).getTime();
+            
+            // Check if the start times are close (within 1 minute)
+            if (Math.abs(eventStartTime - deletedStartTime) < 60000) {
+              newMap.delete(id);
+              foundEvent = true;
+              console.log(`Untracked deleted event by title and start time match: ${event.title}`);
+            }
+          }
+        }
+      }
+      
+      return newMap;
+    });
+    
+    // If we found and removed an event, also update the storage
+    if (foundEvent) {
+      try {
+        // Update localStorage
+        const storedEvents = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (storedEvents) {
+          let parsedEvents = JSON.parse(storedEvents) as DeletedEventInfo[];
+          
+          // Filter out the event we want to untrack
+          parsedEvents = parsedEvents.filter(e => {
+            // Skip if direct ID match
+            if (event.id && e.id === event.id) return false;
+            
+            // Skip if UID match
+            if (event.uid && e.uid === event.uid) return false;
+            
+            // Skip if title and start time match
+            if (event.title && event.startDate && e.title === event.title && e.startDateISO) {
+              const deletedStartTime = new Date(e.startDateISO).getTime();
+              const eventStartTime = new Date(event.startDate).getTime();
+              
+              if (Math.abs(eventStartTime - deletedStartTime) < 60000) {
+                return false;
+              }
+            }
+            
+            return true;
+          });
+          
+          // Save back to storage
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsedEvents));
+        }
+        
+        // Update sessionStorage
+        const sessionEvents = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        if (sessionEvents) {
+          let parsedSessionEvents = JSON.parse(sessionEvents) as DeletedEventInfo[];
+          
+          // Filter out the event
+          parsedSessionEvents = parsedSessionEvents.filter(e => {
+            // Skip if direct ID match
+            if (event.id && e.id === event.id) return false;
+            
+            // Skip if UID match
+            if (event.uid && e.uid === event.uid) return false;
+            
+            // Skip if title and start time match
+            if (event.title && event.startDate && e.title === event.title && e.startDateISO) {
+              const deletedStartTime = new Date(e.startDateISO).getTime();
+              const eventStartTime = new Date(event.startDate).getTime();
+              
+              if (Math.abs(eventStartTime - deletedStartTime) < 60000) {
+                return false;
+              }
+            }
+            
+            return true;
+          });
+          
+          // Save back to storage
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsedSessionEvents));
+        }
+      } catch (error) {
+        console.error('Error updating storage for untracked event:', error);
+      }
+    }
+    
+    return foundEvent;
+  }, []);
+  
   // Filter an array of events to remove any that have been deleted
   const filterDeletedEvents = useCallback((events: Event[] | undefined): Event[] => {
     if (!events) return [];
     
     return events.filter(event => {
-      // Skip if explicitly deleted
+      // Check for reimported events - by checking syncStatus
+      // If this is a reimported event that was previously deleted, untrack it
+      if (event.syncStatus === 'needs_sync' || event.syncStatus === 'synced') {
+        // This logic allows reimported events (with needs_sync or synced status) to appear
+        // even if they were previously deleted
+        for (const deletedEvent of deletedEvents.values()) {
+          // Check if this might be a reimported event by comparing signatures
+          if (deletedEvent.title === event.title && 
+              deletedEvent.startDateISO && 
+              event.startDate) {
+              
+            const deletedStart = new Date(deletedEvent.startDateISO).getTime();
+            const eventStart = new Date(event.startDate).getTime();
+            
+            if (Math.abs(deletedStart - eventStart) < 60000) {
+              // This looks like a reimported event, untrack it
+              console.log(`Detected reimported event, untracking from deleted events: ${event.title} (ID: ${event.id})`);
+              untrackDeletedEvent(event);
+              return true; // Keep the event
+            }
+          }
+        }
+      }
+
+      // Skip if explicitly deleted by ID or UID
       if (isEventDeleted(event.id, event.uid)) {
         console.log(`Filtering out deleted event: ${event.title} (ID: ${event.id})`);
         return false;
@@ -348,6 +495,7 @@ export function useDeletedEventsTracker() {
   // Return public API
   return {
     trackDeletedEvent,
+    untrackDeletedEvent,
     isEventDeleted,
     filterDeletedEvents,
     cleanAllEventCaches,

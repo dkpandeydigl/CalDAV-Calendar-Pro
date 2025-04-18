@@ -19,6 +19,7 @@ import { Calendar } from '@shared/schema';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/use-auth';
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
+import { useDeletedEventsTracker } from '@/hooks/useDeletedEventsTracker';
 
 interface ImportCalendarModalProps {
   open: boolean;
@@ -45,6 +46,7 @@ export default function ImportCalendarModal({
   const { sharedCalendars, isLoading: isLoadingSharedCalendars } = useSharedCalendars();
   const { user, isLoading: isLoadingAuth } = useAuth();
   const { toast } = useToast();
+  const { untrackDeletedEvent } = useDeletedEventsTracker();
   
   // Log detailed authentication state for debugging
   useEffect(() => {
@@ -341,8 +343,27 @@ export default function ImportCalendarModal({
 
       const result = await response.json();
       
+      // Untrack any events that were previously deleted but now reimported
+      // This ensures they will appear in the calendar view
+      console.log(`Untracking ${selectedEvents.length} imported events from deleted events tracker`);
+      selectedEvents.forEach(event => {
+        // Untrack each imported event so it will be displayed
+        untrackDeletedEvent({
+          title: event.summary,
+          startDate: event.startDate,
+          uid: event.uid
+        });
+      });
+      
       // Invalidate the events cache to trigger a refetch
       queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+      
+      // Also invalidate any calendar-specific event queries
+      if (calendarId) {
+        queryClient.invalidateQueries({ 
+          queryKey: ['/api/calendars', calendarId, 'events'] 
+        });
+      }
       
       toast({
         title: "Import successful",
