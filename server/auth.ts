@@ -810,19 +810,15 @@ export function setupAuth(app: Express) {
           console.error(`User ${userId} found in session but not in database - session is stale`);
           
           // Clear the corrupted session
-          req.logout((err) => {
+          req.session.destroy((err) => {
             if (err) {
-              console.error("Logout error:", err);
+              console.error("Session destroy error:", err);
+            } else {
+              console.log("Stale session destroyed successfully");
             }
-            
-            req.session.regenerate((regErr) => {
-              if (regErr) {
-                console.error("Session regeneration error:", regErr);
-              } else {
-                console.log("Stale session regenerated successfully");
-              }
-              res.status(401).json({ message: "Session expired. Please log in again." });
-            });
+            // Clear cookie
+            res.clearCookie('caldav_app.sid');
+            res.status(401).json({ message: "Session expired. Please log in again." });
           });
           return;
         }
