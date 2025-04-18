@@ -166,9 +166,16 @@ async function verifyCalDAVCredentials(
                 if (responseText.includes('displayname')) {
                   console.log('Response contains "displayname" tag');
                   // Try to get context around displayname tag
-                  const displaynameContext = responseText.match(/(.{0,100}<displayname>.*?<\/displayname>.{0,100})/s);
-                  if (displaynameContext) {
-                    console.log('Context around displayname tag:', displaynameContext[1]);
+                  try {
+                    // Look for displayname tag with surrounding context (100 chars before and after)
+                    const startIndex = Math.max(0, responseText.indexOf('<displayname>') - 100);
+                    const endIndex = Math.min(responseText.length, responseText.indexOf('</displayname>') + 13 + 100);
+                    if (startIndex >= 0 && endIndex > startIndex) {
+                      const context = responseText.substring(startIndex, endIndex);
+                      console.log('Context around displayname tag:', context);
+                    }
+                  } catch (contextError) {
+                    console.log('Error getting context around displayname tag:', contextError);
                   }
                 } else {
                   console.log('Warning: Response does not contain "displayname" tag');
@@ -241,18 +248,28 @@ async function verifyCalDAVCredentials(
         
         // If we couldn't get display name from principal properties, try getting it from calendars
         if (!userInfo.displayName && calendars && calendars.length > 0) {
-          // Try to find owner info in calendar data
+          // Log the first calendar data to see its structure
+          if (calendars[0]) {
+            console.log('First calendar data structure:', JSON.stringify(calendars[0]).substring(0, 500));
+          }
+          
+          // Try to find owner info in calendar data - safely access properties
           for (const calendar of calendars) {
-            if (calendar.owner && calendar.owner.displayName) {
-              userInfo.displayName = calendar.owner.displayName;
+            // Safe property access with type checking
+            const calendarAny = calendar as any; // Cast to any to access properties
+            
+            // Try to get owner display name if it exists
+            if (calendarAny.owner && typeof calendarAny.owner === 'object' && calendarAny.owner.displayName) {
+              userInfo.displayName = calendarAny.owner.displayName;
               console.log(`Using owner displayName from calendar: ${userInfo.displayName}`);
               break;
             }
             
             // Sometimes the display name is in the principalURL or calendar URL
             // Extract username part and use as display name if it looks like a name (not an email)
-            if (!userInfo.displayName && calendar.principalUrl) {
-              const principalUrlParts = calendar.principalUrl.split('/');
+            const principalUrl = calendarAny.principalUrl || calendarAny.url || '';
+            if (!userInfo.displayName && principalUrl && typeof principalUrl === 'string') {
+              const principalUrlParts = principalUrl.split('/');
               const potentialName = principalUrlParts[principalUrlParts.length - 1];
               
               if (potentialName && !potentialName.includes('@') && !potentialName.includes('.')) {
@@ -260,7 +277,7 @@ async function verifyCalDAVCredentials(
                 const formattedName = potentialName
                   .replace(/[._-]/g, ' ')
                   .split(' ')
-                  .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+                  .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
                   .join(' ');
                 
                 userInfo.displayName = formattedName;
@@ -295,7 +312,32 @@ async function verifyCalDAVCredentials(
       
       if (response.ok || response.status === 207) {
         console.log("CalDAV auth successful with direct PROPFIND");
-        return { authenticated: true };
+        
+        // Generate a display name from username for consistent behavior
+        let formattedName = "";
+        if (username.includes('@')) {
+          // Get the username part before the @ symbol
+          const namePart = username.split('@')[0];
+          // Convert from formats like "john.doe" or "john_doe" to "John Doe"
+          formattedName = namePart
+            .replace(/[._-]/g, ' ')
+            .split(' ')
+            .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+            .join(' ');
+        } else {
+          // For non-email username formats
+          formattedName = username
+            .replace(/[._-]/g, ' ')
+            .split(' ')
+            .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+            .join(' ');
+        }
+        
+        return {
+          authenticated: true,
+          displayName: formattedName,
+          email: username.includes('@') ? username : undefined
+        };
       } else {
         console.log("Direct PROPFIND auth failed with status:", response.status);
         return false;
