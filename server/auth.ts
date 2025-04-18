@@ -29,9 +29,9 @@ declare global {
       id: number;
       username: string;
       password: string;
-      preferredTimezone?: string;
-      email?: string | null;
-      fullName?: string | null;
+      preferredTimezone: string;
+      email: string | null;
+      fullName: string | null;
     }
   }
 }
@@ -42,6 +42,18 @@ export async function hashPassword(password: string) {
 
 export async function comparePasswords(supplied: string, stored: string) {
   return bcrypt.compare(supplied, stored);
+}
+
+// Helper function to normalize user objects to match Express.User interface
+function normalizeUserForAuth(user: any): Express.User {
+  return {
+    id: user.id,
+    username: user.username,
+    password: user.password || "[FILTERED]",
+    preferredTimezone: user.preferredTimezone || "UTC", // Ensure it's never undefined/null
+    email: user.email || null, // Ensure it's null rather than undefined
+    fullName: user.fullName || null // Ensure it's null rather than undefined
+  };
 }
 
 // Define a CalDAVUserInfo interface
@@ -680,15 +692,11 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
       
-      // Clean up sensitive data that shouldn't be in the session
-      const { password, ...userWithoutPassword } = user;
-      const safeUser = {
-        ...userWithoutPassword,
-        password: "[FILTERED]" // Include a placeholder to maintain expected shape
-      };
+      // Use our helper function to normalize user
+      const normalizedUser = normalizeUserForAuth(user);
       
       console.log(`User ${id} (${user.username}) successfully deserialized from session`);
-      done(null, safeUser as Express.User);
+      done(null, normalizedUser);
     } catch (error) {
       console.error(`Error deserializing user ${id}:`, error);
       done(error, null);
