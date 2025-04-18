@@ -183,33 +183,34 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
       // Get owner email with multiple fallbacks to ensure we always have a value
       let ownerEmail = 'Unknown';
       
-      // Debug log to see what's coming from the server
-      console.log("Calendar owner data:", 
-                  calendar.name, 
-                  "owner:", calendar.owner, 
-                  "ownerEmail:", calendar.ownerEmail,
-                  "userId:", calendar.userId,
-                  "cached email:", calendar.userId ? ownerEmailsById.get(calendar.userId) : 'No userId');
-      
-      // Use a better cascade of fallbacks for owner email
-      if (calendar.owner?.email && calendar.owner.email !== 'undefined' && calendar.owner.email !== 'null') {
-        ownerEmail = calendar.owner.email;
-      } else if (calendar.ownerEmail && calendar.ownerEmail !== 'undefined' && calendar.ownerEmail !== 'null') {
-        ownerEmail = calendar.ownerEmail;
-      } else if (calendar.owner?.username && calendar.owner.username !== 'undefined' && calendar.owner.username !== 'null') {
-        ownerEmail = calendar.owner.username;
-      } else if (calendar.userId && ownerEmailsById.has(calendar.userId)) {
-        const cachedOwnerEmail = ownerEmailsById.get(calendar.userId);
-        if (cachedOwnerEmail) {
-          ownerEmail = cachedOwnerEmail;
+      // Try to get the owner email from our user details map first
+      // This is the most reliable source since it comes from the server
+      if (calendar.owner?.id && ownerEmailsById.has(calendar.owner.id)) {
+        ownerEmail = ownerEmailsById.get(calendar.owner.id) || ownerEmail;
+      } 
+      // Otherwise fall back to calendar.userId if that's different from owner.id
+      else if (calendar.userId && 
+               (!calendar.owner?.id || calendar.userId !== calendar.owner.id) && 
+               ownerEmailsById.has(calendar.userId)) {
+        ownerEmail = ownerEmailsById.get(calendar.userId) || ownerEmail;
+      }
+      // If we still don't have a valid email, check the calendar object's fields
+      else {
+        // Use a cascade of fallbacks from the calendar object
+        if (calendar.owner?.email && calendar.owner.email !== 'undefined' && calendar.owner.email !== 'null') {
+          ownerEmail = calendar.owner.email;
+        } else if (calendar.ownerEmail && calendar.ownerEmail !== 'undefined' && calendar.ownerEmail !== 'null') {
+          ownerEmail = calendar.ownerEmail;
+        } else if (calendar.owner?.username && calendar.owner.username !== 'undefined' && calendar.owner.username !== 'null') {
+          ownerEmail = calendar.owner.username;
+        } else if (calendar.userId) {
+          // Last resort fallback - use a formatted user ID
+          ownerEmail = `User ${calendar.userId}`;
         }
       }
-  
-      // If we still have 'Unknown', try one more time with calendar's userId
-      if (ownerEmail === 'Unknown' && calendar.userId) {
-        // Just use the userId directly without updating state during render
-        ownerEmail = `User ${calendar.userId}`;
-      }
+      
+      // Debug log the result
+      console.log(`Calendar "${calendar.name}" (ID: ${calendar.id}) - Owner determined as: ${ownerEmail}`);
       
       // Create the group if it doesn't exist
       if (!acc[ownerEmail]) {
@@ -228,14 +229,30 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     console.log("Expanded owner email:", expandedOwnerEmail);
   }, [groupedSharedCalendars, expandedOwnerEmail]);
   
-  // Extract all unique user IDs from the shared calendars
-  const uniqueUserIds = filteredSharedCalendars
-    .filter(cal => cal.userId)
-    .map(cal => cal.userId);
+  // Extract all unique user IDs from the shared calendars for lookup
+  const uniqueUserIds = useMemo(() => {
+    // Get owner IDs from both owner.id and userId properties
+    const ids = new Set<number>();
+    
+    filteredSharedCalendars.forEach(cal => {
+      // Add the owner ID if present
+      if (cal.owner?.id) {
+        ids.add(cal.owner.id);
+      }
+      
+      // Also add userId if it's different from owner.id
+      if (cal.userId && (!cal.owner?.id || cal.userId !== cal.owner.id)) {
+        ids.add(cal.userId);
+      }
+    });
+    
+    // Convert to array and filter out any non-numeric or zero values
+    return Array.from(ids).filter(id => typeof id === 'number' && id > 0);
+  }, [filteredSharedCalendars]);
   
   console.log("Getting user details for IDs:", uniqueUserIds);
   
-  // Use our custom hook to fetch user details
+  // Use our custom hook to fetch user details with the revised user ID list
   const { 
     userDetailsMap, 
     isLoading: isLoadingUserDetails 
@@ -245,35 +262,43 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   useEffect(() => {
     console.log("User details received:", userDetailsMap);
     
-    // Create a new map from the user details
-    const updatedMap = new Map<number, string>();
-    
-    // Add all user details to our map
-    Object.entries(userDetailsMap).forEach(([userId, userDetail]) => {
-      const id = Number(userId);
-      if (!isNaN(id) && userDetail) {
-        // Prefer email, then displayName, then username, finally fall back to User ID
-        const emailToUse = userDetail.email || 
-                          userDetail.displayName || 
-                          userDetail.username || 
-                          `User ${id}`;
-        updatedMap.set(id, emailToUse);
-        console.log(`Mapped user ID ${id} to ${emailToUse}`);
-      }
-    });
-    
-    // Only update state if we have new data
-    if (updatedMap.size > 0) {
-      setOwnerEmailsById(prevMap => {
-        const combinedMap = new Map(prevMap);
-        
-        // Add all entries from updatedMap to combinedMap
-        updatedMap.forEach((value, key) => {
-          combinedMap.set(key, value);
-        });
-        
-        return combinedMap;
+    if (Object.keys(userDetailsMap).length > 0) {
+      // Create a new map from the user details
+      const updatedMap = new Map<number, string>();
+      
+      // Process all user details to build our email map
+      Object.entries(userDetailsMap).forEach(([userId, userDetail]) => {
+        const id = Number(userId);
+        if (!isNaN(id) && userDetail) {
+          // Cascade through all possible identifier fields with the best precedence order
+          let emailToUse: string;
+          
+          if (userDetail.email && userDetail.email !== 'null' && userDetail.email !== 'undefined') {
+            // Email is the preferred identifier
+            emailToUse = userDetail.email;
+          } else if (userDetail.displayName && userDetail.displayName !== 'null' && userDetail.displayName !== 'undefined') {
+            // Display name as fallback
+            emailToUse = userDetail.displayName;
+          } else if (userDetail.username && userDetail.username !== 'null' && userDetail.username !== 'undefined') {
+            // Username as secondary fallback
+            emailToUse = userDetail.username;
+          } else {
+            // Final fallback to a formatted user ID
+            emailToUse = `User ${id}`;
+          }
+          
+          // Store in our map
+          updatedMap.set(id, emailToUse);
+          console.log(`Mapped user ID ${id} to ${emailToUse}`);
+        }
       });
+      
+      // Replace the entire map with our updated version
+      // This avoids partial updates that can cause rendering inconsistencies
+      setOwnerEmailsById(updatedMap);
+      
+      // Log updated map for debugging
+      console.log("Updated owner emails map:", Array.from(updatedMap.entries()));
     }
     
     // Log all shared calendars details for debugging
@@ -283,8 +308,10 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
           id: cal.id,
           name: cal.name,
           userId: cal.userId,
+          ownerUserId: cal.owner?.id,
           ownerEmail: cal.ownerEmail,
-          owner: cal.owner
+          ownerUsername: cal.owner?.username,
+          hasOwner: !!cal.owner
         }))
       );
     }
@@ -1045,7 +1072,10 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                   <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
                                 }
                                 <div className="text-xs text-left truncate max-w-[160px]">
-                                  <span className="font-medium text-blue-600" title={ownerEmail}>
+                                  <span 
+                                    className="font-medium text-blue-600 hover:underline cursor-help" 
+                                    title={`Calendar owner: ${ownerEmail}`}
+                                  >
                                     {ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' 
                                       ? ownerEmail 
                                       : 'Unknown owner'}
