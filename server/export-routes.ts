@@ -48,8 +48,14 @@ export function registerExportRoutes(app: Express) {
   });
   
   // New direct export endpoint with robust authentication and error handling
-  app.get("/api/export-direct", isAuthenticated, async (req, res) => {
+  app.get("/api/export-direct", async (req, res) => {
     try {
+      // Debug authentication state
+      console.log('Export-direct request received');
+      console.log('Session ID:', req.sessionID);
+      console.log('Is authenticated:', req.isAuthenticated());
+      console.log('User in session:', req.user ? 'User exists' : 'No user in session');
+      
       if (!req.isAuthenticated() || !req.user) {
         console.error('User not authenticated when accessing export-direct');
         return res.status(401).json({ message: 'Authentication required. Please log in and try again.' });
@@ -350,6 +356,196 @@ export function registerExportRoutes(app: Express) {
     }
   });
 
+  // POST endpoint for calendar export
+  app.post("/api/calendars/export-post", isAuthenticated, async (req, res) => {
+    try {
+      // Debug authentication state
+      console.log('POST Export request received');
+      console.log('Session ID:', req.sessionID);
+      console.log('Is authenticated:', req.isAuthenticated());
+      console.log('User in session:', req.user ? 'User exists' : 'No user in session');
+      
+      if (!req.isAuthenticated() || !req.user) {
+        console.error('User not authenticated when accessing export-post');
+        return res.status(401).json({ message: 'Authentication required. Please log in and try again.' });
+      }
+      
+      const userId = (req.user as User).id;
+      console.log(`[EXPORT-POST] Calendar export requested by user ID: ${userId}`);
+      
+      // Get the calendar IDs from the body 
+      const rawIds = req.body.calendarIds || '';
+      const calendarIds = rawIds
+        .split(',')
+        .map(id => {
+          const num = parseInt(id.trim(), 10);
+          return isNaN(num) ? null : num;
+        })
+        .filter((id): id is number => id !== null);
+      
+      // Get date filters if provided
+      const startDate = req.body.startDate ? new Date(req.body.startDate) : null;
+      const endDate = req.body.endDate ? new Date(req.body.endDate) : null;
+      
+      console.log(`[EXPORT-POST] Request details: IDs=${rawIds}, Calendar IDs parsed: ${calendarIds.join(', ')}`);
+      
+      if (calendarIds.length === 0) {
+        console.error(`[EXPORT-POST] No valid calendar IDs provided`);
+        return res.status(400).json({ message: 'No calendars selected for export' });
+      }
+      
+      // Get user's calendars
+      const userCalendars = await storage.getCalendars(userId);
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      
+      console.log(`[EXPORT-POST] User has ${userCalendars.length} own calendars and ${sharedCalendars.length} shared calendars`);
+      
+      // Map calendars for lookup by ID
+      const calendarMap = new Map();
+      [...userCalendars, ...sharedCalendars].forEach(cal => {
+        calendarMap.set(cal.id, cal);
+      });
+      
+      // Check which calendars the user has access to
+      const accessibleCalendarIds = new Set([
+        ...userCalendars.map(cal => cal.id),
+        ...sharedCalendars.map(cal => cal.id)
+      ]);
+      
+      // Filter out any calendar IDs the user doesn't have access to
+      const validCalendarIds = calendarIds.filter(id => accessibleCalendarIds.has(id));
+      
+      if (validCalendarIds.length === 0) {
+        console.error(`[EXPORT-POST] User ${userId} attempted to export calendars but has no permission for any of them`);
+        return res.status(403).json({ message: 'You do not have permission to export any of the selected calendars' });
+      }
+      
+      console.log(`[EXPORT-POST] Processing ${validCalendarIds.length} valid calendars`);
+      
+      // Generate iCalendar content
+      const allEvents = [];
+      
+      for (const calendarId of validCalendarIds) {
+        const calendar = calendarMap.get(calendarId);
+        if (!calendar) {
+          console.warn(`[EXPORT-POST] Calendar ${calendarId} not found in map`);
+          continue;
+        }
+        
+        // Get all events for this calendar
+        let events = await storage.getEvents(calendarId);
+        console.log(`[EXPORT-POST] Retrieved ${events.length} events from calendar ${calendar.name} (ID: ${calendarId})`);
+        
+        // Apply date filtering if provided
+        if (startDate && endDate) {
+          events = events.filter(event => {
+            const eventStart = new Date(event.startDate);
+            const eventEnd = new Date(event.endDate);
+            return (eventStart >= startDate && eventStart <= endDate) || 
+                  (eventEnd >= startDate && eventEnd <= endDate) ||
+                  (eventStart <= startDate && eventEnd >= endDate);
+          });
+          console.log(`[EXPORT-POST] Filtered to ${events.length} events within date range`);
+        }
+        
+        // Add calendar information to each event
+        const eventsWithCalendarInfo = events.map(event => ({
+          ...event,
+          calendarName: calendar.name,
+          calendarColor: calendar.color
+        }));
+        
+        allEvents.push(...eventsWithCalendarInfo);
+      }
+      
+      if (allEvents.length === 0) {
+        console.warn(`[EXPORT-POST] No events found to export`);
+        return res.status(404).json({ message: 'No events found to export in the selected calendars' });
+      }
+      
+      // Determine calendar name for the export file
+      let calendarName = 'Multiple Calendars';
+      if (validCalendarIds.length === 1) {
+        const calendarId = validCalendarIds[0];
+        const calendar = calendarMap.get(calendarId);
+        calendarName = calendar?.name || 'Exported Calendar';
+      }
+      
+      // Generate iCalendar content
+      const now = formatICALDate(new Date());
+      
+      // Create the initial lines array
+      let lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//CalDAV Client//NONSGML v1.0//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        `X-WR-CALNAME:${calendarName}`,
+        'X-WR-CALDESC:Exported Calendar'
+      ];
+      
+      // Add each event
+      for (const event of allEvents) {
+        const safeUid = event.uid?.includes('@') ? event.uid : `${event.uid || `event-${Date.now()}`}@caldavclient.local`;
+        const startDate = formatICALDate(new Date(event.startDate));
+        const endDate = formatICALDate(new Date(event.endDate));
+        
+        lines.push('BEGIN:VEVENT');
+        lines.push(`UID:${safeUid}`);
+        lines.push(`DTSTAMP:${now}`);
+        lines.push(`DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${startDate}`);
+        lines.push(`DTEND${event.allDay ? ';VALUE=DATE' : ''}:${endDate}`);
+        lines.push(`SUMMARY:${event.title}`);
+        
+        if (event.calendarName) {
+          lines.push(`CATEGORIES:${event.calendarName}`);
+        }
+        
+        if (event.description) {
+          const formattedDesc = event.description
+            .replace(/\n/g, '\\n')  // Line breaks
+            .replace(/,/g, '\\,')   // Commas
+            .replace(/;/g, '\\;');  // Semicolons
+          
+          lines.push(`DESCRIPTION:${formattedDesc}`);
+        }
+        
+        if (event.location) {
+          lines.push(`LOCATION:${event.location.replace(/,/g, '\\,').replace(/;/g, '\\;')}`);
+        }
+        
+        if (event.allDay) {
+          lines.push('X-MICROSOFT-CDO-ALLDAYEVENT:TRUE');
+        }
+        
+        lines.push('END:VEVENT');
+      }
+      
+      lines.push('END:VCALENDAR');
+      
+      // Use shared formatter utility to ensure proper RFC 5545 compliance
+      const icalContent = formatICS(lines);
+      
+      // Set the appropriate headers for file download
+      let filename = 'calendars_export.ics';
+      if (validCalendarIds.length === 1) {
+        const safeCalendarName = calendarName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        filename = `calendar_${safeCalendarName}.ics`;
+      }
+      
+      res.setHeader('Content-Type', 'text/calendar');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(icalContent);
+      
+      console.log(`[EXPORT-POST] Successfully exported ${allEvents.length} events from ${validCalendarIds.length} calendars`);
+      
+    } catch (error) {
+      console.error('[EXPORT-POST] Error:', error);
+      res.status(500).json({ message: 'Failed to export calendars', error: (error as Error).message });
+    }
+  });
+  
   // Calendar Export API - new implementation completely bypassing database calls
   app.get("/api/export-simple", isAuthenticated, async (req, res) => {
     try {
