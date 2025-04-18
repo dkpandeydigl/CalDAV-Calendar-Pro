@@ -210,17 +210,18 @@ export function setupAuth(app: Express) {
   // Enhanced session configuration for better persistence
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "calendar-app-secret-key",
-    resave: true, // Forces the session to be saved back to the session store
-    saveUninitialized: true, // Save uninitialized sessions (new but not modified)
+    resave: false, // Don't save session if unmodified
+    saveUninitialized: false, // Don't create session until something stored
     store: storage.sessionStore, // Use our storage's session store for persistence
     name: 'caldav_app.sid', // Use a distinct name to avoid conflicts
     rolling: true, // Forces a cookie set on every response
     cookie: {
-      secure: false, // Set to false for development in Replit (set to true in production)
+      secure: process.env.NODE_ENV === 'production', // Only use HTTPS in production
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
       httpOnly: true, // Prevents client-side JS from reading the cookie
       sameSite: 'lax', // Allows cross-site requests with some restrictions
-      path: '/' // Ensure cookie is available across all paths
+      path: '/', // Ensure cookie is available across all paths
+      domain: undefined // Allow the browser to set the cookie domain automatically
     }
   };
   
@@ -610,7 +611,21 @@ export function setupAuth(app: Express) {
 
       // Log in the new user
       req.login(user, async (err) => {
-        if (err) return next(err);
+        if (err) {
+          console.error("Register session error:", err);
+          return next(err);
+        }
+        
+        // Ensure session is saved immediately
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error("Session save error during registration:", saveErr);
+            return next(saveErr);
+          }
+          
+          console.log(`New user ${user.username} session established. Session ID: ${req.session.id}`);
+          console.log(`Session cookie during registration: ${req.headers.cookie ? 'Present' : 'Not present'}`);
+        });
         
         try {
           // Get the server connection to set up sync
@@ -777,7 +792,21 @@ export function setupAuth(app: Express) {
       
       // Login and server connection successful
       req.login(user, async (err) => {
-        if (err) return next(err);
+        if (err) {
+          console.error("Login session error:", err);
+          return next(err);
+        }
+        
+        // Ensure session is saved immediately
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error("Session save error:", saveErr);
+            return next(saveErr);
+          }
+          
+          console.log(`User ${user.username} session established. Session ID: ${req.session.id}`);
+          console.log(`Session cookie: ${req.headers.cookie ? 'Present' : 'Not present'}`);
+        });
         
         try {
           // Get the updated connection (after it was created/updated above)
