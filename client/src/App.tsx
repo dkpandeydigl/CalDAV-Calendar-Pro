@@ -13,10 +13,11 @@ import WebSocketChatPage from "@/pages/WebSocketChatPage";
 import ResourceTestPage from "@/pages/ResourceTestPage";
 import { EmailSettingsPage } from "@/pages/EmailSettingsPage";
 import { ProtectedRoute } from "@/lib/protected-route";
-import { AuthProvider } from "@/hooks/use-auth";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { CalendarProvider } from "@/contexts/CalendarContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { EnhancedSyncProvider } from "@/contexts/EnhancedSyncContext";
+import LoadingOverlay from "@/components/LoadingOverlay";
 
 function Router() {
   return (
@@ -52,6 +53,28 @@ function Router() {
   );
 }
 
+function AppContent() {
+  const { isPostLoginLoading } = useAuth();
+  
+  return (
+    <>
+      <Router />
+      <Toaster />
+      {isPostLoginLoading && (
+        <LoadingOverlay 
+          duration={5000} 
+          message="Loading your calendars and events..." 
+          onComplete={() => {
+            // This is redundant since we already set timeouts in the auth hooks,
+            // but it's here as a safeguard
+            window.location.reload();
+          }} 
+        />
+      )}
+    </>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -59,8 +82,7 @@ function App() {
         <NotificationProvider>
           <EnhancedSyncProvider>
             <CalendarProvider>
-              <Router />
-              <Toaster />
+              <AppContent />
             </CalendarProvider>
           </EnhancedSyncProvider>
         </NotificationProvider>
