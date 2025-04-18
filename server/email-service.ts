@@ -1382,16 +1382,30 @@ ${resourceString}`;
     // Add recurrence rule if present
     if (data.recurrenceRule) {
       if (typeof data.recurrenceRule === 'string') {
+        // Sanitize RRULE to prevent corruption with mailto and other elements
+        let cleanRrule = data.recurrenceRule;
+        
+        // Fix case where RRULE has mailto or other non-RRULE content appended
+        if (cleanRrule.includes('mailto:') || cleanRrule.includes(':')) {
+          console.log(`Sanitizing corrupted RRULE: ${cleanRrule}`);
+          // If there's a colon, only keep what's before it (except the RRULE: part itself)
+          cleanRrule = cleanRrule.split(/mailto:|:|;mailto/).shift() || '';
+          console.log(`Sanitized RRULE: ${cleanRrule}`);
+        }
+        
         icsContent += `
-RRULE:${data.recurrenceRule}`;
+RRULE:${cleanRrule}`;
       } else {
         // Handle object recurrence rule
         const rrule = Object.entries(data.recurrenceRule)
           .map(([key, value]) => `${key}=${value}`)
           .join(';');
-          
+        
+        // Final safety check to prevent corruption
+        const cleanRrule = rrule.split(/mailto:|:|;mailto/).shift() || '';
+        
         icsContent += `
-RRULE:${rrule}`;
+RRULE:${cleanRrule}`;
       }
     }
 
