@@ -50,7 +50,7 @@ function normalizeUserForAuth(user: any): Express.User {
     id: user.id,
     username: user.username,
     password: user.password || "[FILTERED]",
-    preferredTimezone: user.preferredTimezone || "UTC", // Ensure it's never undefined/null
+    preferredTimezone: user.preferredTimezone || "UTC", // Never undefined/null, always a string
     email: user.email || null, // Ensure it's null rather than undefined
     fullName: user.fullName || null // Ensure it's null rather than undefined
   };
@@ -477,7 +477,7 @@ export function setupAuth(app: Express) {
                 // Continue with authentication even if SMTP setup fails
               }
               
-              return done(null, newUser);
+              return done(null, normalizeUserForAuth(newUser));
             }
             
             // At this point, user exists in our system and CalDAV authentication succeeded
@@ -605,7 +605,7 @@ export function setupAuth(app: Express) {
               // Continue login process even if password update fails
             }
             
-            return done(null, existingUser);
+            return done(null, normalizeUserForAuth(existingUser));
           }
         } catch (caldavError) {
           console.error(`Error during CalDAV authentication for ${username}:`, caldavError);
@@ -658,7 +658,7 @@ export function setupAuth(app: Express) {
         }
         
         console.log(`Authentication successful for user ${username}`);
-        return done(null, existingUser);
+        return done(null, normalizeUserForAuth(existingUser));
       } catch (error) {
         console.error(`Authentication error for user ${username}:`, error);
         return done(error);
@@ -836,8 +836,8 @@ export function setupAuth(app: Express) {
         return res.status(500).json({ message: "Error creating user" });
       }
 
-      // Log in the new user
-      req.login(user, async (err) => {
+      // Log in the new user - normalize the user first
+      req.login(normalizeUserForAuth(user), async (err) => {
         if (err) {
           console.error("Register session error:", err);
           return next(err);
@@ -911,8 +911,8 @@ export function setupAuth(app: Express) {
           return res.status(500).json({ message: "Session error during login" });
         }
         
-        // Log the user in with the fresh session
-        req.login(user, (loginErr) => {
+        // Log the user in with the fresh session - normalize the user object
+        req.login(normalizeUserForAuth(user), (loginErr) => {
           if (loginErr) {
             console.error("Login error after session regeneration:", loginErr);
             return next(loginErr);
