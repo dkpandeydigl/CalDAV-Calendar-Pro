@@ -549,7 +549,28 @@ export function transformIcsForCancellation(originalIcs: string, eventData: any)
   lines.push('END:VCALENDAR');
 
   // Join with CRLF as required by RFC 5545
-  return lines.join('\r\n');
+  // Remove any line break errors by ensuring there's no line break after property names
+  let icsData = lines.join('\r\n');
+  
+  // Fix the specific pattern where there are line breaks after property names but before colons
+  if (icsData.includes('\r\n:')) {
+    console.log('Fixing incorrect line breaks in ICS data');
+    icsData = icsData.replace(/\r\n:/g, ':');
+  }
+  
+  // Fix another common pattern where line breaks appear between property parameters
+  if (icsData.includes('\r\n;')) {
+    console.log('Fixing incorrect line breaks between parameters');
+    icsData = icsData.replace(/\r\n;/g, ';');
+  }
+  
+  // Fix the pattern where there are line breaks between "mailto:" and the email
+  if (icsData.includes('\r\n mailto:')) {
+    console.log('Fixing incorrect line breaks before mailto:');
+    icsData = icsData.replace(/\r\n mailto:/g, 'mailto:');
+  }
+  
+  return icsData;
 }
 
 /**
