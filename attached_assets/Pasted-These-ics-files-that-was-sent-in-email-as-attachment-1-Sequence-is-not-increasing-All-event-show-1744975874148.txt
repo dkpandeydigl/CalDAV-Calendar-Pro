@@ -1,0 +1,131 @@
+These ics files that was sent in email as attachment.
+1. Sequence is not increasing. All event shows 0
+
+2. I am not sure why the UID changed in second update, Can you find the reason for me ?
+
+Original event
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Replit Calendar App//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:event-1744969037801-u8j34j23@caldavclient.local
+DTSTAMP:20250418T094029Z
+DTSTART:20250421T033000Z
+DTEND:20250421T043000Z
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:test event
+DESCRIPTION:Digital India is a campaign launched by the Government of India
+  to make its services available to citizens electronically via improved onl
+ ine infrastructure and by increasing Internet connectivity.[1][2] The initi
+ ative includes plans to connect rural areas with high-speed internet networ
+ ks. It consists of three core components: the development of secure and sta
+ ble digital infrastructure\\\, delivering government services digitally\\\,
+  and universal digital literacy.Indian Prime Minister Narendra Modi launche
+ d the program on 1 July 2015. Digital India campaign supports other Governm
+ ent of India schemes\\\, such as BharatNet\\\, Make in India\\\, Standup In
+ dia\\\, industrial corridors\\\, Bharatmala Sagarmala and Amrit Bharat Stat
+ ion Scheme\\\, Atmanirbhar Bharat.While India has seen an increase in inter
+ net users in recent years\\\,[3][4] frequent data breaches have raised conc
+ erns over the effectiveness of the Digital India campaign.[5][6][7]
+LOCATION:DIGL Durgapura\, Jaipur \, Rajasthan
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+ATTENDEE;ROLE=Member;PARTSTAT=NEEDS-ACTION:mailto:dktest32@gmail.com
+ATTENDEE;ROLE=Secretary;PARTSTAT=NEEDS-ACTION:mailto:dktest@dil.in
+ATTENDEE;CUTYPE=RESOURCE;CN=res name;X-RESOURCE-TYPE=res type;X-RESOURCE-ID
+ =resource-646b70616e64;X-RESOURCE-CAPACITY=5;PARTSTAT=NEEDS-ACTION:mailto:dkpandey@datamail.in
+RRULE:FREQ=DAILY;INTERVAL=1;COUNT=5
+END:VEVENT
+END:VCALENDAR
+
+First Update 
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Replit Calendar App//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:event-1744969037801-u8j34j23@caldavclient.local
+DTSTAMP:20250418T104957Z
+DTSTART:20250421T033000Z
+DTEND:20250421T043000Z
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:test event update
+DESCRIPTION:Digital India is a campaign launched by the Government of India
+  to make its services available to citizens electronically via improved onl
+ ine infrastructure and by increasing Internet connectivity.[1][2] The initi
+ ative includes plans to connect rural areas with high-speed internet networ
+ ks. It consists of three core components: the development of secure and sta
+ ble digital infrastructure\\\, delivering government services digitally\\\,
+  and universal digital literacy.\\nIndian Prime Minister Narendra Modi laun
+ ched the program on 1 July 2015. Digital India campaign supports other Gove
+ rnment of India schemes\\\, such as BharatNet\\\, Make in India\\\, Standup
+  India\\\, industrial corridors\\\, Bharatmala Sagarmala and Amrit Bharat S
+ tation Scheme\\\, Atmanirbhar Bharat.\\nWhile India has seen an increase in
+  internet users in recent years\\\,[3][4] frequent data breaches have raise
+ d concerns over the effectiveness of the Digital India campaign.[5][6][7]
+LOCATION:DIGL Durgapura\, Jaipur \, Rajasthan
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+ATTENDEE;ROLE=Member;PARTSTAT=NEEDS-ACTION:mailto:dktest32@gmail.com
+ATTENDEE;ROLE=Secretary;PARTSTAT=NEEDS-ACTION:mailto:dktest@dil.in
+ATTENDEE;CUTYPE=RESOURCE;CN=res name;X-RESOURCE-TYPE=res type;X-RESOURCE-ID
+ =resource-646b70616e64;X-RESOURCE-CAPACITY=5;PARTSTAT=NEEDS-ACTION:mailto:dkpandey@datamail.in
+RRULE:FREQ=DAILY;INTERVAL=1;COUNT=5
+END:VEVENT
+END:VCALENDAR
+
+
+Second Update 
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Replit Calendar App//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:event-1744974590992-8e09aba6@caldavclient.local
+DTSTAMP:20250418T110952Z
+DTSTART:20250421T033000Z
+DTEND:20250421T043000Z
+SEQUENCE:0
+STATUS:CONFIRMED
+SUMMARY:test event update
+DESCRIPTION:Digital India is a campaign launched by the Government of India
+  to make its services available to citizens electronically via improved onl
+ ine infrastructure and by increasing Internet connectivity.[1][2] The initi
+ ative includes plans to connect rural areas with high-speed internet networ
+ ks. It consists of three core components: the development of secure and sta
+ ble digital infrastructure\\\, delivering government services digitally\\\,
+  and universal digital literacy.\\nIndian Prime Minister Narendra Modi laun
+ ched the program on 1 July 2015. Digital India campaign supports other Gove
+ rnment of India schemes\\\, such as BharatNet\\\, Make in India\\\, Standup
+  India\\\, industrial corridors\\\, Bharatmala Sagarmala and Amrit Bharat S
+ tation Scheme\\\, Atmanirbhar Bharat.\\nWhile India has seen an increase in
+  internet users in recent years\\\,[3][4] frequent data breaches have raise
+ d concerns over the effectiveness of the Digital India campaign.[5][6][7]di
+ a to make its services available to citizens electronically via improved on
+ line infrastructure and by increasing Internet connectivity.[1][2] The init
+ iative includes plans to connect rural areas with high-speed internet netwo
+ rks. It consists of three core components: the development of secure and st
+ able digital infrastructure\\\, delivering government services digitally\\\
+ , and universal digital literacy.\\nIndian Prime Minister Narendra Modi lau
+ nched the program on 1 July 2015. Digital India campaign supports other Gov
+ ernment of India schemes\\\, such as BharatNet\\\, Make in India\\\, Standu
+ p India\\\, industrial corridors\\\, Bharatmala Sagarmala and Amrit Bharat 
+ Station Scheme\\\, Atmanirbhar Bharat.\\nWhile India has seen an increase i
+ n internet users in recent years\\\,[3][4] frequent data breaches have rais
+ ed concerns over the effectiveness of the Digital India campaign.[5][6][7]
+LOCATION:New Delhi
+ORGANIZER;CN=dk.pandey@xgenplus.com:mailto:dk.pandey@xgenplus.com
+ATTENDEE;ROLE=Member;PARTSTAT=NEEDS-ACTION:mailto:dktest32@gmail.com
+ATTENDEE;ROLE=Secretary;PARTSTAT=NEEDS-ACTION:mailto:dktest@dil.in
+ATTENDEE;CUTYPE=RESOURCE;CN=DK Pandey;X-RESOURCE-TYPE=res type;X-RESOURCE-I
+ D=resource-646b70616e64;X-RESOURCE-CAPACITY=5;PARTSTAT=NEEDS-ACTION:mailto:dkpandey@datamail.in
+RRULE:FREQ=DAILY;INTERVAL=1;COUNT=5
+END:VEVENT
+END:VCALENDAR
