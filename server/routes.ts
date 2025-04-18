@@ -991,20 +991,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       console.log(`Fetching calendars for user ID: ${userId}, username: ${req.user?.username || 'unknown'}`);
       
-      const calendars = await storage.getCalendars(userId);
-      console.log(`Found ${calendars.length} calendars for user ${userId}`);
+      // Try to retrieve calendars from storage
+      let calendars = await storage.getCalendars(userId);
+      console.log(`Initially found ${calendars.length} calendars for user ${userId}`);
       
-      // Log some basic info about each calendar
+      // If no calendars found but user has a server connection, force a sync
+      if (calendars.length === 0) {
+        console.log(`No calendars found for user ${userId}. Checking for CalDAV server connection...`);
+        
+        try {
+          // Check if user has a CalDAV server connection
+          const serverConnection = await storage.getServerConnection(userId);
+          
+          if (serverConnection && serverConnection.status === 'connected') {
+            console.log(`User ${userId} has active CalDAV connection. Forcing immediate sync...`);
+            
+            try {
+              // Import sync service and force an immediate sync
+              const { syncService } = await import('./sync-service');
+              await syncService.synchronizeUser(userId, { 
+                forceRefresh: true,
+                calendarId: null,
+                isGlobalSync: true,
+                preserveLocalEvents: true,
+                preserveLocalDeletes: true
+              });
+              
+              // Get calendars again after the sync
+              calendars = await storage.getCalendars(userId);
+              console.log(`After forced sync, found ${calendars.length} calendars for user ${userId}`);
+            } catch (syncError) {
+              console.error(`Error during emergency sync for user ${userId}:`, syncError);
+              // Continue with empty calendar list if sync fails
+            }
+          } else {
+            console.log(`User ${userId} has no active CalDAV connection. Can't sync.`);
+          }
+        } catch (connectionCheckError) {
+          console.error(`Error checking server connection for user ${userId}:`, connectionCheckError);
+        }
+      }
+      
+      // Log calendar information
       if (calendars.length > 0) {
+        console.log(`Returning ${calendars.length} calendars for user ${userId}`);
         calendars.forEach((cal, idx) => {
           console.log(`Calendar ${idx+1}: ID=${cal.id}, Name="${cal.name}", Color=${cal.color}, UserID=${cal.userId}, URL=${cal.url || 'None'}`);
         });
       } else {
-        console.log(`No calendars found for user ${userId}. Checking if any exist in storage...`);
+        console.log(`No calendars available for user ${userId} even after sync attempt`);
+        
+        // Detailed debugging - check if calendars exist for other users
         try {
-          // Try to get all calendars (regardless of user) to help debug
+          // Try to get all calendars to help debug
           const allCalendars = await storage.getAllCalendars();
-          console.log(`Total calendars in storage: ${allCalendars.length}`);
+          console.log(`Total calendars in storage for all users: ${allCalendars.length}`);
           if (allCalendars.length > 0) {
             // Log the user IDs to help debugging
             const userIds = [...new Set(allCalendars.map(cal => cal.userId))];
@@ -1015,6 +1056,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      // Send response
       res.json(calendars);
     } catch (err) {
       console.error("Error fetching calendars:", err);
