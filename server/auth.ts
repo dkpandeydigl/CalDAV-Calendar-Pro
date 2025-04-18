@@ -632,28 +632,57 @@ export function setupAuth(app: Express) {
   app.post("/api/login", async (req, res, next) => {
     const { username, password, caldavServerUrl } = req.body;
     
+    // Add enhanced logging for debugging
+    console.log(`Login attempt for user ${username} with CalDAV server URL: ${caldavServerUrl || 'not provided'}`);
+    
     // Store caldavServerUrl in req so it can be accessed by the LocalStrategy
     (req as any).caldavServerUrl = caldavServerUrl;
     
+    // Handle missing required fields
+    if (!username || !password) {
+      console.log('Login attempt failed: Missing username or password');
+      return res.status(400).json({ message: "Username and password are required" });
+    }
+    
     passport.authenticate("local", async (err: Error | null, user: Express.User | false, info: { message: string } | undefined) => {
-      if (err) return next(err);
+      if (err) {
+        console.error('Authentication error in passport strategy:', err);
+        return next(err);
+      }
+      
       if (!user) {
+        console.log(`Authentication failed for user ${username}: ${info?.message || 'Unknown reason'}`);
         return res.status(401).json({ message: info?.message || "Invalid username or password" });
       }
 
       // App login successful, now check CalDAV credentials
       try {
-        const caldavResult = await verifyCalDAVCredentials(
+        console.log(`Verifying CalDAV credentials for ${username} at ${caldavServerUrl || 'default URL'}`);
+        
+        // Add timeout to CalDAV verification to prevent hanging requests
+        const caldavPromise = verifyCalDAVCredentials(
           caldavServerUrl,
           username,
           password
         );
         
+        // Create a timeout promise
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("CalDAV server connection timed out")), 15000); // 15 second timeout
+        });
+        
+        // Race the promises
+        const caldavResult = await Promise.race([caldavPromise, timeoutPromise]);
+        
         if (!caldavResult || (typeof caldavResult === 'boolean' && !caldavResult)) {
+          console.log(`CalDAV verification failed for ${username} at ${caldavServerUrl || 'default URL'}`);
           return res.status(400).json({ 
             message: "Invalid CalDAV credentials. Please check your server URL, username and password." 
           });
         }
+        
+        console.log(`CalDAV verification successful for ${username}`);
+        
         
         // Extract user info from the CalDAV server response
         const caldavUserInfo = typeof caldavResult === 'object' ? caldavResult : null;
@@ -805,6 +834,28 @@ export function setupAuth(app: Express) {
     } else {
       res.status(401).json({ message: "Not authenticated" });
     }
+  });
+  
+  // Diagnostic endpoint for checking authentication status details
+  app.get("/api/auth-check", (req, res) => {
+    const authStatus = {
+      isAuthenticated: req.isAuthenticated(),
+      sessionExists: !!req.session,
+      hasUser: !!req.user,
+      userId: req.user?.id,
+      username: req.user?.username,
+      // Don't include password or sensitive data
+      sessionId: req.sessionID,
+      hasCookies: !!req.headers.cookie,
+      cookieCount: req.headers.cookie ? req.headers.cookie.split(';').length : 0,
+    };
+    
+    console.log("Auth check requested:", authStatus);
+    
+    res.json({
+      status: authStatus.isAuthenticated ? "authenticated" : "unauthenticated",
+      details: authStatus
+    });
   });
   
   // Update user timezone preference

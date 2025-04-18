@@ -44,7 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       try {
-        const res = await apiRequest("POST", "/api/login", credentials);
+        // Ensure caldavServerUrl is explicitly included in the request
+        const requestData = {
+          username: credentials.username,
+          password: credentials.password,
+          caldavServerUrl: credentials.caldavServerUrl || "https://zpush.ajaydata.com/davical/"
+        };
+
+        const res = await apiRequest("POST", "/api/login", requestData);
         const userData = await res.json();
         console.log("Login response received:", {
           status: res.status,
@@ -111,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async (credentials: InsertUser) => {
+    mutationFn: async (credentials: InsertUser & { caldavServerUrl?: string }) => {
       console.log("Register mutation called with credentials:", {
         username: credentials.username,
         hasPassword: !!credentials.password,
@@ -119,7 +126,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       try {
-        const res = await apiRequest("POST", "/api/register", credentials);
+        // Explicitly include caldavServerUrl in the request
+        const requestData = {
+          ...credentials,
+          // Make sure caldavServerUrl is included in the request
+          caldavServerUrl: credentials.caldavServerUrl
+        };
+
+        const res = await apiRequest("POST", "/api/register", requestData);
         const userData = await res.json();
         console.log("Registration response received:", {
           status: res.status,

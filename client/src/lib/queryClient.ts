@@ -20,27 +20,54 @@ export async function apiRequest(
 ): Promise<Response> {
   console.log(`Making ${method} request to ${url}`, data ? 'with data' : 'without data');
   
-  const res = await fetch(url, {
-    method,
-    headers: {
-      ...(data ? { "Content-Type": "application/json" } : {}),
-      "X-Requested-With": "XMLHttpRequest" // Helps some servers identify AJAX requests
-    },
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "include", // Include cookies for cross-origin requests
-    mode: "same-origin", // Ensures cookies are sent for same-origin requests
-    cache: "no-cache" // Prevents caching to ensure fresh responses
-  });
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        ...(data ? { "Content-Type": "application/json" } : {}),
+        "X-Requested-With": "XMLHttpRequest" // Helps some servers identify AJAX requests
+      },
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include", // Include cookies for cross-origin requests
+      mode: "same-origin", // Ensures cookies are sent for same-origin requests
+      cache: "no-cache" // Prevents caching to ensure fresh responses
+    });
 
-  if (method === 'POST' && (url === '/api/login' || url === '/api/register')) {
-    console.log(`Auth request to ${url} completed with status: ${res.status}`);
-    // Log cookies for debugging (not the values, just existence)
-    const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
-    console.log('Cookies present after auth:', cookies.length ? cookies.join(', ') : 'none');
+    if (method === 'POST' && (url === '/api/login' || url === '/api/register')) {
+      console.log(`Auth request to ${url} completed with status: ${res.status}`);
+      // Log cookies for debugging (not the values, just existence)
+      const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+      console.log('Cookies present after auth:', cookies.length ? cookies.join(', ') : '');
+      
+      // For 5xx server errors, provide more detailed error information
+      if (res.status >= 500) {
+        console.error(`Server error (${res.status}) during auth request to ${url}`);
+        try {
+          const errorText = await res.text();
+          console.error('Server error response:', errorText);
+          throw new Error(`Server error (${res.status}): ${errorText}`);
+        } catch (textError) {
+          throw new Error(`Server error (${res.status}): Unable to read response`);
+        }
+      }
+    }
+    
+    // For non-authentication endpoints, just log 5xx errors
+    if (res.status >= 500) {
+      console.error(`Server error (${res.status}) for ${method} request to ${url}`);
+    }
+    
+    await throwIfResNotOk(res);
+    return res;
+  } catch (error) {
+    // Log network errors
+    if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+      console.error(`Network error for ${method} request to ${url}: Could not connect to server`);
+      throw new Error('Network error: Could not connect to server. Please check your internet connection.');
+    }
+    
+    throw error;
   }
-  
-  await throwIfResNotOk(res);
-  return res;
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw" | "continueWithEmpty";
