@@ -218,12 +218,22 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   }, [expandedOwnerEmails, groupedSharedCalendars]);
   
   // Function to toggle a group's expansion state
-  const handleToggleGroupExpansion = (ownerEmail: string) => {
+  const handleToggleGroupExpansion = (ownerEmail: string, e?: React.MouseEvent) => {
+    // Stop propagation if event is provided
+    if (e) {
+      e.stopPropagation();
+    }
+
+    console.log(`Toggling expansion for owner: ${ownerEmail}`, 
+                `Current state: ${expandedOwnerEmails.has(ownerEmail) ? 'expanded' : 'collapsed'}`);
+    
     setExpandedOwnerEmails(prev => {
       const newSet = new Set(prev);
       if (newSet.has(ownerEmail)) {
+        console.log(`Collapsing group: ${ownerEmail}`);
         newSet.delete(ownerEmail);
       } else {
+        console.log(`Expanding group: ${ownerEmail}`);
         newSet.add(ownerEmail);
       }
       return newSet;
@@ -948,7 +958,11 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                 }
                                 <div className="text-xs text-left truncate max-w-[160px]">
                                   <span className="italic">Shared by:</span>{' '}
-                                  <span className="font-medium">{ownerEmail}</span>
+                                  <span className="font-medium" title={ownerEmail}>
+                                    {ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' 
+                                      ? ownerEmail 
+                                      : 'Unknown owner'}
+                                  </span>
                                 </div>
                               </div>
                               
