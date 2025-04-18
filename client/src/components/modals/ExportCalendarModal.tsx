@@ -97,11 +97,14 @@ export default function ExportCalendarModal({
         queryParams.set('endDate', endDate.toISOString());
       }
       
-      // Use our direct export endpoint that doesn't need authentication
-      const exportUrl = `/api/quick-export?${queryParams.toString()}`;
-      console.log('Using direct export URL:', exportUrl);
+      // Use the proven working export-simple endpoint with properly formatted query
+      const queryStr = `ids=${selectedCalendarIds.join(',')}${showDateFilter && startDate && endDate ? 
+        `&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}` : ''}`;
       
-      // Open in a new tab to handle download
+      const exportUrl = `/api/export-simple?${queryStr}`;
+      console.log('Using working export URL with carefully formatted query:', exportUrl);
+      
+      // Open in a new tab to handle download, ensuring cookies and credentials are preserved
       window.open(exportUrl, '_blank');
       
       // Show success message
