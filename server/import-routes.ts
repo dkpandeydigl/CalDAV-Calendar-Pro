@@ -188,13 +188,8 @@ export function registerImportRoutes(app: Express) {
           [...userCalendars, ...sharedCalendars].map(c => ({ id: c.id, name: c.name })));
         
         // Check if any calendar exists with this ID in the system
-        // Use the Map.values() approach since getAllCalendars isn't available
-        const allCalendars = [...await storage.getCalendars(0), ...await storage.getAllCalendarSharings()
-          .then(sharings => Promise.all(
-            sharings.map(s => storage.getCalendar(s.calendarId))
-          ))
-          .then(calendars => calendars.filter(Boolean) as Calendar[])
-        ];
+        // Get all calendars from the storage
+        const allCalendars = await storage.getAllCalendars();
         
         console.log(`Collected ${allCalendars.length} calendars to check`);
         const calendarExists = allCalendars.some(cal => cal?.id === calendarId);
