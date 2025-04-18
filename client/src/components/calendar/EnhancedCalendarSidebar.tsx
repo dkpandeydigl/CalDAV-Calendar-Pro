@@ -126,6 +126,9 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   // State for tracking which shared calendar groups are expanded (multiple can be expanded)
   const [expandedOwnerEmails, setExpandedOwnerEmails] = useState<Set<string>>(new Set());
   
+  // Cache for mapping user IDs to owner emails
+  const [ownerEmailsById, setOwnerEmailsById] = useState<Map<number, string>>(new Map());
+  
   // Inherit other state variables from original implementation
   const [showAddCalendar, setShowAddCalendar] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
@@ -178,14 +181,31 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     // Get owner email with multiple fallbacks to ensure we always have a value
     let ownerEmail = 'Unknown';
     
-    if (calendar.owner) {
-      if (calendar.owner.email) {
-        ownerEmail = calendar.owner.email;
-      } else if (calendar.owner.username) {
-        ownerEmail = calendar.owner.username;
-      }
-    } else if (calendar.ownerEmail) {
+    // Debug log to see what's coming from the server
+    console.log("Calendar owner data:", 
+                calendar.name, 
+                "owner:", calendar.owner, 
+                "ownerEmail:", calendar.ownerEmail);
+    
+    // Use a better cascade of fallbacks for owner email
+    if (calendar.owner?.email && calendar.owner.email !== 'undefined' && calendar.owner.email !== 'null') {
+      ownerEmail = calendar.owner.email;
+    } else if (calendar.ownerEmail && calendar.ownerEmail !== 'undefined' && calendar.ownerEmail !== 'null') {
       ownerEmail = calendar.ownerEmail;
+    } else if (calendar.owner?.username && calendar.owner.username !== 'undefined' && calendar.owner.username !== 'null') {
+      ownerEmail = calendar.owner.username;
+    } else if (calendar.userId && calendar.userId !== ownerEmailsById.get(calendar.userId)) {
+      const cachedOwnerEmail = ownerEmailsById.get(calendar.userId);
+      if (cachedOwnerEmail) {
+        ownerEmail = cachedOwnerEmail;
+      }
+    }
+
+    // If we still have 'Unknown', try one more time with calendar's userId
+    if (ownerEmail === 'Unknown' && calendar.userId) {
+      // Store this mapping for future use
+      setOwnerEmailsById(prev => new Map(prev).set(calendar.userId, `User ${calendar.userId}`));
+      ownerEmail = `User ${calendar.userId}`;
     }
     
     // Create the group if it doesn't exist
@@ -949,7 +969,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                             {/* Group Header - always visible */}
                             <div 
                               className={`py-2 px-3 flex justify-between items-center cursor-pointer hover:bg-gray-50 transition-colors ${expandedOwnerEmails.has(ownerEmail) ? 'bg-gray-50' : 'bg-white'}`}
-                              onClick={() => handleToggleGroupExpansion(ownerEmail)}
+                              onClick={(e) => handleToggleGroupExpansion(ownerEmail, e)}
                             >
                               <div className="flex items-center space-x-2">
                                 {expandedOwnerEmails.has(ownerEmail) ? 
