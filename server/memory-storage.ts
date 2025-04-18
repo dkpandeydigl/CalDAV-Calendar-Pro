@@ -372,14 +372,25 @@ export class MemStorage implements IStorage {
       const calendar = await this.getCalendar(sharing.calendarId);
       if (calendar) {
         console.log(`Adding shared calendar "${calendar.name}" to user's shared calendars`);
+        // Get the full owner information
+        const owner = await this.getUser(calendar.userId);
+        
         calendars.push({
           ...calendar,
-          // Add owner information to shared calendars
+          // Add complete owner information to shared calendars
           owner: {
-            userId: calendar.userId
-          } as any,
+            id: calendar.userId,
+            username: owner?.username || 'unknown',
+            email: owner?.email || owner?.username || 'unknown'
+          },
+          // Add owner email for backward compatibility
+          ownerEmail: owner?.email || owner?.username || 'unknown',
           // Add permission level to shared calendars
-          permissionLevel: sharing.permissionLevel
+          permissionLevel: sharing.permissionLevel,
+          // Add sharing ID for permission management
+          sharingId: sharing.id,
+          // Mark as shared for UI
+          isShared: true
         } as any);
       }
     }
