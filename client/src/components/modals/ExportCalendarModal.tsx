@@ -146,9 +146,9 @@ export default function ExportCalendarModal({
         if (filenameMatch && filenameMatch[1]) {
           filename = filenameMatch[1].replace(/['"]/g, '');
         }
-      } else if (validCalendarIds.length === 1) {
+      } else if (selectedCalendarIds.length === 1) {
         // Use calendar name if single calendar
-        const calendar = allCalendars.find(cal => cal.id === validCalendarIds[0]);
+        const calendar = allCalendars.find(cal => cal.id === selectedCalendarIds[0]);
         if (calendar) {
           const safeCalendarName = calendar.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
           filename = `calendar_${safeCalendarName}.ics`;
