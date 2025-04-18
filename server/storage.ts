@@ -93,6 +93,10 @@ export interface IStorage {
   
   // Session store for authentication
   sessionStore: session.Store;
+  
+  // Helper methods for syncing
+  getActiveUserIds(): Promise<number[]>;
+  getAllServerConnections(): Promise<ServerConnection[]>;
 }
 
 export class MemStorage implements IStorage {

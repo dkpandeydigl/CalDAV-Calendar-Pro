@@ -184,6 +184,11 @@ export function registerImportRoutes(app: Express) {
   // Endpoint to import events into a calendar
   app.post("/api/calendars/import-events", isAuthenticated, async (req, res) => {
     try {
+      if (!req.user) {
+        console.log("No authenticated user found in request", { session: req.session?.id || 'no-session' });
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
       const userId = (req.user as User).id;
       const { calendarId, events, replaceExisting } = req.body;
       
@@ -207,30 +212,50 @@ export function registerImportRoutes(app: Express) {
       // Validate the first event to see if structure is correct
       console.log("First event sample:", JSON.stringify(events[0]));
       
+      // Debug authentication state
+      console.log(`User authentication confirmed: ID ${userId}, checking calendars...`);
+      
       // Check if user has permission to add events to this calendar
       const userCalendars = await storage.getCalendars(userId);
-      const sharedCalendars = await storage.getSharedCalendars(userId);
+      console.log(`User ${userId} has ${userCalendars.length} personal calendars`);
       
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      console.log(`User ${userId} has ${sharedCalendars.length} shared calendars`);
+      
+      // Print detailed debug info
       console.log("User calendars:", userCalendars.map(c => ({ id: c.id, name: c.name })));
       console.log("Shared calendars:", sharedCalendars.map(c => ({ id: c.id, name: c.name })));
       
-      // Find the target calendar and check permissions
+      // Verify calendar ID type matches
+      console.log(`Target calendar ID: ${calendarId} (type: ${typeof calendarId})`);
+      
+      // If calendarId is a string, try to convert it to a number
+      let targetCalendarId = calendarId;
+      if (typeof calendarId === 'string' && !isNaN(Number(calendarId))) {
+        targetCalendarId = Number(calendarId);
+        console.log(`Converted calendar ID from string to number: ${targetCalendarId}`);
+      }
+      
+      // Find the target calendar and check permissions with better type handling
       const targetCalendar = [...userCalendars, ...sharedCalendars].find(
-        cal => cal.id === calendarId
+        cal => cal.id === targetCalendarId || cal.id === calendarId
       );
       
       // If the calendar doesn't exist in the user's calendars or shared calendars, they don't have access
       if (!targetCalendar) {
         console.log("Calendar not found in user's calendars:", calendarId);
         console.log(`User ID: ${userId}, Available calendars:`, 
-          [...userCalendars, ...sharedCalendars].map(c => ({ id: c.id, name: c.name })));
+          [...userCalendars, ...sharedCalendars].map(c => ({ id: c.id, name: c.name, idType: typeof c.id })));
         
         // Check if any calendar exists with this ID in the system
-        // Get all calendars from the storage
         const allCalendars = await storage.getAllCalendars();
         
         console.log(`Collected ${allCalendars.length} calendars to check`);
-        const calendarExists = allCalendars.some(cal => cal?.id === calendarId);
+        
+        // Try to match with both original and converted ID
+        const calendarExists = allCalendars.some(cal => 
+          cal?.id === targetCalendarId || cal?.id === calendarId
+        );
         
         if (calendarExists) {
           console.log("Calendar exists in system but user doesn't have access:", calendarId);
