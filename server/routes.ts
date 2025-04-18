@@ -1,7 +1,7 @@
 import { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
-import { storage } from "./memory-storage"; // Using in-memory storage instead of database storage
+import { storage } from "./storage"; // Using standardized storage import
 import { registerCancellationTestEndpoint } from './cancellation/test-endpoint';
 import { 
   insertEventSchema, 

@@ -28,6 +28,7 @@ export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getActiveUserIds(): Promise<number[]>;
   getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, userData: Partial<User>): Promise<User | undefined>;
@@ -841,13 +842,51 @@ export class MemStorage implements IStorage {
   }
   
   // Helper methods for syncing
-  async getActiveUserIds(): Promise<number[]> {
-    // In memory storage, we'll consider all users as "active"
-    return Array.from(this.users.values()).map(user => user.id);
-  }
   
   async getAllServerConnections(): Promise<ServerConnection[]> {
     return Array.from(this.serverConnectionsMap.values());
+  }
+  
+  // Get active user IDs from session store
+  async getActiveUserIds(): Promise<number[]> {
+    return new Promise((resolve) => {
+      const activeUserIds = new Set<number>();
+      
+      if (!this.sessionStore) {
+        console.log("No session store available, returning empty active user list");
+        return resolve([]);
+      }
+      
+      // Get all sessions from the store
+      this.sessionStore.all((err, sessions) => {
+        if (err) {
+          console.error("Error retrieving sessions:", err);
+          return resolve([]);
+        }
+        
+        if (!sessions) {
+          console.log("No sessions found");
+          return resolve([]);
+        }
+        
+        // Extract user IDs from passport data in sessions
+        Object.values(sessions).forEach((session: any) => {
+          try {
+            if (session.passport && session.passport.user) {
+              const userId = parseInt(session.passport.user);
+              if (!isNaN(userId)) {
+                activeUserIds.add(userId);
+              }
+            }
+          } catch (error) {
+            console.error("Error processing session:", error);
+          }
+        });
+        
+        console.log(`Found ${activeUserIds.size} active user sessions`);
+        resolve(Array.from(activeUserIds));
+      });
+    });
   }
 }
 

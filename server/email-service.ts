@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { SmtpConfig } from '@shared/schema';
-import { storage } from './memory-storage';
+import { storage } from './storage';
 import { formatICalDate } from './ical-utils';
 import { generateEventAgendaPDF } from './pdf-generator';
 import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
