@@ -575,5 +575,32 @@ function CalendarContent() {
 }
 
 export default function Calendar() {
+  const { isAuthenticated, isLoading: authLoading, forceRefreshUserData } = useAuth();
+  const [forceRefreshAttempted, setForceRefreshAttempted] = useState(false);
+  
+  // When the component mounts, trigger a data refresh if authenticated
+  useEffect(() => {
+    if (isAuthenticated && !forceRefreshAttempted) {
+      console.log('Calendar: Triggering force refresh on mount');
+      forceRefreshUserData();
+      setForceRefreshAttempted(true);
+    }
+  }, [isAuthenticated, forceRefreshUserData, forceRefreshAttempted]);
+  
+  // Show loading screen if auth is still loading
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <h2 className="text-xl font-medium">Loading your calendar...</h2>
+          <p className="text-sm text-muted-foreground mt-2">
+            Please wait while we prepare your calendar data
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
   return <CalendarContent />;
 }
