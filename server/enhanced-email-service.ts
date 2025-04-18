@@ -600,21 +600,30 @@ export class EnhancedEmailService {
       switch (type) {
         case 'invitation':
           method = 'REQUEST';
+          // Get the current sequence from the sequence service for new invitations
+          const invitationSequence = await sequenceService.getCurrentSequence(data.uid, data.rawData) || 0;
+          console.log(`[EnhancedEmailService] Preview: Using sequence ${invitationSequence} for invitation with UID ${data.uid}`);
+          
           // Use centralized ICS service for invitation preview
           icsData = data.icsData || generateNewEventICS({
             ...data,
             method,
-            sequence: data.sequence || 0
+            sequence: invitationSequence
           }, data.rawData || null);
           htmlContent = this.generateInvitationEmailContent(data);
           break;
         case 'update':
           method = 'REQUEST';
+          // Get the next sequence from the sequence service for updates
+          const currentUpdateSequence = await sequenceService.getCurrentSequence(data.uid, data.rawData);
+          const nextUpdateSequence = await sequenceService.getNextSequence(data.uid, data.rawData);
+          console.log(`[EnhancedEmailService] Preview: Using sequence ${nextUpdateSequence} (was ${currentUpdateSequence}) for update with UID ${data.uid}`);
+          
           // Use centralized ICS service for update preview
           const updateData = {
             ...data,
             method,
-            sequence: (data.sequence || 0) + 1
+            sequence: nextUpdateSequence
           };
           
           // Apply the same UID preservation logic used in sendEventUpdate
@@ -641,12 +650,17 @@ export class EnhancedEmailService {
           break;
         case 'cancellation':
           method = 'CANCEL';
+          // Get the next sequence from the sequence service for cancellations
+          const currentCancelSequence = await sequenceService.getCurrentSequence(data.uid, data.rawData);
+          const nextCancelSequence = await sequenceService.getNextSequence(data.uid, data.rawData);
+          console.log(`[EnhancedEmailService] Preview: Using sequence ${nextCancelSequence} (was ${currentCancelSequence}) for cancellation with UID ${data.uid}`);
+          
           // Use centralized ICS service for cancellation preview
           const cancelData = {
             ...data,
             status: 'CANCELLED',
             method,
-            sequence: (data.sequence || 0) + 1
+            sequence: nextCancelSequence
           };
           icsData = data.icsData || generateCancelledEventICS(cancelData, data.rawData || null);
           htmlContent = this.generateCancellationEmailContent(cancelData);
