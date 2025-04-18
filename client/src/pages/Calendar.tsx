@@ -293,19 +293,47 @@ function CalendarContent() {
   const [cacheVersion, setCacheVersion] = useState(0);
   const { events: rawEvents, isLoading: isEventsLoading, refetch, deleteEvent } = useCalendarEvents(viewStartDate, viewEndDate);
   
-  // Force loading state to true for a brief period after component mounts
+  // Force loading state to true for a brief period after component mounts,
+  // and also enforce a maximum loading time to prevent infinite loading
   const [initialLoadingComplete, setInitialLoadingComplete] = useState(false);
+  const [forceLoadComplete, setForceLoadComplete] = useState(false);
+  
+  // State for manual reload button
+  const [showReloadButton, setShowReloadButton] = useState(false);
+  
   useEffect(() => {
     // Always show loading state when component first mounts
-    const timer = setTimeout(() => {
+    const initialTimer = setTimeout(() => {
       setInitialLoadingComplete(true);
     }, 1500); // Show loading for at least 1.5 seconds
     
-    return () => clearTimeout(timer);
+    // Force complete loading after 8 seconds even if data is still loading
+    // This prevents users from being stuck in an indefinite loading state
+    const forceTimer = setTimeout(() => {
+      console.log("Force loading complete due to timeout");
+      setForceLoadComplete(true);
+      
+      // Show reload button after a brief delay
+      setTimeout(() => {
+        setShowReloadButton(true);
+      }, 1000);
+    }, 8000);
+    
+    return () => {
+      clearTimeout(initialTimer);
+      clearTimeout(forceTimer);
+    };
   }, []);
   
-  // Combined loading state for all data
-  const isLoading = isEventsLoading || isCalendarsLoading || isSharedCalendarsLoading || !initialLoadingComplete;
+  // Function to handle manual page reload
+  const handleForceReload = () => {
+    console.log("User triggered manual reload");
+    window.location.reload();
+  };
+  
+  // Combined loading state for all data, with a maximum loading time
+  const isLoading = (isEventsLoading || isCalendarsLoading || isSharedCalendarsLoading || !initialLoadingComplete) 
+                    && !forceLoadComplete;
   
   // Use useMemo to ensure filteredEvents only updates when rawEvents or cacheVersion changes
   const events = useMemo(() => {
@@ -503,7 +531,23 @@ function CalendarContent() {
               <div className="absolute inset-0 bg-white/80 z-10 flex justify-center items-center">
                 <div className="flex flex-col items-center">
                   <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-                  <div className="text-lg font-medium text-primary">Loading calendars and events...</div>
+                  <div className="text-lg font-medium text-primary mb-2">Loading calendars and events...</div>
+                  
+                  {showReloadButton && (
+                    <div className="mt-4">
+                      <p className="text-amber-600 mb-2 text-center">
+                        Taking longer than expected? The WebSocket connection might have issues.
+                      </p>
+                      <Button 
+                        variant="outline" 
+                        onClick={handleForceReload}
+                        className="mt-2"
+                      >
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        Reload Page
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

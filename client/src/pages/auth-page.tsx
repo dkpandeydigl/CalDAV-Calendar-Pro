@@ -102,9 +102,38 @@ export default function AuthPage() {
         setLocation("/");
       }, 500);
       
-      return () => clearTimeout(timer);
+      // Add a safety timeout to force redirect even if something goes wrong
+      const forceRedirectTimer = setTimeout(() => {
+        console.log("Auth page: Force redirecting due to timeout");
+        window.location.href = "/"; // Direct browser redirect as fallback
+      }, 3000);
+      
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(forceRedirectTimer);
+      };
     }
   }, [user, redirecting, isLoading, setLocation]);
+  
+  // State for showing manual redirect button after timeout
+  const [showManualRedirect, setShowManualRedirect] = useState(false);
+  
+  // Show manual redirect button after 5 seconds in case automatic redirect fails
+  useEffect(() => {
+    if (redirecting) {
+      const timer = setTimeout(() => {
+        setShowManualRedirect(true);
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [redirecting]);
+  
+  // Function to handle manual redirect
+  const handleManualRedirect = () => {
+    console.log("Manual redirect triggered by user");
+    window.location.href = "/";
+  };
   
   // Show loading state during redirection
   if (redirecting || (user && !isLoading)) {
@@ -116,6 +145,21 @@ export default function AuthPage() {
           <p className="text-sm text-muted-foreground mt-2">
             Redirecting to your calendar...
           </p>
+          
+          {showManualRedirect && (
+            <div className="mt-8">
+              <p className="text-sm text-amber-600 mb-2">
+                Taking longer than expected? Try manual redirection:
+              </p>
+              <Button 
+                variant="outline" 
+                onClick={handleManualRedirect}
+                className="mt-2"
+              >
+                Go to Calendar
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     );
