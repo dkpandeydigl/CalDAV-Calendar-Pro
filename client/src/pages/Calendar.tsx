@@ -619,7 +619,7 @@ function CalendarContent() {
 }
 
 export default function Calendar() {
-  const { user, isLoading: authLoading, forceRefreshUserData } = useAuth();
+  const { user, isLoading: authLoading, forceRefreshUserData = () => {} } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   

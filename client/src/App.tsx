@@ -17,6 +17,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { CalendarProvider } from "@/contexts/CalendarContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { EnhancedSyncProvider } from "@/contexts/EnhancedSyncContext";
+// Remove the old auth hook
+// import { useAuth } from "@/hooks/use-auth";
 
 function Router() {
   return (
