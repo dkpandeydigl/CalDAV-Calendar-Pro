@@ -2,7 +2,7 @@ import { type Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import session from "express-session";
-import { storage } from "./memory-storage";
+import { storage } from "./storage";
 import bcrypt from "bcryptjs";
 import { InsertUser, User } from "@shared/schema";
 import { DAVClient } from "tsdav";
@@ -780,7 +780,7 @@ export function setupAuth(app: Express) {
         }
         
         // Clear the cookie on the client side as well
-        res.clearCookie('connect.sid');
+        res.clearCookie('caldav_app.sid');
         res.status(200).json({ success: true, message: "Logged out successfully" });
       });
     });
@@ -851,22 +851,22 @@ export function setupAuth(app: Express) {
       if (req.session) {
         console.log("Session exists but no authentication");
         
-        // If there's a session but no auth, it might be corrupted
-        req.logout((logoutErr) => {
-          if (logoutErr) {
-            console.error("Logout error during session cleanup:", logoutErr);
+        // If there's a session but no auth, simply return 401 without trying to regenerate
+        // This simplifies the flow and avoids potential race conditions
+        res.status(401).json({ 
+          message: "Not authenticated. Please log in.",
+          sessionExists: true,
+          sessionId: req.sessionID
+        });
+        
+        // In the background, clean up the corrupted session 
+        // without waiting for it to complete before responding
+        req.session.destroy((err) => {
+          if (err) {
+            console.error("Error destroying corrupted session:", err);
+          } else {
+            console.log("Successfully cleaned up corrupted session in background");
           }
-          
-          // Regenerate session to fix potential corruption
-          req.session.regenerate((regenerateErr) => {
-            if (regenerateErr) {
-              console.error("Session regeneration error:", regenerateErr);
-              res.status(401).json({ message: "Not authenticated. Session error." });
-            } else {
-              console.log("Session regenerated successfully during auth check");
-              res.status(401).json({ message: "Not authenticated. Please log in." });
-            }
-          });
         });
       } else {
         console.log("No session found for user authentication");

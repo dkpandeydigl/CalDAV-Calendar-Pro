@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { storage } from "./memory-storage"; // Using in-memory storage instead of database storage
+import { storage } from "./storage"; // Using standardized storage import
 import { initializeSyncService, syncService } from "./sync-service";
 import { initializeWebSocketServer } from "./websocket-handler";
 import { enhancedSyncService } from "./enhanced-sync-service";
