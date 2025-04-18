@@ -21,11 +21,11 @@ export function useUserDetails(userIds: number[]) {
     [userIds]
   );
 
-  // Build the query parameter
-  const queryParam = useMemo(() => 
-    uniqueUserIds.length > 0 ? uniqueUserIds.join(',') : '',
-    [uniqueUserIds]
-  );
+  // Build the query parameter - ensure we're using 'ids' parameter which server expects
+  const queryParam = useMemo(() => {
+    if (uniqueUserIds.length === 0) return '';
+    return `ids=${uniqueUserIds.join(',')}`;
+  }, [uniqueUserIds]);
 
   const {
     data,
@@ -34,7 +34,19 @@ export function useUserDetails(userIds: number[]) {
     refetch
   } = useQuery<UserDetails[]>({
     queryKey: ['/api/users/details', queryParam],
-    queryFn: getQueryFn({ on401: 'returnNull' }),
+    queryFn: async () => {
+      if (uniqueUserIds.length === 0) return [];
+      try {
+        // Direct API call to avoid issues with query string parameters
+        const response = await fetch(`/api/users/details?ids=${uniqueUserIds.join(',')}`);
+        if (response.status === 401) return null;
+        if (!response.ok) throw new Error(`API Error: ${response.status}`);
+        return await response.json();
+      } catch (err) {
+        console.error("Error fetching user details:", err);
+        return []; // Return empty array as fallback
+      }
+    },
     enabled: uniqueUserIds.length > 0, // Only run query if we have user IDs
     retry: 1, // Retry once if failed
     staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
