@@ -6,6 +6,7 @@ import { initializeSyncService, syncService } from "./sync-service";
 import { initializeWebSocketServer } from "./websocket-handler";
 import { enhancedSyncService } from "./enhanced-sync-service";
 import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
+import { sequenceService } from "./sequence-service"; // Import the sequence service for RFC 5545 compliance
 
 const app = express();
 app.use(express.json());
@@ -61,6 +62,14 @@ app.use((req, res, next) => {
   // Initialize the sync service for automatic CalDAV synchronization
   await initializeSyncService();
   log("CalDAV synchronization service initialized with background sync");
+  
+  // Initialize the sequence service for RFC 5545 compliance
+  try {
+    await sequenceService.init();
+    log("RFC 5545 sequence tracking service initialized")
+  } catch (error) {
+    console.error("Error initializing sequence service:", error);
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

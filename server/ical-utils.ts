@@ -1,6 +1,32 @@
 /**
  * Utility functions for working with iCalendar data
+ * 
+ * This file contains helpers for generating, parsing, and manipulating
+ * iCalendar (RFC 5545) formatted data.
  */
+
+/**
+ * Extracts the sequence number from an iCalendar string
+ * 
+ * @param icalData The raw iCalendar data
+ * @returns The sequence number (defaults to 0 if not found)
+ */
+export function extractSequenceFromICal(icalData: string): number {
+  try {
+    if (!icalData) return 0;
+    
+    // Look for SEQUENCE: property
+    const sequenceMatch = icalData.match(/SEQUENCE:(\d+)/i);
+    if (sequenceMatch && sequenceMatch[1]) {
+      return parseInt(sequenceMatch[1], 10);
+    }
+    
+    return 0; // Default value per RFC 5545
+  } catch (error) {
+    console.error('Error extracting sequence number from iCalendar data:', error);
+    return 0;
+  }
+}
 
 /**
  * Decodes HTML entities in a string
@@ -472,105 +498,6 @@ function generateAttendeesAndResources(event: any, skipResources: boolean = fals
 
 /**
  * Format a recurrence rule for iCalendar
- * @param ruleString The recurrence rule as a JSON string
- * @returns Formatted RRULE string
- */
-export function formatRecurrenceRule(ruleString: string | undefined | null): string {
-  if (!ruleString) {
-    return '';
-  }
-  
-  // If the string already has FREQ= in it, it's likely already in proper RRULE format
-  if (typeof ruleString === 'string' && ruleString.includes('FREQ=')) {
-    return ruleString;
-  }
-  
-  try {
-    const parsedRule = JSON.parse(ruleString);
-    
-    // Start building the RRULE string
-    const ruleParts: string[] = [];
-    
-    // Pattern (FREQ)
-    if (parsedRule.pattern) {
-      ruleParts.push(`FREQ=${parsedRule.pattern.toUpperCase()}`);
-    }
-    
-    // Interval
-    if (parsedRule.interval && parsedRule.interval > 1) {
-      ruleParts.push(`INTERVAL=${parsedRule.interval}`);
-    }
-    
-    // Weekdays (BYDAY) for weekly patterns
-    if (parsedRule.pattern === 'Weekly' && parsedRule.weekdays && parsedRule.weekdays.length > 0) {
-      const days = parsedRule.weekdays.map((day: string) => {
-        switch (day) {
-          case 'Monday': return 'MO';
-          case 'Tuesday': return 'TU';
-          case 'Wednesday': return 'WE';
-          case 'Thursday': return 'TH';
-          case 'Friday': return 'FR';
-          case 'Saturday': return 'SA';
-          case 'Sunday': return 'SU';
-          default: return '';
-        }
-      }).filter(Boolean).join(',');
-      
-      if (days) {
-        ruleParts.push(`BYDAY=${days}`);
-      }
-    }
-    
-    // End type
-    if (parsedRule.endType) {
-      if (parsedRule.endType === 'After' && parsedRule.occurrences) {
-        ruleParts.push(`COUNT=${parsedRule.occurrences}`);
-      } else if (parsedRule.endType === 'On' && parsedRule.untilDate) {
-        const untilDate = new Date(parsedRule.untilDate);
-        ruleParts.push(`UNTIL=${formatICalDate(untilDate)}`);
-      }
-    }
-    
-    return ruleParts.join(';');
-  } catch (error) {
-    console.error(`Error formatting recurrence rule:`, error);
-    // If it's not valid JSON but has a format that looks like a valid RRULE,
-    // return it as is instead of causing an error
-    if (typeof ruleString === 'string' && 
-        (ruleString.includes('DAILY') || 
-         ruleString.includes('WEEKLY') || 
-         ruleString.includes('MONTHLY') || 
-         ruleString.includes('YEARLY'))) {
-      return ruleString;
-    }
-    return ruleString || ''; // Return the original string or empty string if null/undefined
-  }
-}
-
-/**
- * Extract the SEQUENCE value from an iCalendar event string
- * @param icalData The raw iCalendar data string
- * @returns The SEQUENCE value as a number (defaults to 0 if not found)
- */
-export function extractSequenceFromICal(icalData: string): number {
-  try {
-    const sequenceMatch = icalData.match(/SEQUENCE:(\d+)/);
-    if (sequenceMatch && sequenceMatch[1]) {
-      return parseInt(sequenceMatch[1], 10);
-    }
-    return 0; // Default if no SEQUENCE is found
-  } catch (error) {
-    console.error('Error extracting SEQUENCE from iCalendar data:', error);
-    return 0; // Safe default
-  }
-}
-
-/**
- * Generate a cancellation iCalendar for an event
- * This follows RFC 5546 for properly canceling events
- * @param event The event data to cancel
- * @param options Additional options for the cancellation
- * @returns Properly formatted iCalendar cancellation data
  */
 export function generateCancellationICalEvent(event: any, options: {
   organizer: string;
@@ -649,19 +576,6 @@ export function generateCancellationICalEvent(event: any, options: {
   // Make sure we retain the resources array for cancellations
   if (!eventCopy.resources || !Array.isArray(eventCopy.resources) || eventCopy.resources.length === 0) {
     let extractedResources: any[] = [];
-    
-    // First try to parse resources if they're stored as a string
-    if (typeof eventCopy.resources === 'string') {
-      try {
-        const parsedResources = JSON.parse(eventCopy.resources);
-        if (Array.isArray(parsedResources) && parsedResources.length > 0) {
-          extractedResources = parsedResources;
-          console.log(`Parsed ${extractedResources.length} resources from string in event data`);
-        }
-      } catch (e) {
-        console.warn('Failed to parse resources string:', e);
-      }
-    }
     
     // If we still don't have resources, try to extract from raw data
     if (extractedResources.length === 0 && event.rawData && typeof event.rawData === 'string') {

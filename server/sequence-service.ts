@@ -6,7 +6,7 @@
  * is critical for event changes to be properly recognized by calendar clients.
  */
 
-import { db } from './storage';
+import { storage } from './memory-storage';
 import { extractSequenceFromICal } from './ical-utils';
 
 class SequenceService {
@@ -21,13 +21,7 @@ class SequenceService {
     
     try {
       // Load existing events to cache their sequence numbers
-      const events = await db.event.findMany({
-        select: {
-          id: true,
-          uid: true,
-          rawData: true
-        }
-      });
+      const events = await storage.getEvents({});
       
       console.log(`[SequenceService] Loading sequence numbers for ${events.length} events`);
       
