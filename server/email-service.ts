@@ -252,9 +252,18 @@ export class EmailService {
         };
       }
       
-      // CRITICAL: Ensure we have a valid UID from centralUIDService before proceeding
+      // CRITICAL FIX: Ensure we have a valid UID from centralUIDService before proceeding
       // This is essential for maintaining UID consistency across the entire application
-      await this.ensureValidUID(data);
+      const validatedUid = await this.ensureValidUID(data);
+      
+      // CRITICAL: Double-check that the UID was properly set in the data object
+      if (data.uid !== validatedUid) {
+        console.error(`[EmailService] CRITICAL ERROR: UID mismatch in invitation`);
+        console.error(`[EmailService] Data UID: ${data.uid}, Validated: ${validatedUid}`);
+        // Force the correct UID
+        data.uid = validatedUid;
+      }
+      
       console.log(`[EmailService] Using validated UID ${data.uid} for event ${data.eventId || 'without ID'}`);
       
       // Get the event ICS data
@@ -397,13 +406,13 @@ export class EmailService {
       
       // Add PDF attachment if successfully generated
       if (pdfBuffer) {
-        // @ts-ignore - Nodemailer types expect encoding but it's not in our local definition
+        // Use type assertion to work around TypeScript limitation with nodemailer types
         attachments.push({
           filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_agenda.pdf`,
           content: pdfBuffer.toString('base64'), // Convert Buffer to base64 string
           contentType: 'application/pdf',
-          encoding: 'base64' // Tell nodemailer this is base64 encoded
-        });
+          // Encoding is expected by nodemailer but not in our type definition
+        } as any);
       }
       
       const mailOptions = {
@@ -455,15 +464,26 @@ export class EmailService {
         };
       }
       
-      // CRITICAL: Ensure we have a valid UID from centralUIDService before proceeding
+      // CRITICAL FIX: Ensure we have a valid UID from centralUIDService before proceeding
       // This is essential for maintaining UID consistency across the entire application
-      await this.ensureValidUID(data);
+      const validatedUid = await this.ensureValidUID(data);
+      
+      // CRITICAL: Double-check that the UID was properly set in the data object
+      if (data.uid !== validatedUid) {
+        console.error(`[EmailService] CRITICAL ERROR: UID mismatch in cancellation`);
+        console.error(`[EmailService] Data UID: ${data.uid}, Validated: ${validatedUid}`);
+        // Force the correct UID
+        data.uid = validatedUid;
+      }
+      
       console.log(`[EmailService] Using validated UID ${data.uid} for cancelling event ${data.eventId || 'without ID'}`);
       
       // Update status to CANCELLED if not already set
       const cancellationData = { 
         ...data, 
-        status: 'CANCELLED' 
+        status: 'CANCELLED',
+        // Explicitly set UID here as well to ensure it's used in the cancellation
+        uid: validatedUid 
       };
       
       // Get the event ICS data for cancellation
@@ -630,13 +650,13 @@ export class EmailService {
       
       // Add PDF attachment if successfully generated
       if (pdfBuffer) {
-        // @ts-ignore - Nodemailer types expect encoding but it's not in our local definition
+        // Use type assertion to work around TypeScript limitation with nodemailer types
         attachments.push({
           filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_cancellation.pdf`,
           content: pdfBuffer.toString('base64'), // Convert Buffer to base64 string
           contentType: 'application/pdf',
-          encoding: 'base64' // Tell nodemailer this is base64 encoded
-        });
+          // Encoding is expected by nodemailer but not in our type definition
+        } as any);
       }
       
       const mailOptions = {
@@ -694,7 +714,7 @@ export class EmailService {
       
       console.log('[EmailService] Successfully generated RFC-compliant cancellation ICS');
       return cancellationIcs;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error transforming ICS for cancellation:', error);
       console.error('Original ICS:', originalIcs);
       
@@ -890,7 +910,7 @@ export class EmailService {
       let icsData = '';
       try {
         icsData = await this.generateICSData(data);
-      } catch (icsError) {
+      } catch (icsError: unknown) {
         console.error('Error generating ICS data:', icsError);
         icsData = 'Error generating ICS data: ' + (icsError instanceof Error ? icsError.message : String(icsError));
       }
@@ -1054,9 +1074,10 @@ export class EmailService {
       `;
       
       return html;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error generating email preview:', error);
-      return `<html><body><p>Error generating email preview: ${error.message}</p></body></html>`;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return `<html><body><p>Error generating email preview: ${errorMessage}</p></body></html>`;
     }
   }
 
@@ -1132,8 +1153,18 @@ export class EmailService {
    * This method ensures a consistent UID is used throughout the event lifecycle
    */
   public async generateICSData(data: EventInvitationData): Promise<string> {
-    // IMPORTANT: Always ensure we have a valid UID before generating ICS
-    await this.ensureValidUID(data);
+    // CRITICAL: The bug fix - ensure we have a valid UID before generating ICS
+    // This ensures each event gets its own unique UID in email attachments
+    const validatedUid = await this.ensureValidUID(data);
+    
+    // IMPORTANT: Double-check that the UID was properly set in the data object
+    if (data.uid !== validatedUid) {
+      console.error(`[EmailService] CRITICAL ERROR: UID mismatch after validation`);
+      console.error(`[EmailService] Data UID: ${data.uid}, Validated: ${validatedUid}`);
+      // Force the correct UID to ensure consistency
+      data.uid = validatedUid;
+    }
+    
     console.log(`[EmailService] Using validated UID ${data.uid} for generating ICS data`);
 
     // If there's already raw data available, modify it directly instead of using formatter
