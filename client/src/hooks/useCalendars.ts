@@ -2,14 +2,20 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, getQueryFn } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
 import type { Calendar } from '@shared/schema';
 
 export const useCalendars = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const calendarsQuery = useQuery<Calendar[]>({
     queryKey: ['/api/calendars'],
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty for graceful auth handling
+    // Only run this query if the user is authenticated
+    enabled: !!user,
+    staleTime: 30000, // 30 seconds
+    refetchOnWindowFocus: true // Refetch when window gains focus to keep data fresh
   });
 
   const createCalendarMutation = useMutation({

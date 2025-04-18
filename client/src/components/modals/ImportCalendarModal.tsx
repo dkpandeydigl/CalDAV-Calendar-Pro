@@ -39,7 +39,8 @@ export default function ImportCalendarModal({
   open,
   onOpenChange
 }: ImportCalendarModalProps) {
-  const { calendars } = useCalendars();
+  const { calendars, isLoading: isLoadingCalendars, error: calendarError } = useCalendars();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   // State for file input
@@ -58,6 +59,38 @@ export default function ImportCalendarModal({
   const [isImporting, setIsImporting] = useState(false);
   const [importStep, setImportStep] = useState<'upload' | 'select'>('upload');
   const [replaceExisting, setReplaceExisting] = useState(false);
+  
+  // State for calendar fetch status
+  const [isRefreshingCalendars, setIsRefreshingCalendars] = useState(false);
+  
+  // Effect to set default calendar when calendars are loaded
+  useEffect(() => {
+    if (calendars.length > 0 && !selectedCalendarId && importStep === 'select') {
+      const defaultCalendar = calendars.find(cal => cal.isPrimary) || calendars[0];
+      setSelectedCalendarId(String(defaultCalendar.id));
+      console.log(`Setting default calendar to ${defaultCalendar.name} (ID: ${defaultCalendar.id})`);
+    }
+  }, [calendars, selectedCalendarId, importStep]);
+  
+  // Refresh calendars from server
+  const handleRefreshCalendars = () => {
+    setIsRefreshingCalendars(true);
+    // Force refresh by invalidating the query cache
+    queryClient.invalidateQueries({ queryKey: ['/api/calendars'] })
+      .then(() => {
+        console.log('Calendars refreshed');
+        setIsRefreshingCalendars(false);
+      })
+      .catch((error) => {
+        console.error('Error refreshing calendars:', error);
+        setIsRefreshingCalendars(false);
+        toast({
+          title: "Failed to refresh calendars",
+          description: "Please try again or check your connection",
+          variant: "destructive"
+        });
+      });
+  };
 
   // Handle file selection
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -299,25 +332,57 @@ export default function ImportCalendarModal({
           ) : (
             <div className="py-4">
               <div className="mb-4">
-                <Label htmlFor="calendar-select">Select calendar to import into:</Label>
-                <Select value={selectedCalendarId} onValueChange={setSelectedCalendarId}>
-                  <SelectTrigger id="calendar-select" className="w-full" type="button">
-                    <SelectValue placeholder="Select a calendar" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {calendars.map((calendar: Calendar) => (
-                      <SelectItem key={calendar.id} value={String(calendar.id)}>
-                        <div className="flex items-center">
-                          <span 
-                            className="inline-block h-3 w-3 rounded-full mr-2" 
-                            style={{ backgroundColor: calendar.color }} 
-                          />
-                          {calendar.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex justify-between items-center mb-2">
+                  <Label htmlFor="calendar-select">Select calendar to import into:</Label>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-8 px-2"
+                    onClick={handleRefreshCalendars}
+                    disabled={isRefreshingCalendars}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-1 ${isRefreshingCalendars ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
+                
+                {!user ? (
+                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-2 border border-amber-200">
+                    <span className="font-medium">Authentication required:</span> You must be logged in to access your calendars.
+                  </div>
+                ) : isLoadingCalendars ? (
+                  <div className="flex items-center justify-center py-3 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading calendars...
+                  </div>
+                ) : calendarError ? (
+                  <div className="text-sm text-destructive bg-destructive/10 p-3 rounded mb-2">
+                    Error loading calendars: {calendarError.message || 'Failed to load calendars'}
+                  </div>
+                ) : calendars.length === 0 ? (
+                  <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded mb-2 border border-amber-200">
+                    No calendars found. Please refresh or create a new calendar.
+                  </div>
+                ) : (
+                  <Select value={selectedCalendarId} onValueChange={setSelectedCalendarId}>
+                    <SelectTrigger id="calendar-select" className="w-full" type="button">
+                      <SelectValue placeholder="Select a calendar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {calendars.map((calendar: Calendar) => (
+                        <SelectItem key={calendar.id} value={String(calendar.id)}>
+                          <div className="flex items-center">
+                            <span 
+                              className="inline-block h-3 w-3 rounded-full mr-2" 
+                              style={{ backgroundColor: calendar.color }} 
+                            />
+                            {calendar.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               
               <div className="flex items-center space-x-2 mb-4">

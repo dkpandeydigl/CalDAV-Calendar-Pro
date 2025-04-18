@@ -76,54 +76,81 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    console.log(`Making query request to ${queryKey[0]}`);
+    const url = queryKey[0] as string;
+    console.log(`Making query request to ${url}`);
     
-    const res = await fetch(queryKey[0] as string, {
-      method: 'GET',
-      headers: {
-        "X-Requested-With": "XMLHttpRequest"
-      },
-      credentials: "include",
-      mode: "same-origin",
-      cache: "no-cache"
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        credentials: "include",
+        mode: "same-origin",
+        cache: "no-cache"
+      });
+      
+      // Enhanced debugging for specific calendar endpoint
+      if (url === '/api/calendars') {
+        console.log(`[Calendar API] Response status: ${res.status}`);
+        
+        // Log session state
+        const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+        console.log('[Calendar API] Available cookies:', cookies.length ? cookies.join(', ') : 'none');
+        
+        // Try to get a brief look at the response body without consuming it
+        const clonedRes = res.clone();
+        try {
+          const text = await clonedRes.text();
+          const preview = text.length > 200 ? text.substring(0, 200) + '...' : text;
+          console.log(`[Calendar API] Response preview: ${preview}`);
+        } catch (err) {
+          console.error('[Calendar API] Could not preview response', err);
+        }
+      }
 
-    if (res.status === 401) {
-      console.log(`Authentication error (401) when accessing ${queryKey[0]}`);
-      
-      // Log session info for debugging
-      const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
-      console.log('Current cookies:', cookies.length ? cookies.join(', ') : 'none');
-      
-      if (unauthorizedBehavior === "returnNull") {
-        console.log(`Returning null for ${queryKey[0]} due to 401`);
-        return null;
-      } else if (unauthorizedBehavior === "continueWithEmpty") {
-        // This is useful for operations that need to continue even if user session is expired
-        // but where server-side CalDAV credentials are still valid
-        console.log(`401 on ${queryKey[0]}, but continuing with empty data`);
-        return [];
+      if (res.status === 401) {
+        console.log(`Authentication error (401) when accessing ${url}`);
+        
+        // Log session info for debugging
+        const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+        console.log('Current cookies:', cookies.length ? cookies.join(', ') : 'none');
+        
+        if (unauthorizedBehavior === "returnNull") {
+          console.log(`Returning null for ${url} due to 401`);
+          return null;
+        } else if (unauthorizedBehavior === "continueWithEmpty") {
+          // This is useful for operations that need to continue even if user session is expired
+          // but where server-side CalDAV credentials are still valid
+          console.log(`401 on ${url}, but continuing with empty data as configured`);
+          return [];
+        }
+        
+        // If we reach here, we're going to throw - try to get more information first
+        try {
+          const text = await res.text();
+          console.log(`401 response body: ${text}`);
+        } catch (err) {
+          console.error('Could not read 401 response body', err);
+        }
       }
       
-      // If we reach here, we're going to throw - try to get more information first
-      try {
-        const text = await res.text();
-        console.log(`401 response body: ${text}`);
-      } catch (err) {
-        console.error('Could not read 401 response body', err);
+      await throwIfResNotOk(res);
+      
+      // Safely check content type before parsing as JSON
+      if (!isJsonResponse(res)) {
+        const textContent = await res.text();
+        console.error('Non-JSON response from server:', textContent);
+        throw new Error('Server returned an invalid response format. Please try again.');
       }
+      
+      return await res.json();
+      
+    } catch (fetchError) {
+      console.error(`[API Error] Failed request to ${url}:`, fetchError);
+      throw new Error(`Network error when requesting ${url}: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
     }
-
-    await throwIfResNotOk(res);
-    
-    // Safely check content type before parsing as JSON
-    if (!isJsonResponse(res)) {
-      const textContent = await res.text();
-      console.error('Non-JSON response from server:', textContent);
-      throw new Error('Server returned an invalid response format. Please try again.');
-    }
-    
-    return await res.json();
   };
 
 export const queryClient = new QueryClient({

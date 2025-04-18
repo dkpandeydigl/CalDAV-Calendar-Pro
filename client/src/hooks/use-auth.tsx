@@ -429,5 +429,17 @@ export function useAuth() {
   if (!context) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
+  
+  // Add logging for debugging auth state
+  if (context.user) {
+    console.log(`[Auth] User is authenticated: ${context.user.username} (ID: ${context.user.id})`);
+  } else if (context.isLoading) {
+    console.log(`[Auth] Authentication state is loading...`);
+  } else if (context.error) {
+    console.log(`[Auth] Authentication error: ${context.error.message}`);
+  } else {
+    console.log(`[Auth] No authenticated user`);
+  }
+  
   return context;
 }
