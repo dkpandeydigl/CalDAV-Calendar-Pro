@@ -251,7 +251,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/logout", {
         method: "POST",
         headers: {
-          "X-Requested-With": "XMLHttpRequest"
+          "X-Requested-With": "XMLHttpRequest",
+          "Content-Type": "application/json"
         },
         credentials: "include",
         mode: "same-origin",
@@ -268,7 +269,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
       console.log('Cookies after logout:', cookies.length ? cookies.join(', ') : 'None');
       
-      return true;
+      // Explicitly refresh the page to fully clear state after logout
+      setTimeout(() => {
+        window.location.href = '/auth';
+      }, 500);
+      
+      return undefined; // Return void for proper typing
     },
     onSuccess: () => {
       console.log("Logout successful, clearing all cached data");

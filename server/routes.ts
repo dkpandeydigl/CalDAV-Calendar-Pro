@@ -780,10 +780,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   function isAuthenticated(req: Request, res: Response, next: NextFunction) {
+    // Log session information for debugging
+    console.log("Session check: isAuthenticated() called");
+    console.log("Session data:", {
+      hasSession: !!req.session,
+      sessionID: req.sessionID,
+      hasUser: !!req.user,
+      userID: req.user?.id,
+      authenticated: req.isAuthenticated()
+    });
+    
     if (req.isAuthenticated()) {
       return next();
     }
-    res.status(401).json({ message: "Unauthorized" });
+    
+    // More detailed error response
+    console.log("Authentication failed: User not authenticated");
+    res.status(401).json({ message: "Not authenticated" });
   }
   
   function handleZodError(err: unknown, res: Response) {

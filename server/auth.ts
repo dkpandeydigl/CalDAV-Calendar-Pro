@@ -210,13 +210,13 @@ export function setupAuth(app: Express) {
   // Enhanced session configuration for better persistence
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "calendar-app-secret-key",
-    resave: false, // Don't save session if unmodified
+    resave: true, // Force the session to be saved back to the store
     saveUninitialized: false, // Don't create session until something stored
     store: storage.sessionStore, // Use our storage's session store for persistence
     name: 'caldav_app.sid', // Use a distinct name to avoid conflicts
     rolling: true, // Forces a cookie set on every response
     cookie: {
-      secure: process.env.NODE_ENV === 'production', // Only use HTTPS in production
+      secure: false, // Allow both HTTP and HTTPS for development purposes
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
       httpOnly: true, // Prevents client-side JS from reading the cookie
       sameSite: 'lax', // Allows cross-site requests with some restrictions
