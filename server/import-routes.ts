@@ -168,14 +168,32 @@ export function registerImportRoutes(app: Express) {
       console.log("User calendars:", userCalendars.map(c => ({ id: c.id, name: c.name })));
       console.log("Shared calendars:", sharedCalendars.map(c => ({ id: c.id, name: c.name })));
       
+      // First try to find the calendar directly by ID
+      const calendarById = await storage.getCalendarById(calendarId);
+      if (!calendarById) {
+        console.log("Calendar not found by ID:", calendarId);
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
       // Find the target calendar and check permissions
       const targetCalendar = [...userCalendars, ...sharedCalendars].find(
         cal => cal.id === calendarId
       );
       
+      // If the calendar exists but the user doesn't have it in their list, they don't have access
       if (!targetCalendar) {
-        console.log("Calendar not found or no access:", calendarId);
-        return res.status(403).json({ message: "You don't have access to this calendar" });
+        console.log("Calendar exists but user doesn't have access:", calendarId);
+        console.log(`Calendar owner ID: ${calendarById.userId}, User ID: ${userId}`);
+        
+        if (calendarById.userId === userId) {
+          console.log("This is user's own calendar but not in their list - this is a data consistency issue");
+          // Since this is the user's own calendar, we'll allow the operation despite the inconsistency
+          return res.status(403).json({ 
+            message: "Calendar access issue detected. Please refresh your browser and try again." 
+          });
+        } else {
+          return res.status(403).json({ message: "You don't have access to this calendar" });
+        }
       }
       
       console.log("Target calendar:", { id: targetCalendar.id, name: targetCalendar.name });
@@ -187,6 +205,24 @@ export function registerImportRoutes(app: Express) {
         const shareRecord = shareRecords.find(record => 
           record.sharedWithUserId === userId || record.sharedWithEmail === req.user?.username
         );
+        
+        console.log("Shared calendar permission check:", {
+          calendarId: targetCalendar.id,
+          userName: req.user?.username,
+          userId,
+          shareRecords: shareRecords.map(r => ({
+            id: r.id,
+            sharedWithUserId: r.sharedWithUserId,
+            sharedWithEmail: r.sharedWithEmail,
+            permissionLevel: r.permissionLevel
+          })),
+          shareRecord: shareRecord ? {
+            id: shareRecord.id,
+            sharedWithUserId: shareRecord.sharedWithUserId,
+            sharedWithEmail: shareRecord.sharedWithEmail,
+            permissionLevel: shareRecord.permissionLevel
+          } : 'none'
+        });
         
         if (!shareRecord || shareRecord.permissionLevel !== "edit") {
           console.log("No edit permission for shared calendar:", { 
