@@ -18,7 +18,7 @@ type AuthContextType = {
   isPostLoginLoading: boolean; // Added for post-login loading state
 };
 
-type LoginData = Pick<InsertUser, "username" | "password">;
+type LoginData = Pick<InsertUser, "username" | "password"> & { caldavServerUrl?: string };
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -37,10 +37,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
-      const res = await apiRequest("POST", "/api/login", credentials);
-      return await res.json();
+      console.log("Login mutation called with credentials:", {
+        username: credentials.username,
+        hasPassword: !!credentials.password,
+        serverUrl: credentials.caldavServerUrl
+      });
+
+      try {
+        const res = await apiRequest("POST", "/api/login", credentials);
+        const userData = await res.json();
+        console.log("Login response received:", {
+          status: res.status,
+          userData: userData ? { id: userData.id, username: userData.username } : null
+        });
+        return userData;
+      } catch (error) {
+        console.error("Login request failed:", error);
+        throw error;
+      }
     },
     onSuccess: (user: SelectUser) => {
+      console.log("Login success, user data:", { id: user.id, username: user.username });
+      
       // Set loading state to true to show overlay
       setIsPostLoginLoading(true);
       
@@ -94,10 +112,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerMutation = useMutation({
     mutationFn: async (credentials: InsertUser) => {
-      const res = await apiRequest("POST", "/api/register", credentials);
-      return await res.json();
+      console.log("Register mutation called with credentials:", {
+        username: credentials.username,
+        hasPassword: !!credentials.password,
+        serverUrl: credentials.caldavServerUrl
+      });
+
+      try {
+        const res = await apiRequest("POST", "/api/register", credentials);
+        const userData = await res.json();
+        console.log("Registration response received:", {
+          status: res.status,
+          userData: userData ? { id: userData.id, username: userData.username } : null
+        });
+        return userData;
+      } catch (error) {
+        console.error("Registration request failed:", error);
+        throw error;
+      }
     },
     onSuccess: (user: SelectUser) => {
+      console.log("Registration success, user data:", { id: user.id, username: user.username });
+      
       // Set loading state to true to show overlay
       setIsPostLoginLoading(true);
       
