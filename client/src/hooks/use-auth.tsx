@@ -51,7 +51,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           caldavServerUrl: credentials.caldavServerUrl || "https://zpush.ajaydata.com/davical/"
         };
 
-        const res = await apiRequest("POST", "/api/login", requestData);
+        // Enhanced fetch with specific options for session handling
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest" // Helps identify AJAX requests
+          },
+          body: JSON.stringify(requestData),
+          credentials: "include", // Critical for session cookies
+          mode: "same-origin", // Security measure for cookies
+          cache: "no-cache"
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error(`Login failed with status ${res.status}:`, errorText);
+          throw new Error(errorText || `Login failed with status: ${res.status}`);
+        }
+
+        // Check for session cookie after login
+        const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+        console.log('Cookies after login:', cookies.length ? cookies.join(', ') : 'None');
+
         const userData = await res.json();
         console.log("Login response received:", {
           status: res.status,
@@ -133,7 +155,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           caldavServerUrl: credentials.caldavServerUrl
         };
 
-        const res = await apiRequest("POST", "/api/register", requestData);
+        // Use direct fetch call for registration to ensure proper session handling
+        const res = await fetch("/api/register", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          body: JSON.stringify(requestData),
+          credentials: "include",
+          mode: "same-origin",
+          cache: "no-cache"
+        });
+
+        if (!res.ok) {
+          const errorText = await res.text();
+          console.error(`Registration failed with status ${res.status}:`, errorText);
+          throw new Error(errorText || `Registration failed with status: ${res.status}`);
+        }
+
+        // Check for session cookie after registration
+        const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+        console.log('Cookies after registration:', cookies.length ? cookies.join(', ') : 'None');
+
         const userData = await res.json();
         console.log("Registration response received:", {
           status: res.status,
@@ -201,15 +245,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/logout");
+      console.log("Logging out user...");
+      
+      // Use direct fetch for logout to ensure proper session cleanup
+      const res = await fetch("/api/logout", {
+        method: "POST",
+        headers: {
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        credentials: "include",
+        mode: "same-origin",
+        cache: "no-cache"
+      });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`Logout failed with status ${res.status}:`, errorText);
+        throw new Error(errorText || `Logout failed with status: ${res.status}`);
+      }
+      
+      // Check for session cookies after logout (should be cleared)
+      const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+      console.log('Cookies after logout:', cookies.length ? cookies.join(', ') : 'None');
+      
+      return true;
     },
     onSuccess: () => {
+      console.log("Logout successful, clearing all cached data");
+      
+      // Clear user data from cache
       queryClient.setQueryData(["/api/user"], null);
+      
+      // Clear all queries to prevent data leakage between users
+      queryClient.clear();
+      
       toast({
         title: "Logged out successfully",
       });
     },
     onError: (error: Error) => {
+      console.error("Logout error:", error);
       toast({
         title: "Logout failed",
         description: error.message,
