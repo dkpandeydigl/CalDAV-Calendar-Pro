@@ -40,14 +40,33 @@ export default function ImportCalendarModal({
   open,
   onOpenChange
 }: ImportCalendarModalProps) {
+  // Get all necessary data with authentication state
   const { calendars, isLoading: isLoadingCalendars, error: calendarError } = useCalendars();
   const { sharedCalendars, isLoading: isLoadingSharedCalendars } = useSharedCalendars();
-  const { user } = useAuth();
+  const { user, isLoading: isLoadingAuth } = useAuth();
   const { toast } = useToast();
   
+  // Log detailed authentication state for debugging
+  useEffect(() => {
+    console.log("ImportCalendarModal auth state:", {
+      user: user ? { id: user.id, username: user.username } : null,
+      isAuthLoading: isLoadingAuth,
+      calendarCount: calendars.length,
+      sharedCalendarCount: sharedCalendars?.length || 0,
+      isLoadingCalendars,
+      isLoadingSharedCalendars
+    });
+  }, [user, isLoadingAuth, calendars, sharedCalendars, isLoadingCalendars, isLoadingSharedCalendars]);
+
   // Combine user's calendars and shared calendars with edit permission
   const allCalendars = useMemo(() => {
-    // Make sure sharedCalendars is defined before filtering
+    // Make sure both user and sharedCalendars are loaded before filtering
+    if (!user) {
+      console.log("ImportCalendarModal: No authenticated user found");
+      return [];
+    }
+
+    // Make sure shared calendars are defined and properly filtered
     const editableSharedCalendars = sharedCalendars
       ? sharedCalendars
           .filter(cal => cal.permissionLevel === 'edit')
@@ -57,11 +76,13 @@ export default function ImportCalendarModal({
           }))
       : [];
       
+    console.log(`ImportCalendarModal: Found ${calendars.length} personal calendars and ${editableSharedCalendars.length} editable shared calendars`);
+    
     return [
       ...calendars.map(cal => ({ ...cal, isShared: false })),
       ...editableSharedCalendars
     ];
-  }, [calendars, sharedCalendars]);
+  }, [calendars, sharedCalendars, user]);
 
   // State for file input
   const [file, setFile] = useState<File | null>(null);
@@ -254,6 +275,17 @@ export default function ImportCalendarModal({
 
   // Import selected events
   const handleImport = async () => {
+    // Check authentication
+    if (!user) {
+      console.error("Cannot import events: User not authenticated");
+      toast({
+        title: "Authentication required",
+        description: "Please log in to import events.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!selectedCalendarId) {
       toast({
         title: "No calendar selected",
@@ -274,16 +306,35 @@ export default function ImportCalendarModal({
       return;
     }
 
+    // Find the calendar in the combined calendars list
+    const targetCalendar = allCalendars.find(cal => String(cal.id) === selectedCalendarId);
+    if (!targetCalendar) {
+      console.error(`Calendar ID ${selectedCalendarId} not found in available calendars`);
+      toast({
+        title: "Calendar not found",
+        description: "The selected calendar could not be found. Please select another calendar.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    console.log(`Importing events to calendar: ${targetCalendar.name} (ID: ${targetCalendar.id})`);
     setIsImporting(true);
 
     try {
+      // Verify the calendar ID type
+      const calendarId = parseInt(selectedCalendarId);
+      
+      console.log(`Sending import request with calendarId: ${calendarId} (type: ${typeof calendarId})`);
+      
       const response = await apiRequest('POST', '/api/calendars/import-events', {
-        calendarId: parseInt(selectedCalendarId),
+        calendarId,
         events: selectedEvents,
         replaceExisting: replaceExisting
       });
 
       if (!response.ok) {
+        console.error(`Import API error: ${response.status}`, response);
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to import events');
       }
