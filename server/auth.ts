@@ -132,11 +132,41 @@ async function verifyCalDAVCredentials(
               if (principalProps && principalProps.status === 207) {
                 const responseText = await principalProps.text();
                 
-                // Extract display name from XML response
-                const displayNameMatch = responseText.match(/<displayname>(.*?)<\/displayname>/);
+                // Log the full response for debugging
+                console.log(`[DEBUG] Principal properties response (first 500 chars): ${responseText.substring(0, 500)}...`);
+                if (responseText.includes('displayname')) {
+                  console.log('Response contains "displayname" tag');
+                } else {
+                  console.log('Warning: Response does not contain "displayname" tag');
+                }
+                
+                // Extract display name from XML response - more comprehensive to handle different formats
+                // Try multiple patterns as different servers might format the XML differently
+                
+                // Pattern 1: Standard format
+                let displayNameMatch = responseText.match(/<displayname>(.*?)<\/displayname>/);
+                
+                // Pattern 2: With namespace prefix
+                if (!displayNameMatch) {
+                  displayNameMatch = responseText.match(/<[^:]+:displayname>(.*?)<\/[^:]+:displayname>/);
+                }
+                
+                // Pattern 3: With XML escaped characters
+                if (!displayNameMatch) {
+                  displayNameMatch = responseText.match(/<displayname>([^<]*?)&lt;\/displayname&gt;/);
+                }
+                
+                // Pattern 4: In CDATA section
+                if (!displayNameMatch) {
+                  displayNameMatch = responseText.match(/<displayname><!\[CDATA\[(.*?)\]\]><\/displayname>/);
+                }
+                
                 if (displayNameMatch && displayNameMatch[1]) {
-                  userInfo.displayName = displayNameMatch[1];
+                  userInfo.displayName = displayNameMatch[1].trim();
                   console.log(`Found display name: ${userInfo.displayName}`);
+                } else {
+                  console.log("Could not extract display name from principal properties"); 
+                  // Extract from username as fallback (will handle below)
                 }
                 
                 // Extract email from XML response
@@ -169,6 +199,38 @@ async function verifyCalDAVCredentials(
         const calendars = await davClient.fetchCalendars();
         console.log(`CalDAV fetchCalendars successful: ${calendars.length} calendars found`);
         userInfo.calendars = calendars;
+        
+        // If we couldn't get display name from principal properties, try getting it from calendars
+        if (!userInfo.displayName && calendars && calendars.length > 0) {
+          // Try to find owner info in calendar data
+          for (const calendar of calendars) {
+            if (calendar.owner && calendar.owner.displayName) {
+              userInfo.displayName = calendar.owner.displayName;
+              console.log(`Using owner displayName from calendar: ${userInfo.displayName}`);
+              break;
+            }
+            
+            // Sometimes the display name is in the principalURL or calendar URL
+            // Extract username part and use as display name if it looks like a name (not an email)
+            if (!userInfo.displayName && calendar.principalUrl) {
+              const principalUrlParts = calendar.principalUrl.split('/');
+              const potentialName = principalUrlParts[principalUrlParts.length - 1];
+              
+              if (potentialName && !potentialName.includes('@') && !potentialName.includes('.')) {
+                // Convert to title case for better display
+                const formattedName = potentialName
+                  .replace(/[._-]/g, ' ')
+                  .split(' ')
+                  .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+                  .join(' ');
+                
+                userInfo.displayName = formattedName;
+                console.log(`Extracted display name from principal URL: ${userInfo.displayName}`);
+                break;
+              }
+            }
+          }
+        }
       } catch (fetchError) {
         console.log("CalDAV fetchCalendars failed, but login was successful:", fetchError);
         // Even if fetching calendars fails, consider auth successful if login worked
