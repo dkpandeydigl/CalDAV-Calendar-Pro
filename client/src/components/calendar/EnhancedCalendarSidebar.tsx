@@ -1076,7 +1076,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                     className="font-medium text-blue-600 hover:underline cursor-help" 
                                     title={`Calendar owner: ${ownerEmail}`}
                                   >
-                                    {ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' 
+                                    {ownerEmail && ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' && ownerEmail !== 'undefined' && ownerEmail !== 'null'
                                       ? ownerEmail 
                                       : 'Unknown owner'}
                                   </span>

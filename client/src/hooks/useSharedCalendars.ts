@@ -50,24 +50,37 @@ export const useSharedCalendars = () => {
         
         // Ensure owner data is properly populated
         return data.map((calendar: SharedCalendar) => {
-          // Make sure owner is always defined
+          // Create a complete owner object
           if (!calendar.owner) {
+            // If we don't have an owner object at all, create one with the best available information
             calendar.owner = {
-              id: 0,
-              username: calendar.ownerEmail || 'Unknown'
+              id: calendar.userId || 0,
+              username: calendar.ownerEmail || 'Unknown',
+              email: calendar.ownerEmail || undefined
             };
+          } else {
+            // If we have a partial owner object, enhance it with any additional information
+            // Make sure the owner has a username
+            if (!calendar.owner.username || calendar.owner.username === 'undefined' || calendar.owner.username === 'null') {
+              calendar.owner.username = calendar.ownerEmail || `User ${calendar.owner.id || calendar.userId || 0}`;
+            }
+            
+            // Make sure the owner has an email
+            if (!calendar.owner.email || calendar.owner.email === 'undefined' || calendar.owner.email === 'null') {
+              calendar.owner.email = calendar.ownerEmail || calendar.owner.username;
+            }
           }
           
-          // Make sure owner has email 
-          if (!calendar.owner.email && calendar.owner.username) {
-            calendar.owner.email = calendar.owner.username;
-          }
-          
-          // Set ownerEmail for backward compatibility
-          if (!calendar.ownerEmail && calendar.owner.email) {
+          // Set/update ownerEmail field for backward compatibility and ensuring we always have it
+          // Choose the most reliable email source with fallbacks
+          if (calendar.owner.email && calendar.owner.email !== 'undefined' && calendar.owner.email !== 'null') {
             calendar.ownerEmail = calendar.owner.email;
-          } else if (!calendar.ownerEmail && calendar.owner.username) {
+          } else if (calendar.owner.username && calendar.owner.username.includes('@')) {
             calendar.ownerEmail = calendar.owner.username;
+          } else if (calendar.userId) {
+            calendar.ownerEmail = `User ${calendar.userId}`;
+          } else if (!calendar.ownerEmail || calendar.ownerEmail === 'undefined' || calendar.ownerEmail === 'null') {
+            calendar.ownerEmail = calendar.owner.username || 'Unknown Owner';
           }
           
           // Ensure enabled property is always set for consistency
