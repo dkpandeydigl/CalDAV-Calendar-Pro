@@ -15,14 +15,16 @@ import { BulkDeleteModal } from '@/components/modals/BulkDeleteModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Event, Calendar as CalendarType } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
+import { useCalendars } from '@/hooks/useCalendars';
+import { useSharedCalendars } from '@/hooks/useSharedCalendars';  
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
-import { Loader2, RefreshCcw, Trash } from 'lucide-react';
+import { Loader2, RefreshCcw, Trash, Calendar as CalendarIcon } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 
 // For different calendar views
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
@@ -284,8 +286,15 @@ function CalendarContent() {
   const { toast } = useToast();
   const { user } = useAuth();
   
+  // Get user calendars and shared calendars
+  const { calendars, isLoading: isCalendarsLoading } = useCalendars();
+  const { sharedCalendars, isLoading: isSharedCalendarsLoading } = useSharedCalendars();
+  
   const [cacheVersion, setCacheVersion] = useState(0);
-  const { events: rawEvents, isLoading, refetch, deleteEvent } = useCalendarEvents(viewStartDate, viewEndDate);
+  const { events: rawEvents, isLoading: isEventsLoading, refetch, deleteEvent } = useCalendarEvents(viewStartDate, viewEndDate);
+  
+  // Combined loading state for all data
+  const isLoading = isEventsLoading || isCalendarsLoading || isSharedCalendarsLoading;
   
   // Use useMemo to ensure filteredEvents only updates when rawEvents or cacheVersion changes
   const events = useMemo(() => {
