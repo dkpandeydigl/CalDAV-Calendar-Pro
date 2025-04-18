@@ -18,6 +18,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Calendar } from '@shared/schema';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/use-auth';
+import { useSharedCalendars } from '@/hooks/useSharedCalendars';
 
 interface ImportCalendarModalProps {
   open: boolean;
@@ -68,41 +69,43 @@ export default function ImportCalendarModal({
   
   // Effect to verify authentication and load calendars when modal opens
   useEffect(() => {
-    if (open && user) {
+    if (open) {
       setIsVerifyingAuth(true);
       
-      // Verify authentication is active by checking the user endpoint
-      fetch('/api/user', {
-        credentials: 'include',
-        headers: {
-          'Cache-Control': 'no-cache',
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept': 'application/json'
-        }
-      })
-      .then(res => {
-        if (res.ok) {
-          console.log('Authentication verified, refreshing calendars');
-          // Force refresh calendars after confirming authentication
-          return queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
-        } else {
-          console.error('Authentication check failed with status:', res.status);
-          throw new Error('Authentication check failed');
-        }
-      })
-      .catch(err => {
-        console.error('Error verifying authentication:', err);
-        toast({
-          title: "Authentication Error",
-          description: "Please try refreshing the page and logging in again.",
-          variant: "destructive"
+      // Only try to invalidate the user query if needed
+      if (!user) {
+        // First try to make sure we have the latest user data
+        queryClient.invalidateQueries({ queryKey: ['/api/user'] })
+          .then(() => {
+            // After user data is refreshed, refresh calendar data
+            queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/shared-calendars'] });
+          })
+          .catch(err => {
+            console.error('Error invalidating user query:', err);
+          })
+          .finally(() => {
+            setIsVerifyingAuth(false);
+          });
+      } else {
+        // If user already exists, just refresh calendar data
+        console.log('User already authenticated, refreshing calendars');
+        Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['/api/calendars'] }),
+          queryClient.invalidateQueries({ queryKey: ['/api/shared-calendars'] })
+        ])
+        .then(() => {
+          console.log('Calendar data refreshed');
+        })
+        .catch(err => {
+          console.error('Error refreshing calendar data:', err);
+        })
+        .finally(() => {
+          setIsVerifyingAuth(false);
         });
-      })
-      .finally(() => {
-        setIsVerifyingAuth(false);
-      });
+      }
     }
-  }, [open, user, toast]);
+  }, [open, user]);
   
   // Effect to set default calendar when calendars are loaded
   useEffect(() => {
