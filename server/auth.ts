@@ -797,7 +797,11 @@ export function setupAuth(app: Express) {
           return next(err);
         }
         
-        // Ensure session is saved immediately
+        // Add a flag to the session to indicate successful login
+        req.session.loggedIn = true;
+        req.session.loginTime = new Date().toISOString();
+        
+        // Ensure session is saved immediately and only respond after session is saved
         req.session.save((saveErr) => {
           if (saveErr) {
             console.error("Session save error:", saveErr);
@@ -806,6 +810,7 @@ export function setupAuth(app: Express) {
           
           console.log(`User ${user.username} session established. Session ID: ${req.session.id}`);
           console.log(`Session cookie: ${req.headers.cookie ? 'Present' : 'Not present'}`);
+          console.log(`Session data: loggedIn=${req.session.loggedIn}, loginTime=${req.session.loginTime}`);
         });
         
         try {
@@ -863,11 +868,35 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", (req, res) => {
+    // Add detailed logging for debugging authentication issues
+    console.log("GET /api/user - Authentication check:", {
+      isAuthenticated: req.isAuthenticated(),
+      hasSession: !!req.session,
+      sessionID: req.sessionID,
+      hasUser: !!req.user,
+      cookies: req.headers.cookie ? 'Present' : 'Not present'
+    });
+    
     if (req.isAuthenticated() && req.user) {
       const { password, ...userWithoutPassword } = req.user;
+      console.log(`User ${req.user.id} (${req.user.username}) authenticated successfully`);
       res.json(userWithoutPassword);
     } else {
-      res.status(401).json({ message: "Not authenticated" });
+      console.log("Authentication failed: User not authenticated or user object missing");
+      
+      // Attempt to regenerate session as a fix for "phantom sessions"
+      if (req.session) {
+        req.session.regenerate(err => {
+          if (err) {
+            console.error("Failed to regenerate session:", err);
+          } else {
+            console.log("Session regenerated successfully");
+          }
+          res.status(401).json({ message: "Not authenticated" });
+        });
+      } else {
+        res.status(401).json({ message: "Not authenticated" });
+      }
     }
   });
   
