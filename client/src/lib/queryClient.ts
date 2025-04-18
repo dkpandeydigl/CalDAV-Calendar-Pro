@@ -18,13 +18,27 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  console.log(`Making ${method} request to ${url}`, data ? 'with data' : 'without data');
+  
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: {
+      ...(data ? { "Content-Type": "application/json" } : {}),
+      "X-Requested-With": "XMLHttpRequest" // Helps some servers identify AJAX requests
+    },
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
+    credentials: "include", // Include cookies for cross-origin requests
+    mode: "same-origin", // Ensures cookies are sent for same-origin requests
+    cache: "no-cache" // Prevents caching to ensure fresh responses
   });
 
+  if (method === 'POST' && (url === '/api/login' || url === '/api/register')) {
+    console.log(`Auth request to ${url} completed with status: ${res.status}`);
+    // Log cookies for debugging (not the values, just existence)
+    const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+    console.log('Cookies present after auth:', cookies.length ? cookies.join(', ') : 'none');
+  }
+  
   await throwIfResNotOk(res);
   return res;
 }
@@ -35,18 +49,41 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    console.log(`Making query request to ${queryKey[0]}`);
+    
     const res = await fetch(queryKey[0] as string, {
+      method: 'GET',
+      headers: {
+        "X-Requested-With": "XMLHttpRequest"
+      },
       credentials: "include",
+      mode: "same-origin",
+      cache: "no-cache"
     });
 
     if (res.status === 401) {
+      console.log(`Authentication error (401) when accessing ${queryKey[0]}`);
+      
+      // Log session info for debugging
+      const cookies = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+      console.log('Current cookies:', cookies.length ? cookies.join(', ') : 'none');
+      
       if (unauthorizedBehavior === "returnNull") {
+        console.log(`Returning null for ${queryKey[0]} due to 401`);
         return null;
       } else if (unauthorizedBehavior === "continueWithEmpty") {
         // This is useful for operations that need to continue even if user session is expired
         // but where server-side CalDAV credentials are still valid
         console.log(`401 on ${queryKey[0]}, but continuing with empty data`);
         return [];
+      }
+      
+      // If we reach here, we're going to throw - try to get more information first
+      try {
+        const text = await res.text();
+        console.log(`401 response body: ${text}`);
+      } catch (err) {
+        console.error('Could not read 401 response body', err);
       }
     }
 

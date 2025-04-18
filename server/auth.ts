@@ -207,16 +207,17 @@ async function verifyCalDAVCredentials(
 }
 
 export function setupAuth(app: Express) {
-  // Use session with improved configuration
+  // Use session with enhanced configuration for Replit environment
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || "calendar-app-secret",
-    resave: true, // Changed to true to ensure session is saved on each request
-    saveUninitialized: true, // Changed to true to ensure new sessions are saved
+    resave: true, // Ensure session is saved on each request
+    saveUninitialized: true, // Ensure new sessions are saved
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: false, // Set to false for development in Replit
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
-      httpOnly: true,
-      sameSite: 'lax' // Allows cross-site requests for better compatibility
+      httpOnly: true, 
+      sameSite: 'lax', // Allows cross-site requests for better compatibility
+      path: '/' // Ensure cookie is available across all paths
     }
   };
 

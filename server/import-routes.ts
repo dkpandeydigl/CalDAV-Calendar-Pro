@@ -28,11 +28,19 @@ interface User {
   username: string;
 }
 
-// Middleware to check if user is authenticated
+// Enhanced middleware to check if user is authenticated
 function isAuthenticated(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) {
+  console.log("Authentication check for", req.path);
+  console.log("isAuthenticated():", req.isAuthenticated());
+  console.log("Session ID:", req.sessionID);
+  console.log("User object exists:", !!req.user);
+  
+  if (req.user && req.isAuthenticated()) {
+    console.log("User authenticated:", (req.user as any).id, (req.user as any).username);
     return next();
   }
+  
+  console.log("Authentication failed - returning 401");
   res.status(401).json({ message: "Not authenticated" });
 }
 
