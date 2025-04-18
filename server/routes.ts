@@ -956,7 +956,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/calendars", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
+      console.log(`Fetching calendars for user ID: ${userId}, username: ${req.user?.username || 'unknown'}`);
+      
       const calendars = await storage.getCalendars(userId);
+      console.log(`Found ${calendars.length} calendars for user ${userId}`);
+      
+      // Log some basic info about each calendar
+      if (calendars.length > 0) {
+        calendars.forEach((cal, idx) => {
+          console.log(`Calendar ${idx+1}: ID=${cal.id}, Name="${cal.name}", Color=${cal.color}, UserID=${cal.userId}, URL=${cal.url || 'None'}`);
+        });
+      } else {
+        console.log(`No calendars found for user ${userId}. Checking if any exist in storage...`);
+        try {
+          // Try to get all calendars (regardless of user) to help debug
+          const allCalendars = await storage.getAllCalendars();
+          console.log(`Total calendars in storage: ${allCalendars.length}`);
+          if (allCalendars.length > 0) {
+            // Log the user IDs to help debugging
+            const userIds = [...new Set(allCalendars.map(cal => cal.userId))];
+            console.log(`Calendars exist for user IDs: ${userIds.join(', ')}`);
+          }
+        } catch (debugError) {
+          console.error("Error while trying to debug calendar issues:", debugError);
+        }
+      }
+      
       res.json(calendars);
     } catch (err) {
       console.error("Error fetching calendars:", err);
