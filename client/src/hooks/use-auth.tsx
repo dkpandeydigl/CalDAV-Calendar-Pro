@@ -53,23 +53,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Automatically sync with CalDAV server after login
       apiRequest("POST", "/api/sync")
         .then(() => {
+          console.log("Sync completed successfully after login");
           // After sync, refresh calendar and event data
           queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
           queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/shared-calendars"] });
           
-          // Set timeout to force refresh the page after 5 seconds
+          // Set timeout to end loading state after 5 seconds
           setTimeout(() => {
-            // Reload the page to ensure everything is fresh
-            window.location.reload();
+            setIsPostLoginLoading(false);
           }, 5000);
         })
         .catch(error => {
           console.error("Failed to sync after login:", error);
-          setIsPostLoginLoading(false);
           
-          // Even if sync fails, still force reload after 5 seconds
+          // Refresh data anyway even if sync fails
+          queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/shared-calendars"] });
+          
+          // Set timeout to end loading state after 5 seconds
           setTimeout(() => {
-            window.location.reload();
+            setIsPostLoginLoading(false);
           }, 5000);
         });
 
@@ -105,23 +110,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Automatically sync with CalDAV server after registration
       apiRequest("POST", "/api/sync")
         .then(() => {
+          console.log("Sync completed successfully after registration");
           // After sync, refresh calendar and event data
           queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
           queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/shared-calendars"] });
           
-          // Set timeout to force refresh the page after 5 seconds
+          // Set timeout to end loading state after 5 seconds
           setTimeout(() => {
-            // Reload the page to ensure everything is fresh
-            window.location.reload();
+            setIsPostLoginLoading(false);
           }, 5000);
         })
         .catch(error => {
           console.error("Failed to sync after registration:", error);
-          setIsPostLoginLoading(false);
           
-          // Even if sync fails, still force reload after 5 seconds
+          // Refresh data anyway even if sync fails
+          queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/shared-calendars"] });
+          
+          // Set timeout to end loading state after 5 seconds
           setTimeout(() => {
-            window.location.reload();
+            setIsPostLoginLoading(false);
           }, 5000);
         });
       

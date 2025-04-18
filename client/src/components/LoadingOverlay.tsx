@@ -1,70 +1,87 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Progress } from '@/components/ui/progress';
-import { Loader2 } from 'lucide-react';
+import { useCalendarContext } from '@/contexts/CalendarContext';
+import { queryClient } from '@/lib/queryClient';
 
 interface LoadingOverlayProps {
-  duration?: number;
+  duration: number;
+  message: string;
   onComplete?: () => void;
-  message?: string;
 }
 
-export default function LoadingOverlay({
-  duration = 5000,
-  onComplete,
-  message = 'Loading your calendars and events...'
-}: LoadingOverlayProps) {
+const LoadingOverlay = ({ duration, message, onComplete }: LoadingOverlayProps) => {
   const [progress, setProgress] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(Math.ceil(duration / 1000));
+  const [secondsLeft, setSecondsLeft] = useState(Math.floor(duration / 1000));
+  const { refreshCalendarData } = useCalendarContext();
+  
+  // Refresh data at different intervals during loading
+  const refreshAllData = useCallback(() => {
+    console.log('Refreshing calendar data during loading period');
+    refreshCalendarData();
+    
+    // Force refetch events and calendars
+    queryClient.invalidateQueries({ queryKey: ['/api/events'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/shared-calendars'] });
+  }, [refreshCalendarData]);
   
   useEffect(() => {
-    const startTime = Date.now();
-    const endTime = startTime + duration;
+    // Initial refresh
+    refreshAllData();
     
-    const updateProgress = () => {
-      const now = Date.now();
-      const elapsed = now - startTime;
-      const newProgress = Math.min((elapsed / duration) * 100, 100);
-      setProgress(newProgress);
+    // Set up interval to update progress bar
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        const newProgress = prev + (100 / (duration / 100));
+        return newProgress > 100 ? 100 : newProgress;
+      });
       
-      // Update seconds left
-      const secondsLeft = Math.max(Math.ceil((endTime - now) / 1000), 0);
-      setTimeLeft(secondsLeft);
-      
-      if (now >= endTime) {
-        if (onComplete) onComplete();
-        return;
-      }
-      
-      requestAnimationFrame(updateProgress);
-    };
+      setSecondsLeft((prev) => {
+        const newSecondsLeft = prev - 0.1;
+        return newSecondsLeft < 0 ? 0 : newSecondsLeft;
+      });
+    }, 100);
     
-    const animationId = requestAnimationFrame(updateProgress);
+    // Set up periodic data refreshes during loading
+    const refreshPoints = [
+      duration * 0.25, // 25% through loading
+      duration * 0.5,  // 50% through loading
+      duration * 0.75  // 75% through loading
+    ];
+    
+    const refreshTimers = refreshPoints.map(point => 
+      setTimeout(() => refreshAllData(), point)
+    );
+    
+    // Set up the completion timer
+    const completionTimer = setTimeout(() => {
+      clearInterval(interval);
+      
+      // Final refresh before completing
+      refreshAllData();
+      
+      if (onComplete) onComplete();
+    }, duration);
     
     return () => {
-      cancelAnimationFrame(animationId);
+      // Clean up all timers
+      clearInterval(interval);
+      refreshTimers.forEach(timer => clearTimeout(timer));
+      clearTimeout(completionTimer);
     };
-  }, [duration, onComplete]);
+  }, [duration, onComplete, refreshAllData]);
   
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm">
-      <div className="w-full max-w-md p-6 space-y-6 rounded-lg shadow-lg bg-card">
-        <div className="flex items-center justify-center space-x-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <h2 className="text-2xl font-bold">{message}</h2>
-        </div>
-        
-        <div className="space-y-2">
-          <Progress value={progress} className="h-2 w-full" />
-          <p className="text-sm text-center text-muted-foreground">
-            Refreshing data in {timeLeft} second{timeLeft !== 1 ? 's' : ''}...
-          </p>
-        </div>
-        
-        <div className="text-sm text-center text-muted-foreground">
-          <p>Synchronizing with CalDAV server</p>
-          <p>Please wait while we load your data</p>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center z-50">
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-lg max-w-md w-full">
+        <h2 className="text-xl font-semibold mb-4">{message}</h2>
+        <Progress value={progress} className="mb-4" />
+        <div className="text-center text-sm text-muted-foreground">
+          {secondsLeft.toFixed(1)} seconds remaining...
         </div>
       </div>
     </div>
   );
-}
+};
+
+export default LoadingOverlay;

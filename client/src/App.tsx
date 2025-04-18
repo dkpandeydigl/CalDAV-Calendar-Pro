@@ -31,7 +31,7 @@ function Router() {
         {() => <ProtectedRoute component={EmailSettingsPage} />}
       </Route>
       <Route path="/websocket-test">
-        {() => <ProtectedRoute component={WebSocketTestPage} />}
+        {() => <ProtectedRoute component={() => <WebSocketTestPage />} />}
       </Route>
       <Route path="/websocket-debug">
         {() => <ProtectedRoute component={WebSocketDebugPage} />}
@@ -65,9 +65,8 @@ function AppContent() {
           duration={5000} 
           message="Loading your calendars and events..." 
           onComplete={() => {
-            // This is redundant since we already set timeouts in the auth hooks,
-            // but it's here as a safeguard
-            window.location.reload();
+            // Loading is complete, component will unmount
+            console.log('Loading complete, calendars and events are ready to use');
           }} 
         />
       )}
