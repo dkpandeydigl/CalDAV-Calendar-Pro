@@ -308,26 +308,67 @@ export function registerExportRoutes(app: Express) {
       let icsContent = '';
       
       // If we have raw ICS data, use it with our shared sanitization utility
-      if (event.rawData && typeof event.rawData === 'string') {
+      if (event.rawData && typeof event.rawData === 'string' && !event.rawData.startsWith('"BEGIN:VCALENDAR')) {
         console.log('Using raw ICS data for download with shared sanitizer');
         
         // Use our shared utility for consistent RFC 5545 formatting
         icsContent = sanitizeAndFormatICS(event.rawData);
       } else {
-        // Create basic iCalendar format using our shared utility
+        // Create basic iCalendar format using our enhanced shared utility
         const startDate = new Date(event.startDate);
         const endDate = new Date(event.endDate);
         
-        console.log('Creating basic ICS file for download using shared utility');
+        console.log('Creating basic ICS file for download using enhanced shared utility');
         
-        // Use shared createBasicICS function for consistent RFC 5545 formatting
+        // Parse attendees if present
+        let attendees = [];
+        try {
+          if (event.attendees) {
+            if (typeof event.attendees === 'string') {
+              attendees = JSON.parse(event.attendees);
+            } else if (Array.isArray(event.attendees)) {
+              attendees = event.attendees;
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to parse attendees:', err);
+        }
+        
+        // Parse resources if present
+        let resources = [];
+        try {
+          if (event.resources) {
+            if (typeof event.resources === 'string') {
+              resources = JSON.parse(event.resources);
+            } else if (Array.isArray(event.resources)) {
+              resources = event.resources;
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to parse resources:', err);
+        }
+        
+        // Parse recurrence rule
+        let recurrenceRule = event.recurrenceRule;
+        if (recurrenceRule && recurrenceRule.includes('mailto')) {
+          recurrenceRule = recurrenceRule.split(/mailto:|mailto/)[0];
+        }
+        
+        // Use enhanced createBasicICS function for consistent RFC 5545 formatting with all event details
         icsContent = createBasicICS({
           title: event.title,
           startDate,
           endDate,
           description: event.description || '',
           location: event.location || '',
-          uid: event.uid || `event-${Date.now()}`
+          uid: event.uid || `event-${Date.now()}`,
+          attendees,
+          resources,
+          recurrenceRule,
+          organizer: event.organizer || {
+            email: 'calendar-app@example.com',
+            name: 'Calendar App'
+          }
         });
       }
       

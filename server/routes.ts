@@ -256,12 +256,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (event.recurrenceRule) {
           // Clean any potentially malformed RRULE
           let cleanedRule = event.recurrenceRule;
-          if (cleanedRule.includes('mailto:')) {
-            cleanedRule = cleanedRule.split('mailto:')[0];
+          
+          // Properly clean RRULE of any mailto or other invalid content
+          if (cleanedRule.includes('mailto:') || cleanedRule.includes('mailto')) {
+            cleanedRule = cleanedRule.split(/mailto:|mailto/)[0];
           }
+          
           if (cleanedRule.includes(';CN=')) {
             cleanedRule = cleanedRule.split(';CN=')[0];
           }
+          
+          // Additional check to ensure RRULE only contains valid RFC 5545 parameters
+          const validRRulePattern = /^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;.*)?$/;
+          if (!validRRulePattern.test(cleanedRule)) {
+            // Extract just the part that matches valid RRULE structure
+            const match = cleanedRule.match(/FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;[^;]*)*$/);
+            if (match) {
+              cleanedRule = match[0];
+            }
+          }
+          
           lines.push(`RRULE:${cleanedRule}`);
         }
         
@@ -324,22 +338,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
-        // Add any raw data properties that may be missing
-        if (event.rawData && typeof event.rawData === 'string') {
+        // Add additional custom properties from raw data if needed
+        // But be careful to avoid including the entire raw data as a property
+        if (event.rawData && typeof event.rawData === 'string' && !event.rawData.startsWith('"BEGIN:VCALENDAR')) {
           try {
-            // Extract any properties from rawData that we might have missed
-            const rawLines = event.rawData.split(/\r?\n/);
-            const includedProps = new Set([
-              'UID', 'DTSTART', 'DTEND', 'SUMMARY', 'DESCRIPTION', 'LOCATION', 
-              'CREATED', 'DTSTAMP', 'LAST-MODIFIED', 'SEQUENCE', 'RRULE',
-              'ORGANIZER', 'ATTENDEE', 'CATEGORIES'
-            ]);
-            
-            for (const line of rawLines) {
-              const propName = line.split(':')[0]?.split(';')[0];
-              if (propName && !includedProps.has(propName) && 
-                  !line.startsWith('BEGIN:') && !line.startsWith('END:')) {
-                lines.push(line);
+            // Only process rawData if it looks like valid ICS content
+            if (event.rawData.includes('BEGIN:VCALENDAR') || event.rawData.includes('BEGIN:VEVENT')) {
+              // Extract any properties from rawData that we might have missed
+              const rawLines = event.rawData.split(/\r?\n/);
+              const includedProps = new Set([
+                'UID', 'DTSTART', 'DTEND', 'SUMMARY', 'DESCRIPTION', 'LOCATION', 
+                'CREATED', 'DTSTAMP', 'LAST-MODIFIED', 'SEQUENCE', 'RRULE',
+                'ORGANIZER', 'ATTENDEE', 'CATEGORIES', 'BEGIN', 'END'
+              ]);
+              
+              for (const line of rawLines) {
+                // Skip empty lines
+                if (!line.trim()) continue;
+                
+                // Extract the property name (before any parameters)
+                const propName = line.split(':')[0]?.split(';')[0];
+                
+                // Only include properties we haven't already added
+                // and skip any BEGIN: or END: markers to avoid nesting issues
+                if (propName && 
+                    !includedProps.has(propName) && 
+                    !line.startsWith('BEGIN:') && 
+                    !line.startsWith('END:') &&
+                    !line.includes('"BEGIN:VCALENDAR')) {
+                  lines.push(line);
+                }
               }
             }
           } catch (err) {

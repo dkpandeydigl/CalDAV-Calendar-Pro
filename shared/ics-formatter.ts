@@ -335,6 +335,10 @@ export function createBasicICS(event: {
   description?: string;
   location?: string;
   uid: string;
+  attendees?: Array<{email: string, name?: string, role?: string, status?: string}>;
+  resources?: Array<{email: string, name?: string, type?: string, capacity?: number}>;
+  recurrenceRule?: string;
+  organizer?: {email: string, name?: string};
 }): string {
   // Format dates as required by iCalendar spec (UTC, no separators)
   // Format: YYYYMMDDTHHmmssZ
@@ -353,7 +357,7 @@ export function createBasicICS(event: {
       .replace(/\n/g, '\\n');  // Convert newlines to literal \n
   };
   
-  // Create required iCalendar component lines
+  // Create array for iCalendar component lines
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -364,13 +368,102 @@ export function createBasicICS(event: {
     `SUMMARY:${escapeText(event.title)}`,
     `DTSTART:${formatDate(event.startDate)}`,
     `DTEND:${formatDate(event.endDate)}`,
-    `DESCRIPTION:${escapeText(event.description || '')}`,
-    `LOCATION:${escapeText(event.location || '')}`,
     `UID:${event.uid}`,
-    'STATUS:CONFIRMED',
-    'END:VEVENT',
-    'END:VCALENDAR'
+    `DTSTAMP:${formatDate(new Date())}`
   ];
+  
+  // Add description and location if provided
+  if (event.description) {
+    lines.push(`DESCRIPTION:${escapeText(event.description)}`);
+  }
+  
+  if (event.location) {
+    lines.push(`LOCATION:${escapeText(event.location)}`);
+  }
+  
+  // Add status
+  lines.push('STATUS:CONFIRMED');
+  
+  // Add sequence
+  lines.push('SEQUENCE:0');
+  
+  // Add organizer if provided
+  if (event.organizer) {
+    const organizerStr = event.organizer.name ? 
+      `ORGANIZER;CN=${event.organizer.name}:mailto:${event.organizer.email}` : 
+      `ORGANIZER:mailto:${event.organizer.email}`;
+    lines.push(organizerStr);
+  }
+  
+  // Add attendees if provided
+  if (event.attendees && Array.isArray(event.attendees)) {
+    for (const attendee of event.attendees) {
+      let attendeeStr = 'ATTENDEE';
+      
+      if (attendee.name) {
+        attendeeStr += `;CN=${attendee.name}`;
+      }
+      
+      if (attendee.role) {
+        attendeeStr += `;ROLE=${attendee.role}`;
+      } else {
+        attendeeStr += `;ROLE=REQ-PARTICIPANT`;
+      }
+      
+      if (attendee.status) {
+        attendeeStr += `;PARTSTAT=${attendee.status}`;
+      } else {
+        attendeeStr += `;PARTSTAT=NEEDS-ACTION`;
+      }
+      
+      attendeeStr += `:mailto:${attendee.email}`;
+      lines.push(attendeeStr);
+    }
+  }
+  
+  // Add resources if provided
+  if (event.resources && Array.isArray(event.resources)) {
+    for (const resource of event.resources) {
+      let resourceStr = 'ATTENDEE;CUTYPE=RESOURCE;ROLE=NON-PARTICIPANT';
+      
+      if (resource.name) {
+        resourceStr += `;CN=${resource.name}`;
+      }
+      
+      if (resource.type) {
+        resourceStr += `;X-RESOURCE-TYPE=${resource.type}`;
+      }
+      
+      if (resource.capacity) {
+        resourceStr += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
+      }
+      
+      resourceStr += `:mailto:${resource.email}`;
+      lines.push(resourceStr);
+    }
+  }
+  
+  // Add recurrence rule if provided, ensuring it's properly formatted
+  if (event.recurrenceRule) {
+    // Clean up the recurrence rule to ensure no mailto: or other erroneous text
+    let cleanRule = event.recurrenceRule;
+    
+    // Remove any trailing "mailto" text that might be present
+    if (cleanRule.includes('mailto')) {
+      cleanRule = cleanRule.split('mailto')[0];
+    }
+    
+    // Make sure rule starts with FREQ=
+    if (!cleanRule.startsWith('FREQ=')) {
+      cleanRule = `FREQ=${cleanRule}`;
+    }
+    
+    lines.push(`RRULE:${cleanRule}`);
+  }
+  
+  // Complete the event
+  lines.push('END:VEVENT');
+  lines.push('END:VCALENDAR');
   
   // Apply proper formatting according to RFC 5545
   return formatICS(lines);
