@@ -4028,27 +4028,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.id;
       
       try {
-        // Import our fixed implementation that doesn't rely on missing columns
-        const { getSharedCalendars } = await import('./calendar-sharing-fix');
-        
-        // Use the fixed implementation
-        const sharedCalendars = await getSharedCalendars(userId, storage);
-        console.log(`Returning ${sharedCalendars.length} shared calendars using fixed implementation`);
-        
-        res.setHeader('Content-Type', 'application/json');
-        res.json(sharedCalendars);
-      } catch (fixError) {
-        console.error("Error with fixed implementation, falling back to standard method:", fixError);
-        
-        // Fall back to standard method
+        // First try the memory storage direct method which seems more reliable
         const sharedCalendars = await storage.getSharedCalendars(userId);
+        console.log(`Returning ${sharedCalendars.length} shared calendars using memory storage implementation`);
+        
         res.setHeader('Content-Type', 'application/json');
-        res.json(sharedCalendars);
+        return res.json(sharedCalendars);
+      } catch (memoryError) {
+        console.error("Error with memory storage implementation:", memoryError);
+        
+        try {
+          // Fall back to the fixed Drizzle implementation
+          const { getSharedCalendars } = await import('./calendar-sharing-fix');
+          
+          const sharedCalendars = await getSharedCalendars(userId, storage);
+          console.log(`Returning ${sharedCalendars.length} shared calendars using fixed implementation`);
+          
+          res.setHeader('Content-Type', 'application/json');
+          return res.json(sharedCalendars);
+        } catch (fixError) {
+          console.error("Error with fixed implementation:", fixError);
+          throw fixError; // Let the outer catch handle this
+        }
       }
     } catch (err) {
       console.error("Error fetching shared calendars:", err);
       res.setHeader('Content-Type', 'application/json');
-      res.status(500).json({ message: "Failed to fetch shared calendars" });
+      res.status(500).json({ message: "Failed to fetch shared calendars", error: err.message });
     }
   });
   
