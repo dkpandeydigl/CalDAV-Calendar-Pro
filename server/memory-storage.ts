@@ -507,6 +507,9 @@ export class MemStorage implements IStorage {
       organizer: insertEvent.organizer || null,
       attachments: insertEvent.attachments || null,
       resources: insertEvent.resources || null,
+      syncStatus: insertEvent.syncStatus || "local", // Set sync status with default "local"
+      syncError: insertEvent.syncError || null,
+      lastSyncAttempt: insertEvent.lastSyncAttempt || null,
       emailSent: false,
       emailError: null,
       lastModifiedBy: null,
