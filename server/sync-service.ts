@@ -2846,13 +2846,16 @@ export class SyncService {
         // First handle pending updates (they should get priority in case of duplicate UIDs)
         const pendingEvents = events.filter(event => event.syncStatus === 'pending');
         const localEvents = events.filter(event => event.syncStatus === 'local');
+        const needsSyncEvents = events.filter(event => event.syncStatus === 'needs_sync');
         
-        // Combine pending and local events for processing
-        // This ensures both explicitly marked 'pending' events and default 'local' events will be synced
-        const eventsToSync = [...pendingEvents, ...localEvents];
+        console.log(`Found ${pendingEvents.length} pending events, ${localEvents.length} local events, and ${needsSyncEvents.length} events marked for sync`);
+        
+        // Combine pending, needs_sync and local events for processing
+        // This ensures all types of events that need syncing are included
+        const eventsToSync = [...pendingEvents, ...needsSyncEvents, ...localEvents];
         
         // Log what we're doing
-        console.log(`Found ${pendingEvents.length} pending events and ${localEvents.length} local events to push for calendar ${calendar.name}`);
+        console.log(`Found ${pendingEvents.length} pending events, ${needsSyncEvents.length} needs_sync events, and ${localEvents.length} local events to push for calendar ${calendar.name}`);
         console.log(`Total events to sync: ${eventsToSync.length}`);
         
         // Process all events that need syncing
@@ -2886,9 +2889,9 @@ export class SyncService {
                 currentSequence = this.extractSequenceFromICal(rawDataStr);
                 
                 // For updates, increment the sequence number
-                if (event.syncStatus === 'pending' && event.url && event.etag) {
+                if ((event.syncStatus === 'pending' || event.syncStatus === 'needs_sync') && event.url && event.etag) {
                   currentSequence += 1;
-                  console.log(`Incrementing SEQUENCE to ${currentSequence} for event ${event.id}`);
+                  console.log(`Incrementing SEQUENCE to ${currentSequence} for event ${event.id} with status ${event.syncStatus}`);
                 }
                 
                 // Process raw data to update only what we need while keeping other properties

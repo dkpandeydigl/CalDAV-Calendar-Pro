@@ -419,6 +419,36 @@ END:VCALENDAR`,
       // Return the result
       console.log("Import complete:", { importedCount, totalEvents: events.length, errorCount: errors.length });
       
+      // After import, update event statuses directly and then trigger sync
+      try {
+        // First, directly update all imported events' status to needs_sync
+        console.log("Updating imported events to 'needs_sync' status...");
+        const events = await storage.getEvents(calendarId);
+        const importedEvents = events.filter(event => event.syncStatus === 'local' || event.syncStatus === 'pending');
+        
+        // Update each imported event with needs_sync status
+        for (const event of importedEvents) {
+          await storage.updateEvent(event.id, { 
+            syncStatus: 'needs_sync',
+            lastSyncAttempt: new Date() 
+          });
+          console.log(`Updated event ${event.title} (ID: ${event.id}) to 'needs_sync' status`);
+        }
+        
+        // Then trigger a sync to push these changes to the server
+        const syncService = require('./sync-service').default;
+        if (syncService) {
+          console.log("Triggering immediate sync after import to push changes to server...");
+          // Trigger sync specifically for this calendar
+          syncService.instance.syncNow(userId, { 
+            calendarId: calendarId,
+            forceRefresh: true
+          });
+        }
+      } catch (syncError) {
+        console.error("Error updating event statuses and triggering sync after import:", syncError);
+      }
+      
       res.json({
         message: `Imported ${importedCount} events`,
         imported: importedCount,

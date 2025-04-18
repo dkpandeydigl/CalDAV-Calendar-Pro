@@ -109,7 +109,7 @@ export const events = pgTable("events", {
   etag: text("etag"), // CalDAV ETag for sync
   url: text("url"), // CalDAV event URL
   rawData: json("raw_data"), // Store the raw CalDAV data
-  syncStatus: text("sync_status").default("local").notNull(), // Values: 'local', 'synced', 'sync_failed', 'syncing'
+  syncStatus: text("sync_status").default("local").notNull(), // Values: 'local', 'synced', 'sync_failed', 'syncing', 'pending', 'needs_sync', 'error'
   syncError: text("sync_error"), // Error message if sync failed
   lastSyncAttempt: timestamp("last_sync_attempt"), // When we last tried to sync
   emailSent: text("email_sent"), // Values: 'sent', 'failed', 'not_sent', null (if no attendees)
