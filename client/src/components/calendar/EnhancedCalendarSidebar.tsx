@@ -122,6 +122,9 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   const [calendarViewMode, setCalendarViewMode] = useState<'list' | 'compact'>('list');
   const [sharedCalendarViewMode, setSharedCalendarViewMode] = useState<'list' | 'compact'>('list');
   
+  // State for tracking which shared calendar group is expanded (only one at a time)
+  const [expandedOwnerEmail, setExpandedOwnerEmail] = useState<string | null>(null);
+  
   // Inherit other state variables from original implementation
   const [showAddCalendar, setShowAddCalendar] = useState(false);
   const [newCalendarName, setNewCalendarName] = useState('');
