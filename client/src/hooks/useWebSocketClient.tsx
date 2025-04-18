@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useAuth } from './use-auth';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface WebSocketState {
   connected: boolean;

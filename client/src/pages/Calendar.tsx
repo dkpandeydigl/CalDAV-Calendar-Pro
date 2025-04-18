@@ -17,7 +17,7 @@ import { Event, Calendar as CalendarType } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useSharedCalendars } from '@/hooks/useSharedCalendars';  
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
