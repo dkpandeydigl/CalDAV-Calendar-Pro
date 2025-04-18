@@ -267,6 +267,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
   }, [expandedOwnerEmails, groupedSharedCalendars]);
   
   // Function to toggle a group's expansion state
+  // Now only allows one group to be expanded at a time
   const handleToggleGroupExpansion = (ownerEmail: string, e?: React.MouseEvent) => {
     // Stop propagation if event is provided
     if (e) {
@@ -276,17 +277,15 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     console.log(`Toggling expansion for owner: ${ownerEmail}`, 
                 `Current state: ${expandedOwnerEmails.has(ownerEmail) ? 'expanded' : 'collapsed'}`);
     
-    setExpandedOwnerEmails(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(ownerEmail)) {
-        console.log(`Collapsing group: ${ownerEmail}`);
-        newSet.delete(ownerEmail);
-      } else {
-        console.log(`Expanding group: ${ownerEmail}`);
-        newSet.add(ownerEmail);
-      }
-      return newSet;
-    });
+    // If the group is already expanded, collapse it
+    // If it's collapsed, collapse all others and expand only this one
+    if (expandedOwnerEmails.has(ownerEmail)) {
+      console.log(`Collapsing group: ${ownerEmail}`);
+      setExpandedOwnerEmails(new Set());
+    } else {
+      console.log(`Expanding group: ${ownerEmail}, collapsing all others`);
+      setExpandedOwnerEmails(new Set([ownerEmail]));
+    }
   };
   
   // Function to check duplicate calendar name (reuse from original)
@@ -1006,7 +1005,6 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                   <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
                                 }
                                 <div className="text-xs text-left truncate max-w-[160px]">
-                                  <span className="italic">Shared by:</span>{' '}
                                   <span className="font-medium" title={ownerEmail}>
                                     {ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' 
                                       ? ownerEmail 
