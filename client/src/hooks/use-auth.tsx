@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext } from "react";
+import { createContext, ReactNode, useContext, useState } from "react";
 import {
   useQuery,
   useMutation,
@@ -15,6 +15,7 @@ type AuthContextType = {
   loginMutation: UseMutationResult<SelectUser, Error, LoginData>;
   logoutMutation: UseMutationResult<void, Error, void>;
   registerMutation: UseMutationResult<SelectUser, Error, InsertUser>;
+  isPostLoginLoading: boolean; // Added for post-login loading state
 };
 
 type LoginData = Pick<InsertUser, "username" | "password">;
@@ -23,6 +24,7 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
+  const [isPostLoginLoading, setIsPostLoginLoading] = useState(false);
   
   const {
     data: user,
@@ -39,6 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return await res.json();
     },
     onSuccess: (user: SelectUser) => {
+      // Set loading state to true to show overlay
+      setIsPostLoginLoading(true);
+      
       queryClient.setQueryData(["/api/user"], user);
       
       // Automatically fetch calendars and connection data after login
@@ -51,9 +56,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // After sync, refresh calendar and event data
           queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
           queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+          
+          // Set timeout to force refresh the page after 5 seconds
+          setTimeout(() => {
+            // Reload the page to ensure everything is fresh
+            window.location.reload();
+          }, 5000);
         })
         .catch(error => {
           console.error("Failed to sync after login:", error);
+          setIsPostLoginLoading(false);
+          
+          // Even if sync fails, still force reload after 5 seconds
+          setTimeout(() => {
+            window.location.reload();
+          }, 5000);
         });
 
       toast({
@@ -76,6 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return await res.json();
     },
     onSuccess: (user: SelectUser) => {
+      // Set loading state to true to show overlay
+      setIsPostLoginLoading(true);
+      
       queryClient.setQueryData(["/api/user"], user);
       
       // Automatically fetch calendars and connection data after registration
@@ -88,9 +108,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // After sync, refresh calendar and event data
           queryClient.invalidateQueries({ queryKey: ["/api/calendars"] });
           queryClient.invalidateQueries({ queryKey: ["/api/events"] });
+          
+          // Set timeout to force refresh the page after 5 seconds
+          setTimeout(() => {
+            // Reload the page to ensure everything is fresh
+            window.location.reload();
+          }, 5000);
         })
         .catch(error => {
           console.error("Failed to sync after registration:", error);
+          setIsPostLoginLoading(false);
+          
+          // Even if sync fails, still force reload after 5 seconds
+          setTimeout(() => {
+            window.location.reload();
+          }, 5000);
         });
       
       toast({
@@ -135,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginMutation,
         logoutMutation,
         registerMutation,
+        isPostLoginLoading,
       }}
     >
       {children}
