@@ -232,12 +232,47 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     
     console.log("Shared calendars user IDs:", Array.from(userIds));
     
-    // Map each user ID to a default value if not already in the map
-    userIds.forEach(userId => {
-      if (userId && !ownerEmailsById.has(userId)) {
-        setOwnerEmailsById(prev => new Map(prev).set(userId, `User ${userId}`));
+    // Fetch actual owner information for any users not in our cache
+    const fetchMissingOwnerInfo = async () => {
+      const missingUserIds = Array.from(userIds).filter(userId => 
+        userId && !ownerEmailsById.has(userId)
+      );
+      
+      if (missingUserIds.length === 0) return;
+      
+      console.log("Fetching owner information for user IDs:", missingUserIds);
+      
+      try {
+        const response = await apiRequest('GET', `/api/users/details?ids=${missingUserIds.join(',')}`);
+        const userDetails = await response.json();
+        
+        // Update our cache with real email addresses
+        const updatedMap = new Map(ownerEmailsById);
+        
+        userDetails.forEach(user => {
+          if (user.id) {
+            const emailToUse = user.email || user.username || `User ${user.id}`;
+            updatedMap.set(user.id, emailToUse);
+          }
+        });
+        
+        setOwnerEmailsById(updatedMap);
+      } catch (error) {
+        console.error("Error fetching owner information:", error);
+        
+        // Fall back to default values if API fails
+        const updatedMap = new Map(ownerEmailsById);
+        missingUserIds.forEach(userId => {
+          if (userId && !updatedMap.has(userId)) {
+            updatedMap.set(userId, `User ${userId}`);
+          }
+        });
+        
+        setOwnerEmailsById(updatedMap);
       }
-    });
+    };
+    
+    fetchMissingOwnerInfo();
     
     // Log all shared calendars details for debugging
     if (filteredSharedCalendars.length > 0) {
@@ -1038,7 +1073,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                             </div>
                             
                             {/* Group Content - only visible when expanded */}
-                            {expandedOwnerEmails.has(ownerEmail) && (
+                            {expandedOwnerEmail === ownerEmail && (
                               <div className="px-3 pb-2 pt-1 border-t border-gray-100 bg-white">
                                 <div className="pl-5 space-y-1">
                                   {ownerCalendars
