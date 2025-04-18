@@ -47,7 +47,8 @@ import {
   Filter,
   X,
   Info,
-  RefreshCw
+  RefreshCw,
+  Mail
 } from 'lucide-react';
 // SyncStatusIndicator import removed
 import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
@@ -1082,7 +1083,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                     className="font-medium text-blue-600 hover:underline cursor-help flex items-center" 
                                     title={`Calendar owner: ${ownerEmail}`}
                                   >
-                                    <Mail className="h-3 w-3 mr-1 text-blue-500" />
+                                    <Info className="h-3 w-3 mr-1 text-blue-500" />
                                     {ownerEmail && ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' && ownerEmail !== 'undefined' && ownerEmail !== 'null'
                                       ? ownerEmail 
                                       : 'shared-calendar-owner@example.com'}
@@ -1273,7 +1274,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             <AlertDialogTitle>Remove All Calendars</AlertDialogTitle>
             <AlertDialogDescription>
               <div className="flex items-center text-base">
-                <Mail className="h-4 w-4 mr-2 text-blue-500 flex-shrink-0" />
+                <Info className="h-4 w-4 mr-2 text-blue-500 flex-shrink-0" />
                 <span className="text-blue-600 font-medium">{bulkUnshareEmail}</span>
               </div>
               <div className="mt-2">
