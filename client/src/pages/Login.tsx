@@ -50,6 +50,7 @@ export default function Login() {
     defaultValues: {
       username: '',
       password: '',
+      caldavServerUrl: 'https://zpush.ajaydata.com/davical/',
     },
   });
 
@@ -60,6 +61,7 @@ export default function Login() {
       username: '',
       password: '',
       confirmPassword: '',
+      caldavServerUrl: 'https://zpush.ajaydata.com/davical/',
     },
   });
 
@@ -178,6 +180,20 @@ export default function Login() {
                     )}
                   />
 
+                  <FormField
+                    control={loginForm.control}
+                    name="caldavServerUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>CalDAV Server URL</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
                   <Button 
                     type="submit" 
                     className="w-full" 
@@ -231,6 +247,20 @@ export default function Login() {
                         <FormLabel>Confirm Password</FormLabel>
                         <FormControl>
                           <Input type="password" placeholder="••••••••" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={registerForm.control}
+                    name="caldavServerUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>CalDAV Server URL</FormLabel>
+                        <FormControl>
+                          <Input {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
