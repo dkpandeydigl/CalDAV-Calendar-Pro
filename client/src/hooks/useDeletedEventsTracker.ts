@@ -353,38 +353,64 @@ export function useDeletedEventsTracker() {
   const filterDeletedEvents = useCallback((events: Event[] | undefined): Event[] => {
     if (!events) return [];
     
-    return events.filter(event => {
-      // Check for reimported events - by checking syncStatus
-      // If this is a reimported event that was previously deleted, untrack it
-      if (event.syncStatus === 'needs_sync' || event.syncStatus === 'synced') {
-        // This logic allows reimported events (with needs_sync or synced status) to appear
-        // even if they were previously deleted
+    if (events.length > 0) {
+      // Debug output - show all events before filtering
+      console.log(`[DeletedEventsTracker] Pre-filtering event count: ${events.length}`);
+      console.log(`[DeletedEventsTracker] Events to be filtered:`, events.map(e => ({
+        id: e.id,
+        title: e.title,
+        uid: e.uid ? e.uid.substring(0, 10) + '...' : 'null',
+        startDate: e.startDate ? new Date(e.startDate).toLocaleString() : 'null',
+        endDate: e.endDate ? new Date(e.endDate).toLocaleString() : 'null',
+        syncStatus: e.syncStatus || 'unknown',
+        calendarId: e.calendarId
+      })));
+    }
+    
+    // Force untrack any synced or imported events regardless of deleted status
+    events.forEach(event => {
+      if (event.syncStatus === 'synced' || event.syncStatus === 'needs_sync') {
         for (const deletedEvent of deletedEvents.values()) {
-          // Check if this might be a reimported event by comparing signatures
-          if (deletedEvent.title === event.title && 
-              deletedEvent.startDateISO && 
-              event.startDate) {
-              
-            const deletedStart = new Date(deletedEvent.startDateISO).getTime();
-            const eventStart = new Date(event.startDate).getTime();
-            
-            if (Math.abs(deletedStart - eventStart) < 60000) {
-              // This looks like a reimported event, untrack it
-              console.log(`Detected reimported event, untracking from deleted events: ${event.title} (ID: ${event.id})`);
+          if (deletedEvent.uid === event.uid || 
+              (deletedEvent.title === event.title && 
+               deletedEvent.startDateISO && 
+               event.startDate)) {
+            if (deletedEvent.uid === event.uid) {
+              console.log(`[DeletedEventsTracker] Force untracking by UID match: ${event.title} (ID: ${event.id}, UID: ${event.uid?.substring(0, 10)}...)`);
               untrackDeletedEvent(event);
-              return true; // Keep the event
+            } else if (deletedEvent.title === event.title && deletedEvent.startDateISO && event.startDate) {
+              const deletedStart = new Date(deletedEvent.startDateISO).getTime();
+              const eventStart = new Date(event.startDate).getTime();
+              
+              if (Math.abs(deletedStart - eventStart) < 60000) {
+                console.log(`[DeletedEventsTracker] Force untracking by signature match: ${event.title} (ID: ${event.id})`);
+                untrackDeletedEvent(event);
+              }
             }
           }
         }
       }
+    });
+    
+    // Store initial count for debugging
+    const initialCount = events.length;
+    
+    // Apply filter
+    const filteredEvents = events.filter(event => {
+      // ALWAYS keep synced or needs_sync events regardless of deleted status
+      // This ensures reimported events are not filtered out
+      if (event.syncStatus === 'synced' || event.syncStatus === 'needs_sync') {
+        console.log(`[DeletedEventsTracker] Keeping event with syncStatus=${event.syncStatus}: ${event.title} (ID: ${event.id})`);
+        return true;
+      }
 
-      // Skip if explicitly deleted by ID or UID
+      // Check if this event was previously deleted - by exact ID or UID
       if (isEventDeleted(event.id, event.uid)) {
-        console.log(`Filtering out deleted event: ${event.title} (ID: ${event.id})`);
+        console.log(`[DeletedEventsTracker] Filtering out directly deleted event: ${event.title} (ID: ${event.id}, UID: ${event.uid?.substring(0, 10) || 'null'})`);
         return false;
       }
       
-      // Also check for signature matches across all deleted events
+      // Also check for signature matches (title + start time) across all deleted events
       for (const deletedEvent of deletedEvents.values()) {
         if (deletedEvent.title && 
             deletedEvent.startDateISO && 
@@ -397,7 +423,7 @@ export function useDeletedEventsTracker() {
           const eventStart = new Date(event.startDate).getTime();
           
           if (Math.abs(deletedStart - eventStart) < 60000) {
-            console.log(`Filtering out event with matching signature: ${event.title} (ID: ${event.id})`);
+            console.log(`[DeletedEventsTracker] Filtering out event with matching signature: ${event.title} (ID: ${event.id})`);
             return false;
           }
         }
@@ -405,6 +431,13 @@ export function useDeletedEventsTracker() {
       
       return true;
     });
+    
+    // Debug output - show filtered event summary
+    if (initialCount !== filteredEvents.length) {
+      console.log(`[DeletedEventsTracker] Filtered ${initialCount - filteredEvents.length} events, kept ${filteredEvents.length}`);
+    }
+    
+    return filteredEvents;
   }, [deletedEvents, isEventDeleted]);
   
   // Apply the filter to all event queries

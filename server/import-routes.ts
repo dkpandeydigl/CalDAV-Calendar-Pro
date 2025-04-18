@@ -426,6 +426,8 @@ END:VCALENDAR`,
         const events = await storage.getEvents(calendarId);
         const importedEvents = events.filter(event => event.syncStatus === 'local' || event.syncStatus === 'pending');
         
+        console.log(`Found ${importedEvents.length} imported events to update status for`);
+        
         // Update each imported event with needs_sync status
         for (const event of importedEvents) {
           await storage.updateEvent(event.id, { 
@@ -448,6 +450,62 @@ END:VCALENDAR`,
       } catch (syncError) {
         console.error("Error updating event statuses and triggering sync after import:", syncError);
       }
+      
+      // Add an explicit endpoint to update event sync status
+  
+  // New route to force update event sync status
+  app.post("/api/calendars/:calendarId/mark-events-synced", isAuthenticated, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      
+      const userId = (req.user as User).id;
+      const calendarId = Number(req.params.calendarId);
+      
+      // Get all events for the specified calendar
+      const events = await storage.getEvents(calendarId);
+      
+      if (!events || events.length === 0) {
+        return res.status(404).json({ 
+          message: "No events found for this calendar",
+          calendarId
+        });
+      }
+      
+      console.log(`Found ${events.length} events for calendar ${calendarId}, updating sync status...`);
+      
+      // Start updating events
+      let updatedCount = 0;
+      
+      for (const event of events) {
+        if (event.syncStatus === 'local' || event.syncStatus === 'pending' || event.syncStatus === 'needs_sync') {
+          await storage.updateEvent(event.id, {
+            syncStatus: 'synced',
+            lastSyncAttempt: new Date(),
+            lastSyncSuccess: new Date()
+          });
+          updatedCount++;
+          console.log(`Updated event ${event.title} (ID: ${event.id}) to 'synced' status`);
+        }
+      }
+      
+      console.log(`Successfully updated ${updatedCount} of ${events.length} events to 'synced' status`);
+      
+      res.json({
+        message: `Updated ${updatedCount} events to 'synced' status`,
+        updated: updatedCount,
+        total: events.length
+      });
+      
+    } catch (error) {
+      console.error("Error marking events as synced:", error);
+      res.status(500).json({ 
+        message: "Failed to mark events as synced", 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
       
       res.json({
         message: `Imported ${importedCount} events`,

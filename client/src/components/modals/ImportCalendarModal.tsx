@@ -355,7 +355,24 @@ export default function ImportCalendarModal({
         });
       });
       
-      // Invalidate the events cache to trigger a refetch
+      // Force immediate sync to ensure events are updated with server
+      console.log("Triggering immediate sync to update event statuses...");
+      try {
+        // Make a sync request to ensure events are marked as synced
+        await apiRequest('POST', '/api/sync', { 
+          calendarId: calendarId,
+          forceRefresh: true
+        });
+        console.log("Sync request completed");
+      } catch (syncError) {
+        console.error("Error triggering sync:", syncError);
+      }
+      
+      // Add a small delay to allow the sync to process
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Invalidate the events cache to trigger a refetch with updated statuses
+      console.log("Invalidating event caches to refresh state...");
       queryClient.invalidateQueries({ queryKey: ['/api/events'] });
       
       // Also invalidate any calendar-specific event queries
@@ -364,6 +381,9 @@ export default function ImportCalendarModal({
           queryKey: ['/api/calendars', calendarId, 'events'] 
         });
       }
+      
+      // Invalidate all calendar queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
       
       toast({
         title: "Import successful",
