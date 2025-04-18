@@ -1,10 +1,6 @@
-import { neon, NeonQueryFunction } from '@neondatabase/serverless';
-import { db } from './db';
+import { db, pool } from './db';
 import { and, inArray, ne } from 'drizzle-orm/expressions';
 import { calendars } from '../shared/schema';
-
-// Use the same connection as the main database
-const neonDb: NeonQueryFunction<any, any> = neon(process.env.DATABASE_URL!);
 
 /**
  * Fixed implementation of getSharedCalendars that uses raw SQL to avoid the missing column issue
@@ -49,8 +45,8 @@ export async function getSharedCalendars(userId: number, storage: any): Promise<
       
       console.log('Executing SQL query:', query, 'with params:', params);
       
-      // Execute query directly without using query property
-      const result = await neonDb(query, params);
+      // Execute query using the shared pool from db.ts
+      const result = await pool.query(query, params);
       let records: any[] = [];
       
       // Handle different response formats that neonDb might return
