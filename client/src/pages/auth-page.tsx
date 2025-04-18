@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { Redirect } from "wouter";
+import { useLocation } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -85,44 +85,36 @@ export default function AuthPage() {
     registerMutation.mutate(userData);
   };
   
-  // Redirect to home if already logged in, but add delay to ensure data loads
+  // Redirect to home if already logged in
   // This must come after all hook calls to avoid the "rendered fewer hooks than expected" error
+  const [, setLocation] = useLocation();
   const [redirecting, setRedirecting] = useState(false);
   
-  if (user && !redirecting) {
-    // Set redirecting flag to prevent multiple redirections
-    setRedirecting(true);
-    
-    // Force data prefetch before redirecting
-    setTimeout(() => {
-      // Use window.location instead of Redirect for a full page reload
-      // This ensures all queries are properly registered with fresh context
-      window.location.href = '/';
-    }, 1000); // 1 second delay to allow for data prefetching
-    
-    // Show loading state
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <h2 className="text-xl font-medium">Loading your calendars...</h2>
-          <p className="text-sm text-muted-foreground mt-2">
-            Please wait while we prepare your calendar data
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Use useEffect for redirection to avoid React state update errors
+  useEffect(() => {
+    if (user && !redirecting && !isLoading) {
+      console.log("Auth page: User detected, preparing to redirect");
+      setRedirecting(true);
+      
+      // Use a short delay to ensure auth context is fully updated
+      const timer = setTimeout(() => {
+        console.log("Auth page: Redirecting to calendar page");
+        setLocation("/");
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [user, redirecting, isLoading, setLocation]);
   
-  if (redirecting) {
-    // Show loading state during redirection
+  // Show loading state during redirection
+  if (redirecting || (user && !isLoading)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <h2 className="text-xl font-medium">Loading your calendars...</h2>
+          <h2 className="text-xl font-medium">Login successful!</h2>
           <p className="text-sm text-muted-foreground mt-2">
-            Please wait while we prepare your calendar data
+            Redirecting to your calendar...
           </p>
         </div>
       </div>

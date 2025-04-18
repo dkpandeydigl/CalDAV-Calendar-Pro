@@ -575,28 +575,89 @@ function CalendarContent() {
 }
 
 export default function Calendar() {
-  const { isAuthenticated, isLoading: authLoading, forceRefreshUserData } = useAuth();
+  const { user, isLoading: authLoading, forceRefreshUserData } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  
   const [forceRefreshAttempted, setForceRefreshAttempted] = useState(false);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [showContent, setShowContent] = useState(false);
   
   // When the component mounts, trigger a data refresh if authenticated
   useEffect(() => {
-    if (isAuthenticated && !forceRefreshAttempted) {
-      console.log('Calendar: Triggering force refresh on mount');
+    if (user && !forceRefreshAttempted) {
+      console.log(`Calendar: Triggering force refresh on mount for user ${user.username} (ID: ${user.id})`);
+      
+      // First clear any existing cached data
+      queryClient.clear();
+      
+      // Then trigger a fresh reload
       forceRefreshUserData();
       setForceRefreshAttempted(true);
+      
+      // Set a timeout to show content even if loading takes too long
+      const timer = setTimeout(() => {
+        console.log('Loading timeout reached - showing content anyway');
+        setLoadingTimeout(true);
+      }, 5000); // 5 seconds timeout
+      
+      return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, forceRefreshUserData, forceRefreshAttempted]);
+  }, [user, forceRefreshUserData, forceRefreshAttempted, queryClient]);
   
-  // Show loading screen if auth is still loading
-  if (authLoading) {
+  // Set a flag to show content either immediately or after timeout
+  useEffect(() => {
+    if (!authLoading || loadingTimeout) {
+      // Add slight delay to ensure all queries are properly registered
+      const timer = setTimeout(() => {
+        setShowContent(true);
+        
+        // If we're showing due to timeout, inform the user
+        if (loadingTimeout && user) {
+          toast({
+            title: "Some data still loading",
+            description: "We're showing your calendar while some data continues to load in the background.",
+            duration: 5000,
+          });
+          
+          // Try one more force refresh
+          setTimeout(() => {
+            forceRefreshUserData();
+          }, 1000);
+        }
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading, loadingTimeout, user, toast, forceRefreshUserData]);
+  
+  // Manual reload button handler
+  const handleManualReload = () => {
+    window.location.reload();
+  };
+  
+  // Show loading screen if still loading and timeout hasn't occurred
+  if (!showContent) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <h2 className="text-xl font-medium">Loading your calendar...</h2>
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-sm text-muted-foreground mt-2 mb-6">
             Please wait while we prepare your calendar data
           </p>
+          
+          {/* Add a manual reload button if it's taking too long */}
+          {loadingTimeout && (
+            <Button 
+              variant="outline" 
+              onClick={handleManualReload}
+              className="mt-4"
+            >
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              Reload Page
+            </Button>
+          )}
         </div>
       </div>
     );

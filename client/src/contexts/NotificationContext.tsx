@@ -264,25 +264,11 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
         // Add userId parameter for authentication
         const userIdParam = user?.id ? `?userId=${user.id}` : '';
         
-        // For Replit environment
-        if (window.location.hostname.includes('replit') || window.location.hostname.includes('replit.dev')) {
-          // Use relative URL format for Replit (no protocol/host/port)
-          wsUrl = `${wsPath}${userIdParam}`;
-          console.log(`Creating relative WebSocket URL for Replit: ${wsUrl}`);
-        } 
-        // For localhost development
-        else if (window.location.hostname === 'localhost') {
-          const port = window.location.port || '5000';
-          wsUrl = `ws://localhost:${port}${wsPath}${userIdParam}`;
-          console.log(`Creating explicit localhost WebSocket URL: ${wsUrl}`);
-        } 
-        // Standard case for other deployments
-        else {
-          // Use current protocol and host
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          wsUrl = `${protocol}//${currentHost}${wsPath}${userIdParam}`;
-          console.log(`Creating standard WebSocket URL: ${wsUrl}`);
-        }
+        // Simplified URL creation - use the same format for all environments
+        // This will automatically handle protocol, host, and port correctly
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${wsProtocol}//${window.location.host}${wsPath}${userIdParam}`;
+        console.log(`Creating WebSocket URL: ${wsUrl}${useFallbackPath ? ' (fallback path)' : ' (primary path)'}`);
         
         const connectionAttempt = reconnectAttempts + 1;
         console.log(`🔄 NotificationContext: Connection attempt ${connectionAttempt}: Connecting to WebSocket server at ${wsUrl}${useFallbackPath ? ' (fallback path)' : ''}`);
