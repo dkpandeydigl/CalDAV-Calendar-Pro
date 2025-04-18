@@ -466,12 +466,25 @@ export function setupAuth(app: Express) {
     }),
   );
 
-  passport.serializeUser((user, done) => done(null, user.id));
+  passport.serializeUser((user, done) => {
+    console.log(`Serializing user to session: ${user.id} (${user.username})`);
+    done(null, user.id);
+  });
+  
   passport.deserializeUser(async (id: number, done) => {
     try {
+      console.log(`Deserializing user from session ID: ${id}`);
       const user = await storage.getUser(id);
+      
+      if (!user) {
+        console.error(`User with ID ${id} not found during deserialization`);
+        return done(null, false);
+      }
+      
+      console.log(`User ${id} (${user.username}) successfully deserialized from session`);
       done(null, user);
     } catch (error) {
+      console.error(`Error deserializing user ${id}:`, error);
       done(error);
     }
   });
@@ -885,35 +898,95 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.get("/api/user", (req, res) => {
-    // Add detailed logging for debugging authentication issues
+  app.get("/api/user", async (req, res) => {
+    // Enhanced logging for debugging authentication issues
     console.log("GET /api/user - Authentication check:", {
       isAuthenticated: req.isAuthenticated(),
       hasSession: !!req.session,
       sessionID: req.sessionID,
       hasUser: !!req.user,
-      cookies: req.headers.cookie ? 'Present' : 'Not present'
+      userId: req.user?.id || 'unknown',
+      username: req.user?.username || 'unknown',
+      cookies: req.headers.cookie ? 'Present' : 'Not present',
+      cookieCount: req.headers.cookie ? req.headers.cookie.split(';').length : 0
     });
     
+    // Check for authenticated session
     if (req.isAuthenticated() && req.user) {
-      const { password, ...userWithoutPassword } = req.user;
-      console.log(`User ${req.user.id} (${req.user.username}) authenticated successfully`);
-      res.json(userWithoutPassword);
+      try {
+        // Double-check that user still exists in database
+        const userId = req.user.id;
+        const verifiedUser = await storage.getUser(userId);
+        
+        if (!verifiedUser) {
+          console.error(`User ${userId} found in session but not in database - session is stale`);
+          
+          // Clear the corrupted session
+          req.logout((err) => {
+            if (err) {
+              console.error("Logout error:", err);
+            }
+            
+            req.session.regenerate((regErr) => {
+              if (regErr) {
+                console.error("Session regeneration error:", regErr);
+              } else {
+                console.log("Stale session regenerated successfully");
+              }
+              res.status(401).json({ message: "Session expired. Please log in again." });
+            });
+          });
+          return;
+        }
+        
+        // User is authenticated and exists in database
+        const { password, ...userWithoutPassword } = req.user;
+        console.log(`User ${req.user.id} (${req.user.username}) authenticated successfully`);
+        
+        // Touch session to extend expiration
+        if (req.session) {
+          req.session.touch();
+          req.session.save((err) => {
+            if (err) {
+              console.error("Session save error:", err);
+            } else {
+              console.log(`Session refreshed for user ${req.user!.id}`);
+            }
+          });
+        }
+        
+        res.json(userWithoutPassword);
+      } catch (error) {
+        console.error(`Error verifying user ${req.user.id}:`, error);
+        res.status(500).json({ message: "Error retrieving user data" });
+      }
     } else {
       console.log("Authentication failed: User not authenticated or user object missing");
       
-      // Attempt to regenerate session as a fix for "phantom sessions"
+      // Try to determine the cause of authentication failure
       if (req.session) {
-        req.session.regenerate(err => {
-          if (err) {
-            console.error("Failed to regenerate session:", err);
-          } else {
-            console.log("Session regenerated successfully");
+        console.log("Session exists but no authentication");
+        
+        // If there's a session but no auth, it might be corrupted
+        req.logout((logoutErr) => {
+          if (logoutErr) {
+            console.error("Logout error during session cleanup:", logoutErr);
           }
-          res.status(401).json({ message: "Not authenticated" });
+          
+          // Regenerate session to fix potential corruption
+          req.session.regenerate((regenerateErr) => {
+            if (regenerateErr) {
+              console.error("Session regeneration error:", regenerateErr);
+              res.status(401).json({ message: "Not authenticated. Session error." });
+            } else {
+              console.log("Session regenerated successfully during auth check");
+              res.status(401).json({ message: "Not authenticated. Please log in." });
+            }
+          });
         });
       } else {
-        res.status(401).json({ message: "Not authenticated" });
+        console.log("No session found for user authentication");
+        res.status(401).json({ message: "Not authenticated. No session found." });
       }
     }
   });
