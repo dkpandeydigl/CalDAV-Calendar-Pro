@@ -66,6 +66,44 @@ export default function ImportCalendarModal({
   // State for auth verification
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(false);
   
+  // Effect to verify authentication and load calendars when modal opens
+  useEffect(() => {
+    if (open && user) {
+      setIsVerifyingAuth(true);
+      
+      // Verify authentication is active by checking the user endpoint
+      fetch('/api/user', {
+        credentials: 'include',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json'
+        }
+      })
+      .then(res => {
+        if (res.ok) {
+          console.log('Authentication verified, refreshing calendars');
+          // Force refresh calendars after confirming authentication
+          return queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
+        } else {
+          console.error('Authentication check failed with status:', res.status);
+          throw new Error('Authentication check failed');
+        }
+      })
+      .catch(err => {
+        console.error('Error verifying authentication:', err);
+        toast({
+          title: "Authentication Error",
+          description: "Please try refreshing the page and logging in again.",
+          variant: "destructive"
+        });
+      })
+      .finally(() => {
+        setIsVerifyingAuth(false);
+      });
+    }
+  }, [open, user, toast]);
+  
   // Effect to set default calendar when calendars are loaded
   useEffect(() => {
     if (calendars.length > 0 && !selectedCalendarId && importStep === 'select') {
@@ -293,8 +331,14 @@ export default function ImportCalendarModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-auto">
-          {importStep === 'upload' ? (
+        {isVerifyingAuth ? (
+          <div className="py-10 flex flex-col items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+            <p className="text-sm text-muted-foreground">Verifying authentication...</p>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-auto">
+            {importStep === 'upload' ? (
             <div className="py-4 flex flex-col items-center justify-center min-h-[300px]">
               <div className="w-full max-w-md p-6 border-2 border-dashed border-neutral-300 rounded-lg text-center">
                 <UploadCloud className="h-12 w-12 text-neutral-400 mx-auto mb-4" />
@@ -461,7 +505,8 @@ export default function ImportCalendarModal({
               </div>
             </div>
           )}
-        </div>
+          </div>
+        )}
         
         <DialogFooter className="flex justify-between">
           {importStep === 'upload' ? (
