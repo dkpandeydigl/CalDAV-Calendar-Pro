@@ -13,12 +13,10 @@ import WebSocketChatPage from "@/pages/WebSocketChatPage";
 import ResourceTestPage from "@/pages/ResourceTestPage";
 import { EmailSettingsPage } from "@/pages/EmailSettingsPage";
 import { ProtectedRoute } from "@/lib/protected-route";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider } from "@/hooks/use-auth";
 import { CalendarProvider } from "@/contexts/CalendarContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { EnhancedSyncProvider } from "@/contexts/EnhancedSyncContext";
-// Remove the old auth hook
-// import { useAuth } from "@/hooks/use-auth";
 
 function Router() {
   return (

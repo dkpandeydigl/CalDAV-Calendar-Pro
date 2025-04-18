@@ -15,16 +15,14 @@ import { BulkDeleteModal } from '@/components/modals/BulkDeleteModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Event, Calendar as CalendarType } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
-import { useCalendars } from '@/hooks/useCalendars';
-import { useSharedCalendars } from '@/hooks/useSharedCalendars';  
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { format, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
-import { Loader2, RefreshCcw, RefreshCw, Trash, Calendar as CalendarIcon } from 'lucide-react';
+import { Loader2, RefreshCcw, Trash } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
-import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 
 // For different calendar views
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
@@ -286,54 +284,8 @@ function CalendarContent() {
   const { toast } = useToast();
   const { user } = useAuth();
   
-  // Get user calendars and shared calendars
-  const { calendars, isLoading: isCalendarsLoading } = useCalendars();
-  const { sharedCalendars, isLoading: isSharedCalendarsLoading } = useSharedCalendars();
-  
   const [cacheVersion, setCacheVersion] = useState(0);
-  const { events: rawEvents, isLoading: isEventsLoading, refetch, deleteEvent } = useCalendarEvents(viewStartDate, viewEndDate);
-  
-  // Force loading state to true for a brief period after component mounts,
-  // and also enforce a maximum loading time to prevent infinite loading
-  const [initialLoadingComplete, setInitialLoadingComplete] = useState(false);
-  const [forceLoadComplete, setForceLoadComplete] = useState(false);
-  
-  // State for manual reload button
-  const [showReloadButton, setShowReloadButton] = useState(false);
-  
-  useEffect(() => {
-    // Always show loading state when component first mounts
-    const initialTimer = setTimeout(() => {
-      setInitialLoadingComplete(true);
-    }, 1500); // Show loading for at least 1.5 seconds
-    
-    // Force complete loading after 8 seconds even if data is still loading
-    // This prevents users from being stuck in an indefinite loading state
-    const forceTimer = setTimeout(() => {
-      console.log("Force loading complete due to timeout");
-      setForceLoadComplete(true);
-      
-      // Show reload button after a brief delay
-      setTimeout(() => {
-        setShowReloadButton(true);
-      }, 1000);
-    }, 8000);
-    
-    return () => {
-      clearTimeout(initialTimer);
-      clearTimeout(forceTimer);
-    };
-  }, []);
-  
-  // Function to handle manual page reload
-  const handleForceReload = () => {
-    console.log("User triggered manual reload");
-    window.location.reload();
-  };
-  
-  // Combined loading state for all data, with a maximum loading time
-  const isLoading = (isEventsLoading || isCalendarsLoading || isSharedCalendarsLoading || !initialLoadingComplete) 
-                    && !forceLoadComplete;
+  const { events: rawEvents, isLoading, refetch, deleteEvent } = useCalendarEvents(viewStartDate, viewEndDate);
   
   // Use useMemo to ensure filteredEvents only updates when rawEvents or cacheVersion changes
   const events = useMemo(() => {
@@ -525,37 +477,18 @@ function CalendarContent() {
             </div>
           </div>
           
-          {/* Always render the calendar views, but add a clear loading indicator overlay when loading */}
-          <div className="relative">
-            {isLoading && (
-              <div className="absolute inset-0 bg-white/80 z-10 flex justify-center items-center">
-                <div className="flex flex-col items-center">
-                  <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-                  <div className="text-lg font-medium text-primary mb-2">Loading calendars and events...</div>
-                  
-                  {showReloadButton && (
-                    <div className="mt-4">
-                      <p className="text-amber-600 mb-2 text-center">
-                        Taking longer than expected? The WebSocket connection might have issues.
-                      </p>
-                      <Button 
-                        variant="outline" 
-                        onClick={handleForceReload}
-                        className="mt-2"
-                      >
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Reload Page
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            {viewType === 'year' && <YearView events={events} onEventClick={handleEventClick} />}
-            {viewType === 'month' && <CalendarGrid events={events} isLoading={isLoading || isSyncing} onEventClick={handleEventClick} onDayDoubleClick={handleCreateEvent} />}
-            {viewType === 'week' && <WeekView events={events} onEventClick={handleEventClick} />}
-            {viewType === 'day' && <DayView events={events} onEventClick={handleEventClick} />}
-          </div>
+          {isLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <>
+              {viewType === 'year' && <YearView events={events} onEventClick={handleEventClick} />}
+              {viewType === 'month' && <CalendarGrid events={events} isLoading={isLoading || isSyncing} onEventClick={handleEventClick} onDayDoubleClick={handleCreateEvent} />}
+              {viewType === 'week' && <WeekView events={events} onEventClick={handleEventClick} />}
+              {viewType === 'day' && <DayView events={events} onEventClick={handleEventClick} />}
+            </>
+          )}
         </main>
       </div>
       
@@ -619,93 +552,5 @@ function CalendarContent() {
 }
 
 export default function Calendar() {
-  const { user, isLoading: authLoading, forceRefreshUserData = () => {} } = useAuth();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  
-  const [forceRefreshAttempted, setForceRefreshAttempted] = useState(false);
-  const [loadingTimeout, setLoadingTimeout] = useState(false);
-  const [showContent, setShowContent] = useState(false);
-  
-  // When the component mounts, trigger a data refresh if authenticated
-  useEffect(() => {
-    if (user && !forceRefreshAttempted) {
-      console.log(`Calendar: Triggering force refresh on mount for user ${user.username} (ID: ${user.id})`);
-      
-      // First clear any existing cached data
-      queryClient.clear();
-      
-      // Then trigger a fresh reload
-      forceRefreshUserData();
-      setForceRefreshAttempted(true);
-      
-      // Set a timeout to show content even if loading takes too long
-      const timer = setTimeout(() => {
-        console.log('Loading timeout reached - showing content anyway');
-        setLoadingTimeout(true);
-      }, 5000); // 5 seconds timeout
-      
-      return () => clearTimeout(timer);
-    }
-  }, [user, forceRefreshUserData, forceRefreshAttempted, queryClient]);
-  
-  // Set a flag to show content either immediately or after timeout
-  useEffect(() => {
-    if (!authLoading || loadingTimeout) {
-      // Add slight delay to ensure all queries are properly registered
-      const timer = setTimeout(() => {
-        setShowContent(true);
-        
-        // If we're showing due to timeout, inform the user
-        if (loadingTimeout && user) {
-          toast({
-            title: "Some data still loading",
-            description: "We're showing your calendar while some data continues to load in the background.",
-            duration: 5000,
-          });
-          
-          // Try one more force refresh
-          setTimeout(() => {
-            forceRefreshUserData();
-          }, 1000);
-        }
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [authLoading, loadingTimeout, user, toast, forceRefreshUserData]);
-  
-  // Manual reload button handler
-  const handleManualReload = () => {
-    window.location.reload();
-  };
-  
-  // Show loading screen if still loading and timeout hasn't occurred
-  if (!showContent) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <h2 className="text-xl font-medium">Loading your calendar...</h2>
-          <p className="text-sm text-muted-foreground mt-2 mb-6">
-            Please wait while we prepare your calendar data
-          </p>
-          
-          {/* Add a manual reload button if it's taking too long */}
-          {loadingTimeout && (
-            <Button 
-              variant="outline" 
-              onClick={handleManualReload}
-              className="mt-4"
-            >
-              <RefreshCcw className="mr-2 h-4 w-4" />
-              Reload Page
-            </Button>
-          )}
-        </div>
-      </div>
-    );
-  }
-  
   return <CalendarContent />;
 }

@@ -580,7 +580,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
   // Combine all enabled calendar IDs
   const enabledCalendarIds = [...enabledUserCalendarIds, ...enabledSharedCalendarIds];
   
-  // Setup events query key with filtering parameters and incremental version marker for forced refreshes
+  // Setup events query key with filtering parameters
   const eventsQueryKey = ['/api/events', enabledCalendarIds, startDate?.toISOString(), endDate?.toISOString()];
   
   // Load events for all calendars with date range filtering in a single API call
@@ -588,16 +588,28 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     queryKey: eventsQueryKey,
     enabled: enabledCalendarIds.length > 0,
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty to handle user session expiry gracefully
-    // Force staleTime to 0 to always refetch on query invalidation
-    staleTime: 0,
-    // Set gcTime higher to keep data in cache longer for better UX
-    gcTime: 5 * 60 * 1000, // 5 minutes
+    // Critical: Use stale time to prevent immediate refetching
+    staleTime: 1000, // Short stale time to reduce refetches during sync operations
     // Don't trash data if query fails
     retry: 3,
-    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 10000), // Exponential backoff
+    retryDelay: 500,
     // Use eventsCache as placeholder for guaranteed continuity
     placeholderData: () => {
       return eventsCache.current || [];
+    },
+    // In TanStack Query v5, use gcTime instead of keepPreviousData
+    gcTime: 5 * 60 * 1000, // Keep data in cache for 5 minutes
+    // When new data arrives, update our cache
+    onSuccess: (data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        console.log(`📸 Updating events cache with ${data.length} events from successful query`);
+        // Update our local cache reference
+        eventsCache.current = [...data];
+      }
+    },
+    // If query fails, log error (local cache will be used automatically)
+    onError: (error) => {
+      console.log(`🚨 Query error, using local cache instead:`, error);
     }
   });
   

@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { useAuth } from "@/contexts/AuthContext";
-import { useLocation } from "wouter";
+import { useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { Redirect } from "wouter";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
@@ -87,82 +87,8 @@ export default function AuthPage() {
   
   // Redirect to home if already logged in
   // This must come after all hook calls to avoid the "rendered fewer hooks than expected" error
-  const [, setLocation] = useLocation();
-  const [redirecting, setRedirecting] = useState(false);
-  
-  // Use useEffect for redirection to avoid React state update errors
-  useEffect(() => {
-    if (user && !redirecting && !isLoading) {
-      console.log("Auth page: User detected, preparing to redirect");
-      setRedirecting(true);
-      
-      // Use a short delay to ensure auth context is fully updated
-      const timer = setTimeout(() => {
-        console.log("Auth page: Redirecting to calendar page");
-        setLocation("/");
-      }, 500);
-      
-      // Add a safety timeout to force redirect even if something goes wrong
-      const forceRedirectTimer = setTimeout(() => {
-        console.log("Auth page: Force redirecting due to timeout");
-        window.location.href = "/"; // Direct browser redirect as fallback
-      }, 3000);
-      
-      return () => {
-        clearTimeout(timer);
-        clearTimeout(forceRedirectTimer);
-      };
-    }
-  }, [user, redirecting, isLoading, setLocation]);
-  
-  // State for showing manual redirect button after timeout
-  const [showManualRedirect, setShowManualRedirect] = useState(false);
-  
-  // Show manual redirect button after 5 seconds in case automatic redirect fails
-  useEffect(() => {
-    if (redirecting) {
-      const timer = setTimeout(() => {
-        setShowManualRedirect(true);
-      }, 5000);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [redirecting]);
-  
-  // Function to handle manual redirect
-  const handleManualRedirect = () => {
-    console.log("Manual redirect triggered by user");
-    window.location.href = "/";
-  };
-  
-  // Show loading state during redirection
-  if (redirecting || (user && !isLoading)) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <h2 className="text-xl font-medium">Login successful!</h2>
-          <p className="text-sm text-muted-foreground mt-2">
-            Redirecting to your calendar...
-          </p>
-          
-          {showManualRedirect && (
-            <div className="mt-8">
-              <p className="text-sm text-amber-600 mb-2">
-                Taking longer than expected? Try manual redirection:
-              </p>
-              <Button 
-                variant="outline" 
-                onClick={handleManualRedirect}
-                className="mt-2"
-              >
-                Go to Calendar
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
+  if (user) {
+    return <Redirect to="/" />;
   }
 
   return (

@@ -10,11 +10,6 @@ export const useCalendars = () => {
   const calendarsQuery = useQuery<Calendar[]>({
     queryKey: ['/api/calendars'],
     queryFn: getQueryFn({ on401: "continueWithEmpty" }), // Use continueWithEmpty for graceful auth handling
-    // Force staleTime to 0 so that we always refetch after invalidation
-    staleTime: 0,
-    // Retry up to 3 times with backoff
-    retry: 3,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
   });
 
   const createCalendarMutation = useMutation({
