@@ -207,21 +207,25 @@ async function verifyCalDAVCredentials(
 }
 
 export function setupAuth(app: Express) {
-  // Use session with enhanced configuration for Replit environment
+  // Enhanced session configuration for better persistence
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "calendar-app-secret",
-    resave: true, // Ensure session is saved on each request
-    saveUninitialized: true, // Ensure new sessions are saved
+    secret: process.env.SESSION_SECRET || "calendar-app-secret-key",
+    resave: true, // Forces the session to be saved back to the session store
+    saveUninitialized: true, // Save uninitialized sessions (new but not modified)
     store: storage.sessionStore, // Use our storage's session store for persistence
-    name: 'caldav.sid', // Use a unique name for our session cookie
+    name: 'caldav_app.sid', // Use a distinct name to avoid conflicts
+    rolling: true, // Forces a cookie set on every response
     cookie: {
-      secure: false, // Set to false for development in Replit
+      secure: false, // Set to false for development in Replit (set to true in production)
       maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
-      httpOnly: true, 
-      sameSite: 'lax', // Allows cross-site requests for better compatibility
+      httpOnly: true, // Prevents client-side JS from reading the cookie
+      sameSite: 'lax', // Allows cross-site requests with some restrictions
       path: '/' // Ensure cookie is available across all paths
     }
   };
+  
+  console.log("[Auth] Configuring session with persistence store:", 
+              storage.sessionStore ? "Session store available" : "No session store");
 
   app.set("trust proxy", 1);
   app.use(session(sessionSettings));
