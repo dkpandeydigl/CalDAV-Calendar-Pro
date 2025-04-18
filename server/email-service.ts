@@ -6,7 +6,8 @@ import { generateEventAgendaPDF } from './pdf-generator';
 import { syncSmtpPasswordWithCalDAV } from './smtp-sync-utility';
 import { 
   sanitizeAndFormatICS, 
-  transformIcsForCancellation
+  transformIcsForCancellation,
+  deepCleanIcsData
 } from '../shared/ics-formatter-fixed';
 
 export interface Attendee {
@@ -465,41 +466,22 @@ export class EmailService {
       if (!icsData) {
         // If we have raw data, transform it for cancellation
         if (data.rawData) {
-          // CRITICAL FIX: Clean the raw data before transformation
-          // This ensures no unwanted \r\n or other characters are in the fields
-          console.log('[EmailService] Processing raw data for cancellation');
+          // CRITICAL FIX: Use our robust deep cleaning function
+          console.log('[EmailService] Deep cleaning raw ICS data for cancellation');
           
-          // Pre-clean raw data before transformation
-          let cleanedRawData = String(data.rawData);
+          // Convert to string and handle possible null/undefined
+          const rawDataStr = String(data.rawData || '');
           
-          // First check for escaped \r\n sequences and replace them with actual line breaks
-          cleanedRawData = cleanedRawData.replace(/\\r\\n/g, '\r\n');
+          // Use the dedicated deep cleaning function from shared library
+          const cleanedRawData = deepCleanIcsData(rawDataStr);
           
-          // Look for and fix malformed lines with embedded line breaks within properties
-          console.log('[EmailService] Cleaning ICS data of embedded line breaks within properties');
+          console.log('[EmailService] Successfully deep cleaned raw ICS data, now transforming for cancellation');
           
-          // Capture original properties before deep cleaning
-          const uidMatch = cleanedRawData.match(/UID:([^;\r\n]+)/);
-          const summaryMatch = cleanedRawData.match(/SUMMARY:([^;\r\n]+)/);
-          
-          // Deep cleaning - removes any unwanted \r\n characters embedded within property values
-          cleanedRawData = cleanedRawData
-            .replace(/UID:[^\r\n]*\r\n/g, `UID:${data.uid}\r\n`)
-            .replace(/;\r\n/g, ';')     // Fix line breaks within parameters
-            .replace(/:\r\n/g, ':')     // Fix line breaks after property names
-            .replace(/\r\n mailto:/gi, 'mailto:'); // Fix line breaks in mailto addresses
-          
-          console.log('[EmailService] Cleaned raw data, now transforming for cancellation');
-          
-          // Now transform the cleaned data
+          // Now transform the deeply cleaned data
           icsData = this.transformIcsForCancellation(cleanedRawData, cancellationData);
           
-          // Additional post-processing to ensure well-formed ICS
-          icsData = icsData
-            // Fix any remaining problematic patterns
-            .replace(/;\r\n/g, ';')
-            .replace(/:\r\n/g, ':')
-            .replace(/\r\n mailto:/gi, 'mailto:');
+          // Apply a final deep cleaning to the result to ensure no formatting issues remain
+          icsData = deepCleanIcsData(icsData);
           
           // Final check to ensure the validated UID is used
           if (!icsData.includes(`UID:${data.uid}`)) {

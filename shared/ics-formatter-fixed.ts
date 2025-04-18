@@ -357,10 +357,89 @@ function escapeIcsSpecialChars(text: string): string {
  * @param eventData Event data with status="CANCELLED"
  * @returns A properly formatted cancellation ICS
  */
+/**
+ * Deep clean ICS data to fix corrupted or malformed input
+ * @param dirtyIcs The potentially corrupted ICS data
+ * @returns Cleaned ICS data suitable for further processing
+ */
+export function deepCleanIcsData(dirtyIcs: string): string {
+  console.log('[IcsFormatter] Deep cleaning malformed ICS data');
+  
+  // First, normalize line breaks to CRLF standard
+  let cleanedIcs = dirtyIcs.replace(/\r\n|\n\r|\n|\r/g, '\r\n');
+  
+  // Fix corrupted or repeated line breaks
+  cleanedIcs = cleanedIcs.replace(/\r\n\r\n+/g, '\r\n');
+  
+  // Fix broken lines with embedded \r\n sequences
+  cleanedIcs = cleanedIcs.replace(/([^:]*):\r\n\s*([^\r\n]*)/g, '$1:$2');
+  
+  // Fix broken ATTENDEE lines with mailto: on separate line
+  cleanedIcs = cleanedIcs.replace(/ATTENDEE[^:]*:\r\n\s*mailto:/gi, 'ATTENDEE:mailto:');
+  
+  // Fix incorrectly escaped line breaks
+  cleanedIcs = cleanedIcs.replace(/\\r\\n/g, '\r\n');
+  
+  // Fix unwanted quotes around ICS data (from JSON serialization)
+  if (cleanedIcs.startsWith('"') && cleanedIcs.endsWith('"')) {
+    cleanedIcs = cleanedIcs.substring(1, cleanedIcs.length - 1);
+  }
+  
+  // Un-escape escaped quotes
+  cleanedIcs = cleanedIcs.replace(/\\"/g, '"');
+  
+  // Fix line breaks inside property values
+  // This is critical to fix the issue with line breaks after property names
+  const fixedLines: string[] = [];
+  let currentLine = '';
+  
+  cleanedIcs.split('\r\n').forEach(line => {
+    // If this line doesn't start with a property name (no colon)
+    // and doesn't start with whitespace (folded line), it probably belongs to previous line
+    if (line && !line.includes(':') && !line.startsWith(' ') && currentLine) {
+      // Append to current line instead of creating a new line
+      currentLine += line;
+    } else if (line.startsWith(' ') && currentLine) {
+      // This is a folded line, unfold it
+      currentLine += line.substring(1);
+    } else {
+      // If we have a completed current line, add it to results
+      if (currentLine) {
+        fixedLines.push(currentLine);
+      }
+      // Start a new line
+      currentLine = line;
+    }
+  });
+  
+  // Add the last line if any
+  if (currentLine) {
+    fixedLines.push(currentLine);
+  }
+  
+  // Now join the lines with proper CRLF
+  cleanedIcs = fixedLines.join('\r\n');
+  
+  // Fix corrupted ATTENDEE parameters with line breaks
+  cleanedIcs = cleanedIcs.replace(/ATTENDEE;([^:]*)\r\n([^:]*):mailto:/gi, 'ATTENDEE;$1$2:mailto:');
+  
+  // Fix double mailto: issue
+  cleanedIcs = cleanedIcs.replace(/:mailto:mailto:/gi, ':mailto:');
+  
+  // Remove any trailing whitespace from each line
+  cleanedIcs = cleanedIcs.split('\r\n').map(line => line.trim()).join('\r\n');
+  
+  return cleanedIcs;
+}
+
 export function transformIcsForCancellation(originalIcs: string, eventData: any): string {
   console.log('Creating RFC-compliant cancellation ICS');
 
-  // Extract important information from the original ICS
+  // CRITICAL: First deep clean the original ICS data to fix any formatting issues
+  const cleanedOriginalIcs = deepCleanIcsData(originalIcs);
+  console.log('[IcsFormatter] Successfully cleaned original ICS data');
+
+  // Extract important information from the cleaned ICS
   // We'll extract each piece separately using regex to handle various malformed inputs
   let uid = '';
   let summary = '';
