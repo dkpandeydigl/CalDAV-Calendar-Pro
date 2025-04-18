@@ -1338,7 +1338,14 @@ ${organizerString}`;
           attendeeString += `;PARTSTAT=${attendee.status}`;
         }
         
-        attendeeString += `:mailto:${attendee.email}`;
+        // Fix potential double colon issues in mailto by ensuring correct format
+        attendeeString += `:mailto:${attendee.email.trim()}`;
+        
+        // Sanity check to ensure there's no double colons
+        if (attendeeString.includes("mailto::")) {
+          console.warn(`[EmailService] Found double colon in mailto, fixing: ${attendeeString}`);
+          attendeeString = attendeeString.replace("mailto::", "mailto:");
+        }
         
         icsContent += `
 ${attendeeString}`;
@@ -1365,13 +1372,27 @@ ${line}`;
           }
           
           resourceString += `;X-RESOURCE-TYPE=${resource.subType || resource.type || 'ROOM'}`;
-          resourceString += `;X-RESOURCE-ID=${resource.id}`;
+          // Generate a persistent resource ID based on email to ensure consistency
+          // Only fall back to provided ID if email is not available
+          const resourceEmail = resource.adminEmail ? resource.adminEmail.trim().toLowerCase() : '';
+          const persistentResourceId = resourceEmail 
+            ? `resource-${Buffer.from(resourceEmail).toString('hex').substring(0, 12)}`
+            : resource.id;
+            
+          resourceString += `;X-RESOURCE-ID=${persistentResourceId}`;
           
           if (resource.capacity) {
             resourceString += `;X-RESOURCE-CAPACITY=${resource.capacity}`;
           }
           
-          resourceString += `:mailto:${resource.adminEmail}`;
+          // Fix potential double colon issues in mailto by ensuring correct format
+          resourceString += `:mailto:${resource.adminEmail.trim()}`;
+          
+          // Sanity check to ensure there's no double colons
+          if (resourceString.includes("mailto::")) {
+            console.warn(`[EmailService] Found double colon in resource mailto, fixing: ${resourceString}`);
+            resourceString = resourceString.replace("mailto::", "mailto:");
+          }
           
           icsContent += `
 ${resourceString}`;
