@@ -277,7 +277,12 @@ export function registerImportRoutes(app: Express) {
         }
       }
       
-      console.log("Target calendar:", { id: targetCalendar.id, name: targetCalendar.name });
+      console.log("Target calendar:", { 
+        id: targetCalendar.id, 
+        name: targetCalendar.name,
+        url: targetCalendar.url,
+        userId: targetCalendar.userId
+      });
       
       // For shared calendars, check if user has edit permission
       if (targetCalendar.userId !== userId) {
@@ -333,10 +338,12 @@ export function registerImportRoutes(app: Express) {
             allDay: event.allDay || false,
             uid: event.uid || uuidv4(),
             timezone: "UTC",
-            syncStatus: "local",
+            syncStatus: "needs_sync", // Mark for sync immediately
             busyStatus: "busy",
             attendees: [],
             resources: [],
+            // Add calendar URL info needed for syncing
+            url: targetCalendar.url ? `${targetCalendar.url.endsWith('/') ? targetCalendar.url : targetCalendar.url + '/'}${event.uid || uuidv4()}.ics` : null,
             // Generate minimal ICS data for the event - store directly as string, no JSON.stringify needed
             rawData: `BEGIN:VCALENDAR
 VERSION:2.0
@@ -372,10 +379,15 @@ END:VCALENDAR`,
               // Update the existing event instead of creating a new one
               console.log("Replacing existing event:", { uid: newEvent.uid, title: newEvent.title });
               
-              // Include the existing event ID in the update
+              // Include the existing event ID and set sync status to needs_sync
               const updatedEvent = await storage.updateEvent(existingEvent.id, {
                 ...newEvent,
-                id: existingEvent.id // Make sure to keep the same ID
+                id: existingEvent.id, // Make sure to keep the same ID
+                syncStatus: 'needs_sync', // Important: Mark for sync
+                // Keep existing URL if available or set a new one based on calendar URL
+                url: existingEvent.url || (targetCalendar.url ? 
+                  `${targetCalendar.url.endsWith('/') ? targetCalendar.url : targetCalendar.url + '/'}${newEvent.uid}.ics` : 
+                  null)
               });
               
               if (updatedEvent) {
