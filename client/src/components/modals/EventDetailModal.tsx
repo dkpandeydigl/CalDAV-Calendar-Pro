@@ -155,6 +155,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     };
   }, [isUserLoadingFromAuth]);
   
+  // Get the user's preferred timezone from CalendarContext
+  const { selectedTimezone } = useCalendarContext();
+  
   // If event is null, show an error state
   if (!event) {
     return (
@@ -664,13 +667,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <Clock className="text-blue-600 mr-3 h-5 w-5 flex-shrink-0" />
                       <div>
                         <div className="font-medium">
-                          {formatDayOfWeekDate(startDate)}
+                          {formatDayOfWeekDate(startDate, selectedTimezone)}
                         </div>
                         <div className="text-sm text-blue-700">
                           {event.allDay 
                             ? 'All Day' 
-                            : formatEventTimeRange(startDate, endDate)}
-                          {event.timezone && <span className="text-blue-600/70 text-xs ml-1">({event.timezone})</span>}
+                            : formatEventTimeRange(startDate, endDate, false, selectedTimezone)}
+                          <span className="text-blue-600/70 text-xs ml-1">
+                            ({selectedTimezone})
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -862,13 +867,44 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       <div className="flex items-center">
                         <Calendar className="text-purple-500 mr-2 h-4 w-4" />
                         <span>
-                          Date: {new Date(event.lastModifiedAt).toLocaleDateString()} 
+                          {(() => {
+                            try {
+                              // Format with the user's timezone
+                              const lastModDate = new Date(event.lastModifiedAt);
+                              const formatter = new Intl.DateTimeFormat('en-US', {
+                                timeZone: selectedTimezone,
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                              });
+                              return `Date: ${formatter.format(lastModDate)}`;
+                            } catch (error) {
+                              console.error('Error formatting last modified date:', error);
+                              return `Date: ${new Date(event.lastModifiedAt).toLocaleDateString()}`;
+                            }
+                          })()}
                         </span>
                       </div>
                       <div className="flex items-center">
                         <Clock className="text-purple-500 mr-2 h-4 w-4" />
                         <span>
-                          Time: {new Date(event.lastModifiedAt).toLocaleTimeString()}
+                          {(() => {
+                            try {
+                              // Format with the user's timezone
+                              const lastModTime = new Date(event.lastModifiedAt);
+                              const formatter = new Intl.DateTimeFormat('en-US', {
+                                timeZone: selectedTimezone,
+                                hour: 'numeric',
+                                minute: 'numeric',
+                                second: 'numeric',
+                                hour12: true
+                              });
+                              return `Time: ${formatter.format(lastModTime)}`;
+                            } catch (error) {
+                              console.error('Error formatting last modified time:', error);
+                              return `Time: ${new Date(event.lastModifiedAt).toLocaleTimeString()}`;
+                            }
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -1133,7 +1169,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             // If server download fails with authentication error, try client-side method
                             if (response.status === 401) {
                               console.log('Authentication failed, trying client-side method');
-                              return downloadViaClientSide();
+                              return Promise.resolve(downloadViaClientSide());
                             }
                             
                             // For other errors, try to get a detailed message
@@ -1142,11 +1178,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                               return response.json().then(data => {
                                 console.error('Server error details:', data);
                                 // Still try client-side method even in case of other errors
-                                return downloadViaClientSide();
+                                return Promise.resolve(downloadViaClientSide());
                               });
                             } else {
                               // No JSON error, still try client-side
-                              return downloadViaClientSide();
+                              return Promise.resolve(downloadViaClientSide());
                             }
                           }
                           
