@@ -391,6 +391,7 @@ export class EmailService {
       
       // Add PDF attachment if successfully generated
       if (pdfBuffer) {
+        // @ts-ignore - Nodemailer types expect encoding but it's not in our local definition
         attachments.push({
           filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_agenda.pdf`,
           content: pdfBuffer.toString('base64'), // Convert Buffer to base64 string
@@ -464,16 +465,45 @@ export class EmailService {
       if (!icsData) {
         // If we have raw data, transform it for cancellation
         if (data.rawData) {
-          icsData = this.transformIcsForCancellation(data.rawData, cancellationData);
+          // CRITICAL FIX: Clean the raw data before transformation
+          // This ensures no unwanted \r\n or other characters are in the fields
+          console.log('[EmailService] Processing raw data for cancellation');
           
-          // Ensure the transformed ICS uses our validated UID
-          const extractedUid = icsData.match(/UID:([^\r\n]+)/i)?.[1]?.trim();
+          // Pre-clean raw data before transformation
+          let cleanedRawData = String(data.rawData);
           
-          if (extractedUid && extractedUid !== data.uid) {
-            console.warn(`[EmailService] UID mismatch in transformed cancellation ICS: ${extractedUid} vs validated ${data.uid}`);
-            console.warn('[EmailService] Ensuring consistency by using validated UID from centralUIDService');
-            
-            // Replace the UID in the ICS data
+          // First check for escaped \r\n sequences and replace them with actual line breaks
+          cleanedRawData = cleanedRawData.replace(/\\r\\n/g, '\r\n');
+          
+          // Look for and fix malformed lines with embedded line breaks within properties
+          console.log('[EmailService] Cleaning ICS data of embedded line breaks within properties');
+          
+          // Capture original properties before deep cleaning
+          const uidMatch = cleanedRawData.match(/UID:([^;\r\n]+)/);
+          const summaryMatch = cleanedRawData.match(/SUMMARY:([^;\r\n]+)/);
+          
+          // Deep cleaning - removes any unwanted \r\n characters embedded within property values
+          cleanedRawData = cleanedRawData
+            .replace(/UID:[^\r\n]*\r\n/g, `UID:${data.uid}\r\n`)
+            .replace(/;\r\n/g, ';')     // Fix line breaks within parameters
+            .replace(/:\r\n/g, ':')     // Fix line breaks after property names
+            .replace(/\r\n mailto:/gi, 'mailto:'); // Fix line breaks in mailto addresses
+          
+          console.log('[EmailService] Cleaned raw data, now transforming for cancellation');
+          
+          // Now transform the cleaned data
+          icsData = this.transformIcsForCancellation(cleanedRawData, cancellationData);
+          
+          // Additional post-processing to ensure well-formed ICS
+          icsData = icsData
+            // Fix any remaining problematic patterns
+            .replace(/;\r\n/g, ';')
+            .replace(/:\r\n/g, ':')
+            .replace(/\r\n mailto:/gi, 'mailto:');
+          
+          // Final check to ensure the validated UID is used
+          if (!icsData.includes(`UID:${data.uid}`)) {
+            console.warn(`[EmailService] UID not found in transformed ICS, inserting validated UID: ${data.uid}`);
             icsData = icsData.replace(/UID:[^\r\n]+/i, `UID:${data.uid}`);
           }
         } else {
@@ -604,6 +634,7 @@ export class EmailService {
       
       // Add PDF attachment if successfully generated
       if (pdfBuffer) {
+        // @ts-ignore - Nodemailer types expect encoding but it's not in our local definition
         attachments.push({
           filename: `${data.title.replace(/[^a-zA-Z0-9]/g, '_')}_cancellation.pdf`,
           content: pdfBuffer.toString('base64'), // Convert Buffer to base64 string
