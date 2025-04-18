@@ -47,7 +47,36 @@ export const useSharedCalendars = () => {
         
         // Parse the response
         const data = await response.json();
-        return data;
+        
+        // Ensure owner data is properly populated
+        return data.map((calendar: SharedCalendar) => {
+          // Make sure owner is always defined
+          if (!calendar.owner) {
+            calendar.owner = {
+              id: 0,
+              username: calendar.ownerEmail || 'Unknown'
+            };
+          }
+          
+          // Make sure owner has email 
+          if (!calendar.owner.email && calendar.owner.username) {
+            calendar.owner.email = calendar.owner.username;
+          }
+          
+          // Set ownerEmail for backward compatibility
+          if (!calendar.ownerEmail && calendar.owner.email) {
+            calendar.ownerEmail = calendar.owner.email;
+          } else if (!calendar.ownerEmail && calendar.owner.username) {
+            calendar.ownerEmail = calendar.owner.username;
+          }
+          
+          // Ensure enabled property is always set for consistency
+          if (calendar.enabled === undefined) {
+            calendar.enabled = true;
+          }
+          
+          return calendar;
+        });
       } catch (error) {
         throw error;
       }

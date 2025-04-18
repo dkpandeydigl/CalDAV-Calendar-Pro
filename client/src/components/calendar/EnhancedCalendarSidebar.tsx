@@ -173,21 +173,46 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
     )
     .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   
-  // Group shared calendars by owner
+  // Group shared calendars by owner with enhanced owner identification
   const groupedSharedCalendars = filteredSharedCalendars.reduce((acc, calendar) => {
-    const ownerEmail = calendar.owner?.email || calendar.owner?.username || 'Unknown';
+    // Get owner email with multiple fallbacks to ensure we always have a value
+    let ownerEmail = 'Unknown';
+    
+    if (calendar.owner) {
+      if (calendar.owner.email) {
+        ownerEmail = calendar.owner.email;
+      } else if (calendar.owner.username) {
+        ownerEmail = calendar.owner.username;
+      }
+    } else if (calendar.ownerEmail) {
+      ownerEmail = calendar.ownerEmail;
+    }
+    
+    // Create the group if it doesn't exist
     if (!acc[ownerEmail]) {
       acc[ownerEmail] = [];
     }
+    
+    // Add calendar to the appropriate group
     acc[ownerEmail].push(calendar);
     return acc;
   }, {} as Record<string, typeof filteredSharedCalendars>);
   
+  // Log grouped calendars for debugging
+  useEffect(() => {
+    console.log("Grouped shared calendars:", groupedSharedCalendars);
+    console.log("Expanded owner emails:", expandedOwnerEmails);
+  }, [groupedSharedCalendars, expandedOwnerEmails]);
+  
   // Initialize with all groups expanded by default
   useEffect(() => {
-    if (expandedOwnerEmails.size === 0 && Object.keys(groupedSharedCalendars).length > 0) {
+    const ownerKeys = Object.keys(groupedSharedCalendars);
+    
+    // Only initialize if we have calendars but no expanded groups
+    if (expandedOwnerEmails.size === 0 && ownerKeys.length > 0) {
+      console.log("Setting initial expanded owner emails:", ownerKeys);
       // Set all groups as expanded by default
-      const allOwnerEmails = new Set(Object.keys(groupedSharedCalendars));
+      const allOwnerEmails = new Set(ownerKeys);
       setExpandedOwnerEmails(allOwnerEmails);
     }
   }, [expandedOwnerEmails, groupedSharedCalendars]);
