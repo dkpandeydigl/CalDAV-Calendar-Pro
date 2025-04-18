@@ -1146,6 +1146,40 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                         }
                       };
 
+                      // Handle download failures by switching to client-side method
+                      const handleDownloadFailure = (error: any) => {
+                        console.error('Download failed, attempting client-side fallback:', error);
+                        downloadViaClientSide();
+                      };
+
+                      // Handle successful server response
+                      const handleServerSuccess = (blob: Blob) => {
+                        try {
+                          // Create a local URL for the blob
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          
+                          // Set up download attributes
+                          link.href = url;
+                          link.download = `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
+                          document.body.appendChild(link);
+                          
+                          // Trigger download and clean up
+                          link.click();
+                          document.body.removeChild(link);
+                          URL.revokeObjectURL(url);
+                          
+                          setIsLoading(false);
+                          toast({
+                            title: "Downloaded Successfully",
+                            description: "Calendar file downloaded successfully.",
+                            variant: "default"
+                          });
+                        } catch (error) {
+                          handleDownloadFailure(error);
+                        }
+                      };
+
                       // First try server-side download
                       try {
                         console.log('Attempting server-side ICS download for event ID:', event.id);
@@ -1166,71 +1200,32 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                           if (!response.ok) {
                             console.error('Server download failed with status:', response.status);
                             
-                            // If server download fails with authentication error, try client-side method
-                            if (response.status === 401) {
-                              console.log('Authentication failed, trying client-side method');
-                              return Promise.resolve(downloadViaClientSide());
-                            }
-                            
-                            // For other errors, try to get a detailed message
+                            // If server download fails, try to get more information from response
                             const contentType = response.headers.get('content-type');
                             if (contentType && contentType.includes('application/json')) {
                               return response.json().then(data => {
                                 console.error('Server error details:', data);
-                                // Still try client-side method even in case of other errors
-                                return Promise.resolve(downloadViaClientSide());
+                                throw new Error(data.message || 'Server error');
                               });
                             } else {
-                              // No JSON error, still try client-side
-                              return Promise.resolve(downloadViaClientSide());
+                              throw new Error(`HTTP error ${response.status}`);
                             }
                           }
                           
-                          console.log('Server download successful, getting blob data');
-                          // For successful response, get the blob data
                           return response.blob();
                         })
                         .then(blob => {
-                          if (blob instanceof Blob) {
-                            // Create a local URL for the blob
-                            const url = URL.createObjectURL(blob);
-                            const link = document.createElement('a');
-                            
-                            // Set up download attributes
-                            link.href = url;
-                            link.download = `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
-                            document.body.appendChild(link);
-                            
-                            // Trigger download and clean up
-                            link.click();
-                            document.body.removeChild(link);
-                            URL.revokeObjectURL(url);
-                            
-                            setIsLoading(false);
-                            toast({
-                              title: "Downloaded Successfully",
-                              description: "Calendar file downloaded successfully.",
-                              variant: "default"
-                            });
+                          if (blob) {
+                            handleServerSuccess(blob);
+                          } else {
+                            throw new Error('No blob data received');
                           }
                         })
                         .catch(error => {
-                          setIsLoading(false);
-                          console.error('Error downloading ICS file:', error);
-                          toast({
-                            title: 'Download Failed',
-                            description: error.message || 'Could not download ICS file. Please try again.',
-                            variant: 'destructive'
-                          });
+                          handleDownloadFailure(error);
                         });
                       } catch (error) {
-                        setIsLoading(false);
-                        console.error('Error setting up ICS download:', error);
-                        toast({
-                          title: 'Download Failed',
-                          description: 'Could not download ICS file. Please try again.',
-                          variant: 'destructive'
-                        });
+                        handleDownloadFailure(error);
                       }
                     }}
                   >
