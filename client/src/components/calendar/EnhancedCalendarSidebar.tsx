@@ -539,8 +539,14 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 ml-auto opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-700"
-              onClick={() => handleOpenUnshareDialog(calendar, (calendar as SharedCalendar).owner?.email || 'Unknown')}
+              className="h-5 w-5 ml-auto opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700"
+              onClick={() => {
+                const ownerEmail = (calendar as SharedCalendar).owner?.email 
+                  || (calendar as SharedCalendar).owner?.username 
+                  || 'Unknown';
+                handleOpenUnshareDialog(calendar, ownerEmail);
+              }}
+              title={`Remove "${calendar.name}"`}
             >
               <Trash2 className="h-3 w-3" />
             </Button>
@@ -623,8 +629,14 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-red-600 hover:text-red-700"
-            onClick={() => handleOpenUnshareDialog(calendar, (calendar as SharedCalendar).owner?.email || 'Unknown')}
+            className="h-7 w-7 text-red-500 hover:text-red-700"
+            onClick={() => {
+              const ownerEmail = (calendar as SharedCalendar).owner?.email 
+                || (calendar as SharedCalendar).owner?.username 
+                || 'Unknown';
+              handleOpenUnshareDialog(calendar, ownerEmail);
+            }}
+            title={`Remove "${calendar.name}"`}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -905,7 +917,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                               onClick={() => handleToggleGroupExpansion(ownerEmail)}
                             >
                               <div className="flex items-center space-x-2">
-                                {expandedOwnerEmail === ownerEmail ? 
+                                {expandedOwnerEmails.has(ownerEmail) ? 
                                   <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : 
                                   <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
                                 }
@@ -941,7 +953,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                             </div>
                             
                             {/* Group Content - only visible when expanded */}
-                            {expandedOwnerEmail === ownerEmail && (
+                            {expandedOwnerEmails.has(ownerEmail) && (
                               <div className="px-3 pb-2 pt-1 border-t border-gray-100 bg-white">
                                 <div className="pl-5 space-y-1">
                                   {ownerCalendars
