@@ -78,10 +78,34 @@ async function verifyCalDAVCredentials(
       await davClient.login();
       console.log("CalDAV login successful with tsdav");
       
-      // Initialize user info with authenticated status
+      // Initialize user info with authenticated status and default display name derived from username
+      // This ensures we always have at least a basic display name
+      let formattedName = "";
+      if (username.includes('@')) {
+        // Get the username part before the @ symbol
+        const namePart = username.split('@')[0];
+        // Convert from formats like "john.doe" or "john_doe" to "John Doe"
+        formattedName = namePart
+          .replace(/[._-]/g, ' ')
+          .split(' ')
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+          .join(' ');
+      } else {
+        // For non-email username formats
+        formattedName = username
+          .replace(/[._-]/g, ' ')
+          .split(' ')
+          .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+          .join(' ');
+      }
+      
       const userInfo: CalDAVUserInfo = {
-        authenticated: true
+        authenticated: true,
+        displayName: formattedName,  // Set a default display name
+        email: username.includes('@') ? username : undefined
       };
+      
+      console.log(`Initial displayName set to: ${userInfo.displayName}`);
       
       // Try to get user info
       try {
@@ -120,11 +144,16 @@ async function verifyCalDAVCredentials(
                   'Authorization': 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')
                 },
                 body: `<?xml version="1.0" encoding="utf-8" ?>
-                <propfind xmlns="DAV:">
+                <propfind xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                   <prop>
                     <displayname/>
                     <email/>
-                    <calendar-user-address-set xmlns="urn:ietf:params:xml:ns:caldav"/>
+                    <C:calendar-user-address-set/>
+                    <C:calendar-user-type/>
+                    <C:calendar-home-set/>
+                    <current-user-privilege-set/>
+                    <principal-URL/>
+                    <resourcetype/>
                   </prop>
                 </propfind>`
               });
@@ -133,9 +162,14 @@ async function verifyCalDAVCredentials(
                 const responseText = await principalProps.text();
                 
                 // Log the full response for debugging
-                console.log(`[DEBUG] Principal properties response (first 500 chars): ${responseText.substring(0, 500)}...`);
+                console.log(`[DEBUG] Principal properties response (first 800 chars): ${responseText.substring(0, 800)}...`);
                 if (responseText.includes('displayname')) {
                   console.log('Response contains "displayname" tag');
+                  // Try to get context around displayname tag
+                  const displaynameContext = responseText.match(/(.{0,100}<displayname>.*?<\/displayname>.{0,100})/s);
+                  if (displaynameContext) {
+                    console.log('Context around displayname tag:', displaynameContext[1]);
+                  }
                 } else {
                   console.log('Warning: Response does not contain "displayname" tag');
                 }
@@ -159,6 +193,11 @@ async function verifyCalDAVCredentials(
                 // Pattern 4: In CDATA section
                 if (!displayNameMatch) {
                   displayNameMatch = responseText.match(/<displayname><!\[CDATA\[(.*?)\]\]><\/displayname>/);
+                }
+                
+                // Pattern 5: With whitespace and newlines
+                if (!displayNameMatch) {
+                  displayNameMatch = responseText.match(/<displayname>\s*([\s\S]*?)\s*<\/displayname>/);
                 }
                 
                 if (displayNameMatch && displayNameMatch[1]) {
