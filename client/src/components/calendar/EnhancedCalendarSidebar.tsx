@@ -725,10 +725,11 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             </Label>
             {isShared && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                {(calendar as SharedCalendar).permissionLevel === 'edit' ? (
+                {console.log(`Calendar ${calendar.name} (ID: ${calendar.id}) permission:`, (calendar as SharedCalendar).permissionLevel)}
+                {((calendar as SharedCalendar).permissionLevel === 'edit') ? (
                   <span className="text-emerald-600">Can edit</span>
                 ) : (
-                  <span className="text-amber-600">View only</span>
+                  <span className="text-amber-600" title={`Permission level: ${(calendar as SharedCalendar).permissionLevel}`}>View only</span>
                 )}
               </div>
             )}
