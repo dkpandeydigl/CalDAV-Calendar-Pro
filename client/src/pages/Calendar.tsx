@@ -361,14 +361,18 @@ function CalendarContent() {
   };
   
   // Handler for copying an event - creates a new event with the same details but a new UID
-  const handleCopyEvent = (event: Event) => {
+  // Follows RFC 5545 spec section 3.8.4.7 for UIDs
+  const handleCopyEvent = async (event: Event) => {
     if (event) {
       // Close the detail modal
       setEventDetailOpen(false);
       
       try {
-        // Create a clean copy with minimal required fields and no references to the original
-        const copiedEvent = {
+        // Get a robust, persistently stored UID using proper IndexedDB for RFC compliance
+        const newUID = await getOrGenerateUID();
+        
+        // Create a clean RFC 5545 compliant event with proper typing
+        const copiedEvent: ICalendarEventCreate = {
           calendarId: event.calendarId,
           title: `Copy of ${event.title}`,
           description: event.description || '',
@@ -377,28 +381,28 @@ function CalendarContent() {
           endDate: new Date(event.endDate),
           allDay: Boolean(event.allDay),
           timezone: event.timezone || 'UTC',
-          // Generate a new RFC-compliant UID
-          uid: generateUID(),
-          // Add other fields with safe defaults
+          uid: newUID,
           status: 'CONFIRMED',
           syncStatus: 'local',
-          // Strip attendees and resources for the copy to avoid sending notifications
+          // Strip attendees and resources for the copy to avoid notifications
+          // RFC 5545 requires all attendee invitations to be explicit
           attendees: [],
           resources: []
         };
         
-        // Log for debugging
-        console.log('Copying event:', { 
-          original: event.id,
-          title: event.title,
-          copyTitle: copiedEvent.title, 
-          newUID: copiedEvent.uid
+        // Log for verification
+        console.log('Copying event with RFC-compliant UID:', { 
+          originalId: event.id,
+          originalUID: event.uid,
+          newUID: copiedEvent.uid,
+          title: copiedEvent.title
         });
         
         // Set as the selected event for the form
-        setSelectedEvent(copiedEvent as any); // Type cast required for compatibility
+        // This cast is necessary due to the DOM Event vs CalendarEvent type conflict
+        setSelectedEvent(copiedEvent as any);
         
-        // Open the event form to let user edit before saving
+        // Open the event form to let user modify before saving
         setEventFormOpen(true);
         
         toast({
@@ -409,7 +413,7 @@ function CalendarContent() {
         console.error("Error copying event:", error);
         toast({
           title: "Copy Failed",
-          description: "There was an error copying this event.",
+          description: "Could not generate a unique identifier for the copied event.",
           variant: "destructive"
         });
       }

@@ -150,6 +150,59 @@ export const insertEventSchema = createInsertSchema(events).pick({
 
 export type InsertEvent = z.infer<typeof insertEventSchema>;
 export type Event = typeof events.$inferSelect;
+export type CalendarEvent = typeof events.$inferSelect;
+
+/**
+ * RFC 5545 compliant interface for a calendar event
+ * Used for better type safety when handling events in the application
+ */
+export interface ICalendarEvent {
+  id?: number;
+  uid: string;
+  calendarId: number;
+  title: string;
+  description?: string | null;
+  location?: string | null;
+  startDate: Date;
+  endDate: Date;
+  allDay?: boolean | null;
+  timezone?: string | null;
+  recurrenceRule?: string | null;
+  isRecurring?: boolean | null;
+  attendees?: any[] | null;
+  resources?: any[] | null;
+  busyStatus?: string | null;
+  etag?: string | null;
+  url?: string | null;
+  rawData?: any | null;
+  syncStatus?: string;
+  syncError?: string | null;
+  lastSyncAttempt?: Date | null;
+  emailSent?: string | null;
+  emailError?: string | null;
+  lastModifiedBy?: number | null;
+  lastModifiedByName?: string | null;
+  lastModifiedAt?: Date | null;
+}
+
+/**
+ * For creating new RFC 5545 compliant events
+ */
+export interface ICalendarEventCreate {
+  calendarId: number;
+  title: string;
+  description?: string;
+  location?: string;
+  startDate: Date;
+  endDate: Date;
+  allDay?: boolean;
+  timezone?: string;
+  uid?: string;
+  attendees?: any[];
+  resources?: any[];
+  syncStatus?: string;
+  status?: string;
+}
 
 // CalDAV server connection settings
 export const serverConnections = pgTable("server_connections", {
