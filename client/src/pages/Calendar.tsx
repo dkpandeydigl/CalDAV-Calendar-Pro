@@ -366,59 +366,53 @@ function CalendarContent() {
       // Close the detail modal
       setEventDetailOpen(false);
       
-      // Create a safer copy of the event object with proper typings
-      const eventData = {
-        // Keep all original event fields but with proper typing
-        id: event.id,
-        uid: event.uid,
-        calendarId: event.calendarId,
-        title: `Copy of ${event.title}`,
-        description: event.description,
-        location: event.location,
-        startDate: new Date(event.startDate),
-        endDate: new Date(event.endDate),
-        allDay: event.allDay,
-        timezone: event.timezone,
-        color: event.color,
-        attendees: event.attendees ? [...event.attendees] : [],
-        resources: event.resources ? [...event.resources] : [],
-        rrule: event.rrule,
-        recurrenceRule: event.recurrenceRule,
-        status: event.status || 'CONFIRMED',
-        organizer: event.organizer ? {...event.organizer} : null,
-        rawData: event.rawData,
-        url: event.url,
-        createdAt: event.createdAt,
-        lastModifiedAt: new Date(),
-        lastModifiedBy: event.lastModifiedBy,
-        lastModifiedByName: event.lastModifiedByName,
-        sharingMetadata: event.sharingMetadata ? {...event.sharingMetadata} : null
-      };
-      
-      // Create a new event with only the necessary modifications
-      const copiedEvent = {
-        ...eventData,
-        id: undefined, // Remove ID so a new one is created
-        uid: getOrGenerateUID(), // Generate a new RFC-compliant UID
-      };
-      
-      console.log('Copying event:', { 
-        original: event.id,
-        title: event.title,
-        copyTitle: copiedEvent.title, 
-        newUID: copiedEvent.uid
-      });
-      
-      // Set as the selected event for the form
-      setSelectedEvent(copiedEvent as any); // Type cast to satisfy TS until we improve the Event type
-      
-      // Open the event form to let user edit before saving
-      setEventFormOpen(true);
-      
-      toast({
-        title: "Event Copied",
-        description: "You can now modify the copy before saving.",
-      });
+      try {
+        // Create a clean copy with minimal required fields and no references to the original
+        const copiedEvent = {
+          calendarId: event.calendarId,
+          title: `Copy of ${event.title}`,
+          description: event.description || '',
+          location: event.location || '',
+          startDate: new Date(event.startDate),
+          endDate: new Date(event.endDate),
+          allDay: Boolean(event.allDay),
+          timezone: event.timezone || 'UTC',
+          // Generate a new RFC-compliant UID
+          uid: generateUID(),
+          // Add other fields with safe defaults
+          status: 'CONFIRMED',
+          syncStatus: 'local',
+          // Strip attendees and resources for the copy to avoid sending notifications
+          attendees: [],
+          resources: []
+        };
+        
+        // Log for debugging
+        console.log('Copying event:', { 
+          original: event.id,
+          title: event.title,
+          copyTitle: copiedEvent.title, 
+          newUID: copiedEvent.uid
+        });
+        
+        // Set as the selected event for the form
+        setSelectedEvent(copiedEvent as any); // Type cast required for compatibility
+        
+        // Open the event form to let user edit before saving
+        setEventFormOpen(true);
+        
+        toast({
+          title: "Event Copied",
+          description: "You can now modify the copy before saving.",
+        });
+      } catch (error) {
+        console.error("Error copying event:", error);
+        toast({
+          title: "Copy Failed",
+          description: "There was an error copying this event.",
+          variant: "destructive"
+        });
+      }
     }
   };
   
