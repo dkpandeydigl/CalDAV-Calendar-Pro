@@ -10,12 +10,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { CalendarDays, CornerDownRight, CornerRightUp, Repeat } from 'lucide-react';
 import { format } from 'date-fns';
+import { CalendarEvent } from '@shared/schema';
 
 export type RecurringEditMode = 'single' | 'all' | 'cancel';
 
 interface RecurringEventEditModalProps {
   open: boolean;
-  event: Event | null;
+  event: CalendarEvent | null;
   onClose: () => void;
   onConfirm: (mode: RecurringEditMode) => void;
 }

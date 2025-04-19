@@ -21,10 +21,11 @@ import {
 import { format } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { CalendarEvent } from '@shared/schema';
 
 interface PrintEventModalProps {
   open: boolean;
-  event: Event | null;
+  event: CalendarEvent | null;
   onClose: () => void;
 }
 

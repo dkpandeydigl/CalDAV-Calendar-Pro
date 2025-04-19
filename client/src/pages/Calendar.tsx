@@ -26,7 +26,7 @@ import { format, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfM
 import { Loader2, RefreshCcw, Trash } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
-import { generateUID, getOrGenerateUID, ensureCompliantUID } from '@/lib/uid-utils';
+import { generateUID, getOrGenerateUID, ensureCompliantUID } from '../lib/uid-utils';
 
 // For different calendar views
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
@@ -631,7 +631,7 @@ function CalendarContent() {
       
       <EventDetailModal 
         open={eventDetailOpen} 
-        event={selectedEvent} 
+        event={selectedEvent as CalendarEvent} 
         onClose={() => setEventDetailOpen(false)}
         onEdit={handleEditEvent}
         onCopy={handleCopyEvent}
