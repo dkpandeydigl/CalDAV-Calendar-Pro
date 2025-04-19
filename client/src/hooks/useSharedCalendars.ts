@@ -79,11 +79,30 @@ export const useSharedCalendars = () => {
             calendar.permissionLevel = isEditable ? 'edit' : 'view';
             calendar.permission = isEditable ? 'edit' : 'view';
           }
-          // If for some reason no permission information is available, set default to 'view'
+          // CRITICAL FIX: If for some reason no permission information is available, default to 'edit' instead of 'view'
           else if (calendar.permissionLevel === undefined && calendar.permission === undefined) {
-            console.log(`Neither permission nor permissionLevel nor canEdit defined, setting defaults to 'view'`);
-            calendar.permissionLevel = 'view';
-            calendar.permission = 'view';
+            console.log(`Neither permission nor permissionLevel nor canEdit defined, setting defaults to 'edit'`);
+            calendar.permissionLevel = 'edit';
+            calendar.permission = 'edit';
+          }
+          
+          // CRITICAL FIX: Additional permission normalization to catch more variations
+          if (calendar.permissionLevel) {
+            const normalizedPerm = calendar.permissionLevel.toString().toLowerCase().trim();
+            if (normalizedPerm.includes('edit') || normalizedPerm.includes('write')) {
+              console.log(`[Permission Normalization] Found edit/write in permissionLevel value "${calendar.permissionLevel}", normalizing to "edit"`);
+              calendar.permissionLevel = 'edit';
+              calendar.permission = 'edit';
+            }
+          }
+          
+          if (calendar.permission) {
+            const normalizedPerm = calendar.permission.toString().toLowerCase().trim();
+            if (normalizedPerm.includes('edit') || normalizedPerm.includes('write')) {
+              console.log(`[Permission Normalization] Found edit/write in permission value "${calendar.permission}", normalizing to "edit"`);
+              calendar.permissionLevel = 'edit';
+              calendar.permission = 'edit';
+            }
           }
           
           // Debug what we received from the server with detailed permission info
@@ -320,9 +339,38 @@ export const useSharedCalendars = () => {
   const updatePermissionMutation = useMutation({
     mutationFn: async (params: { sharingId: number, permissionLevel: 'view' | 'edit' | 'read' | 'write' }) => {
       const { sharingId, permissionLevel } = params;
+      
+      // CRITICAL FIX: Apply permission normalization for the mutation
+      console.log(`[Mutation] Updating permission for sharing ID ${sharingId} to ${permissionLevel}`);
+      
+      // Normalize permission value to ensure consistent format
+      const normalizedPermission = 
+        permissionLevel.toLowerCase().includes('edit') || 
+        permissionLevel.toLowerCase().includes('write') ? 
+        'edit' : 'view';
+        
+      if (normalizedPermission !== permissionLevel) {
+        console.log(`[Mutation] Normalized permission from "${permissionLevel}" to "${normalizedPermission}"`);
+      }
+      
       const url = `/api/calendar-sharings/${sharingId}`;
-      const response = await apiRequest('PATCH', url, { permissionLevel });
-      return response.json();
+      const requestData = { 
+        permissionLevel: normalizedPermission,
+        permission: normalizedPermission // Include both for backward compatibility
+      };
+      
+      console.log(`[Mutation] Sending permission update request:`, requestData);
+      const response = await apiRequest('PATCH', url, requestData);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[Mutation] Permission update failed:`, errorText);
+        throw new Error(`Failed to update permission: ${errorText}`);
+      }
+      
+      const result = await response.json();
+      console.log(`[Mutation] Permission updated successfully:`, result);
+      return result;
     },
     onMutate: async ({ sharingId, permissionLevel }) => {
       // Use proper query key with user ID
@@ -334,15 +382,46 @@ export const useSharedCalendars = () => {
       // Snapshot the previous value
       const previousSharedCalendars = queryClient.getQueryData<SharedCalendar[]>(queryKey);
       
-      // Optimistically update the permission level in the cache
+      // CRITICAL FIX: Normalize permission value consistently for optimistic updates
+      // This ensures the UI is immediately consistent with the normalized value being sent to server
+      const normalizedPermission = 
+        permissionLevel.toLowerCase().includes('edit') || 
+        permissionLevel.toLowerCase().includes('write') ? 
+        'edit' : 'view';
+        
+      if (normalizedPermission !== permissionLevel) {
+        console.log(`[Optimistic Update] Normalized permission from "${permissionLevel}" to "${normalizedPermission}"`);
+      }
+      
+      // Optimistically update the permission level in the cache with normalized value
       if (previousSharedCalendars) {
         const updatedCalendars = previousSharedCalendars.map(calendar => {
           if (calendar.sharingId === sharingId) {
-            return { 
+            const updatedCalendar = { 
               ...calendar, 
-              permissionLevel,
-              permission: permissionLevel, // Update both fields for backward compatibility
+              permissionLevel: normalizedPermission,
+              permission: normalizedPermission, // Update both fields consistently
             };
+            
+            // If the calendar uses the canEdit function-based approach, update that to match too
+            if (typeof updatedCalendar.canEdit === 'boolean') {
+              updatedCalendar.canEdit = normalizedPermission === 'edit';
+            }
+            
+            console.log(`[Optimistic Update] Calendar ${calendar.id} (${calendar.name}) permissions updated:`, {
+              previous: {
+                permissionLevel: calendar.permissionLevel,
+                permission: calendar.permission,
+                canEdit: typeof calendar.canEdit === 'boolean' ? calendar.canEdit : 'function'
+              },
+              updated: {
+                permissionLevel: updatedCalendar.permissionLevel,
+                permission: updatedCalendar.permission,
+                canEdit: typeof updatedCalendar.canEdit === 'boolean' ? updatedCalendar.canEdit : 'function'
+              }
+            });
+            
+            return updatedCalendar;
           }
           return calendar;
         });
@@ -356,11 +435,11 @@ export const useSharedCalendars = () => {
           previousSharedCalendars, 
           updatedCalendar,
           queryKey,
-          permissionLevel
+          permissionLevel: normalizedPermission // Return the normalized value for success message
         };
       }
       
-      return { previousSharedCalendars };
+      return { previousSharedCalendars, permissionLevel: normalizedPermission };
     },
     onSuccess: (_, { permissionLevel }, context) => {
       const calendarName = context?.updatedCalendar?.name || 'calendar';

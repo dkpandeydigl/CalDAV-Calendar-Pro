@@ -59,6 +59,20 @@ export async function shareCalendar(
   permissionLevel: 'view' | 'edit',
   syncWithServer: boolean = false
 ) {
+  // CRITICAL FIX: Log and normalize permission values for better troubleshooting
+  console.log(`[API] Sharing calendar ID ${calendarId} with ${email}, permission: ${permissionLevel}`);
+  
+  // Normalize permission value to ensure consistent format
+  // This provides an additional safeguard in case the UI sends unexpected values
+  const normalizedPermission = 
+    permissionLevel.toLowerCase().includes('edit') || 
+    permissionLevel.toLowerCase().includes('write') ? 
+    'edit' : 'view';
+    
+  if (normalizedPermission !== permissionLevel) {
+    console.log(`[API] Normalized permission from "${permissionLevel}" to "${normalizedPermission}"`);
+  }
+  
   const apiUrl = syncWithServer
     ? `/api/calendars/${calendarId}/shares?syncWithServer=true`
     : `/api/calendars/${calendarId}/shares`;
@@ -74,18 +88,32 @@ export async function shareCalendar(
     throw new Error('Failed to get current user data');
   }
   
-  const response = await apiRequest('POST', apiUrl, {
+  const requestData = {
     email: email, // Server expects 'email', not 'sharedWithEmail'
-    permissionLevel,
+    permissionLevel: normalizedPermission,
+    permission: normalizedPermission, // Include both for backward compatibility
     sharedByUserId: currentUserId
-  });
+  };
+  
+  console.log(`[API] Sending calendar sharing request:`, requestData);
+  
+  const response = await apiRequest('POST', apiUrl, requestData);
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.message || 'Failed to share calendar');
+    const errorText = await response.text();
+    console.error(`[API] Failed to share calendar:`, errorText);
+    
+    try {
+      const error = JSON.parse(errorText);
+      throw new Error(error.message || 'Failed to share calendar');
+    } catch (e) {
+      throw new Error('Failed to share calendar: ' + errorText);
+    }
   }
   
-  return await response.json();
+  const result = await response.json();
+  console.log(`[API] Successfully shared calendar:`, result);
+  return result;
 }
 
 /**
@@ -116,19 +144,36 @@ export async function updateSharingPermission(
   permissionLevel: 'view' | 'edit',
   syncWithServer: boolean = false
 ) {
+  // CRITICAL FIX: Log and normalize permission values for better troubleshooting
+  console.log(`[API] Updating sharing permission for ID ${shareId} to ${permissionLevel}`);
+  
+  // Normalize permission value to ensure consistent format
+  // This provides an additional safeguard in case the UI sends unexpected values
+  const normalizedPermission = 
+    permissionLevel.toLowerCase().includes('edit') || 
+    permissionLevel.toLowerCase().includes('write') ? 
+    'edit' : 'view';
+    
+  if (normalizedPermission !== permissionLevel) {
+    console.log(`[API] Normalized permission from "${permissionLevel}" to "${normalizedPermission}"`);
+  }
+  
   const apiUrl = syncWithServer
     ? `/api/calendar-sharings/${shareId}?syncWithServer=true`
     : `/api/calendar-sharings/${shareId}`;
     
   const response = await apiRequest('PATCH', apiUrl, {
-    permissionLevel
+    permissionLevel: normalizedPermission
   });
   
   if (!response.ok) {
+    console.error(`[API] Failed to update sharing permission for ID ${shareId}`, await response.text());
     throw new Error('Failed to update sharing permission');
   }
   
-  return await response.json();
+  const result = await response.json();
+  console.log(`[API] Successfully updated sharing permission for ID ${shareId}`, result);
+  return result;
 }
 
 /**
