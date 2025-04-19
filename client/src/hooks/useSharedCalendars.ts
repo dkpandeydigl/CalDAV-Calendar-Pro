@@ -57,12 +57,16 @@ export const useSharedCalendars = () => {
           // Create a complete owner object
           if (!calendar.owner) {
             // If we don't have an owner object at all, create one with the best available information
+            // Create a partial owner object that matches the User type
             calendar.owner = {
               id: calendar.userId || 0,
               username: calendar.ownerEmail || 'Unknown',
-              email: calendar.ownerEmail || null
+              password: '', // Required field but not used in display
+              preferredTimezone: null,
+              email: calendar.ownerEmail || null,
+              fullName: null
             };
-          } else {
+          } else if (calendar.owner) {
             // If we have a partial owner object, enhance it with any additional information
             // Make sure the owner has a username
             if (!calendar.owner.username || calendar.owner.username === 'undefined' || calendar.owner.username === 'null') {
@@ -77,14 +81,14 @@ export const useSharedCalendars = () => {
           
           // Set/update ownerEmail field for backward compatibility and ensuring we always have it
           // Choose the most reliable email source with fallbacks
-          if (calendar.owner.email && calendar.owner.email !== 'undefined' && calendar.owner.email !== 'null') {
+          if (calendar.owner && calendar.owner.email && calendar.owner.email !== 'undefined' && calendar.owner.email !== 'null') {
             calendar.ownerEmail = calendar.owner.email;
-          } else if (calendar.owner.username && calendar.owner.username.includes('@')) {
+          } else if (calendar.owner && calendar.owner.username && calendar.owner.username.includes('@')) {
             calendar.ownerEmail = calendar.owner.username;
           } else if (calendar.userId) {
             calendar.ownerEmail = `User ${calendar.userId}`;
           } else if (!calendar.ownerEmail || calendar.ownerEmail === 'undefined' || calendar.ownerEmail === 'null') {
-            calendar.ownerEmail = calendar.owner.username || 'Unknown Owner';
+            calendar.ownerEmail = calendar.owner && calendar.owner.username ? calendar.owner.username : 'Unknown Owner';
           }
           
           // Ensure enabled property is always set for consistency
@@ -343,7 +347,23 @@ export const useSharedCalendars = () => {
   // Thanks to our strict server-side security filtering, we can now trust the shared calendars directly from the server
   // The server will never send calendars owned by the current user in the shared calendars API
   // This simplifies our client-side logic and prevents bugs
-  const filteredSharedCalendars = sharedCalendarsQuery.data || [];
+  const filteredSharedCalendars = (sharedCalendarsQuery.data || []).map(calendar => {
+    // Add the canEdit method to each calendar for consistent permission checking
+    // This addresses the inconsistency where some parts of the app use permissionLevel
+    // and others use permission
+    calendar.canEdit = () => {
+      // Check both permission and permissionLevel fields
+      // Different parts of the API use different field names
+      const permissionLevel = calendar.permissionLevel;
+      const permission = calendar.permission;
+      
+      // Check if either field contains an edit-level permission
+      return ['edit', 'write'].includes(permissionLevel) || 
+             (permission && ['edit', 'write'].includes(permission));
+    };
+    
+    return calendar;
+  });
   
   // Add debug logging to identify permission levels
   useEffect(() => {
@@ -354,7 +374,7 @@ export const useSharedCalendars = () => {
           name: cal.name,
           permissionLevel: cal.permissionLevel,
           permission: cal.permission, // Check if this alternative field exists
-          canEdit: ['edit', 'write'].includes(cal.permissionLevel)
+          canEdit: cal.canEdit ? cal.canEdit() : ['edit', 'write'].includes(cal.permissionLevel)
         }))
       );
     }
