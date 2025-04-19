@@ -739,7 +739,29 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   // Use the new canEdit method on the SharedCalendar for consistent permission checks
                   // This fixes the issues with permission inconsistencies across the application
                   const sharedCal = calendar as SharedCalendar;
-                  const canEdit = sharedCal.canEdit ? sharedCal.canEdit() : false;
+                  
+                  // Enhanced debug logging to help troubleshoot permission issues
+                  console.log(`[CalendarDisplay] Calendar ID ${sharedCal.id}, name: "${sharedCal.name}"`);
+                  console.log(`[CalendarDisplay] Raw permission values:`, {
+                    permissionLevel: sharedCal.permissionLevel,
+                    permission: sharedCal.permission,
+                    sharingId: sharedCal.sharingId
+                  });
+                  
+                  // Enhanced permission check that's more flexible
+                  const hasEditPermission = (
+                    (sharedCal.permissionLevel === 'edit' || sharedCal.permissionLevel === 'write') ||
+                    (sharedCal.permission === 'edit' || sharedCal.permission === 'write')
+                  );
+                  
+                  // Use both the direct check and the canEdit method for maximum flexibility
+                  const canEdit = (
+                    hasEditPermission || 
+                    (sharedCal.canEdit && sharedCal.canEdit()) ||
+                    false
+                  );
+                  
+                  console.log(`[CalendarDisplay] Permission check result: hasEditPermission=${hasEditPermission}, canEdit=${canEdit}`);
                   
                   return canEdit ? 
                     <span className="text-emerald-600">Can edit</span> : 

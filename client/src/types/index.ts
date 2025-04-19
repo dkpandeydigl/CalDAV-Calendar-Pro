@@ -1,6 +1,9 @@
 // Type definition for calendar types
 import { Calendar, User } from "../../../shared/schema";
 
+// Permission type that accepts all supported variations to reduce type errors
+export type CalendarPermission = 'view' | 'edit' | 'read' | 'write' | string;
+
 // Extended type for a shared calendar with additional properties
 export interface SharedCalendar {
   // Base Calendar properties
@@ -23,10 +26,10 @@ export interface SharedCalendar {
   isShared?: boolean;
   
   // Legacy permission field - some API endpoints use this
-  permission?: 'view' | 'edit' | 'read' | 'write';
+  permission?: CalendarPermission;
   
   // Primary permission field from schema - some endpoints use this 
-  permissionLevel: 'view' | 'edit' | 'read' | 'write';
+  permissionLevel?: CalendarPermission;
   
   // ID of the calendar sharing record
   sharingId?: number;
