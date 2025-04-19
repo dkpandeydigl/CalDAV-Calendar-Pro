@@ -2679,6 +2679,7 @@ export class SyncService {
   /**
    * Sanitize a RRULE string by removing any non-recurrence data that might have been incorrectly added
    * This helps fix corrupted RRULE properties that might contain email addresses or other invalid data
+   * Uses a preservation-focused approach to keep as much valid data as possible
    * @param rrule The possibly corrupted RRULE string
    * @returns A cleaned RRULE string containing only valid recurrence parameters
    */
@@ -2686,103 +2687,125 @@ export class SyncService {
     if (!rrule) return '';
     
     try {
-      console.log(`Sanitizing RRULE: ${rrule}`);
+      console.log(`[RRULE_SANITIZE] Processing recurrence rule: ${rrule}`);
       
-      // Check for specific malformed patterns (emails merged with resource types)
-      if (rrule.includes('@') && (rrule.includes('Projector') || rrule.includes('projector') ||
-          rrule.includes('Room') || rrule.includes('room') || rrule.includes('Resource'))) {
-        console.log('Found email/resource pattern in RRULE - applying focused fix');
-        
-        // Specific case: dktest@dil.inProjector
-        rrule = rrule.replace(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})[A-Za-z]+/g, (match, email) => {
-          console.log(`Removing resource suffix from email ${email}`);
-          return '';  // Remove the entire problematic part
-        });
-        
-        // After removing problematic parts, check if we still have a valid RRULE
-        const freqMatch = rrule.match(/FREQ=([^;]+)/i);
-        if (freqMatch) {
-          console.log(`Recovered FREQ from corrupted RRULE: FREQ=${freqMatch[1]}`);
-          // Just use the basic frequency to be safe
-          return `FREQ=${freqMatch[1]}`;
-        } else {
-          // If we can't recover a FREQ, return a default daily recurrence
-          console.log('Could not recover FREQ from corrupted RRULE, using default DAILY');
-          return 'FREQ=DAILY';
-        }
-      }
+      // Store the original value for recovery if needed
+      const originalRrule = rrule;
       
       // If it's already an object in string form, parse it and let our formatter handle it
       if (rrule.startsWith('{') && rrule.endsWith('}')) {
         try {
-          return icalUtils.formatRecurrenceRule(rrule);
+          console.log('[RRULE_SANITIZE] Found JSON-format recurrence rule, forwarding to formatter');
+          return this.formatRecurrenceRule(rrule);
         } catch (e) {
-          console.error("Error parsing recurrence rule JSON:", e);
+          console.error("[RRULE_SANITIZE] Error parsing recurrence rule JSON:", e);
+          // Continue with string-based cleaning
         }
       }
       
       // Remove any RRULE: prefix if present
       if (rrule.startsWith('RRULE:')) {
         rrule = rrule.substring(6);
+        console.log(`[RRULE_SANITIZE] Removed RRULE: prefix, now: ${rrule}`);
       }
       
-      // Explicitly check for and remove SCHEDULE-STATUS
-      if (rrule.includes('SCHEDULE-STATUS')) {
-        console.log('Found SCHEDULE-STATUS in RRULE - removing it');
-        rrule = rrule.replace(/SCHEDULE-STATUS=[^;]*(;|$)/g, '');
-      }
-      
-      // Remove any stray "mailto:" sections and anything after a colon that's not part of a valid parameter
-      if (rrule.includes('mailto:') || rrule.includes(':')) {
-        console.log('Found mailto: or colon in RRULE - cleaning it properly');
-        
-        // First, separate at any colon that's not part of a parameter definition
-        const cleanParts = rrule.split(':');
-        if (cleanParts.length > 1) {
-          // Only keep the first part before any colon (which should contain the actual RRULE)
-          rrule = cleanParts[0];
-          console.log(`Split RRULE at colon, keeping only: ${rrule}`);
-        }
-        
-        // Also remove any remaining mailto sections
-        rrule = rrule.replace(/mailto:[^;]*(;|$)/g, '');
-      }
-      
-      // If we have a clean RRULE without problematic content, return it
-      if (rrule.startsWith('FREQ=') && !rrule.includes('mailto:') && !rrule.includes('PARTSTAT=') && 
-          !rrule.includes('SCHEDULE-STATUS') && !rrule.includes('@')) {
+      // Check if we already have a clean RRULE at this point
+      if (rrule.startsWith('FREQ=') && 
+          !rrule.includes('mailto:') && 
+          !rrule.includes('PARTSTAT=') && 
+          !rrule.includes('SCHEDULE-STATUS') && 
+          !rrule.includes('@')) {
+        console.log(`[RRULE_SANITIZE] Rule is already clean: ${rrule}`);
         return rrule;
       }
       
-      // Extract valid RRULE parameters (whitelist approach)
-      const validParams = ['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'BYDAY', 'BYMONTHDAY', 'BYMONTH', 'WKST', 'BYSETPOS'];
-      const parts = rrule.split(';');
+      // Step 1: Extract and validate all parts that look like valid RRULE parameters
+      // Define the valid RRULE parameters according to RFC 5545
+      const validParams = [
+        'FREQ', 'UNTIL', 'COUNT', 'INTERVAL', 'BYSECOND', 'BYMINUTE', 'BYHOUR',
+        'BYDAY', 'BYMONTHDAY', 'BYYEARDAY', 'BYWEEKNO', 'BYMONTH', 'BYSETPOS', 'WKST'
+      ];
       
-      const validParts = parts.filter(part => {
-        if (!part.includes('=')) return false;
-        const paramName = part.split('=')[0];
-        return validParams.includes(paramName);
+      // Split into parts by semicolon
+      const allParts = rrule.split(';');
+      
+      // Collect valid parts - first pass to collect known parameters
+      let validParts: string[] = [];
+      let hasFreq = false;
+      
+      // First pass: extract known valid parameters
+      allParts.forEach(part => {
+        if (!part.includes('=')) return; // Skip parts without equals sign
+        
+        const [paramName, ...paramValueParts] = part.split('=');
+        const paramValue = paramValueParts.join('='); // Recombine in case the value itself had an equals sign
+        
+        if (validParams.includes(paramName)) {
+          // Special handling for FREQ - most important parameter
+          if (paramName === 'FREQ') {
+            hasFreq = true;
+            validParts.push(`FREQ=${paramValue}`);
+          } 
+          // Special handling for UNTIL to make sure it's a valid date format
+          else if (paramName === 'UNTIL') {
+            // Check if the UNTIL value looks like a date in YYYYMMDD format
+            if (/^\d{8}(T\d{6}Z?)?$/.test(paramValue)) {
+              validParts.push(`UNTIL=${paramValue}`);
+            } else {
+              console.log(`[RRULE_SANITIZE] Invalid UNTIL format: ${paramValue}, skipping`);
+            }
+          }
+          // All other valid parameters
+          else {
+            validParts.push(`${paramName}=${paramValue}`);
+          }
+        }
       });
       
-      // If we have valid parts, join them
+      // If we don't have a FREQ parameter, look for one using regex
+      if (!hasFreq) {
+        console.log('[RRULE_SANITIZE] No FREQ parameter found, searching for one...');
+        const freqMatch = originalRrule.match(/FREQ=([^;:]+)/i);
+        if (freqMatch && freqMatch[1]) {
+          console.log(`[RRULE_SANITIZE] Extracted FREQ=${freqMatch[1]} from original rule`);
+          validParts.unshift(`FREQ=${freqMatch[1]}`); // Add FREQ as the first parameter
+          hasFreq = true;
+        }
+      }
+      
+      // Construct the sanitized rule
       if (validParts.length > 0) {
         const sanitizedRule = validParts.join(';');
-        console.log(`Sanitized RRULE: ${sanitizedRule}`);
+        console.log(`[RRULE_SANITIZE] Successfully cleaned rule: ${sanitizedRule}`);
         return sanitizedRule;
       }
       
-      // Extract just FREQ as a last resort
-      const freqMatch = rrule.match(/FREQ=([^;]+)/i);
-      if (freqMatch) {
-        console.log(`Extracted only FREQ from RRULE: FREQ=${freqMatch[1]}`);
-        return `FREQ=${freqMatch[1]}`;
+      // If we still don't have valid parts but have a FREQ in the original, extract just that
+      if (!hasFreq) {
+        const lastChanceFreqMatch = originalRrule.match(/FREQ=([^;:]+)/i);
+        if (lastChanceFreqMatch && lastChanceFreqMatch[1]) {
+          console.log(`[RRULE_SANITIZE] Last resort: using only FREQ=${lastChanceFreqMatch[1]}`);
+          return `FREQ=${lastChanceFreqMatch[1]}`;
+        }
       }
       
-      // If all else fails, return a default or empty
-      console.warn(`Could not sanitize RRULE: ${rrule}, returning empty string`);
+      // If all else fails, return an empty string rather than default to something that might be wrong
+      console.warn(`[RRULE_SANITIZE] Could not sanitize RRULE: ${originalRrule}, returning empty string`);
       return '';
     } catch (e) {
-      console.error(`Error sanitizing RRULE: ${e}`);
+      console.error(`[RRULE_SANITIZE] Error sanitizing RRULE:`, e);
+      
+      // Try one last attempt to extract a FREQ from the original string
+      try {
+        const emergencyFreqMatch = rrule.match(/FREQ=([^;:]+)/i);
+        if (emergencyFreqMatch && emergencyFreqMatch[1]) {
+          console.log(`[RRULE_SANITIZE] Emergency recovery: extracting FREQ=${emergencyFreqMatch[1]}`);
+          return `FREQ=${emergencyFreqMatch[1]}`;
+        }
+      } catch (innerError) {
+        console.error(`[RRULE_SANITIZE] Even emergency extraction failed:`, innerError);
+      }
+      
       return '';
     }
   }
@@ -3401,7 +3424,7 @@ export class SyncService {
   /**
    * Format a recurrence rule for iCalendar
    */
-  private formatRecurrenceRule(rule: string | object): string {
+  private formatRecurrenceRule(rule: string | any): string {
     // If rule is empty, return empty string
     if (!rule) return '';
     
