@@ -38,6 +38,8 @@ import { initializeWebSocketServer } from "./websocket-handler";
 import { initializeWebSocketNotificationService, WebSocketNotificationService, WebSocketNotification } from "./websocket-notifications";
 import { setupCommonSmtp, getSmtpStatus } from './smtp-controller';
 import { enhancedSyncService } from './enhanced-sync-service';
+import { getCalendarSharingService } from './calendar-sharing-service';
+import { registerCompatibilityRoutes } from './new-calendar-sharing-routes';
 
 // Initialize the WebSocket notification service for use throughout the app
 let websocketNotificationService: WebSocketNotificationService;
@@ -4026,61 +4028,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // CALENDAR SHARING API
+  // CALENDAR SHARING API - Using the new Calendar Sharing Service
+  console.log('Registering calendar sharing routes using new service implementation');
+  
+  // Initialize the sharing service for better code organization and security
+  const sharingService = getCalendarSharingService(storage);
+  
+  // Also register the new API routes under /api/v2 for compatibility
+  registerCompatibilityRoutes(app, sharingService);
+  
+  // GET /api/shared-calendars - Get calendars shared with me
   app.get("/api/shared-calendars", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
+      console.log(`[NEW SHARING SERVICE] Getting shared calendars for user ${userId}`);
       
-      try {
-        // First try the memory storage direct method which seems more reliable
-        const sharedCalendars = await storage.getSharedCalendars(userId);
-        console.log(`Returning ${sharedCalendars.length} shared calendars using memory storage implementation`);
-        
-        res.setHeader('Content-Type', 'application/json');
-        return res.json(sharedCalendars);
-      } catch (memoryError) {
-        console.error("Error with memory storage implementation:", memoryError);
-        
-        try {
-          // Fall back to the fixed Drizzle implementation
-          const { getSharedCalendars } = await import('./calendar-sharing-fix');
-          
-          const sharedCalendars = await getSharedCalendars(userId, storage);
-          console.log(`Returning ${sharedCalendars.length} shared calendars using fixed implementation`);
-          
-          res.setHeader('Content-Type', 'application/json');
-          return res.json(sharedCalendars);
-        } catch (fixError) {
-          console.error("Error with fixed implementation:", fixError);
-          throw fixError; // Let the outer catch handle this
-        }
+      const result = await sharingService.getSharedCalendarsForUser(userId);
+      
+      if ('error' in result) {
+        console.error(`[NEW SHARING SERVICE] Error: ${result.error}`);
+        return res.status(400).json({ message: result.error });
       }
-    } catch (err) {
-      console.error("Error fetching shared calendars:", err);
+      
+      console.log(`[NEW SHARING SERVICE] Found ${result.length} shared calendars`);
       res.setHeader('Content-Type', 'application/json');
-      res.status(500).json({ message: "Failed to fetch shared calendars", error: err.message });
+      return res.json(result);
+    } catch (error) {
+      console.error('[NEW SHARING SERVICE] Error getting shared calendars:', error);
+      return res.status(500).json({ 
+        message: 'Failed to get shared calendars',
+        error: error.message 
+      });
     }
   });
   
+  // POST /api/calendar-sharing - Share a calendar
   app.post("/api/calendar-sharing", isAuthenticated, async (req, res) => {
     try {
-      const sharingData = {
-        ...req.body,
-        sharedByUserId: req.user!.id
-      };
+      const { calendarId, sharedWithEmail, permissionLevel = 'view' } = req.body;
+      const ownerId = req.user!.id;
       
-      // Debug logging for permission levels
-      console.log(`Calendar sharing request with permission: ${req.body.permissionLevel}`, sharingData);
+      console.log(`[NEW SHARING SERVICE] Sharing calendar ${calendarId} with ${sharedWithEmail}, permission: ${permissionLevel}`);
       
-      const validatedData = insertCalendarSharingSchema.parse(sharingData);
-      console.log(`Validated calendar sharing data with permission: ${validatedData.permissionLevel}`);
+      if (!calendarId || !sharedWithEmail) {
+        return res.status(400).json({ 
+          message: 'Invalid request. calendarId and sharedWithEmail are required.' 
+        });
+      }
       
-      const newSharing = await storage.shareCalendar(validatedData);
-      console.log(`Created new calendar sharing with ID ${newSharing.id}, permission: ${newSharing.permissionLevel}`);
+      // Map permissionLevel to permission for the new service
+      const permission = permissionLevel === 'edit' ? 'edit' : 'view';
       
-      res.status(201).json(newSharing);
+      // Share the calendar using our new service
+      const result = await sharingService.shareCalendar(
+        calendarId,
+        ownerId,
+        sharedWithEmail,
+        permission
+      );
+      
+      if ('error' in result) {
+        console.error(`[NEW SHARING SERVICE] Error: ${result.error}`);
+        return res.status(400).json({ message: result.error });
+      }
+      
+      console.log(`[NEW SHARING SERVICE] Successfully shared calendar, ID: ${result.id}`);
+      return res.status(201).json(result);
     } catch (err) {
-      console.error("Error sharing calendar:", err);
+      console.error("[NEW SHARING SERVICE] Error sharing calendar:", err);
       return handleZodError(err, res);
     }
   });
@@ -4089,72 +4104,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/calendar-sharings/:id", isAuthenticated, async (req, res) => {
     try {
       const sharingId = parseInt(req.params.id);
-      console.log(`Updating calendar sharing permissions for sharing ID ${sharingId} by user ${req.user?.id}`);
-      console.log(`Request body:`, req.body);
-      
-      // Validate the permission level
-      // CRITICAL FIX: Enhance permission validation to handle more permission format variations
-      const requestedPermission = req.body.permissionLevel ? req.body.permissionLevel.toLowerCase().trim() : '';
-
-      // Normalize variations of edit permissions 
-      if (requestedPermission && !['view', 'edit', 'write', 'readwrite', 'read-write'].includes(requestedPermission)) {
-        // If it contains "edit" or "write" substring, treat as "edit"
-        if (requestedPermission.includes('edit') || requestedPermission.includes('write')) {
-          console.log(`Normalizing permission "${requestedPermission}" to "edit"`);
-          req.body.permissionLevel = 'edit';
-        } else {
-          return res.status(400).json({ 
-            message: "Invalid permission level. Must be 'view' or 'edit' (or variations like 'write', 'readwrite')." 
-          });
-        }
+      if (isNaN(sharingId)) {
+        return res.status(400).json({ message: 'Invalid sharing ID' });
       }
       
-      // CRITICAL FIX: Default to "edit" if no permission level is provided
-      if (!req.body.permissionLevel) {
-        console.log(`No permission level specified, defaulting to "edit"`);
-        req.body.permissionLevel = 'edit';
+      console.log(`[NEW SHARING SERVICE] Updating sharing permissions for ID ${sharingId}`);
+      
+      // Support old format with permissionLevel field
+      const { permissionLevel = 'view' } = req.body;
+      
+      // Map permissionLevel to permission for the new service
+      const permission = permissionLevel === 'edit' ? 'edit' : 'view';
+      
+      console.log(`[NEW SHARING SERVICE] Using normalized permission: ${permission}`);
+      
+      // Update sharing permissions using our service
+      const result = await sharingService.updateSharingPermission(
+        sharingId,
+        permission
+      );
+      
+      if ('error' in result) {
+        console.error(`[NEW SHARING SERVICE] Error: ${result.error}`);
+        return res.status(400).json({ message: result.error });
       }
       
-      // Get all sharing records and find the one we want to update
-      const sharingRecords = await storage.getAllCalendarSharings();
-      console.log(`Got ${sharingRecords.length} total sharing records`);
-      
-      const sharingRecord = sharingRecords.find(record => record.id === sharingId);
-      console.log(`Looking for sharing ID ${sharingId}, found:`, sharingRecord || "not found");
-      
-      if (!sharingRecord) {
-        return res.status(404).json({ message: "Calendar sharing record not found" });
-      }
-      
-      // Check if the user has permission to update this sharing record
-      // Only allow update if they are the calendar owner (they shared it) or the recipient
-      const calendar = await storage.getCalendar(sharingRecord.calendarId);
-      if (!calendar) {
-        return res.status(404).json({ message: "Calendar not found" });
-      }
-      
-      const isCalendarOwner = calendar.userId === req.user!.id;
-      const isRecipient = sharingRecord.sharedWithUserId === req.user!.id;
-      
-      if (!isCalendarOwner && !isRecipient) {
-        return res.status(403).json({ 
-          message: "You don't have permission to update this sharing record" 
-        });
-      }
-      
-      // Update the sharing record
-      const updatedSharing = await storage.updateCalendarSharing(sharingId, {
-        permissionLevel: req.body.permissionLevel
+      console.log(`[NEW SHARING SERVICE] Successfully updated sharing permission`);
+      return res.json(result);
+    } catch (error) {
+      console.error('[NEW SHARING SERVICE] Error updating sharing:', error);
+      return res.status(500).json({ 
+        message: 'Failed to update sharing',
+        error: error.message 
       });
-      
-      if (!updatedSharing) {
-        return res.status(500).json({ message: "Failed to update calendar sharing" });
-      }
-      
-      res.json(updatedSharing);
-    } catch (err) {
-      console.error("Error updating calendar sharing:", err);
-      return handleZodError(err, res);
     }
   });
   
@@ -4163,25 +4145,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const calendarId = parseInt(req.params.id);
       const userId = req.user!.id;
-      console.log(`Unshare request for calendar ID ${calendarId} by user ${userId}`);
       
-      // If calendar doesn't exist in personal calendars, it might be a shared calendar
-      let calendar = await storage.getCalendar(calendarId);
+      console.log(`[NEW SHARING SERVICE] Unshare request for calendar ID ${calendarId} by user ${userId}`);
       
-      // First, handle the case where the user is trying to remove a calendar shared with them
-      const sharedCalendars = await storage.getSharedCalendarsForUser(userId);
-      const isSharedWithUser = sharedCalendars.some(cal => cal.id === calendarId);
+      // First check if the calendar exists
+      const calendar = await storage.getCalendar(calendarId);
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
       
-      if (isSharedWithUser) {
-        console.log(`Calendar ID ${calendarId} is shared with user ${userId} - finding sharing records`);
+      // Check if this user is the owner of the calendar
+      const isOwner = calendar.userId === userId;
+      
+      if (isOwner) {
+        // If the user is the calendar owner, remove all shares
+        console.log(`[NEW SHARING SERVICE] User ${userId} is the owner of calendar ${calendarId}, removing all shares`);
         
-        // 1. Try to find it through the sharingId field first (if provided from frontend)
-        let foundSharingRecords: CalendarSharing[] = [];
+        const result = await sharingService.unshareCalendar(calendarId, userId);
         
-        // If this is a calendar shared with the user, find all sharing records 
-        // where this user is the recipient
-        const allSharingRecords = await storage.getAllCalendarSharings();
-        foundSharingRecords = allSharingRecords.filter(record => 
+        if (result === true) {
+          return res.json({ message: "Calendar unshared successfully" });
+        } else {
+          console.error(`[NEW SHARING SERVICE] Error: ${(result as any).error}`);
+          return res.status(400).json({ message: (result as any).error });
+        }
+      } else {
+        // If the user is not the owner, they are trying to remove a calendar shared with them
+        console.log(`[NEW SHARING SERVICE] User ${userId} is removing a calendar shared with them`);
+        
+        // Find all sharing records where this user is the recipient
+        const allSharings = await storage.getAllCalendarSharings();
+        
+        const userSharings = allSharings.filter(record => 
           record.calendarId === calendarId && 
           (
             // Match by user ID (most reliable)
@@ -4193,71 +4188,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           )
         );
         
-        if (foundSharingRecords.length > 0) {
-          console.log(`Found ${foundSharingRecords.length} sharing records for calendar ${calendarId} shared with user ${userId}`);
-          
-          // Remove all found sharing records
-          const results = await Promise.all(
-            foundSharingRecords.map(record => {
-              console.log(`Removing sharing record ID ${record.id} (calendar ${record.calendarId} shared with ${record.sharedWithEmail})`);
-              return storage.removeCalendarSharing(record.id);
-            })
-          );
-          
-          // Check if all removals were successful
-          const allSuccessful = results.every(result => result === true);
-          
-          if (allSuccessful) {
-            console.log(`Successfully removed ${results.length} sharing records as participant`);
-            return res.json({ message: "Calendar unshared successfully" });
-          } else {
-            console.error(`Failed to remove some sharing records: ${results}`);
-            return res.status(500).json({ message: "Failed to unshare calendar completely", partial: true });
-          }
+        console.log(`[NEW SHARING SERVICE] Found ${userSharings.length} shares to remove`);
+        
+        if (userSharings.length === 0) {
+          return res.status(404).json({ message: "No sharing records found for this calendar" });
+        }
+        
+        // Remove each sharing record
+        const results = await Promise.all(
+          userSharings.map(record => sharingService.removeSharing(record.id))
+        );
+        
+        // Check if all removals were successful
+        const allSuccessful = results.every(result => result === true);
+        
+        if (allSuccessful) {
+          return res.json({ message: "Calendar unshared successfully" });
+        } else {
+          const errors = results.filter(r => typeof r !== 'boolean').map(r => (r as any).error);
+          return res.status(500).json({ 
+            message: "Failed to unshare calendar completely", 
+            errors 
+          });
         }
       }
-      
-      // If we get here, handle the case where the user is the calendar owner
-      // First ensure the user is authorized to remove sharing (i.e., owns the calendar)
-      if (!calendar) {
-        return res.status(404).json({ message: "Calendar not found" });
-      }
-      
-      if (calendar.userId !== userId) {
-        return res.status(403).json({ 
-          message: "Not authorized to remove sharing for this calendar. Only the calendar owner can do that." 
-        });
-      }
-      
-      // Get all sharing records for this calendar
-      const sharingRecords = await storage.getCalendarSharing(calendarId);
-      console.log(`Found ${sharingRecords.length} sharing records for calendar ID ${calendarId} owned by user ${userId}`);
-      
-      if (sharingRecords.length === 0) {
-        return res.status(404).json({ message: "No sharing records found for this calendar" });
-      }
-      
-      // Remove all sharing records for this calendar
-      const results = await Promise.all(
-        sharingRecords.map(record => {
-          console.log(`Removing sharing record ID ${record.id} as owner`);
-          return storage.removeCalendarSharing(record.id);
-        })
-      );
-      
-      // Check if all removals were successful
-      const allSuccessful = results.every(result => result === true);
-      
-      if (allSuccessful) {
-        console.log(`Successfully removed ${results.length} sharing records as owner`);
-        res.json({ message: "Calendar unshared successfully" });
-      } else {
-        console.error(`Failed to remove some sharing records: ${results}`);
-        res.status(500).json({ message: "Failed to unshare calendar completely", partial: true });
-      }
-    } catch (err) {
-      console.error("Error unsharing calendar:", err);
-      res.status(500).json({ message: "Failed to unshare calendar", error: String(err) });
+    } catch (error) {
+      console.error("[NEW SHARING SERVICE] Error unsharing calendar:", error);
+      return res.status(500).json({ 
+        message: "Failed to unshare calendar",
+        error: error.message 
+      });
     }
   });
   
