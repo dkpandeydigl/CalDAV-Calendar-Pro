@@ -1406,7 +1406,15 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       
       // Prepare attendees and recurrence data for storage
       const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
-      const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify(recurrence) : null;
+      const isRecurringEvent = recurrence.pattern !== 'None';
+      const recurrenceRule = isRecurringEvent ? JSON.stringify(recurrence) : null;
+      
+      // Debug log for recurrence configuration
+      console.log('[RECURRENCE DEBUG] Preparing event with recurrence:', {
+        pattern: recurrence.pattern,
+        isRecurring: isRecurringEvent,
+        recurrenceRule
+      });
             
       // Get or create a UID as needed
       let eventUID: string;
@@ -1470,6 +1478,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         attendees: attendeesJson,
         resources: resources.length > 0 ? resources : null,
         recurrenceRule,
+        isRecurring: isRecurringEvent, // Set the recurring flag explicitly
         syncStatus: 'pending', // Mark as pending for immediate sync
         // Use the UID we determined above
         uid: eventUID,
