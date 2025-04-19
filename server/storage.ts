@@ -462,6 +462,12 @@ export class MemStorage implements IStorage {
     return calendars;
   }
   
+  // Method added to fix the unshare functionality - serves as an alias
+  async getSharedCalendarsForUser(userId: number): Promise<Calendar[]> {
+    console.log(`Called getSharedCalendarsForUser for user ID ${userId}`);
+    return this.getSharedCalendars(userId);
+  }
+  
   async shareCalendar(insertSharing: InsertCalendarSharing): Promise<CalendarSharing> {
     const id = this.calendarSharingIdCounter++;
     
