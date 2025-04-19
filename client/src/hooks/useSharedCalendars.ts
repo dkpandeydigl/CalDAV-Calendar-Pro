@@ -373,6 +373,13 @@ export const useSharedCalendars = () => {
     // This addresses the inconsistency where some parts of the app use permissionLevel
     // and others use permission
     calendar.canEdit = function(): boolean {
+      // If the current user is the owner of the calendar, they always have edit permissions
+      // This check takes priority over all others
+      if (currentUserId && this.userId === currentUserId) {
+        console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name} - USER IS OWNER, FULL EDIT PERMISSIONS`);
+        return true;
+      }
+      
       // Check all possible permission field representations
       // Different parts of the API use different field names
       const permissionLevel = this.permissionLevel || '';
@@ -392,20 +399,23 @@ export const useSharedCalendars = () => {
         console.log(`[PERMISSION CHECK] Debug info for ${this.id}:`, this._sharingDebug);
       }
       
-      // Use a direct strict comparison for known edit values first
-      if (permissionLevel === 'edit' || permissionLevel === 'write' || 
-          permission === 'edit' || permission === 'write') {
-        console.log(`[PERMISSION CHECK] Explicit edit/write permission detected`);
-        return true;
-      }
+      // Function to normalize and check if a permission value indicates edit access
+      const isEditPermission = (val: string): boolean => {
+        if (!val) return false;
+        const normalized = val.toLowerCase().trim();
+        
+        // Check for various edit permission formats
+        return [
+          'edit', 'write', 'readwrite', 'read-write', 
+          'modify', 'rw', 'true', '1', 'yes'
+        ].includes(normalized);
+      };
       
-      // Also check array includes for flexibility with different formats
-      const hasEditPermission = 
-        (permissionLevel && ['edit', 'write'].includes(String(permissionLevel).toLowerCase())) || 
-        (permission && ['edit', 'write'].includes(String(permission).toLowerCase()));
+      // Check both permission fields using the helper function
+      const hasEditPermission = isEditPermission(permissionLevel) || isEditPermission(permission);
       
       console.log(`[PERMISSION CHECK] hasEditPermission=${hasEditPermission}`);
-      return hasEditPermission === true;
+      return hasEditPermission;
     };
     
     return calendar;

@@ -42,4 +42,27 @@ export interface SharedCalendar {
   
   // Utility method to check edit permissions with flexibility
   canEdit?: () => boolean;
+  
+  // Debug information for sharing/permission troubleshooting
+  // This is added by the server to help debug permission issues
+  _sharingDebug?: {
+    originalPermission?: string;
+    normalizedPermission?: string;
+    isEdit?: boolean;
+    isView?: boolean;
+    userMatch?: {
+      userId?: number;
+      sharingId?: number;
+      originalPermission?: string;
+      normalizedPermission?: string;
+      permissionEquivalents?: {
+        isEdit?: boolean;
+        isView?: boolean;
+      };
+      sharedWithEmail?: string;
+      sharedWithUserId?: number | null;
+      sharedByUserId?: number;
+    };
+    [key: string]: any; // Allow for additional debug fields
+  };
 }
