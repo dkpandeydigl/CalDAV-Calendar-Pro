@@ -99,7 +99,7 @@ function YearView({ events, onEventClick }: { events: CalendarEvent[]; onEventCl
   );
 }
 
-function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (event: Event) => void }) {
+function WeekView({ events, onEventClick }: { events: CalendarEvent[]; onEventClick: (event: CalendarEvent) => void }) {
   const { currentDate, selectedTimezone } = useCalendarContext();
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 }); // Monday
   
@@ -170,7 +170,7 @@ function WeekView({ events, onEventClick }: { events: Event[]; onEventClick: (ev
   );
 }
 
-function DayView({ events, onEventClick }: { events: Event[]; onEventClick: (event: Event) => void }) {
+function DayView({ events, onEventClick }: { events: CalendarEvent[]; onEventClick: (event: CalendarEvent) => void }) {
   const { currentDate, selectedTimezone } = useCalendarContext();
   const hours = Array.from({ length: 24 }).map((_, i) => i);
   
@@ -271,7 +271,7 @@ function CalendarContent() {
   const { viewStartDate, viewEndDate, viewType, setViewType, setServerStatus, currentDate } = useCalendarContext();
   const [showSidebar, setShowSidebar] = useState(true);
   const [eventFormOpen, setEventFormOpen] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [eventDetailOpen, setEventDetailOpen] = useState(false);
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
@@ -343,7 +343,7 @@ function CalendarContent() {
     setEventFormOpen(true);
   };
 
-  const handleEventClick = (event: Event) => {
+  const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
     setEventDetailOpen(true);
   };
@@ -363,7 +363,7 @@ function CalendarContent() {
   
   // Handler for copying an event - creates a new event with the same details but a new UID
   // Follows RFC 5545 spec section 3.8.4.7 for UIDs
-  const handleCopyEvent = async (event: Event) => {
+  const handleCopyEvent = async (event: CalendarEvent) => {
     if (event) {
       // Close the detail modal
       setEventDetailOpen(false);
@@ -399,9 +399,9 @@ function CalendarContent() {
           title: copiedEvent.title
         });
         
-        // Create a proper Event object to avoid type conflicts
-        // The ImprovedEventFormModal expects a standard Event type from the schema
-        const eventForForm: Event = {
+        // Create a proper CalendarEvent object to avoid type conflicts
+        // The ImprovedEventFormModal expects a standard CalendarEvent type from the schema
+        const eventForForm: CalendarEvent = {
           id: 0, // Temporary ID, will be replaced when saved
           uid: copiedEvent.uid,
           calendarId: copiedEvent.calendarId,
@@ -441,7 +441,7 @@ function CalendarContent() {
   };
   
   // Handler for printing an event
-  const handlePrintEvent = (event: Event) => {
+  const handlePrintEvent = (event: CalendarEvent) => {
     if (event) {
       setSelectedEvent(event);
       setPrintEventModalOpen(true);
