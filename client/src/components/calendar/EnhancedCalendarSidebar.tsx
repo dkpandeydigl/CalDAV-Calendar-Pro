@@ -680,7 +680,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             className="ml-2 text-sm text-neutral-800 truncate max-w-[120px]"
             title={calendar.name}
           >
-            {calendar.name.length > 20 ? `${calendar.name.substring(0, 20)}...` : calendar.name}
+            {calendar.name.length > 17 ? `${calendar.name.substring(0, 17)}...` : calendar.name}
           </Label>
           <span className="ml-1 text-xs text-muted-foreground">
             {isShared && (['edit', 'write'].includes((calendar as SharedCalendar).permissionLevel)) ? 
@@ -723,7 +723,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
               className="text-sm text-neutral-800 truncate"
               title={calendar.name}
             >
-              {calendar.name.length > 20 ? `${calendar.name.substring(0, 20)}...` : calendar.name}
+              {calendar.name.length > 17 ? `${calendar.name.substring(0, 17)}...` : calendar.name}
             </Label>
             {isShared && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
