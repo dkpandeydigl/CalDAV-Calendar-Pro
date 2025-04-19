@@ -1078,7 +1078,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                   <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : 
                                   <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
                                 }
-                                <div className="text-xs text-left truncate max-w-[160px]">
+                                <div className="text-xs text-left truncate max-w-[250px]">
                                   <span 
                                     className="font-medium text-blue-600 hover:underline cursor-help flex items-center" 
                                     title={`Calendar owner: ${ownerEmail}`}
