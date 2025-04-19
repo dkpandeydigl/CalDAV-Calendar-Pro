@@ -449,19 +449,9 @@ export class MemStorage implements IStorage {
         // Normalize permission level - critical fix: don't default to 'view'
         let normalizedPermission;
         
-        // First try to interpret the permission as an edit permission
-        if (rawPermission === 'edit' || 
-            rawPermission === 'write' || 
-            rawPermission === 'readwrite' || 
-            rawPermission === 'modify' || 
-            rawPermission === true || 
-            rawPermission === 'true') {
-          normalizedPermission = 'edit';
-        } 
-        // If it doesn't match an edit permission, normalize it as view
-        else {
-          normalizedPermission = 'view';
-        }
+        // Use a more comprehensive function to normalize permission values
+        // This ensures consistent interpretation across the application
+        normalizedPermission = this.normalizePermissionValue(rawPermission);
         
         // Log permission info for debugging
         console.log(`[PERMISSION DEBUG] Calendar ID ${calendar.id}, Name: ${calendar.name}`);
