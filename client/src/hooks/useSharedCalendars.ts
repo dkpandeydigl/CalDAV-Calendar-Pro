@@ -6,8 +6,8 @@ import { useToast } from '@/hooks/use-toast';
 
 // Extended calendar type with permission information
 export interface SharedCalendar extends Calendar {
-  permissionLevel: 'view' | 'edit'; // The permission level (using the same field name as the server)
-  permission?: 'view' | 'edit';     // For backward compatibility
+  permissionLevel: 'view' | 'edit' | 'read' | 'write'; // The permission level (using the same field name as the server)
+  permission?: 'view' | 'edit' | 'read' | 'write';     // For backward compatibility
   isShared: boolean;
   owner?: {
     id: number;
@@ -47,6 +47,8 @@ export const useSharedCalendars = () => {
         
         // Parse the response
         const data = await response.json();
+        
+        console.log('Raw shared calendars data from server:', data);
         
         // Ensure owner data is properly populated
         return data.map((calendar: SharedCalendar) => {

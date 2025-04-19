@@ -683,7 +683,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             {calendar.name.length > 20 ? `${calendar.name.substring(0, 20)}...` : calendar.name}
           </Label>
           <span className="ml-1 text-xs text-muted-foreground">
-            {isShared && (calendar as SharedCalendar).permissionLevel === 'edit' ? 
+            {isShared && (['edit', 'write'].includes((calendar as SharedCalendar).permissionLevel)) ? 
               <Badge variant="outline" className="text-[10px] py-0 h-4 text-emerald-600">Can edit</Badge> : 
               <Badge variant="outline" className="text-[10px] py-0 h-4 text-amber-600">View only</Badge>
             }
@@ -727,7 +727,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             </Label>
             {isShared && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                {(calendar as SharedCalendar).permissionLevel === 'edit' ? (
+                {(['edit', 'write'].includes((calendar as SharedCalendar).permissionLevel)) ? (
                   <span className="text-emerald-600">Can edit</span>
                 ) : (
                   <span className="text-amber-600">View only</span>
