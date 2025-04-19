@@ -678,13 +678,14 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
           <Label 
             htmlFor={`${isShared ? 'shared-' : ''}cal-${calendar.id}`} 
             className="ml-2 text-sm text-neutral-800 truncate max-w-[120px]"
+            title={calendar.name}
           >
-            {calendar.name}
+            {calendar.name.length > 20 ? `${calendar.name.substring(0, 20)}...` : calendar.name}
           </Label>
           <span className="ml-1 text-xs text-muted-foreground">
             {isShared && (calendar as SharedCalendar).permissionLevel === 'edit' ? 
-              <Badge variant="outline" className="text-[10px] py-0 h-4">Edit</Badge> : 
-              <Badge variant="outline" className="text-[10px] py-0 h-4">View</Badge>
+              <Badge variant="outline" className="text-[10px] py-0 h-4 text-emerald-600">Can edit</Badge> : 
+              <Badge variant="outline" className="text-[10px] py-0 h-4 text-amber-600">View only</Badge>
             }
           </span>
           
@@ -720,8 +721,9 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             <Label 
               htmlFor={`${isShared ? 'shared-' : ''}cal-${calendar.id}`} 
               className="text-sm text-neutral-800 truncate"
+              title={calendar.name}
             >
-              {calendar.name}
+              {calendar.name.length > 20 ? `${calendar.name.substring(0, 20)}...` : calendar.name}
             </Label>
             {isShared && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -1085,7 +1087,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                   >
                                     <Info className="h-3 w-3 mr-1 text-blue-500" />
                                     {ownerEmail && ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' && ownerEmail !== 'undefined' && ownerEmail !== 'null'
-                                      ? ownerEmail 
+                                      ? (ownerEmail.length > 20 ? `${ownerEmail.substring(0, 20)}...` : ownerEmail)
                                       : 'shared-calendar-owner@example.com'}
                                   </span>
                                 </div>
@@ -1275,7 +1277,14 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             <AlertDialogDescription>
               <div className="flex items-center text-base">
                 <Info className="h-4 w-4 mr-2 text-blue-500 flex-shrink-0" />
-                <span className="text-blue-600 font-medium">{bulkUnshareEmail}</span>
+                <span 
+                  className="text-blue-600 font-medium"
+                  title={bulkUnshareEmail}
+                >
+                  {bulkUnshareEmail && bulkUnshareEmail.length > 20 
+                    ? `${bulkUnshareEmail.substring(0, 20)}...` 
+                    : bulkUnshareEmail}
+                </span>
               </div>
               <div className="mt-2">
                 This will remove all calendars shared by this user.
