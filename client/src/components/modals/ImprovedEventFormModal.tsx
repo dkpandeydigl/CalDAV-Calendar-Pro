@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/use-auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Ban,
@@ -1507,6 +1508,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       else {
         try {
           // For new events, we need to prepare the full event data
+          // Get current user information from auth context if available
+          const { user } = useAuth();
+          
           const newEventData = {
             ...eventData,
             // Include mandatory fields with null/default values to match schema requirements
@@ -1517,9 +1521,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             lastSyncAttempt: null,
             emailSent: null,
             emailError: null,
-            lastModifiedBy: null,
-            lastModifiedByName: null,
-            lastModifiedAt: new Date()
+            // Frontend should not set these - let the backend handle it with actual authenticated user
+            // This ensures consistent handling of modification tracking
           };
           
           // Debug log for missing fields

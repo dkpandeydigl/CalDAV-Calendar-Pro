@@ -3068,12 +3068,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[UID PRESERVATION] Using provided RFC5545-compliant UID: ${uid} for event creation`);
       }
       
-      // Set syncStatus to pending to mark it for pushing to the server
+      // Get user information for tracking who made the change
+      const username = req.user?.username || req.user?.email || `User ${userId}`;
+      
+      // Set syncStatus to pending and add modification tracking
       const eventData = {
         ...req.body,
         uid: uid,
-        syncStatus: 'pending'
+        syncStatus: 'pending',
+        lastModifiedBy: userId,
+        lastModifiedByName: username,
+        lastModifiedAt: new Date()
       };
+      
+      // Log the modification tracking fields
+      console.log(`[EVENT CREATE] Setting modification tracking: User ${username} (ID: ${userId})`);
       
       // DEBUGGING RECURRENCE: Verify the recurrence rule is copied to eventData
       console.log(`[RECURRENCE DEBUG] Recurrence rule after copying to eventData:`, {
