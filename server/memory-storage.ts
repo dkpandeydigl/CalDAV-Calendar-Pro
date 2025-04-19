@@ -453,18 +453,31 @@ export class MemStorage implements IStorage {
         // Get the raw permission level directly from the sharing record first
         const rawPermission = sharing.permissionLevel;
         
-        // Normalize permission level - critical fix: don't default to 'view'
+        // CRITICAL FIX: If permission is missing, default to 'edit' instead of 'view'
+        // This ensures that sharing works as expected when the permission isn't explicitly specified
         let normalizedPermission;
         
-        // Use a more comprehensive function to normalize permission values
-        // This ensures consistent interpretation across the application
-        normalizedPermission = this.normalizePermissionValue(rawPermission);
+        if (rawPermission === undefined || rawPermission === null || rawPermission === '') {
+          console.log(`[PERMISSION FIX] Calendar ID ${calendar.id}: Missing permission value, defaulting to 'edit'`);
+          normalizedPermission = 'edit';
+        } else {
+          // Use a more comprehensive function to normalize permission values
+          // This ensures consistent interpretation across the application
+          normalizedPermission = this.normalizePermissionValue(rawPermission);
+        }
         
         // Log permission info for debugging
         console.log(`[PERMISSION DEBUG] Calendar ID ${calendar.id}, Name: ${calendar.name}`);
         console.log(`[PERMISSION DEBUG] Original permission from sharing: ${rawPermission}`);
         console.log(`[PERMISSION DEBUG] Normalized permission: ${normalizedPermission}`);
         console.log(`[PERMISSION DEBUG] Is Edit: ${normalizedPermission === 'edit'}`);
+        
+        // Force update the permission in the sharing record if needed
+        if (normalizedPermission !== sharing.permissionLevel) {
+          console.log(`[PERMISSION FIX] Updating sharing record ID ${sharing.id} permission: '${sharing.permissionLevel}' -> '${normalizedPermission}'`);
+          sharing.permissionLevel = normalizedPermission;
+          this.calendarSharingMap.set(sharing.id, sharing);
+        }
         
         calendars.push({
           ...calendar,
@@ -550,12 +563,20 @@ export class MemStorage implements IStorage {
     // Create sharing record with proper fields
     const now = new Date();
     
+    // CRITICAL FIX: If permissionLevel is missing or undefined, set it to 'edit' by default
+    // This fixes the issue where new shares default to 'view' even when edit should be granted
+    if (insertSharing.permissionLevel === undefined || insertSharing.permissionLevel === null) {
+      console.log(`[PERMISSION SHARE] No permission specified, using default 'edit' permission`);
+      insertSharing.permissionLevel = 'edit';
+    }
+    
     // Normalize the permission level to ensure consistent values
     // This converts between 'read'/'view' and 'write'/'edit' formats
     const normalizedPermission = this.normalizePermissionValue(insertSharing.permissionLevel);
     
     console.log(`[PERMISSION SHARE] Creating share with permission: ${insertSharing.permissionLevel}`);
     console.log(`[PERMISSION SHARE] Normalized to: ${normalizedPermission}`);
+    console.log(`[PERMISSION SHARE] Is Edit Permission: ${normalizedPermission === 'edit'}`);
     
     const sharing: CalendarSharing = {
       id,
@@ -580,11 +601,19 @@ export class MemStorage implements IStorage {
     if (!sharing) return undefined;
     
     // If we're updating the permission level, normalize it
-    if (sharingUpdate.permissionLevel) {
+    if (sharingUpdate.permissionLevel !== undefined) {
+      // CRITICAL FIX: Same consistent handling as in shareCalendar
+      // If permissionLevel is null/undefined/'', default to edit instead of view
+      if (sharingUpdate.permissionLevel === null || sharingUpdate.permissionLevel === '') {
+        console.log(`[PERMISSION UPDATE] Empty permission value, defaulting to 'edit'`);
+        sharingUpdate.permissionLevel = 'edit';
+      }
+      
       const originalPermission = sharingUpdate.permissionLevel;
       sharingUpdate.permissionLevel = this.normalizePermissionValue(originalPermission);
       
       console.log(`[PERMISSION UPDATE] Calendar sharing ID ${id}: ${originalPermission} -> ${sharingUpdate.permissionLevel}`);
+      console.log(`[PERMISSION UPDATE] Is Edit Permission: ${sharingUpdate.permissionLevel === 'edit'}`);
     }
     
     const now = new Date();
