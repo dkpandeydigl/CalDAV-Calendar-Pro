@@ -5,7 +5,7 @@
  */
 export function generateUID(domain = 'calendar.replit.app'): string {
   const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 10);
+  const random = Math.floor(Math.random() * 10000000).toString(16);
   return `${timestamp}-${random}@${domain}`;
 }
 
@@ -15,24 +15,20 @@ export function generateUID(domain = 'calendar.replit.app'): string {
  */
 export function storeUID(uid: string, eventId?: number): void {
   try {
-    // Get existing UIDs from localStorage
-    const existingUIDs = JSON.parse(localStorage.getItem('event_uids') || '{}');
+    // Get existing UIDs
+    const storedUIDs = localStorage.getItem('calendar_event_uids');
+    const uids = storedUIDs ? JSON.parse(storedUIDs) : {};
     
-    // Add the new UID, potentially mapping to an event ID
+    // Add new UID with timestamp
     if (eventId) {
-      existingUIDs[eventId.toString()] = uid;
+      uids[`event_${eventId}`] = uid;
     } else {
-      // Store in a timestamp-indexed array for unmapped UIDs
-      const unmappedUIDs = existingUIDs['unmapped'] || [];
-      unmappedUIDs.push({
-        uid,
-        created: new Date().toISOString()
-      });
-      existingUIDs['unmapped'] = unmappedUIDs;
+      // If no eventId, store by the UID itself (useful for template events)
+      uids[uid] = uid;
     }
     
     // Save back to localStorage
-    localStorage.setItem('event_uids', JSON.stringify(existingUIDs));
+    localStorage.setItem('calendar_event_uids', JSON.stringify(uids));
   } catch (error) {
     console.error('Error storing UID in localStorage:', error);
   }
@@ -43,10 +39,13 @@ export function storeUID(uid: string, eventId?: number): void {
  */
 export function getStoredUID(eventId: number): string | null {
   try {
-    const existingUIDs = JSON.parse(localStorage.getItem('event_uids') || '{}');
-    return existingUIDs[eventId.toString()] || null;
+    const storedUIDs = localStorage.getItem('calendar_event_uids');
+    if (!storedUIDs) return null;
+    
+    const uids = JSON.parse(storedUIDs);
+    return uids[`event_${eventId}`] || null;
   } catch (error) {
-    console.error('Error retrieving UID from localStorage:', error);
+    console.error('Error retrieving stored UID:', error);
     return null;
   }
 }
@@ -58,19 +57,17 @@ export function getStoredUID(eventId: number): string | null {
 export function getOrGenerateUID(eventId?: number): string {
   if (eventId) {
     const storedUID = getStoredUID(eventId);
-    if (storedUID) {
-      return storedUID;
-    }
+    if (storedUID) return storedUID;
   }
   
-  const newUID = generateUID();
+  const uid = generateUID();
+  
+  // If we have an event ID, store for future use
   if (eventId) {
-    storeUID(newUID, eventId);
-  } else {
-    storeUID(newUID);
+    storeUID(uid, eventId);
   }
   
-  return newUID;
+  return uid;
 }
 
 /**
@@ -78,11 +75,13 @@ export function getOrGenerateUID(eventId?: number): string {
  * If the provided UID doesn't have a domain part, one is added
  */
 export function ensureCompliantUID(uid: string): string {
-  // Check if UID has an @ symbol indicating it has a domain
-  if (!uid.includes('@')) {
-    return `${uid}@calendar.replit.app`;
+  // Check if UID already has a domain part
+  if (uid.includes('@')) {
+    return uid;
   }
-  return uid;
+  
+  // Add domain part for compliance
+  return `${uid}@calendar.replit.app`;
 }
 
 /**
@@ -91,24 +90,8 @@ export function ensureCompliantUID(uid: string): string {
  * hyphens, periods, and @ symbols
  */
 export function cleanUID(uid: string): string {
-  // First ensure any newlines, tabs, etc. are removed
-  uid = uid.replace(/[\r\n\t]/g, '');
-  
-  // If UID contains invalid chars, regenerate a compliant one
-  if (!/^[a-zA-Z0-9\-\.@]+$/.test(uid)) {
-    console.warn('Cleaning invalid UID:', uid);
-    
-    // Extract valid parts if possible
-    const validParts = uid.match(/([a-zA-Z0-9\-\.@]+)/g);
-    if (validParts && validParts.length > 0) {
-      return validParts.join('-');
-    }
-    
-    // If no valid parts found, generate a new UID
-    return generateUID();
-  }
-  
-  return uid;
+  // Remove any characters that aren't alphanumeric, hyphen, period, underscore or @
+  return uid.replace(/[^a-zA-Z0-9\-\._@]/g, '');
 }
 
 /**
@@ -117,9 +100,175 @@ export function cleanUID(uid: string): string {
  */
 export function getAllStoredUIDs(): Record<string, string> {
   try {
-    return JSON.parse(localStorage.getItem('event_uids') || '{}');
+    const storedUIDs = localStorage.getItem('calendar_event_uids');
+    return storedUIDs ? JSON.parse(storedUIDs) : {};
   } catch (error) {
-    console.error('Error retrieving all UIDs:', error);
+    console.error('Error retrieving stored UIDs:', error);
     return {};
   }
+}
+
+/**
+ * Stores UIDs in IndexedDB for more robust persistence
+ * This is a more advanced option than localStorage and better for large datasets
+ */
+export async function storeUIDInIndexedDB(uid: string, eventId?: number): Promise<void> {
+  try {
+    // Check if IndexedDB is supported
+    if (!window.indexedDB) {
+      console.warn('IndexedDB not supported, falling back to localStorage');
+      storeUID(uid, eventId);
+      return;
+    }
+    
+    // Open (or create) the database
+    const request = window.indexedDB.open('CalendarUIDStore', 1);
+    
+    // Handle database creation/upgrade
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      
+      // Create an object store for UIDs if it doesn't exist
+      if (!db.objectStoreNames.contains('uids')) {
+        const store = db.createObjectStore('uids', { keyPath: 'id' });
+        store.createIndex('uid', 'uid', { unique: false });
+        store.createIndex('eventId', 'eventId', { unique: false });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+    };
+    
+    // Handle success
+    request.onsuccess = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      const transaction = db.transaction(['uids'], 'readwrite');
+      const store = transaction.objectStore('uids');
+      
+      // Store the UID with metadata
+      const storeRequest = store.put({
+        id: eventId ? `event_${eventId}` : uid,
+        uid: uid,
+        eventId: eventId,
+        timestamp: Date.now()
+      });
+      
+      storeRequest.onerror = (error) => {
+        console.error('Error storing UID in IndexedDB:', error);
+        // Fall back to localStorage
+        storeUID(uid, eventId);
+      };
+      
+      transaction.oncomplete = () => {
+        db.close();
+      };
+    };
+    
+    // Handle errors
+    request.onerror = (event) => {
+      console.error('IndexedDB error:', (event.target as IDBOpenDBRequest).error);
+      // Fall back to localStorage
+      storeUID(uid, eventId);
+    };
+  } catch (error) {
+    console.error('Error in IndexedDB operation:', error);
+    // Fall back to localStorage
+    storeUID(uid, eventId);
+  }
+}
+
+/**
+ * Gets a UID from IndexedDB
+ * Falls back to localStorage if IndexedDB is not supported or fails
+ */
+export async function getUIDFromIndexedDB(eventId: number): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      // Check if IndexedDB is supported
+      if (!window.indexedDB) {
+        console.warn('IndexedDB not supported, falling back to localStorage');
+        resolve(getStoredUID(eventId));
+        return;
+      }
+      
+      // Open the database
+      const request = window.indexedDB.open('CalendarUIDStore', 1);
+      
+      // Handle database opening
+      request.onsuccess = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        
+        // Check if the UIDs store exists
+        if (!db.objectStoreNames.contains('uids')) {
+          db.close();
+          resolve(getStoredUID(eventId));
+          return;
+        }
+        
+        const transaction = db.transaction(['uids'], 'readonly');
+        const store = transaction.objectStore('uids');
+        
+        // Get the UID by event ID
+        const getRequest = store.get(`event_${eventId}`);
+        
+        getRequest.onsuccess = () => {
+          const data = getRequest.result;
+          db.close();
+          
+          if (data && data.uid) {
+            resolve(data.uid);
+          } else {
+            // Fall back to localStorage
+            resolve(getStoredUID(eventId));
+          }
+        };
+        
+        getRequest.onerror = () => {
+          db.close();
+          resolve(getStoredUID(eventId));
+        };
+      };
+      
+      // Handle errors
+      request.onerror = () => {
+        resolve(getStoredUID(eventId));
+      };
+    } catch (error) {
+      console.error('Error in IndexedDB operation:', error);
+      resolve(getStoredUID(eventId));
+    }
+  });
+}
+
+/**
+ * Gets or generates a UID, trying IndexedDB first, then localStorage, then generating
+ * This is the most robust implementation that handles all fallback cases
+ */
+export async function getOrGenerateUIDAsync(eventId?: number): Promise<string> {
+  if (eventId) {
+    try {
+      // Try IndexedDB first
+      const indexedDBUID = await getUIDFromIndexedDB(eventId);
+      if (indexedDBUID) return indexedDBUID;
+      
+      // If not in IndexedDB, check localStorage
+      const localStorageUID = getStoredUID(eventId);
+      if (localStorageUID) return localStorageUID;
+    } catch (error) {
+      console.error('Error retrieving UID:', error);
+    }
+  }
+  
+  // If we get here, we need to generate a new UID
+  const uid = generateUID();
+  
+  // Store for future use if we have an eventId
+  if (eventId) {
+    try {
+      await storeUIDInIndexedDB(uid, eventId);
+    } catch (error) {
+      console.error('Error storing generated UID:', error);
+      storeUID(uid, eventId); // Fallback to localStorage
+    }
+  }
+  
+  return uid;
 }

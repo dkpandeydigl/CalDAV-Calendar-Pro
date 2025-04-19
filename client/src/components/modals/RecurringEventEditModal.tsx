@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Calendar, Clock, RepeatIcon, Copy } from 'lucide-react';
+import { CalendarDays, CornerDownRight, CornerRightUp, Repeat } from 'lucide-react';
 import { format } from 'date-fns';
 
 export type RecurringEditMode = 'single' | 'all' | 'cancel';
@@ -25,29 +25,14 @@ interface RecurringEventEditModalProps {
  * - 'Edit only this occurrence': Uses RECURRENCE-ID to modify a single instance
  * - 'Edit all occurrences': Modifies the master event (original VEVENT)
  */
-const RecurringEventEditModal: React.FC<RecurringEventEditModalProps> = ({ 
-  open, 
+const RecurringEventEditModal: React.FC<RecurringEventEditModalProps> = ({
+  open,
   event,
   onClose,
-  onConfirm
+  onConfirm,
 }) => {
-  // If event is null, show an error state
   if (!event) {
-    return (
-      <Dialog open={open} onOpenChange={open => !open && onClose()}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Error</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
-            <p>Unable to load recurring event information.</p>
-          </div>
-          <DialogFooter>
-            <Button onClick={onClose}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    );
+    return null;
   }
 
   // Parse dates safely
@@ -65,25 +50,73 @@ const RecurringEventEditModal: React.FC<RecurringEventEditModalProps> = ({
     startDate = new Date();
   }
 
-  // Convert date to display format
-  const formattedDate = format(startDate, 'EEEE, MMMM d, yyyy');
-  const formattedTime = format(startDate, 'h:mm a');
-
-  // Extract recurring rule details for display
-  const getRecurrencePattern = () => {
-    if (!event.recurrenceRule) return 'No recurrence pattern found';
+  // Format the recurrence rule into a more readable format
+  const formatRecurrenceRule = (rule: string | null | undefined): string => {
+    if (!rule) return 'Unknown recurrence';
     
-    if (event.recurrenceRule.includes('FREQ=DAILY')) {
-      return 'Daily';
-    } else if (event.recurrenceRule.includes('FREQ=WEEKLY')) {
-      return 'Weekly';
-    } else if (event.recurrenceRule.includes('FREQ=MONTHLY')) {
-      return 'Monthly';
-    } else if (event.recurrenceRule.includes('FREQ=YEARLY')) {
-      return 'Yearly';
+    const ruleText: string[] = [];
+    
+    // Basic mapping for frequency
+    if (rule.includes('FREQ=DAILY')) {
+      ruleText.push('Daily');
+    } else if (rule.includes('FREQ=WEEKLY')) {
+      ruleText.push('Weekly');
+    } else if (rule.includes('FREQ=MONTHLY')) {
+      ruleText.push('Monthly');
+    } else if (rule.includes('FREQ=YEARLY')) {
+      ruleText.push('Yearly');
     } else {
-      return 'Custom recurrence pattern';
+      ruleText.push('Custom');
     }
+    
+    // Check for interval
+    const intervalMatch = rule.match(/INTERVAL=(\d+)/);
+    if (intervalMatch && intervalMatch[1] !== '1') {
+      ruleText.push(`every ${intervalMatch[1]} ${ruleText[0].toLowerCase()}`);
+    }
+    
+    // Check for count
+    const countMatch = rule.match(/COUNT=(\d+)/);
+    if (countMatch) {
+      ruleText.push(`for ${countMatch[1]} occurrences`);
+    }
+    
+    // Check for until date
+    const untilMatch = rule.match(/UNTIL=(\d{8}T\d{6}Z)/);
+    if (untilMatch) {
+      try {
+        const year = untilMatch[1].substring(0, 4);
+        const month = untilMatch[1].substring(4, 6);
+        const day = untilMatch[1].substring(6, 8);
+        const untilDate = new Date(`${year}-${month}-${day}`);
+        ruleText.push(`until ${format(untilDate, 'MMM d, yyyy')}`);
+      } catch (e) {
+        // If date parsing fails, just show the raw date
+        ruleText.push(`until end date`);
+      }
+    }
+    
+    // Check for BYDAY in weekly recurrences
+    if (rule.includes('FREQ=WEEKLY') && rule.includes('BYDAY=')) {
+      const byDayMatch = rule.match(/BYDAY=([A-Z,]+)/);
+      if (byDayMatch) {
+        const days = byDayMatch[1].split(',');
+        const dayNames: { [key: string]: string } = {
+          MO: 'Monday',
+          TU: 'Tuesday',
+          WE: 'Wednesday',
+          TH: 'Thursday',
+          FR: 'Friday',
+          SA: 'Saturday',
+          SU: 'Sunday'
+        };
+        
+        const readableDays = days.map(day => dayNames[day] || day).join(', ');
+        ruleText.push(`on ${readableDays}`);
+      }
+    }
+    
+    return ruleText.join(' ');
   };
 
   return (
@@ -91,66 +124,63 @@ const RecurringEventEditModal: React.FC<RecurringEventEditModalProps> = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <RepeatIcon className="h-5 w-5 text-blue-500" />
+            <Repeat className="h-5 w-5 text-primary" />
             Edit Recurring Event
           </DialogTitle>
           <DialogDescription>
-            This is a repeating event. Choose which occurrences to modify.
+            This is a recurring event. How would you like to edit it?
           </DialogDescription>
         </DialogHeader>
         
-        <div className="py-4">
-          <div className="mb-4 p-3 bg-blue-50 rounded-md">
-            <h3 className="font-medium text-lg mb-1">{event.title}</h3>
-            <div className="flex items-center gap-1 text-sm text-muted-foreground mb-1">
-              <Calendar className="h-4 w-4 mr-1 text-blue-500" />
-              {formattedDate}
-            </div>
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Clock className="h-4 w-4 mr-1 text-blue-500" />
-              {event.allDay ? 'All day' : formattedTime}
+        <div className="py-6 space-y-4">
+          <div className="bg-muted/50 p-3 rounded-md">
+            <h3 className="font-medium text-lg truncate">{event.title}</h3>
+            <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
+              <CalendarDays className="h-4 w-4" />
+              <span>{format(startDate, 'MMMM d, yyyy')}</span>
             </div>
             <div className="flex items-center gap-1 text-sm text-muted-foreground mt-1">
-              <RepeatIcon className="h-4 w-4 mr-1 text-blue-500" />
-              {getRecurrencePattern()}
+              <Repeat className="h-4 w-4" />
+              <span>{formatRecurrenceRule(event.recurrenceRule)}</span>
             </div>
           </div>
           
-          <div className="space-y-4 mt-4">
+          <div className="space-y-2">
             <Button 
               variant="outline" 
-              className="w-full justify-start p-3 h-auto flex flex-col items-start"
+              className="w-full justify-start h-auto py-3 border-primary/20 flex items-start gap-3"
               onClick={() => onConfirm('single')}
             >
-              <div className="font-medium">Edit only this occurrence</div>
-              <div className="text-sm text-muted-foreground mt-1 text-left">
-                Changes will apply only to this specific instance of the event. All other occurrences will remain unchanged.
+              <CornerDownRight className="h-5 w-5 text-primary mt-0.5" />
+              <div className="text-left">
+                <div className="font-medium">Edit only this occurrence</div>
+                <div className="text-sm text-muted-foreground mt-0.5">
+                  Changes will only affect this specific date
+                </div>
               </div>
             </Button>
             
             <Button 
               variant="outline" 
-              className="w-full justify-start p-3 h-auto flex flex-col items-start"
+              className="w-full justify-start h-auto py-3 border-primary/20 flex items-start gap-3"
               onClick={() => onConfirm('all')}
             >
-              <div className="font-medium">Edit all occurrences</div>
-              <div className="text-sm text-muted-foreground mt-1 text-left">
-                Changes will apply to all instances of this recurring event, including past and future occurrences.
-              </div>
-            </Button>
-            
-            <Button 
-              variant="outline" 
-              className="w-full justify-start p-3 h-auto flex flex-col items-start"
-              onClick={() => onConfirm('cancel')}
-            >
-              <div className="font-medium">Cancel</div>
-              <div className="text-sm text-muted-foreground mt-1 text-left">
-                Return to event details without making any changes.
+              <CornerRightUp className="h-5 w-5 text-primary mt-0.5" />
+              <div className="text-left">
+                <div className="font-medium">Edit all occurrences</div>
+                <div className="text-sm text-muted-foreground mt-0.5">
+                  Changes will affect all events in this series
+                </div>
               </div>
             </Button>
           </div>
         </div>
+        
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onConfirm('cancel')}>
+            Cancel
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

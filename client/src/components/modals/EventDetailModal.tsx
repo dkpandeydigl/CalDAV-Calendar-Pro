@@ -1106,6 +1106,36 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="flex space-x-2">
               {!isUserLoading && (
                 <>
+                  {/* Copy Event button */}
+                  {onCopy && (
+                    <Button 
+                      variant="outline" 
+                      className="border-green-200 text-green-600 hover:bg-green-50 flex items-center gap-1 shadow-sm"
+                      onClick={() => {
+                        if (!event) return;
+                        onCopy(event);
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
+                      <span className="hidden sm:inline">Copy</span>
+                    </Button>
+                  )}
+                  
+                  {/* Print Event button */}
+                  {onPrint && (
+                    <Button 
+                      variant="outline" 
+                      className="border-purple-200 text-purple-600 hover:bg-purple-50 flex items-center gap-1 shadow-sm"
+                      onClick={() => {
+                        if (!event) return;
+                        onPrint(event);
+                      }}
+                    >
+                      <Printer className="h-4 w-4" />
+                      <span className="hidden sm:inline">Print</span>
+                    </Button>
+                  )}
+                  
                   {/* Download Event as iCalendar file */}
                   <Button 
                     variant="outline" 
@@ -1295,26 +1325,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       >
                         Edit
                       </Button>
-                      {onCopy && (
-                        <Button 
-                          variant="outline"
-                          onClick={() => onCopy(event)}
-                          className="shadow-sm flex items-center gap-1"
-                        >
-                          <Copy className="h-4 w-4 mr-1" />
-                          Copy
-                        </Button>
-                      )}
-                      {onPrint && (
-                        <Button 
-                          variant="outline"
-                          onClick={() => onPrint(event)}
-                          className="shadow-sm flex items-center gap-1"
-                        >
-                          <Printer className="h-4 w-4 mr-1" />
-                          Print
-                        </Button>
-                      )}
                     </>
                   )}
                 </>
