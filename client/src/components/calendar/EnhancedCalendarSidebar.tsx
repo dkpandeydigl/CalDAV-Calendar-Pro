@@ -725,7 +725,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             </Label>
             {isShared && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                {((calendar as SharedCalendar).permissionLevel === 'edit' || (calendar as SharedCalendar).permission === 'edit') ? (
+                {(calendar as SharedCalendar).permissionLevel === 'edit' ? (
                   <span className="text-emerald-600">Can edit</span>
                 ) : (
                   <span className="text-amber-600">View only</span>
@@ -1056,7 +1056,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   <div className="space-y-3">
                     {/* Group calendars by owner email - Improved UI with single group expansion */}
                     {Object.entries(groupedSharedCalendars).length > 0 ? (
-                      <div className={`w-full space-y-1 ${sharedCalendars.length > 20 ? 'max-h-[400px] overflow-y-auto pr-1' : ''}`}>
+                      <div className="w-full space-y-1">
                         {Object.entries(groupedSharedCalendars)
                           .sort(([emailA], [emailB]) => emailA.toLowerCase().localeCompare(emailB.toLowerCase()))
                           .map(([ownerEmail, ownerCalendars]: [string, SharedCalendar[]]) => (
@@ -1078,7 +1078,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                   <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : 
                                   <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
                                 }
-                                <div className="text-xs text-left truncate max-w-[350px]">
+                                <div className="text-xs text-left truncate max-w-[160px]">
                                   <span 
                                     className="font-medium text-blue-600 hover:underline cursor-help flex items-center" 
                                     title={`Calendar owner: ${ownerEmail}`}
@@ -1119,7 +1119,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                             {/* Group Content - only visible when expanded */}
                             {expandedOwnerEmail === ownerEmail && (
                               <div className="px-3 pb-2 pt-1 border-t border-gray-100 bg-white">
-                                <div className={`pl-5 space-y-1 ${ownerCalendars.length > 10 ? 'max-h-[250px] overflow-y-auto pr-1' : ''}`}>
+                                <div className="pl-5 space-y-1">
                                   {ownerCalendars
                                     .sort((a: SharedCalendar, b: SharedCalendar) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
                                     .map((calendar: SharedCalendar) => renderCalendarItem(calendar, true))}
