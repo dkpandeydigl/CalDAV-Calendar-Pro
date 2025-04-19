@@ -104,11 +104,33 @@ export function SimplifiedShareCalendarModal({ open, onClose, calendar }: ShareC
       queryClient.invalidateQueries({ queryKey: ['/api/calendars'] });
       
     } catch (error: any) {
-      toast({
-        title: 'Sharing Failed',
-        description: error.message || 'Could not share calendar',
-        variant: 'destructive'
-      });
+      // Check if this is an "already shared" error
+      if (error.message && error.message.includes('already shared')) {
+        // Use a warning variant instead of destructive for already shared errors
+        toast({
+          title: 'Calendar Already Shared',
+          description: error.message,
+          variant: 'default' // Use default variant for informational message
+        });
+        
+        // Still refresh the shares list to show the current state
+        try {
+          const updatedShares = await getCalendarShares(calendar.id);
+          setShares(updatedShares);
+        } catch (refreshError) {
+          console.error('Error refreshing shares after already-shared error:', refreshError);
+        }
+        
+        // Clear the email field since we've handled this case
+        setEmail('');
+      } else {
+        // Regular error case
+        toast({
+          title: 'Sharing Failed',
+          description: error.message || 'Could not share calendar',
+          variant: 'destructive'
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }

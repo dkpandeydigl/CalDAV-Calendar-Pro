@@ -58,15 +58,33 @@ export class CalendarSharingService {
       );
 
       if (alreadyShared) {
-        // Calendar is already shared, update permissions instead
+        // If permission is the same, return a friendly message
+        if (alreadyShared.permissionLevel === this.normalizePermission(permission)) {
+          const userName = recipientEmail.split('@')[0] || 'user';
+          return { 
+            error: `This calendar is already shared with ${userName} with the same permission level.`,
+            alreadyShared: true,
+            sharingRecord: alreadyShared
+          };
+        }
+        
+        // Permission is different, update it
+        console.log(`[CalendarSharingService] Calendar already shared, updating permission from ${alreadyShared.permissionLevel} to ${permission}`);
         const updated = await this.updateSharingPermission(
           alreadyShared.id, 
           permission
         );
+        
         if ('error' in updated) {
           return updated;
         }
-        return updated;
+        
+        // Add metadata about the update
+        return {
+          ...updated,
+          wasUpdated: true,
+          previousPermission: alreadyShared.permissionLevel
+        };
       }
 
       // Normalize permission to ensure consistency

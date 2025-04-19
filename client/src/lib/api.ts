@@ -105,7 +105,15 @@ export async function shareCalendar(
     
     try {
       const error = JSON.parse(errorText);
-      throw new Error(error.message || 'Failed to share calendar');
+      // Check for the enhanced error information from our service
+      if (error.alreadyShared) {
+        // This is a case where the calendar is already shared with this user
+        console.log(`[API] Calendar already shared with ${email}`, error);
+        const username = email.split('@')[0] || 'user';
+        throw new Error(`This calendar is already shared with ${username}`);
+      } else {
+        throw new Error(error.message || 'Failed to share calendar');
+      }
     } catch (e) {
       throw new Error('Failed to share calendar: ' + errorText);
     }
