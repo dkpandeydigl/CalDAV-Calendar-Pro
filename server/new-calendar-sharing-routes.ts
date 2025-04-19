@@ -70,6 +70,18 @@ sharingRouter.post('/share-calendar', isAuthenticated, async (req, res) => {
     );
     
     if ('error' in result) {
+      // Special handling for "already shared" case
+      if ('alreadyShared' in result) {
+        // This is an information message, not a true error
+        const userName = recipientEmail.split('@')[0] || 'user';
+        return res.status(400).json({
+          message: `Calendar is already shared with ${userName}`,
+          alreadyShared: true,
+          sharingRecord: result.sharingRecord
+        });
+      }
+      
+      // Regular error case
       return res.status(400).json({ message: result.error });
     }
     
@@ -244,6 +256,18 @@ export function registerCompatibilityRoutes(app: any, customSharingService: any 
       );
       
       if ('error' in result) {
+        // Special handling for "already shared" case
+        if ('alreadyShared' in result) {
+          // This is an information message, not a true error
+          const userName = sharedWithEmail.split('@')[0] || 'user';
+          return res.status(400).json({
+            message: `Calendar is already shared with ${userName}`,
+            alreadyShared: true,
+            sharingRecord: result.sharingRecord
+          });
+        }
+        
+        // Regular error case
         return res.status(400).json({ message: result.error });
       }
       
