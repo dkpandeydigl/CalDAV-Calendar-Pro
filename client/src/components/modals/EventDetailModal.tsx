@@ -11,7 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCalendarPermissions } from '@/hooks/useCalendarPermissions';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCalendarContext } from '@/contexts/CalendarContext';
-import { MailCheck, AlertTriangle, User as UserIcon, UserRound, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle, Trash2, Calendar, History, ChevronUp, ChevronDown } from 'lucide-react';
+import { MailCheck, AlertTriangle, User as UserIcon, UserRound, VideoIcon, DoorClosed, Laptop, Wrench, Settings, MapPin, Info, Clock, MapPinned, AlertCircle, Trash2, Calendar, History, ChevronUp, ChevronDown, Copy, Printer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import DirectResourceExtractor from './DirectResourceExtractor';
 import ResourceManager from '@/components/resources/ResourceManager';

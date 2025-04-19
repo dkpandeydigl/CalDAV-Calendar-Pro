@@ -12,6 +12,8 @@ import MultiCalendarShareModal from '@/components/modals/MultiCalendarShareModal
 import ExportCalendarModal from '@/components/modals/ExportCalendarModal';
 import ImportCalendarModal from '@/components/modals/ImportCalendarModal';
 import { BulkDeleteModal } from '@/components/modals/BulkDeleteModal';
+import RecurringEventEditModal, { RecurringEditMode } from '@/components/modals/RecurringEventEditModal';
+import PrintEventModal from '@/components/modals/PrintEventModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { Event, Calendar as CalendarType } from '@shared/schema';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
@@ -23,6 +25,7 @@ import { format, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfM
 import { Loader2, RefreshCcw, Trash } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
+import { generateUID } from '@/lib/uid-utils';
 
 // For different calendar views
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
