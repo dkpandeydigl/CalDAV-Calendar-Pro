@@ -34,6 +34,32 @@ export class MemStorage implements IStorage {
   // Initialize memory store for sessions
   public sessionStore: session.Store;
   
+  // Helper method to normalize permission values across the app
+  // This ensures consistent handling of different permission formats
+  normalizePermissionValue(permission: string | null | undefined): string {
+    if (!permission) {
+      // Default to view-only if no permission is specified
+      console.log(`[PERMISSION NORMALIZE] No permission value, defaulting to 'view'`);
+      return 'view';
+    }
+    
+    // Convert to lowercase for case-insensitive comparison
+    const normalized = String(permission).toLowerCase();
+    
+    // Map common permission values to their canonical forms
+    if (['edit', 'write', 'readwrite', 'modify'].includes(normalized)) {
+      console.log(`[PERMISSION NORMALIZE] '${permission}' normalized to 'edit'`);
+      return 'edit';
+    } else if (['view', 'read', 'readonly'].includes(normalized)) {
+      console.log(`[PERMISSION NORMALIZE] '${permission}' normalized to 'view'`);
+      return 'view';
+    }
+    
+    // For any unknown values, default to view-only (most restrictive)
+    console.log(`[PERMISSION NORMALIZE] Unknown permission value '${permission}', defaulting to 'view'`);
+    return 'view';
+  }
+  
   // Initialize database (for interface implementation)
   async initializeDatabase(): Promise<void> {
     await this.initializeSampleData();
@@ -458,13 +484,21 @@ export class MemStorage implements IStorage {
     
     // Create sharing record with proper fields
     const now = new Date();
+    
+    // Normalize the permission level to ensure consistent values
+    // This converts between 'read'/'view' and 'write'/'edit' formats
+    const normalizedPermission = this.normalizePermissionValue(insertSharing.permissionLevel);
+    
+    console.log(`[PERMISSION SHARE] Creating share with permission: ${insertSharing.permissionLevel}`);
+    console.log(`[PERMISSION SHARE] Normalized to: ${normalizedPermission}`);
+    
     const sharing: CalendarSharing = {
       id,
       calendarId: insertSharing.calendarId,
       sharedWithEmail: insertSharing.sharedWithEmail,
       sharedWithUserId,
       sharedByUserId: insertSharing.sharedByUserId,
-      permissionLevel: insertSharing.permissionLevel || "read",
+      permissionLevel: normalizedPermission, // Use normalized value
       createdAt: now,
       lastModified: now
     };
@@ -479,6 +513,14 @@ export class MemStorage implements IStorage {
   ): Promise<CalendarSharing | undefined> {
     const sharing = this.calendarSharingMap.get(id);
     if (!sharing) return undefined;
+    
+    // If we're updating the permission level, normalize it
+    if (sharingUpdate.permissionLevel) {
+      const originalPermission = sharingUpdate.permissionLevel;
+      sharingUpdate.permissionLevel = this.normalizePermissionValue(originalPermission);
+      
+      console.log(`[PERMISSION UPDATE] Calendar sharing ID ${id}: ${originalPermission} -> ${sharingUpdate.permissionLevel}`);
+    }
     
     const now = new Date();
     const updatedSharing = { 
