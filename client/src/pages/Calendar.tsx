@@ -278,6 +278,8 @@ function CalendarContent() {
   const [exportCalendarOpen, setExportCalendarOpen] = useState(false);
   const [importCalendarOpen, setImportCalendarOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [recurringEditModalOpen, setRecurringEditModalOpen] = useState(false);
+  const [printEventModalOpen, setPrintEventModalOpen] = useState(false);
   
   const [selectedCalendar, setSelectedCalendar] = useState<CalendarType | null>(null);
   const queryClient = useQueryClient();
