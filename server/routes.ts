@@ -3181,8 +3181,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         eventData.resources = JSON.stringify(eventData.resources);
       }
       
-      const validatedData = insertEventSchema.parse(eventData);
-      const newEvent = await storage.createEvent(validatedData);
+      // DEBUGGING VALIDATION: Log event data before validation
+      console.log('[EVENT CREATE DEBUG] Event data before validation:', {
+        title: eventData.title,
+        recurrenceRule: eventData.recurrenceRule,
+        isRecurring: eventData.isRecurring,
+        lastModifiedBy: eventData.lastModifiedBy,
+        lastModifiedByName: eventData.lastModifiedByName,
+        lastModifiedAt: eventData.lastModifiedAt,
+        syncStatus: eventData.syncStatus,
+      });
+      
+      let newEvent;
+      try {
+        const validatedData = insertEventSchema.parse(eventData);
+        console.log('[EVENT CREATE DEBUG] Validation successful');
+        newEvent = await storage.createEvent(validatedData);
+      } catch (validationError) {
+        console.error('[EVENT CREATE DEBUG] Validation failed:', validationError);
+        
+        // Add more debugging info about the schema
+        console.log('[EVENT CREATE DEBUG] Schema requires the following fields:', 
+          Object.keys(insertEventSchema.shape));
+          
+        // Rethrow the error to be caught by the outer try/catch
+        throw validationError;
+      }
       
       // Wait a moment to ensure event is saved in database
       await new Promise(resolve => setTimeout(resolve, 100));
