@@ -685,19 +685,10 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
           <span className="ml-1 text-xs text-muted-foreground">
             {isShared ? (
               (() => {
-                // Get both permission properties to handle all formats
-                const permLevel = (calendar as SharedCalendar).permissionLevel;
-                const permission = (calendar as SharedCalendar).permission;
-                
-                // Check for edit/write in either field
-                const canEdit = 
-                  (permLevel && ['edit', 'write'].includes(permLevel)) || 
-                  (permission && ['edit', 'write'].includes(permission));
-                
-                // Debug the values
-                console.log(`Calendar ${calendar.id} (${calendar.name}) permission check:`, {
-                  permLevel, permission, canEdit
-                });
+                // Use the new canEdit method on the SharedCalendar for consistent permission checks
+                // This fixes the issues with permission inconsistencies across the application
+                const sharedCal = calendar as SharedCalendar;
+                const canEdit = sharedCal.canEdit ? sharedCal.canEdit() : false;
                 
                 return canEdit ? 
                   <Badge variant="outline" className="text-[10px] py-0 h-4 text-emerald-600">Can edit</Badge> : 
@@ -745,14 +736,10 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             {isShared && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 {(() => {
-                  // Get both permission properties to handle all formats
-                  const permLevel = (calendar as SharedCalendar).permissionLevel;
-                  const permission = (calendar as SharedCalendar).permission;
-                  
-                  // Check for edit/write in either field
-                  const canEdit = 
-                    (permLevel && ['edit', 'write'].includes(permLevel)) || 
-                    (permission && ['edit', 'write'].includes(permission));
+                  // Use the new canEdit method on the SharedCalendar for consistent permission checks
+                  // This fixes the issues with permission inconsistencies across the application
+                  const sharedCal = calendar as SharedCalendar;
+                  const canEdit = sharedCal.canEdit ? sharedCal.canEdit() : false;
                   
                   return canEdit ? 
                     <span className="text-emerald-600">Can edit</span> : 

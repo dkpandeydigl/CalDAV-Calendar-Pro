@@ -351,15 +351,19 @@ export const useSharedCalendars = () => {
     // Add the canEdit method to each calendar for consistent permission checking
     // This addresses the inconsistency where some parts of the app use permissionLevel
     // and others use permission
-    calendar.canEdit = () => {
+    calendar.canEdit = function(): boolean {
       // Check both permission and permissionLevel fields
       // Different parts of the API use different field names
-      const permissionLevel = calendar.permissionLevel;
-      const permission = calendar.permission;
+      const permissionLevel = this.permissionLevel;
+      const permission = this.permission;
       
       // Check if either field contains an edit-level permission
-      return ['edit', 'write'].includes(permissionLevel) || 
-             (permission && ['edit', 'write'].includes(permission));
+      // Make sure we always return a boolean value
+      const hasEditPermission = 
+        (permissionLevel && ['edit', 'write'].includes(permissionLevel)) || 
+        (permission && ['edit', 'write'].includes(permission));
+        
+      return hasEditPermission === true;
     };
     
     return calendar;
