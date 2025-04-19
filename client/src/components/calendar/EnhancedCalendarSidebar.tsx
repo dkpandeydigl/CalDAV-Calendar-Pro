@@ -685,10 +685,14 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
           <span className="ml-1 text-xs text-muted-foreground">
             {isShared ? (
               (() => {
-                // Use the new canEdit method on the SharedCalendar for consistent permission checks
+                // Use the new canEdit property/method on the SharedCalendar for consistent permission checks
                 // This fixes the issues with permission inconsistencies across the application
                 const sharedCal = calendar as SharedCalendar;
-                const canEdit = sharedCal.canEdit ? sharedCal.canEdit() : false;
+                
+                // Handle both boolean and function types for canEdit
+                const canEdit = typeof sharedCal.canEdit === 'boolean' 
+                  ? sharedCal.canEdit 
+                  : (typeof sharedCal.canEdit === 'function' ? sharedCal.canEdit() : false);
                 
                 return canEdit ? 
                   <Badge variant="outline" className="text-[10px] py-0 h-4 text-emerald-600">Can edit</Badge> : 
@@ -754,10 +758,11 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                     (sharedCal.permission === 'edit' || sharedCal.permission === 'write')
                   );
                   
-                  // Use both the direct check and the canEdit method for maximum flexibility
+                  // Use both the direct check and the canEdit property/method for maximum flexibility
                   const canEdit = (
                     hasEditPermission || 
-                    (sharedCal.canEdit && sharedCal.canEdit()) ||
+                    (typeof sharedCal.canEdit === 'boolean' ? sharedCal.canEdit : 
+                     (typeof sharedCal.canEdit === 'function' ? sharedCal.canEdit() : false)) ||
                     false
                   );
                   

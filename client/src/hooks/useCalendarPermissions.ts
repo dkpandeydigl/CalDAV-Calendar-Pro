@@ -43,11 +43,23 @@ export const useCalendarPermissions = () => {
       // Also check in shared calendars to see if we have a shared calendar with edit permissions
       const sharedCalendar = sharedCalendars.find(cal => cal.id === calendarId);
       if (sharedCalendar) {
-        // Use the canEdit() method if available, otherwise fall back to simple permission check
-        const hasEditPermission = sharedCalendar.canEdit 
-          ? sharedCalendar.canEdit() 
-          : (sharedCalendar.permission === 'edit' || sharedCalendar.permission === 'write' || 
-             sharedCalendar.permissionLevel === 'edit' || sharedCalendar.permissionLevel === 'write');
+        // Use the canEdit property/method if available, otherwise fall back to simple permission check
+        let hasEditPermission = false;
+        
+        if (typeof sharedCalendar.canEdit === 'boolean') {
+          hasEditPermission = sharedCalendar.canEdit;
+        } else if (typeof sharedCalendar.canEdit === 'function') {
+          try {
+            hasEditPermission = sharedCalendar.canEdit();
+          } catch (e) {
+            console.error('Error calling canEdit function:', e);
+          }
+        } else {
+          hasEditPermission = (
+            sharedCalendar.permission === 'edit' || sharedCalendar.permission === 'write' || 
+            sharedCalendar.permissionLevel === 'edit' || sharedCalendar.permissionLevel === 'write'
+          );
+        }
         
         console.log(`User data not loaded yet, but shared calendar ${calendarId} exists with permission:`, {
           permission: sharedCalendar.permission,

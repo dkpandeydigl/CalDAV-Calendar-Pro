@@ -262,9 +262,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     (calendarMetadata?.isShared === true && 
      event.calendarId && 
      sharedCalendars?.some?.(cal => {
-       // First try to use the canEdit method if available
+       // First try to use the canEdit property/method if available
        if (cal.id === event.calendarId) {
-         if (typeof cal.canEdit === 'function') {
+         if (typeof cal.canEdit === 'boolean') {
+           return cal.canEdit;
+         } else if (typeof cal.canEdit === 'function') {
            return cal.canEdit();
          } else {
            // Otherwise do a normalized permission check

@@ -55,8 +55,25 @@ export const useSharedCalendars = () => {
           
           // If we receive the canEdit property directly from the server, use it to set permissions
           if (calendar.canEdit !== undefined) {
-            const isEditable = calendar.canEdit === true || calendar.canEdit === 'true';
-            console.log(`Server provided canEdit=${calendar.canEdit}, converting to permissionLevel=${isEditable ? 'edit' : 'view'}`);
+            // Handle both boolean and function canEdit properties
+            let isEditable = false;
+            
+            if (typeof calendar.canEdit === 'boolean') {
+              isEditable = calendar.canEdit;
+            } else if (typeof calendar.canEdit === 'string') {
+              // Legacy code path for string-based canEdit values
+              isEditable = calendar.canEdit === 'true';
+            } else if (typeof calendar.canEdit === 'function') {
+              try {
+                isEditable = calendar.canEdit();
+              } catch (e) {
+                console.error('Error calling canEdit function', e);
+                isEditable = false;
+              }
+            }
+            
+            console.log(`Server provided canEdit=${typeof calendar.canEdit === 'function' ? 'function' : calendar.canEdit}, 
+              evaluated to ${isEditable}, converting to permissionLevel=${isEditable ? 'edit' : 'view'}`);
             
             // Set both permission properties based on the canEdit value
             calendar.permissionLevel = isEditable ? 'edit' : 'view';
