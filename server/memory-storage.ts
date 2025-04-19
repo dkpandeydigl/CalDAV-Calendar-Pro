@@ -375,19 +375,30 @@ export class MemStorage implements IStorage {
         // Get the full owner information
         const owner = await this.getUser(calendar.userId);
         
+        // Normalize permission level
+        const normalizedPermission = this.normalizePermissionValue(sharing.permissionLevel);
+        
+        // Log permission info for debugging
+        console.log(`[PERMISSION DEBUG] Calendar ID ${calendar.id}, Name: ${calendar.name}`);
+        console.log(`[PERMISSION DEBUG] Original permission from sharing: ${sharing.permissionLevel}`);
+        console.log(`[PERMISSION DEBUG] Normalized permission: ${normalizedPermission}`);
+        
         calendars.push({
           ...calendar,
           // Add complete owner information to shared calendars
           owner: {
             id: calendar.userId,
             username: owner?.username || 'unknown',
-            email: owner?.email || owner?.username || 'unknown'
+            email: owner?.email || owner?.username || 'unknown',
+            password: '', // Required by schema but not used for display
+            preferredTimezone: null,
+            fullName: null
           },
           // Add owner email for backward compatibility
           ownerEmail: owner?.email || owner?.username || 'unknown',
           // Add both permission fields to ensure full compatibility
-          permissionLevel: sharing.permissionLevel || 'view',
-          permission: sharing.permissionLevel || 'view', // Add duplicate for compatibility
+          permissionLevel: normalizedPermission,
+          permission: normalizedPermission, // Add duplicate for compatibility
           // Add sharing ID for permission management
           sharingId: sharing.id,
           // Mark as shared for UI
@@ -397,7 +408,12 @@ export class MemStorage implements IStorage {
             userMatch: {
               userId,
               sharingId: sharing.id,
-              permissionLevel: sharing.permissionLevel,
+              originalPermission: sharing.permissionLevel,
+              normalizedPermission: normalizedPermission,
+              permissionEquivalents: {
+                isEdit: ['edit', 'write'].includes(normalizedPermission),
+                isView: ['view', 'read'].includes(normalizedPermission)
+              },
               sharedWithEmail: sharing.sharedWithEmail,
               sharedWithUserId: sharing.sharedWithUserId,
               sharedByUserId: sharing.sharedByUserId
