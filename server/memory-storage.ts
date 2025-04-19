@@ -37,37 +37,63 @@ export class MemStorage implements IStorage {
   // Helper method to normalize permission values across the app
   // This ensures consistent handling of different permission formats
   normalizePermissionValue(permission: string | null | undefined | boolean): string {
-    // Special handling for boolean values
+    // For comprehensive debugging
+    console.log(`[PERMISSION NORMALIZE] RAW VALUE: ${permission}, TYPE: ${typeof permission}`);
+    
+    // 1. Boolean true handling (explicit boolean true = edit)
     if (permission === true) {
       console.log(`[PERMISSION NORMALIZE] Boolean TRUE value converted to 'edit'`);
       return 'edit';
     }
     
-    if (!permission || permission === false) {
-      // Default to view-only if no permission is specified or boolean false
-      console.log(`[PERMISSION NORMALIZE] No permission value or FALSE, defaulting to 'view'`);
+    // 2. Falsy value handling (null, undefined, false, empty string = view)
+    if (permission === false || permission === null || permission === undefined || permission === '') {
+      console.log(`[PERMISSION NORMALIZE] Falsy value (${permission}) defaulting to 'view'`);
       return 'view';
     }
     
-    // Convert to lowercase for case-insensitive comparison
-    const normalized = String(permission).toLowerCase();
+    // 3. String conversion and normalization
+    const normalized = String(permission).toLowerCase().trim();
+    console.log(`[PERMISSION NORMALIZE] Stringified and normalized: '${normalized}'`);
     
-    // Handle 'true' string explicitly
-    if (normalized === 'true') {
-      console.log(`[PERMISSION NORMALIZE] String 'true' converted to 'edit'`);
+    // 4. Special string cases 
+    // Boolean-like strings
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+      console.log(`[PERMISSION NORMALIZE] True-like string '${normalized}' converted to 'edit'`);
       return 'edit';
     }
     
-    // Map common permission values to their canonical forms
-    if (['edit', 'write', 'readwrite', 'modify', 'rw'].includes(normalized)) {
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+      console.log(`[PERMISSION NORMALIZE] False-like string '${normalized}' converted to 'view'`);
+      return 'view'; 
+    }
+    
+    // 5. Permission term canonicalization
+    // Edit-equivalent permission values
+    if (['edit', 'write', 'readwrite', 'modify', 'rw', 'read-write'].includes(normalized)) {
       console.log(`[PERMISSION NORMALIZE] '${permission}' normalized to 'edit'`);
       return 'edit';
-    } else if (['view', 'read', 'readonly', 'false'].includes(normalized)) {
+    } 
+    
+    // View-equivalent permission values
+    if (['view', 'read', 'readonly', 'read-only', 'ro'].includes(normalized)) {
       console.log(`[PERMISSION NORMALIZE] '${permission}' normalized to 'view'`);
       return 'view';
     }
     
-    // For any unknown values, default to view-only (most restrictive)
+    // 6. Numeric handling
+    const numericValue = Number(normalized);
+    if (!isNaN(numericValue)) {
+      if (numericValue > 0) {
+        console.log(`[PERMISSION NORMALIZE] Numeric value ${numericValue} treated as 'edit'`);
+        return 'edit';
+      } else {
+        console.log(`[PERMISSION NORMALIZE] Zero/negative number ${numericValue} treated as 'view'`);
+        return 'view';
+      }
+    }
+    
+    // 7. Default fallback - safest is view-only access
     console.log(`[PERMISSION NORMALIZE] Unknown permission value '${permission}', defaulting to 'view'`);
     return 'view';
   }

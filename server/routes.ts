@@ -4275,25 +4275,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Create the sharing data with improved permission handling
-      // Always normalize permission levels for consistency
-      let permissionLevel = req.body.permissionLevel || 'view';
+      // Create the sharing data with enhanced permission handling
+      // Get raw permission values from the request
+      const rawPermissionLevel = req.body.permissionLevel;
+      const rawPermission = req.body.permission;
       
-      // Add support for both "permission" and "permissionLevel" fields
-      if (req.body.permission && !req.body.permissionLevel) {
-        permissionLevel = req.body.permission;
+      // Determine the effective permission with proper priority
+      let effectivePermission;
+      
+      // 1. If permissionLevel is explicitly true or "true", use edit
+      if (rawPermissionLevel === true || rawPermissionLevel === "true") {
+        effectivePermission = 'edit';
       }
-      
-      // Support for permission=true in backward compatibility
-      if (req.body.permission === true || req.body.permissionLevel === true) {
-        permissionLevel = 'edit';
+      // 2. If permission is explicitly true or "true", use edit
+      else if (rawPermission === true || rawPermission === "true") {
+        effectivePermission = 'edit';
+      }
+      // 3. If permissionLevel is a string and in our recognized formats
+      else if (typeof rawPermissionLevel === 'string' && 
+               ['edit', 'write', 'readwrite', 'modify'].includes(rawPermissionLevel.toLowerCase())) {
+        effectivePermission = 'edit';
+      }
+      // 4. If permission is a string and in our recognized formats
+      else if (typeof rawPermission === 'string' && 
+              ['edit', 'write', 'readwrite', 'modify'].includes(rawPermission.toLowerCase())) {
+        effectivePermission = 'edit';
+      }
+      // 5. If we have any permissionLevel value, use it (will be normalized by storage layer)
+      else if (rawPermissionLevel !== undefined && rawPermissionLevel !== null) {
+        effectivePermission = String(rawPermissionLevel);
+      }
+      // 6. If we have any permission value, use it (will be normalized by storage layer)
+      else if (rawPermission !== undefined && rawPermission !== null) {
+        effectivePermission = String(rawPermission);
+      }
+      // 7. Default to view if we have nothing else
+      else {
+        effectivePermission = 'view';
       }
       
       // Log detailed permission information for debugging
-      console.log(`Calendar sharing permission check:`, {
-        requestedPermission: req.body.permissionLevel,
-        fallbackPermission: req.body.permission,
-        normalizedPermission: permissionLevel,
+      console.log(`[CALENDAR SHARING PERMISSION] Full debug:`, {
+        rawPermissionLevel,
+        rawPermission,
+        effectivePermission,
+        rawBodyKeys: Object.keys(req.body),
         rawBody: req.body
       });
       
@@ -4301,7 +4327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         calendarId,
         sharedWithEmail: req.body.email,
         sharedWithUserId: sharedWithUserId || undefined,
-        permissionLevel: permissionLevel,
+        permissionLevel: effectivePermission,
         // We don't need to add sharedByUserId as it gets added by the shareCalendar method
       };
       
