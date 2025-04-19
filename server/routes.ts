@@ -4275,12 +4275,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Create the sharing data
+      // Create the sharing data with improved permission handling
+      // Always normalize permission levels for consistency
+      let permissionLevel = req.body.permissionLevel || 'view';
+      
+      // Add support for both "permission" and "permissionLevel" fields
+      if (req.body.permission && !req.body.permissionLevel) {
+        permissionLevel = req.body.permission;
+      }
+      
+      // Support for permission=true in backward compatibility
+      if (req.body.permission === true || req.body.permissionLevel === true) {
+        permissionLevel = 'edit';
+      }
+      
+      // Log detailed permission information for debugging
+      console.log(`Calendar sharing permission check:`, {
+        requestedPermission: req.body.permissionLevel,
+        fallbackPermission: req.body.permission,
+        normalizedPermission: permissionLevel,
+        rawBody: req.body
+      });
+      
       const sharingData = {
         calendarId,
         sharedWithEmail: req.body.email,
         sharedWithUserId: sharedWithUserId || undefined,
-        permissionLevel: req.body.permissionLevel || 'view',
+        permissionLevel: permissionLevel,
         // We don't need to add sharedByUserId as it gets added by the shareCalendar method
       };
       
