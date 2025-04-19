@@ -385,12 +385,24 @@ export class MemStorage implements IStorage {
           },
           // Add owner email for backward compatibility
           ownerEmail: owner?.email || owner?.username || 'unknown',
-          // Add permission level to shared calendars
-          permissionLevel: sharing.permissionLevel,
+          // Add both permission fields to ensure full compatibility
+          permissionLevel: sharing.permissionLevel || 'view',
+          permission: sharing.permissionLevel || 'view', // Add duplicate for compatibility
           // Add sharing ID for permission management
           sharingId: sharing.id,
           // Mark as shared for UI
-          isShared: true
+          isShared: true,
+          // Debug info for troubleshooting
+          _sharingDebug: {
+            userMatch: {
+              userId,
+              sharingId: sharing.id,
+              permissionLevel: sharing.permissionLevel,
+              sharedWithEmail: sharing.sharedWithEmail,
+              sharedWithUserId: sharing.sharedWithUserId,
+              sharedByUserId: sharing.sharedByUserId
+            }
+          }
         } as any);
       }
     }

@@ -25,8 +25,9 @@ import { z } from "zod";
 import { registerExportRoutes } from "./export-routes";
 import { registerImportRoutes } from "./import-routes";
 import { registerUserLookupRoutes } from "./user-lookup-routes";
+import { registerTestPermissionEndpoints } from "./test-permissions";
 import fetch from "node-fetch";
-import { escapeICalString, formatICalDate, formatContentLine, formatRecurrenceRule, generateICalEvent } from "./ical-utils";
+import { escapeICalString, formatICalDate, formatContentLine, generateICalEvent } from "./ical-utils";
 import { syncService } from "./sync-service";
 import { webdavSyncService } from "./webdav-sync";
 import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
@@ -104,10 +105,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   console.log('[express] WebSocket server initialization handled in routes.ts');
   
-  // Register the export, import, and user lookup routes
+  // Register the export, import, user lookup, and test routes
   registerExportRoutes(app);
   registerImportRoutes(app);
   registerUserLookupRoutes(app);
+  registerTestPermissionEndpoints(app, storage);
 
   // Direct calendar export endpoint with robustness to storage backend changes
   // NOTE: This endpoint bypasses auth verification to work reliably with both PostgreSQL and IndexedDB
