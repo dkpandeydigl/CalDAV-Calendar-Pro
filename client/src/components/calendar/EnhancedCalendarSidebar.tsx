@@ -725,11 +725,10 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             </Label>
             {isShared && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                {console.log(`Calendar ${calendar.name} (ID: ${calendar.id}) permission:`, (calendar as SharedCalendar).permissionLevel)}
-                {((calendar as SharedCalendar).permissionLevel === 'edit') ? (
+                {((calendar as SharedCalendar).permissionLevel === 'edit' || (calendar as SharedCalendar).permission === 'edit') ? (
                   <span className="text-emerald-600">Can edit</span>
                 ) : (
-                  <span className="text-amber-600" title={`Permission level: ${(calendar as SharedCalendar).permissionLevel}`}>View only</span>
+                  <span className="text-amber-600">View only</span>
                 )}
               </div>
             )}
@@ -1079,7 +1078,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                   <ChevronDown className="h-3.5 w-3.5 text-gray-500" /> : 
                                   <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
                                 }
-                                <div className="text-xs text-left truncate max-w-[250px]">
+                                <div className="text-xs text-left truncate max-w-[350px]">
                                   <span 
                                     className="font-medium text-blue-600 hover:underline cursor-help flex items-center" 
                                     title={`Calendar owner: ${ownerEmail}`}
