@@ -375,11 +375,22 @@ export const useSharedCalendars = () => {
     calendar.canEdit = function(): boolean {
       // Check all possible permission field representations
       // Different parts of the API use different field names
-      const permissionLevel = this.permissionLevel;
-      const permission = this.permission;
+      const permissionLevel = this.permissionLevel || '';
+      const permission = this.permission || '';
+      
+      // Ensure we have at least one permission field value
+      if (!permissionLevel && !permission) {
+        console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name} - NO PERMISSION VALUES FOUND`);
+        return false;
+      }
       
       console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name}`);
-      console.log(`[PERMISSION CHECK] permissionLevel=${permissionLevel}, permission=${permission}`);
+      console.log(`[PERMISSION CHECK] permissionLevel="${permissionLevel}", permission="${permission}"`);
+      
+      // Examine sharingDebug data if available
+      if (this._sharingDebug) {
+        console.log(`[PERMISSION CHECK] Debug info for ${this.id}:`, this._sharingDebug);
+      }
       
       // Use a direct strict comparison for known edit values first
       if (permissionLevel === 'edit' || permissionLevel === 'write' || 
@@ -408,8 +419,10 @@ export const useSharedCalendars = () => {
           id: cal.id,
           name: cal.name,
           permissionLevel: cal.permissionLevel,
-          permission: cal.permission, // Check if this alternative field exists
-          canEdit: cal.canEdit ? cal.canEdit() : ['edit', 'write'].includes(cal.permissionLevel)
+          permission: cal.permission || cal.permissionLevel, // Check both fields
+          canEdit: cal.canEdit ? cal.canEdit() : 
+                   (cal.permission ? ['edit', 'write'].includes(cal.permission) : 
+                   ['edit', 'write'].includes(cal.permissionLevel || ''))
         }))
       );
     }
