@@ -642,6 +642,17 @@ export class MemStorage implements IStorage {
   async createEvent(insertEvent: InsertEvent): Promise<Event> {
     const id = this.eventIdCounter++;
     
+    // DEBUGGING RECURRENCE: Log the recurrence rule during event creation in storage
+    console.log(`[STORAGE RECURRENCE DEBUG] Creating event with recurrence rule:`, {
+      recurrenceRule: insertEvent.recurrenceRule,
+      type: typeof insertEvent.recurrenceRule,
+      eventTitle: insertEvent.title,
+      eventId: id,
+      isStringifiedJson: typeof insertEvent.recurrenceRule === 'string' && 
+                         insertEvent.recurrenceRule?.startsWith('{') && 
+                         insertEvent.recurrenceRule?.endsWith('}')
+    });
+    
     // Set up default values
     const now = new Date();
     
@@ -662,7 +673,7 @@ export class MemStorage implements IStorage {
       rawData: insertEvent.rawData || null,
       recurringEventId: insertEvent.recurringEventId || null,
       recurrenceRule: insertEvent.recurrenceRule || null,
-      isRecurring: insertEvent.isRecurring || false,
+      isRecurring: insertEvent.recurrenceRule ? true : false, // Set isRecurring based on recurrenceRule
       isException: insertEvent.isException || false,
       lastSync: insertEvent.lastSync || now,
       createdAt: now,
@@ -682,6 +693,15 @@ export class MemStorage implements IStorage {
       lastModifiedByName: null,
       lastModifiedAt: now
     };
+    
+    // DEBUGGING RECURRENCE: Double check the recurrence rule after event object creation
+    console.log(`[STORAGE RECURRENCE DEBUG] Event object created with recurrence rule:`, {
+      recurrenceRule: event.recurrenceRule,
+      type: typeof event.recurrenceRule,
+      eventTitle: event.title,
+      eventId: event.id,
+      isRecurring: event.isRecurring
+    });
     
     this.eventsMap.set(id, event);
     return event;

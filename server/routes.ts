@@ -3047,6 +3047,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user!.id;
       
+      // DEBUGGING RECURRENCE: Log the recurrence rule as it comes from the client
+      console.log(`[RECURRENCE DEBUG] Received recurrence rule in create event request:`, {
+        recurrenceRule: req.body.recurrenceRule,
+        type: typeof req.body.recurrenceRule
+      });
+      
       // Handle UID generation and preservation
       // First, check if we received a uid in the request that looks like a server-generated UID
       let uid = req.body.uid;
@@ -3068,6 +3074,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         uid: uid,
         syncStatus: 'pending'
       };
+      
+      // DEBUGGING RECURRENCE: Verify the recurrence rule is copied to eventData
+      console.log(`[RECURRENCE DEBUG] Recurrence rule after copying to eventData:`, {
+        recurrenceRule: eventData.recurrenceRule,
+        type: typeof eventData.recurrenceRule
+      });
       
       // Handle date conversions
       if (typeof eventData.startDate === 'string') {
