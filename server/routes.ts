@@ -4341,9 +4341,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       else if (rawPermission !== undefined && rawPermission !== null) {
         effectivePermission = String(rawPermission);
       }
-      // 7. Default to view if we have nothing else
+      // 7. CRITICAL FIX: Default to 'edit' instead of 'view'
+      // This ensures shared calendars grant edit permissions by default
       else {
-        effectivePermission = 'view';
+        console.log(`[PERMISSION FIX] No permission specified in share endpoint, using default 'edit' permission`);
+        effectivePermission = 'edit';
       }
       
       // Log detailed permission information for debugging
