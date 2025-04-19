@@ -162,9 +162,14 @@ export async function updateSharingPermission(
     ? `/api/calendar-sharings/${shareId}?syncWithServer=true`
     : `/api/calendar-sharings/${shareId}`;
     
-  const response = await apiRequest('PATCH', apiUrl, {
-    permissionLevel: normalizedPermission
-  });
+  // CRITICAL FIX: Include both permission fields for consistency and backwards compatibility
+  const requestData = {
+    permissionLevel: normalizedPermission,
+    permission: normalizedPermission // Include both for backward compatibility
+  };
+  
+  console.log(`[API] Sending permission update request:`, requestData);
+  const response = await apiRequest('PATCH', apiUrl, requestData);
   
   if (!response.ok) {
     console.error(`[API] Failed to update sharing permission for ID ${shareId}`, await response.text());
