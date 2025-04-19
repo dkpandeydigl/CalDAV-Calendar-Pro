@@ -37,22 +37,35 @@ export const useSharedCalendars = () => {
         // Parse the response
         const data = await response.json();
         
-        console.log('Raw shared calendars data from server:', data);
+        console.log('Raw shared calendars data from server:', JSON.stringify(data, null, 2));
         
         // Ensure owner data is properly populated
         return data.map((calendar: SharedCalendar) => {
-          // Make sure we have both permission and permissionLevel fields
+          // Enhanced debug logging with raw calendar data
+          console.log(`Shared calendar raw data from server:`, calendar);
+          
+          // Always ensure both permission fields exist for maximum compatibility
           if (calendar.permissionLevel === undefined && calendar.permission !== undefined) {
+            console.log(`Setting missing permissionLevel from permission: ${calendar.permission}`);
             calendar.permissionLevel = calendar.permission;
           } else if (calendar.permission === undefined && calendar.permissionLevel !== undefined) {
+            console.log(`Setting missing permission from permissionLevel: ${calendar.permissionLevel}`);
             calendar.permission = calendar.permissionLevel;
           }
           
-          // Debug what we received from the server
+          // If for some reason both are undefined, set default to 'view'
+          if (calendar.permissionLevel === undefined && calendar.permission === undefined) {
+            console.log(`Neither permission nor permissionLevel defined, setting defaults to 'view'`);
+            calendar.permissionLevel = 'view';
+            calendar.permission = 'view';
+          }
+          
+          // Debug what we received from the server with detailed permission info
           console.log(`Calendar ${calendar.id} (${calendar.name}) permission data:`, {
             permissionLevel: calendar.permissionLevel,
             permission: calendar.permission,
-            raw: calendar
+            sharingId: calendar.sharingId,
+            isShared: !!calendar.isShared
           });
           
           // Enhanced debug information to track permission values
