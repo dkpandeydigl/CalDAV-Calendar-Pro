@@ -60,7 +60,7 @@ export const useSharedCalendars = () => {
             calendar.owner = {
               id: calendar.userId || 0,
               username: calendar.ownerEmail || 'Unknown',
-              email: calendar.ownerEmail || undefined
+              email: calendar.ownerEmail || null
             };
           } else {
             // If we have a partial owner object, enhance it with any additional information

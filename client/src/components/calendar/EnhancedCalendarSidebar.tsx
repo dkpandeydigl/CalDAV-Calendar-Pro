@@ -29,7 +29,6 @@ import {
 import { useCalendarContext } from '@/contexts/CalendarContext';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useUserDetails } from '@/hooks/useUserDetails';
-
 import { Calendar } from '@shared/schema';
 import { 
   CalendarIcon, 
@@ -51,7 +50,8 @@ import {
   Mail
 } from 'lucide-react';
 // SyncStatusIndicator import removed
-import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
+import { useSharedCalendars } from '@/hooks/useSharedCalendars';
+import { SharedCalendar } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import {
