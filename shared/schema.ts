@@ -103,6 +103,7 @@ export const events = pgTable("events", {
   allDay: boolean("all_day").default(false),
   timezone: text("timezone").default("UTC"),
   recurrenceRule: text("recurrence_rule"),
+  isRecurring: boolean("is_recurring").default(false), // Flag to quickly identify recurring events
   attendees: json("attendees"), // JSON array of attendees with email, name, role, status
   resources: json("resources"), // JSON array of resource names/emails
   busyStatus: text("busy_status").default("busy"), // busy, free, tentative, or cancelled
@@ -130,6 +131,7 @@ export const insertEventSchema = createInsertSchema(events).pick({
   allDay: true,
   timezone: true,
   recurrenceRule: true,
+  isRecurring: true,
   attendees: true,
   resources: true,
   busyStatus: true,

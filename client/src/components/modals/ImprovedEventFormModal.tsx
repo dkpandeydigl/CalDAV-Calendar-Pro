@@ -2940,6 +2940,21 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                       untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
                     }) : null;
                     
+                    // DEBUGGING RECURRENCE: Log the recurrence rule we're sending to the server
+                    console.log(`[CLIENT RECURRENCE DEBUG] Sending recurrence rule to server:`, {
+                      recurrenceRule,
+                      recurrencePattern: recurrence.pattern,
+                      hasRecurrence: recurrence.pattern !== 'None',
+                      recurrenceObj: recurrence.pattern !== 'None' ? {
+                        pattern: recurrence.pattern,
+                        interval: recurrence.interval,
+                        weekdays: recurrence.weekdays,
+                        endType: recurrence.endType,
+                        occurrences: recurrence.occurrences,
+                        endDate: recurrence.endDate
+                      } : null
+                    });
+                    
                     // Prepare attendees and resources
                     const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
                     const resourcesJson = resources.length > 0 ? JSON.stringify(resources) : null;

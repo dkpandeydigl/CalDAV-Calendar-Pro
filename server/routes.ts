@@ -3840,6 +3840,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Event not found" });
       }
       
+      // DEBUGGING RECURRENCE: Log the recurrence data before modification
+      console.log(`[RECURRENCE DEBUG] Updating event ${eventId} with existing recurrence:`, {
+        existingRecurrenceRule: existingEvent.recurrenceRule,
+        existingRecurrenceType: typeof existingEvent.recurrenceRule,
+        isRecurring: existingEvent.isRecurring,
+        incomingRecurrenceRule: req.body.recurrenceRule,
+        incomingRecurrenceType: typeof req.body.recurrenceRule
+      });
+      
       // Process the update data - CRITICAL: Always preserve the UID
       const updateData = { 
         ...req.body,
@@ -3851,6 +3860,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (req.body.uid && req.body.uid !== existingEvent.uid) {
         console.log(`[UID PRESERVATION] Request attempted to change UID from ${existingEvent.uid} to ${req.body.uid}`);
         console.log(`[UID PRESERVATION] Enforcing original UID ${existingEvent.uid} for event continuity`);
+      }
+      
+      // DEBUGGING RECURRENCE: Verify isRecurring flag is set correctly based on recurrenceRule
+      if (updateData.recurrenceRule) {
+        updateData.isRecurring = true;
+        console.log(`[RECURRENCE DEBUG] Setting isRecurring=true because recurrenceRule exists: ${updateData.recurrenceRule}`);
+      } else if (updateData.recurrenceRule === null) {
+        updateData.isRecurring = false;
+        console.log(`[RECURRENCE DEBUG] Setting isRecurring=false because recurrenceRule is null`);
       }
       
       // Handle date conversions

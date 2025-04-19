@@ -657,6 +657,13 @@ export class MemStorage implements IStorage {
     const now = new Date();
     
     // Create the event with all required fields
+    // DEBUGGING RECURRENCE: Log the recurrence rule during event creation
+    console.log(`[STORAGE RECURRENCE DEBUG] Creating event with recurrence rule:`, {
+      recurrenceRule: insertEvent.recurrenceRule,
+      recurrenceRuleType: typeof insertEvent.recurrenceRule,
+      hasRecurrenceRule: !!insertEvent.recurrenceRule
+    });
+    
     const event: Event = {
       id,
       uid: insertEvent.uid,
@@ -673,7 +680,7 @@ export class MemStorage implements IStorage {
       rawData: insertEvent.rawData || null,
       recurringEventId: insertEvent.recurringEventId || null,
       recurrenceRule: insertEvent.recurrenceRule || null,
-      isRecurring: insertEvent.recurrenceRule ? true : false, // Set isRecurring based on recurrenceRule
+      isRecurring: !!insertEvent.recurrenceRule, // Set isRecurring flag explicitly based on recurrenceRule existence
       isException: insertEvent.isException || false,
       lastSync: insertEvent.lastSync || now,
       createdAt: now,
@@ -711,6 +718,17 @@ export class MemStorage implements IStorage {
     const event = this.eventsMap.get(id);
     if (!event) return undefined;
     
+    // DEBUGGING RECURRENCE: Log the recurrence rule during event update in storage
+    console.log(`[STORAGE RECURRENCE DEBUG] Updating event ${id} with recurrence rule:`, {
+      existingRecurrenceRule: event.recurrenceRule,
+      existingRecurrenceType: typeof event.recurrenceRule,
+      updateRecurrenceRule: eventUpdate.recurrenceRule,
+      updateRecurrenceType: typeof eventUpdate.recurrenceRule,
+      isRecurringBefore: event.isRecurring,
+      isRecurringInUpdate: eventUpdate.isRecurring,
+      hasRecurrenceRuleInUpdate: 'recurrenceRule' in eventUpdate
+    });
+    
     const now = new Date();
     const updatedEvent = { 
       ...event, 
@@ -718,7 +736,35 @@ export class MemStorage implements IStorage {
       updatedAt: now
     };
     
+    // DEBUGGING RECURRENCE: Ensure isRecurring flag is set correctly based on recurrenceRule
+    if ('recurrenceRule' in eventUpdate) {
+      if (eventUpdate.recurrenceRule) {
+        // If recurrenceRule is present and not null/undefined, ensure isRecurring is true
+        updatedEvent.isRecurring = true;
+        console.log(`[STORAGE RECURRENCE DEBUG] Explicitly setting isRecurring=true because recurrenceRule exists`, {
+          eventId: id,
+          recurrenceRule: updatedEvent.recurrenceRule
+        });
+      } else if (eventUpdate.recurrenceRule === null) {
+        // If recurrenceRule is explicitly null, set isRecurring to false
+        updatedEvent.isRecurring = false;
+        console.log(`[STORAGE RECURRENCE DEBUG] Explicitly setting isRecurring=false because recurrenceRule is null`, {
+          eventId: id
+        });
+      }
+    }
+    
     this.eventsMap.set(id, updatedEvent);
+    
+    // DEBUGGING RECURRENCE: Log the final updated event state
+    console.log(`[STORAGE RECURRENCE DEBUG] Final updated event state:`, {
+      eventId: id,
+      title: updatedEvent.title,
+      recurrenceRule: updatedEvent.recurrenceRule,
+      recurrenceRuleType: typeof updatedEvent.recurrenceRule,
+      isRecurring: updatedEvent.isRecurring
+    });
+    
     return updatedEvent;
   }
   
