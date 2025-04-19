@@ -70,13 +70,13 @@ export class MemStorage implements IStorage {
     
     // 5. Permission term canonicalization
     // Edit-equivalent permission values
-    if (['edit', 'write', 'readwrite', 'modify', 'rw', 'read-write'].includes(normalized)) {
+    if (['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw', 'editor'].includes(normalized)) {
       console.log(`[PERMISSION NORMALIZE] '${permission}' normalized to 'edit'`);
       return 'edit';
     } 
     
     // View-equivalent permission values
-    if (['view', 'read', 'readonly', 'read-only', 'ro'].includes(normalized)) {
+    if (['view', 'read', 'readonly', 'read-only', 'ro', 'viewer'].includes(normalized)) {
       console.log(`[PERMISSION NORMALIZE] '${permission}' normalized to 'view'`);
       return 'view';
     }
@@ -93,7 +93,14 @@ export class MemStorage implements IStorage {
       }
     }
     
-    // 7. Default fallback - safest is view-only access
+    // 7. Check for partial matching with edit terms
+    if (normalized.includes('edit') || normalized.includes('write') || 
+        normalized.includes('modify') || normalized.includes('full')) {
+      console.log(`[PERMISSION NORMALIZE] Permission '${permission}' contains edit-like terms, treating as 'edit'`);
+      return 'edit';
+    }
+    
+    // 8. Default fallback - safest is view-only access
     console.log(`[PERMISSION NORMALIZE] Unknown permission value '${permission}', defaulting to 'view'`);
     return 'view';
   }
