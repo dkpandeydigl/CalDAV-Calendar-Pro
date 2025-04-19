@@ -52,6 +52,19 @@ export const useSharedCalendars = () => {
         
         // Ensure owner data is properly populated
         return data.map((calendar: SharedCalendar) => {
+          // Make sure we have both permission and permissionLevel fields
+          if (calendar.permissionLevel === undefined && calendar.permission !== undefined) {
+            calendar.permissionLevel = calendar.permission;
+          } else if (calendar.permission === undefined && calendar.permissionLevel !== undefined) {
+            calendar.permission = calendar.permissionLevel;
+          }
+          
+          // Debug what we received from the server
+          console.log(`Calendar ${calendar.id} (${calendar.name}) permission data:`, {
+            permissionLevel: calendar.permissionLevel,
+            permission: calendar.permission,
+            raw: calendar
+          });
           // Create a complete owner object
           if (!calendar.owner) {
             // If we don't have an owner object at all, create one with the best available information
@@ -265,7 +278,7 @@ export const useSharedCalendars = () => {
 
   // Add permission update mutation
   const updatePermissionMutation = useMutation({
-    mutationFn: async (params: { sharingId: number, permissionLevel: 'view' | 'edit' }) => {
+    mutationFn: async (params: { sharingId: number, permissionLevel: 'view' | 'edit' | 'read' | 'write' }) => {
       const { sharingId, permissionLevel } = params;
       const url = `/api/calendar-sharings/${sharingId}`;
       const response = await apiRequest('PATCH', url, { permissionLevel });
@@ -343,7 +356,20 @@ export const useSharedCalendars = () => {
   // This simplifies our client-side logic and prevents bugs
   const filteredSharedCalendars = sharedCalendarsQuery.data || [];
   
-  // No debug logging in production version
+  // Add debug logging to identify permission levels
+  useEffect(() => {
+    if (filteredSharedCalendars.length > 0) {
+      console.log('Shared calendars with permission levels:', 
+        filteredSharedCalendars.map(cal => ({
+          id: cal.id,
+          name: cal.name,
+          permissionLevel: cal.permissionLevel,
+          permission: cal.permission, // Check if this alternative field exists
+          canEdit: ['edit', 'write'].includes(cal.permissionLevel)
+        }))
+      );
+    }
+  }, [filteredSharedCalendars]);
 
   return {
     sharedCalendars: filteredSharedCalendars,

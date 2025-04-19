@@ -1087,7 +1087,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                                   >
                                     <Info className="h-3 w-3 mr-1 text-blue-500" />
                                     {ownerEmail && ownerEmail !== 'Unknown' && ownerEmail !== 'unknown' && ownerEmail !== 'undefined' && ownerEmail !== 'null'
-                                      ? (ownerEmail.length > 20 ? `${ownerEmail.substring(0, 20)}...` : ownerEmail)
+                                      ? (ownerEmail.length > 17 ? `${ownerEmail.substring(0, 17)}...` : ownerEmail)
                                       : 'shared-calendar-owner@example.com'}
                                   </span>
                                 </div>
@@ -1281,8 +1281,8 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   className="text-blue-600 font-medium"
                   title={bulkUnshareEmail}
                 >
-                  {bulkUnshareEmail && bulkUnshareEmail.length > 20 
-                    ? `${bulkUnshareEmail.substring(0, 20)}...` 
+                  {bulkUnshareEmail && bulkUnshareEmail.length > 17 
+                    ? `${bulkUnshareEmail.substring(0, 17)}...` 
                     : bulkUnshareEmail}
                 </span>
               </div>
@@ -1305,7 +1305,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                     className="text-sm truncate" 
                     title={cal.name}
                   >
-                    {cal.name.length > 20 ? `${cal.name.substring(0, 20)}...` : cal.name}
+                    {cal.name.length > 17 ? `${cal.name.substring(0, 17)}...` : cal.name}
                   </span>
                 </div>
               ))}
