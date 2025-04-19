@@ -5,19 +5,8 @@ import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
 // Extended calendar type with permission information
-export interface SharedCalendar extends Calendar {
-  permissionLevel: 'view' | 'edit' | 'read' | 'write'; // The permission level (using the same field name as the server)
-  permission?: 'view' | 'edit' | 'read' | 'write';     // For backward compatibility
-  isShared: boolean;
-  owner?: {
-    id: number;
-    username: string;
-    email?: string;
-  };
-  ownerEmail?: string;      // Derived from owner.email for backward compatibility
-  sharingId?: number;       // The ID of the sharing record for permission management
-  enabled: boolean;         // Must be explicitly defined, don't rely on inheritance
-}
+// Import SharedCalendar from our types file
+import { SharedCalendar } from '@/types';
 
 export const useSharedCalendars = () => {
   const queryClient = useQueryClient();

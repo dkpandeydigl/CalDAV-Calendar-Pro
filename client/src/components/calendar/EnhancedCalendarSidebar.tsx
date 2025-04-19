@@ -683,10 +683,27 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             {calendar.name.length > 17 ? `${calendar.name.substring(0, 17)}...` : calendar.name}
           </Label>
           <span className="ml-1 text-xs text-muted-foreground">
-            {isShared && (['edit', 'write'].includes((calendar as SharedCalendar).permissionLevel)) ? 
-              <Badge variant="outline" className="text-[10px] py-0 h-4 text-emerald-600">Can edit</Badge> : 
-              <Badge variant="outline" className="text-[10px] py-0 h-4 text-amber-600">View only</Badge>
-            }
+            {isShared ? (
+              (() => {
+                // Get both permission properties to handle all formats
+                const permLevel = (calendar as SharedCalendar).permissionLevel;
+                const permission = (calendar as SharedCalendar).permission;
+                
+                // Check for edit/write in either field
+                const canEdit = 
+                  (permLevel && ['edit', 'write'].includes(permLevel)) || 
+                  (permission && ['edit', 'write'].includes(permission));
+                
+                // Debug the values
+                console.log(`Calendar ${calendar.id} (${calendar.name}) permission check:`, {
+                  permLevel, permission, canEdit
+                });
+                
+                return canEdit ? 
+                  <Badge variant="outline" className="text-[10px] py-0 h-4 text-emerald-600">Can edit</Badge> : 
+                  <Badge variant="outline" className="text-[10px] py-0 h-4 text-amber-600">View only</Badge>;
+              })()
+            ) : null}
           </span>
           
           {isShared && (
@@ -727,11 +744,20 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
             </Label>
             {isShared && (
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                {(['edit', 'write'].includes((calendar as SharedCalendar).permissionLevel)) ? (
-                  <span className="text-emerald-600">Can edit</span>
-                ) : (
-                  <span className="text-amber-600">View only</span>
-                )}
+                {(() => {
+                  // Get both permission properties to handle all formats
+                  const permLevel = (calendar as SharedCalendar).permissionLevel;
+                  const permission = (calendar as SharedCalendar).permission;
+                  
+                  // Check for edit/write in either field
+                  const canEdit = 
+                    (permLevel && ['edit', 'write'].includes(permLevel)) || 
+                    (permission && ['edit', 'write'].includes(permission));
+                  
+                  return canEdit ? 
+                    <span className="text-emerald-600">Can edit</span> : 
+                    <span className="text-amber-600">View only</span>;
+                })()}
               </div>
             )}
           </div>
