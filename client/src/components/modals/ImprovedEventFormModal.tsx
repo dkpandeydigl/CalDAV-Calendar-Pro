@@ -1516,8 +1516,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             syncError: null,
             lastSyncAttempt: null,
             emailSent: null,
-            emailError: null
+            emailError: null,
+            lastModifiedBy: null,
+            lastModifiedByName: null,
+            lastModifiedAt: new Date()
           };
+          
+          // Debug log for missing fields
+          console.log('[EVENT CREATE DEBUG] Complete new event data:', newEventData);
           
           // Create the new event
           const createdEvent = await createEvent(newEventData);
