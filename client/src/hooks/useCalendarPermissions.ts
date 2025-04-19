@@ -115,11 +115,23 @@ export const useCalendarPermissions = () => {
         };
       }
       
-      // Use the canEdit() method if available, otherwise fall back to simple permission check
-      const hasEditPermission = sharedCalendar.canEdit 
-        ? sharedCalendar.canEdit() 
-        : (sharedCalendar.permission === 'edit' || sharedCalendar.permission === 'write' || 
-           sharedCalendar.permissionLevel === 'edit' || sharedCalendar.permissionLevel === 'write');
+      // Use the canEdit property/method if available, otherwise fall back to simple permission check
+      let hasEditPermission = false;
+      
+      if (typeof sharedCalendar.canEdit === 'boolean') {
+        hasEditPermission = sharedCalendar.canEdit;
+      } else if (typeof sharedCalendar.canEdit === 'function') {
+        try {
+          hasEditPermission = sharedCalendar.canEdit();
+        } catch (e) {
+          console.error('Error calling canEdit function:', e);
+        }
+      } else {
+        hasEditPermission = (
+          sharedCalendar.permission === 'edit' || sharedCalendar.permission === 'write' || 
+          sharedCalendar.permissionLevel === 'edit' || sharedCalendar.permissionLevel === 'write'
+        );
+      }
       
       // Log extensive details about the shared calendar permissions for debugging
       console.log(`Calendar ${calendarId} (${sharedCalendar.name}) is shared with user - permission type:`, {
