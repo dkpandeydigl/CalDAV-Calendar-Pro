@@ -1301,7 +1301,12 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                     className="h-3 w-3 rounded-full mr-2" 
                     style={{ backgroundColor: cal.color }}
                   ></div>
-                  <span className="text-sm">{cal.name}</span>
+                  <span 
+                    className="text-sm truncate" 
+                    title={cal.name}
+                  >
+                    {cal.name.length > 20 ? `${cal.name.substring(0, 20)}...` : cal.name}
+                  </span>
                 </div>
               ))}
             </div>
