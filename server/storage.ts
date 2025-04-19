@@ -45,6 +45,8 @@ export interface IStorage {
   getCalendarSharing(calendarId: number): Promise<CalendarSharing[]>;
   getAllCalendarSharings(): Promise<CalendarSharing[]>; // Get all sharing records
   getSharedCalendars(userId: number): Promise<Calendar[]>; // Calendars shared with this user
+  getSharedCalendarsForUser(userId: number): Promise<Calendar[]>; // Alias for getSharedCalendars for backward compatibility
+  getAllCalendarSharings(): Promise<CalendarSharing[]>; // Get all calendar sharing records
   shareCalendar(sharing: InsertCalendarSharing): Promise<CalendarSharing>;
   updateCalendarSharing(id: number, sharing: Partial<CalendarSharing>): Promise<CalendarSharing | undefined>;
   removeCalendarSharing(id: number): Promise<boolean>;

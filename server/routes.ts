@@ -4136,38 +4136,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/calendars/unshare/:id", isAuthenticated, async (req, res) => {
     try {
       const calendarId = parseInt(req.params.id);
+      const userId = req.user!.id;
+      console.log(`Unshare request for calendar ID ${calendarId} by user ${userId}`);
       
-      // Get the calendar to check if it exists
-      const calendar = await storage.getCalendar(calendarId);
-      if (!calendar) {
-        return res.status(404).json({ message: "Calendar not found" });
-      }
+      // If calendar doesn't exist in personal calendars, it might be a shared calendar
+      let calendar = await storage.getCalendar(calendarId);
       
-      // Get all sharing records for this calendar
+      // Get all sharing records for this calendar, even if calendar not found
       const sharingRecords = await storage.getCalendarSharing(calendarId);
+      console.log(`Found ${sharingRecords.length} sharing records for calendar ID ${calendarId}`);
       
       // Filter sharing records to find those related to the current user
-      const userSharingRecords = sharingRecords.filter(record => 
-        // User is either the recipient or the sharer
-        record.sharedWithUserId === req.user!.id || 
-        (calendar.userId === req.user!.id && record.calendarId === calendarId)
-      );
+      const userSharingRecords = sharingRecords.filter(record => {
+        const isRecipient = record.sharedWithUserId === userId;
+        const isOwner = calendar && calendar.userId === userId && record.calendarId === calendarId;
+        console.log(`Sharing record ID ${record.id}: User is recipient: ${isRecipient}, User is owner: ${isOwner}`);
+        return isRecipient || isOwner;
+      });
+      
+      console.log(`Found ${userSharingRecords.length} sharing records for user ${userId}`);
       
       if (userSharingRecords.length === 0) {
-        return res.status(404).json({ message: "No sharing record found for this calendar and user" });
+        // Special case: Check if it's directly a calendar shared with the user
+        const allSharedCalendars = await storage.getSharedCalendarsForUser(userId);
+        const isSharedWithUser = allSharedCalendars.some(cal => cal.id === calendarId);
+        
+        if (isSharedWithUser) {
+          // Find all sharing records where this user is the recipient for this calendar
+          const allSharingRecords = await storage.getAllCalendarSharings();
+          const relevantShares = allSharingRecords.filter(
+            record => record.calendarId === calendarId && record.sharedWithUserId === userId
+          );
+          
+          if (relevantShares.length > 0) {
+            console.log(`Found ${relevantShares.length} sharing records through full search`);
+            userSharingRecords.push(...relevantShares);
+          } else {
+            return res.status(404).json({ message: "No sharing record found for this calendar and user" });
+          }
+        } else {
+          return res.status(404).json({ message: "No sharing record found for this calendar and user" });
+        }
       }
       
       // Remove all relevant sharing records
       const results = await Promise.all(
-        userSharingRecords.map(record => storage.removeCalendarSharing(record.id))
+        userSharingRecords.map(record => {
+          console.log(`Removing sharing record ID ${record.id}`);
+          return storage.removeCalendarSharing(record.id);
+        })
       );
       
       // Check if all removals were successful
       const allSuccessful = results.every(result => result === true);
       
       if (allSuccessful) {
+        console.log(`Successfully removed ${results.length} sharing records`);
         res.json({ message: "Calendar unshared successfully" });
       } else {
+        console.error(`Failed to remove some sharing records: ${results}`);
         res.status(500).json({ message: "Failed to unshare calendar completely", partial: true });
       }
     } catch (err) {

@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatFullDate } from '@/lib/date-utils';
 import { useServerConnection } from '@/hooks/useServerConnection';
 import { CalendarIcon, Download, Edit, MoreVertical, Share2, Trash2, UploadCloud, Loader2 } from 'lucide-react';
-import { useSharedCalendars, SharedCalendar } from '@/hooks/useSharedCalendars';
+import { useSharedCalendars } from '@/hooks/useSharedCalendars';
+import { SharedCalendar } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import {
