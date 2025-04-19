@@ -412,8 +412,8 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
       return false;
     }
     
-    if (name.length > 20) {
-      setCalendarNameError('Calendar name must be 20 characters or less');
+    if (name.length > 17) {
+      setCalendarNameError('Calendar name must be 17 characters or less');
       return false;
     }
     
