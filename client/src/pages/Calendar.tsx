@@ -25,7 +25,7 @@ import { format, addDays, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfM
 import { Loader2, RefreshCcw, Trash } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
-import { generateUID } from '@/lib/uid-utils';
+import { generateUID, getOrGenerateUID, ensureCompliantUID } from '@/lib/uid-utils';
 
 // For different calendar views
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
@@ -350,7 +350,73 @@ function CalendarContent() {
   const handleEditEvent = () => {
     if (selectedEvent) {
       setEventDetailOpen(false);
+      
+      // If this is a recurring event, show the recurring edit modal first
+      if (selectedEvent.recurrenceRule) {
+        setRecurringEditModalOpen(true);
+      } else {
+        setEventFormOpen(true);
+      }
+    }
+  };
+  
+  // Handler for copying an event - creates a new event with the same details but a new UID
+  const handleCopyEvent = (event: Event) => {
+    if (event) {
+      // Close the detail modal
+      setEventDetailOpen(false);
+      
+      // Create a new event object with same properties but new UID
+      const copiedEvent = { 
+        ...event,
+        id: undefined, // Remove ID so a new one is created
+        uid: getOrGenerateUID(), // Generate a new RFC-compliant UID
+        title: `Copy of ${event.title}` // Indicate this is a copy
+      };
+      
+      // Set as the selected event for the form
+      setSelectedEvent(copiedEvent);
+      
+      // Open the event form to let user edit before saving
       setEventFormOpen(true);
+      
+      toast({
+        title: "Event Copied",
+        description: "You can now modify the copy before saving.",
+      });
+    }
+  };
+  
+  // Handler for printing an event
+  const handlePrintEvent = (event: Event) => {
+    if (event) {
+      setSelectedEvent(event);
+      setPrintEventModalOpen(true);
+    }
+  };
+  
+  // Handler for when the recurring edit modal returns a selection
+  const handleRecurringEditConfirm = (mode: RecurringEditMode) => {
+    setRecurringEditModalOpen(false);
+    
+    if (mode === 'cancel') {
+      // User canceled editing
+      return;
+    }
+    
+    // Store the edit mode in session storage for the form to use
+    if (mode === 'single' || mode === 'all') {
+      try {
+        sessionStorage.setItem('recurring_edit_mode', mode);
+        setEventFormOpen(true);
+      } catch (error) {
+        console.error('Error saving recurring edit mode:', error);
+        toast({
+          title: "Error",
+          description: "Could not save edit mode preference.",
+          variant: "destructive"
+        });
+      }
     }
   };
 
@@ -515,6 +581,21 @@ function CalendarContent() {
         event={selectedEvent} 
         onClose={() => setEventDetailOpen(false)}
         onEdit={handleEditEvent}
+        onCopy={handleCopyEvent}
+        onPrint={handlePrintEvent}
+      />
+      
+      <RecurringEventEditModal
+        open={recurringEditModalOpen}
+        event={selectedEvent}
+        onClose={() => setRecurringEditModalOpen(false)}
+        onConfirm={handleRecurringEditConfirm}
+      />
+      
+      <PrintEventModal
+        open={printEventModalOpen}
+        event={selectedEvent}
+        onClose={() => setPrintEventModalOpen(false)}
       />
       
       <ServerConnectionModal 
