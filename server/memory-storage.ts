@@ -36,21 +36,33 @@ export class MemStorage implements IStorage {
   
   // Helper method to normalize permission values across the app
   // This ensures consistent handling of different permission formats
-  normalizePermissionValue(permission: string | null | undefined): string {
-    if (!permission) {
-      // Default to view-only if no permission is specified
-      console.log(`[PERMISSION NORMALIZE] No permission value, defaulting to 'view'`);
+  normalizePermissionValue(permission: string | null | undefined | boolean): string {
+    // Special handling for boolean values
+    if (permission === true) {
+      console.log(`[PERMISSION NORMALIZE] Boolean TRUE value converted to 'edit'`);
+      return 'edit';
+    }
+    
+    if (!permission || permission === false) {
+      // Default to view-only if no permission is specified or boolean false
+      console.log(`[PERMISSION NORMALIZE] No permission value or FALSE, defaulting to 'view'`);
       return 'view';
     }
     
     // Convert to lowercase for case-insensitive comparison
     const normalized = String(permission).toLowerCase();
     
+    // Handle 'true' string explicitly
+    if (normalized === 'true') {
+      console.log(`[PERMISSION NORMALIZE] String 'true' converted to 'edit'`);
+      return 'edit';
+    }
+    
     // Map common permission values to their canonical forms
-    if (['edit', 'write', 'readwrite', 'modify'].includes(normalized)) {
+    if (['edit', 'write', 'readwrite', 'modify', 'rw'].includes(normalized)) {
       console.log(`[PERMISSION NORMALIZE] '${permission}' normalized to 'edit'`);
       return 'edit';
-    } else if (['view', 'read', 'readonly'].includes(normalized)) {
+    } else if (['view', 'read', 'readonly', 'false'].includes(normalized)) {
       console.log(`[PERMISSION NORMALIZE] '${permission}' normalized to 'view'`);
       return 'view';
     }
