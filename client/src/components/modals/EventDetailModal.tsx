@@ -251,14 +251,35 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   // Check if this is from a shared calendar with edit permissions
   // First check the new sharingMetadata property, then fall back to old methods
   const isFromSharedCalendarWithEditPermission = 
-    (hasSharingMetadata && sharingMetadata.permissionLevel === 'edit') || 
+    // Check the sharingMetadata with normalized permission checks
+    (hasSharingMetadata && (
+      sharingMetadata.permissionLevel === 'edit' || 
+      sharingMetadata.permissionLevel === 'write' ||
+      sharingMetadata.permission === 'edit' || 
+      sharingMetadata.permission === 'write'
+    )) || 
+    // Check calendar metadata and shared calendars with normalized permission checks
     (calendarMetadata?.isShared === true && 
      event.calendarId && 
-     sharedCalendars?.some?.(
-       cal => cal.id === event.calendarId && 
-         (cal.permission === 'edit' || cal.permissionLevel === 'edit')
-     ));
+     sharedCalendars?.some?.(cal => {
+       // First try to use the canEdit method if available
+       if (cal.id === event.calendarId) {
+         if (typeof cal.canEdit === 'function') {
+           return cal.canEdit();
+         } else {
+           // Otherwise do a normalized permission check
+           return (
+             cal.permission === 'edit' || 
+             cal.permission === 'write' || 
+             cal.permissionLevel === 'edit' || 
+             cal.permissionLevel === 'write'
+           );
+         }
+       }
+       return false;
+     }));
   
+  // Enhanced logging with more detailed permission information
   console.log(`Event ${event.id} permission check:`, {
     isUsersOwnCalendar,
     canEdit,
@@ -267,7 +288,22 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     hasSharingMetadata,
     sharingMetadata,
     calendarMetadata,
-    sharedCalendars: sharedCalendars?.filter(cal => cal.id === event.calendarId),
+    sharedCalendars: sharedCalendars?.filter(cal => cal.id === event.calendarId).map(cal => ({
+      id: cal.id,
+      name: cal.name,
+      permissionLevel: cal.permissionLevel,
+      permission: cal.permission,
+      canEditMethod: cal.canEdit ? 'available' : 'unavailable',
+      userId: cal.userId,
+      currentUserId: currentUserId
+    })),
+    calendar: calendar ? {
+      id: calendar.id,
+      name: calendar.name,
+      userId: calendar.userId,
+      currentUserId: currentUserId,
+      isUsersOwn: calendar.userId === currentUserId
+    } : 'Calendar not found'
   });
   
   // Determine if the user can edit this event based on all permission factors

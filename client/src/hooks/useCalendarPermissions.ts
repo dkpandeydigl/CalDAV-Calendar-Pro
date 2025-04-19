@@ -43,10 +43,21 @@ export const useCalendarPermissions = () => {
       // Also check in shared calendars to see if we have a shared calendar with edit permissions
       const sharedCalendar = sharedCalendars.find(cal => cal.id === calendarId);
       if (sharedCalendar) {
-        console.log(`User data not loaded yet, but shared calendar ${calendarId} exists with permission: ${sharedCalendar.permission}`);
+        // Use the canEdit() method if available, otherwise fall back to simple permission check
+        const hasEditPermission = sharedCalendar.canEdit 
+          ? sharedCalendar.canEdit() 
+          : (sharedCalendar.permission === 'edit' || sharedCalendar.permission === 'write' || 
+             sharedCalendar.permissionLevel === 'edit' || sharedCalendar.permissionLevel === 'write');
+        
+        console.log(`User data not loaded yet, but shared calendar ${calendarId} exists with permission:`, {
+          permission: sharedCalendar.permission,
+          permissionLevel: sharedCalendar.permissionLevel,
+          hasEditPermission
+        });
+        
         return {
           canView: true,
-          canEdit: sharedCalendar.permission === 'edit',
+          canEdit: hasEditPermission,
           isOwner: false
         };
       }
@@ -81,16 +92,35 @@ export const useCalendarPermissions = () => {
     // Next check if it's a shared calendar
     const sharedCalendar = sharedCalendars.find(cal => cal.id === calendarId);
     if (sharedCalendar) {
+      // First check if the current user is actually the owner of this "shared" calendar
+      // This can happen when both users share calendars with each other
+      if (sharedCalendar.userId === user.id) {
+        console.log(`Calendar ${calendarId} appears in shared calendars but is actually owned by current user - full permissions granted`);
+        return {
+          canView: true,
+          canEdit: true,
+          isOwner: true
+        };
+      }
+      
+      // Use the canEdit() method if available, otherwise fall back to simple permission check
+      const hasEditPermission = sharedCalendar.canEdit 
+        ? sharedCalendar.canEdit() 
+        : (sharedCalendar.permission === 'edit' || sharedCalendar.permission === 'write' || 
+           sharedCalendar.permissionLevel === 'edit' || sharedCalendar.permissionLevel === 'write');
+      
       // Log extensive details about the shared calendar permissions for debugging
       console.log(`Calendar ${calendarId} (${sharedCalendar.name}) is shared with user - permission type:`, {
         permission: sharedCalendar.permission,
-        canEdit: sharedCalendar.permission === 'edit',
+        permissionLevel: sharedCalendar.permissionLevel,
+        canEdit: hasEditPermission,
+        methodAvailable: !!sharedCalendar.canEdit,
         fullCalendar: sharedCalendar
       });
       
       return {
         canView: true,
-        canEdit: sharedCalendar.permission === 'edit',
+        canEdit: hasEditPermission,
         isOwner: false
       };
     }
