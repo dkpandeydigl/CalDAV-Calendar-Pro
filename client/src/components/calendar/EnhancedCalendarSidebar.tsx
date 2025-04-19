@@ -697,7 +697,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   sharingId: sharedCal.sharingId
                 });
                 
-                // CRITICAL FIX: Enhanced permission check with more flexible matching and better logging
+                // CRITICAL FIX: Enhanced permission check with stricter matching for edit permissions
                 const isEditPermission = (val: string | undefined | null): boolean => {
                   if (!val) return false;
                   
@@ -707,25 +707,33 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   // Log the normalized value for debugging
                   console.log(`[Permission Match] Processing permission value "${val}" (normalized: "${normalized}")`);
                   
-                  // 1. Check for exact matches on known edit permission values 
-                  if (['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw', 'true', '1', 'yes'].includes(normalized)) {
+                  // 1. If we explicitly have a "view" value or similar, it's definitely not edit permission
+                  if (['view', 'read', 'read-only', 'readonly', 'false', '0', 'no'].includes(normalized)) {
+                    console.log(`[Permission Match] Found explicit view-only permission value: "${val}"`);
+                    return false;
+                  }
+                  
+                  // 2. Check for exact matches on known edit permission values 
+                  if (['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw'].includes(normalized)) {
                     console.log(`[Permission Match] Exact match found for "${val}" as edit permission`);
                     return true;
                   }
                   
-                  // 2. Enhanced substring match to catch more permission formats
-                  if (normalized.includes('edit') || 
-                      normalized.includes('write') || 
-                      normalized.includes('rw') || 
-                      normalized === 'true' || 
-                      normalized === '1' || 
-                      normalized === 'yes') {
-                    console.log(`[Permission Match] Substring match found for "${val}" containing edit/write/rw/true as edit permission`);
+                  // 3. More careful substring matching - only consider it an edit permission
+                  // if it actually contains the word "edit" or "write"
+                  if (normalized.includes('edit') || normalized.includes('write')) {
+                    console.log(`[Permission Match] Substring match found for "${val}" containing edit/write as edit permission`);
                     return true;
                   }
                   
-                  // 3. Log permission values not recognized to help debugging
-                  console.log(`[Permission Match] Unrecognized permission value: "${val}" - will default to view-only permission`);
+                  // 4. For boolean-like values, be explicit
+                  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+                    console.log(`[Permission Match] Boolean true value found: "${val}"`);
+                    return true;
+                  }
+                  
+                  // 5. For anything else, default to view-only for safety
+                  console.log(`[Permission Match] Unrecognized permission value: "${val}" - defaulting to view-only permission`);
                   return false;
                 };
                 
@@ -819,7 +827,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                     sharingId: sharedCal.sharingId
                   });
                   
-                  // CRITICAL FIX: Enhanced permission check with more flexible matching and better logging
+                  // CRITICAL FIX: Enhanced permission check with stricter matching for edit permissions
                   const isEditPermission = (val: string | undefined | null): boolean => {
                     if (!val) return false;
                     
@@ -829,25 +837,33 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                     // Log the normalized value for debugging
                     console.log(`[Permission Match] Processing permission value "${val}" (normalized: "${normalized}")`);
                     
-                    // 1. Check for exact matches on known edit permission values 
-                    if (['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw', 'true', '1', 'yes'].includes(normalized)) {
+                    // 1. If we explicitly have a "view" value or similar, it's definitely not edit permission
+                    if (['view', 'read', 'read-only', 'readonly', 'false', '0', 'no'].includes(normalized)) {
+                      console.log(`[Permission Match] Found explicit view-only permission value: "${val}"`);
+                      return false;
+                    }
+                    
+                    // 2. Check for exact matches on known edit permission values 
+                    if (['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw'].includes(normalized)) {
                       console.log(`[Permission Match] Exact match found for "${val}" as edit permission`);
                       return true;
                     }
                     
-                    // 2. Enhanced substring match to catch more permission formats
-                    if (normalized.includes('edit') || 
-                        normalized.includes('write') || 
-                        normalized.includes('rw') || 
-                        normalized === 'true' || 
-                        normalized === '1' || 
-                        normalized === 'yes') {
-                      console.log(`[Permission Match] Substring match found for "${val}" containing edit/write/rw/true as edit permission`);
+                    // 3. More careful substring matching - only consider it an edit permission
+                    // if it actually contains the word "edit" or "write"
+                    if (normalized.includes('edit') || normalized.includes('write')) {
+                      console.log(`[Permission Match] Substring match found for "${val}" containing edit/write as edit permission`);
                       return true;
                     }
                     
-                    // 3. Log permission values not recognized to help debugging
-                    console.log(`[Permission Match] Unrecognized permission value: "${val}" - will default to view-only permission`);
+                    // 4. For boolean-like values, be explicit
+                    if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+                      console.log(`[Permission Match] Boolean true value found: "${val}"`);
+                      return true;
+                    }
+                    
+                    // 5. For anything else, default to view-only for safety
+                    console.log(`[Permission Match] Unrecognized permission value: "${val}" - defaulting to view-only permission`);
                     return false;
                   };
                   
