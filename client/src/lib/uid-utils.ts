@@ -1,161 +1,191 @@
-/**
- * RFC 5545 compliant UID generation and persistence utilities
- * 
- * Per RFC 5545 section 3.8.4.7:
- * - A UID MUST be a globally unique identifier
- * - The generator SHOULD create the UID with a time component plus a unique identifier
- * - Email-style identifier (user@host) is RECOMMENDED
- * - The domain name SHOULD be real, but domain name requirements can be eased for simple calendaring systems
- */
+// uid-utils.ts - RFC 5545 compliant UID generation for calendar events
+import { createId } from '@paralleldrive/cuid2';
 
-// Initialize IndexedDB for UID persistence
-const DB_NAME = 'calendar-app';
-const STORE_NAME = 'event-uids';
-const DB_VERSION = 1;
+// IndexedDB for storing generated UIDs with fallback to localStorage
+const DB_NAME = 'calendar_app';
+const STORE_NAME = 'generated_uids';
+const LS_UID_KEY = 'calendar_generated_uids';
 
-let db: IDBDatabase | null = null;
-
-// Initialize the database
-async function initDatabase(): Promise<IDBDatabase> {
+// Opens the IndexedDB database for UID storage
+async function openUIDDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    if (db) return resolve(db);
-    
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    
-    request.onerror = (event) => {
-      console.error("IndexedDB error:", event);
-      reject(new Error("Failed to open IndexedDB"));
-    };
-    
-    request.onsuccess = (event) => {
-      db = (event.target as IDBOpenDBRequest).result;
-      console.log("UID persistence service initialized");
-      resolve(db);
-    };
+    const request = indexedDB.open(DB_NAME, 1);
     
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
-      
-      // Create an object store for UIDs if it doesn't exist
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        console.log('[UID Service] Created UID storage in IndexedDB');
       }
+    };
+    
+    request.onsuccess = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      console.log('[UID Service] Successfully opened IndexedDB');
+      resolve(db);
+    };
+    
+    request.onerror = (event) => {
+      console.error('[UID Service] Error opening IndexedDB:', (event.target as IDBOpenDBRequest).error);
+      reject((event.target as IDBOpenDBRequest).error);
     };
   });
 }
 
-// Try to initialize the database on module load
-initDatabase().catch(error => {
-  console.warn("Could not initialize IndexedDB for UID persistence:", error);
-});
-
-/**
- * Generates a new RFC 5545 compliant UID
- * Format: event-[timestamp]-[random string]@[domain]
- * 
- * @returns A string UID conforming to RFC 5545
- */
-export function generateUID(): string {
-  // RFC 5545 requires the UID to be globally unique
-  const timestamp = Date.now();
-  const randomPart = Math.random().toString(36).substring(2, 10);
-  
-  // Per RFC 5545, email format is RECOMMENDED
-  // We use caldavclient.local to indicate our client generated this
-  return `event-${timestamp}-${randomPart}@caldavclient.local`;
-}
-
-/**
- * Get a persisted UID if available or generate and persist a new one
- * This helps maintain consistency for copied events
- */
-export async function getOrGenerateUID(): Promise<string> {
+// Get existing UIDs from storage
+async function getExistingUIDs(): Promise<Set<string>> {
   try {
-    // Try to get from IndexedDB first (most reliable)
-    return await getUIDFromIndexedDB();
-  } catch (error) {
-    console.warn("Failed to get UID from IndexedDB, using localStorage fallback");
-    
-    try {
-      // Fallback to localStorage if IndexedDB is not available
-      return getUIDFromLocalStorage();
-    } catch (innerError) {
-      console.error("Failed to get UID from localStorage:", innerError);
-      
-      // Generate a new one if all persistence methods fail
-      return generateUID();
-    }
-  }
-}
-
-/**
- * Generate and store a UID in IndexedDB
- */
-async function getUIDFromIndexedDB(): Promise<string> {
-  try {
-    const database = await initDatabase();
-    const uid = generateUID();
-    
+    // Try IndexedDB first
+    const db = await openUIDDatabase();
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction([STORE_NAME], "readwrite");
+      const transaction = db.transaction(STORE_NAME, 'readonly');
       const store = transaction.objectStore(STORE_NAME);
+      const request = store.getAll();
       
-      const request = store.add({ uid, created: new Date() });
-      
-      request.onsuccess = () => {
-        resolve(uid);
+      request.onsuccess = (event) => {
+        const results = (event.target as IDBRequest).result;
+        const uidSet = new Set<string>(results.map(item => item.uid));
+        db.close();
+        console.log(`[UID Service] Retrieved ${uidSet.size} UIDs from IndexedDB`);
+        resolve(uidSet);
       };
       
       request.onerror = (event) => {
-        reject(new Error("Failed to store UID in IndexedDB"));
+        console.error('[UID Service] Error retrieving UIDs from IndexedDB:', (event.target as IDBRequest).error);
+        db.close();
+        reject((event.target as IDBRequest).error);
       };
     });
   } catch (error) {
-    throw new Error(`IndexedDB UID persistence failed: ${error}`);
+    console.warn('[UID Service] Falling back to localStorage for UIDs', error);
+    // Fall back to localStorage
+    try {
+      const storedUIDs = localStorage.getItem(LS_UID_KEY);
+      if (storedUIDs) {
+        return new Set<string>(JSON.parse(storedUIDs));
+      }
+    } catch (lsError) {
+      console.error('[UID Service] Error retrieving UIDs from localStorage:', lsError);
+    }
+    return new Set<string>();
+  }
+}
+
+// Store a UID to prevent duplication
+async function storeUID(uid: string): Promise<void> {
+  try {
+    // Try IndexedDB first
+    const db = await openUIDDatabase();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.add({ id: createId(), uid: uid });
+      
+      request.onsuccess = () => {
+        console.log(`[UID Service] Stored UID in IndexedDB: ${uid.substring(0, 8)}...`);
+        db.close();
+        resolve();
+      };
+      
+      request.onerror = (event) => {
+        console.error('[UID Service] Error storing UID in IndexedDB:', (event.target as IDBRequest).error);
+        db.close();
+        reject((event.target as IDBRequest).error);
+      };
+    });
+  } catch (error) {
+    console.warn('[UID Service] Falling back to localStorage for storing UID', error);
+    // Fall back to localStorage
+    try {
+      const existingUIDs = await getExistingUIDs();
+      existingUIDs.add(uid);
+      localStorage.setItem(LS_UID_KEY, JSON.stringify([...existingUIDs]));
+      console.log(`[UID Service] Stored UID in localStorage: ${uid.substring(0, 8)}...`);
+    } catch (lsError) {
+      console.error('[UID Service] Failed to store UID in localStorage:', lsError);
+    }
   }
 }
 
 /**
- * Get a UID from localStorage or generate a new one
+ * Generates a RFC 5545 compliant UID for calendar events
+ * Format: [random-id]@[domain]
+ * @returns A unique identifier string
  */
-function getUIDFromLocalStorage(): string {
+export function generateUID(): string {
+  // Use CUID2 for better random id generation than Math.random
+  const randomId = createId();
+  
+  // Get domain from window.location or use a fallback
+  const domainPart = typeof window !== 'undefined' ? 
+    window.location.hostname : 'calendar-app.example.com';
+  
+  // Construct the UID according to RFC 5545 format
+  const uid = `${randomId}@${domainPart}`;
+  
+  // Store the generated UID asynchronously
+  storeUID(uid).catch(error => {
+    console.error('[UID Service] Failed to store generated UID:', error);
+  });
+  
+  return uid;
+}
+
+/**
+ * Gets a previous UID if one exists, or generates a new one
+ * Useful for ensuring persistence across page reloads
+ * @param key A key to identify this particular UID
+ * @returns A RFC 5545 compliant UID
+ */
+export async function getOrGenerateUID(key: string): Promise<string> {
+  const storageKey = `uid_${key}`;
+  
   try {
-    // Generate a new UID
-    const uid = generateUID();
-    
-    // Try to store it in localStorage
-    const storedUids = JSON.parse(localStorage.getItem('event-uids') || '[]');
-    storedUids.push({ uid, created: new Date() });
-    
-    // Keep only the last 100 UIDs to prevent localStorage from growing too large
-    if (storedUids.length > 100) {
-      storedUids.splice(0, storedUids.length - 100);
+    // First check local storage for this specific key
+    const existingUID = localStorage.getItem(storageKey);
+    if (existingUID) {
+      console.log(`[UID Service] Using existing UID for ${key}: ${existingUID.substring(0, 8)}...`);
+      return existingUID;
     }
-    
-    localStorage.setItem('event-uids', JSON.stringify(storedUids));
-    
-    return uid;
   } catch (error) {
-    // If localStorage fails, just return a new UID
-    console.error("localStorage UID persistence failed:", error);
+    console.warn(`[UID Service] Error retrieving UID for ${key} from localStorage:`, error);
+  }
+  
+  // Generate a new UID
+  const newUID = generateUID();
+  
+  // Store it for future use
+  try {
+    localStorage.setItem(storageKey, newUID);
+  } catch (error) {
+    console.warn(`[UID Service] Error storing UID for ${key} in localStorage:`, error);
+  }
+  
+  console.log(`[UID Service] Generated new UID for ${key}: ${newUID.substring(0, 8)}...`);
+  return newUID;
+}
+
+/**
+ * Ensures the provided UID is RFC 5545 compliant
+ * If not, it generates a compliant one
+ * @param uid Possibly non-compliant UID
+ * @returns RFC 5545 compliant UID
+ */
+export function ensureCompliantUID(uid: string | undefined | null): string {
+  // If there's no UID, generate a new one
+  if (!uid) {
     return generateUID();
   }
-}
-
-/**
- * Validate that a UID is RFC 5545 compliant
- * @param uid UID to validate
- * @returns true if valid, false otherwise
- */
-export function isValidUID(uid: string): boolean {
-  if (!uid) return false;
   
-  // RFC 5545 requires the UID to be a valid URI character set
-  // At minimum, it should not contain spaces, control characters, or commas
-  if (/[\s,]/.test(uid)) return false;
+  // Check if the UID already has the required format (contains @)
+  if (uid.includes('@')) {
+    return uid;
+  }
   
-  // Should not be longer than 255 characters (practical limit)
-  if (uid.length > 255) return false;
+  // Get domain from window.location or use a fallback
+  const domainPart = typeof window !== 'undefined' ? 
+    window.location.hostname : 'calendar-app.example.com';
   
-  return true;
+  // Add the domain part to make it compliant
+  return `${uid}@${domainPart}`;
 }

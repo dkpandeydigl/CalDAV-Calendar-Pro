@@ -15,7 +15,8 @@ import { BulkDeleteModal } from '@/components/modals/BulkDeleteModal';
 import RecurringEventEditModal, { RecurringEditMode } from '@/components/modals/RecurringEventEditModal';
 import PrintEventModal from '@/components/modals/PrintEventModal';
 import { useCalendarContext } from '@/contexts/CalendarContext';
-import { Event, Calendar as CalendarType } from '@shared/schema';
+import { CalendarEvent, Calendar as CalendarType, ICalendarEvent, ICalendarEventCreate } from '@shared/schema';
+// Use CalendarEvent type instead of Event to avoid conflicts with DOM Event
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -30,7 +31,7 @@ import { generateUID, getOrGenerateUID, ensureCompliantUID } from '@/lib/uid-uti
 // For different calendar views
 type CalendarViewType = 'year' | 'month' | 'week' | 'day';
 
-function YearView({ events, onEventClick }: { events: Event[]; onEventClick: (event: Event) => void }) {
+function YearView({ events, onEventClick }: { events: CalendarEvent[]; onEventClick: (event: CalendarEvent) => void }) {
   const { currentDate, selectedTimezone } = useCalendarContext();
   const year = currentDate.getFullYear();
 
@@ -398,9 +399,28 @@ function CalendarContent() {
           title: copiedEvent.title
         });
         
-        // Set as the selected event for the form
-        // This cast is necessary due to the DOM Event vs CalendarEvent type conflict
-        setSelectedEvent(copiedEvent as any);
+        // Create a proper Event object to avoid type conflicts
+        // The ImprovedEventFormModal expects a standard Event type from the schema
+        const eventForForm: Event = {
+          id: 0, // Temporary ID, will be replaced when saved
+          uid: copiedEvent.uid,
+          calendarId: copiedEvent.calendarId,
+          title: copiedEvent.title,
+          description: copiedEvent.description,
+          location: copiedEvent.location,
+          startDate: copiedEvent.startDate,
+          endDate: copiedEvent.endDate,
+          allDay: copiedEvent.allDay,
+          timezone: copiedEvent.timezone,
+          syncStatus: 'local',
+          attendees: null,
+          resources: null,
+          // Set other required fields with defaults
+          busyStatus: 'busy'
+        };
+        
+        // Set the properly formatted event for the form
+        setSelectedEvent(eventForForm);
         
         // Open the event form to let user modify before saving
         setEventFormOpen(true);
