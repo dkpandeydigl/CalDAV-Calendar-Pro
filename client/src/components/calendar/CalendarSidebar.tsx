@@ -222,8 +222,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
     }
     
     // Check for name length (max 20 characters)
-    if (name.length > 20) {
-      setCalendarNameError('Calendar name must be 20 characters or less');
+    if (name.length > 17) {
+      setCalendarNameError('Calendar name must be 17 characters or less');
       return false;
     }
     
@@ -293,8 +293,8 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
     }
     
     // Check for name length (max 20 characters)
-    if (editCalendarName.length > 20) {
-      setEditCalendarNameError('Calendar name must be 20 characters or less');
+    if (editCalendarName.length > 17) {
+      setEditCalendarNameError('Calendar name must be 17 characters or less');
       return;
     }
     
@@ -549,7 +549,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                   )}
                   <div className="text-xs text-neutral-500 mt-1">
                     Note: Calendar name allows letters, digits, spaces and characters (_, -, .)
-                    Maximum length is 20 characters with no consecutive spaces.
+                    Maximum length is 17 characters with no consecutive spaces.
                   </div>
                 </div>
                 <div className="mb-2 flex items-center mt-3">
@@ -629,7 +629,7 @@ const CalendarSidebar: FC<CalendarSidebarProps> = ({ visible, onCreateEvent, onO
                     )}
                     <div className="text-xs text-neutral-500">
                       Note: Calendar name allows letters, digits, spaces and characters (_, -, .)
-                      Maximum length is 20 characters with no consecutive spaces.
+                      Maximum length is 17 characters with no consecutive spaces.
                     </div>
                   </div>
                   
