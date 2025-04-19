@@ -1056,7 +1056,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   <div className="space-y-3">
                     {/* Group calendars by owner email - Improved UI with single group expansion */}
                     {Object.entries(groupedSharedCalendars).length > 0 ? (
-                      <div className="w-full space-y-1">
+                      <div className={`w-full space-y-1 ${sharedCalendars.length > 20 ? 'max-h-[400px] overflow-y-auto pr-1' : ''}`}>
                         {Object.entries(groupedSharedCalendars)
                           .sort(([emailA], [emailB]) => emailA.toLowerCase().localeCompare(emailB.toLowerCase()))
                           .map(([ownerEmail, ownerCalendars]: [string, SharedCalendar[]]) => (
@@ -1119,7 +1119,7 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                             {/* Group Content - only visible when expanded */}
                             {expandedOwnerEmail === ownerEmail && (
                               <div className="px-3 pb-2 pt-1 border-t border-gray-100 bg-white">
-                                <div className="pl-5 space-y-1">
+                                <div className={`pl-5 space-y-1 ${ownerCalendars.length > 10 ? 'max-h-[250px] overflow-y-auto pr-1' : ''}`}>
                                   {ownerCalendars
                                     .sort((a: SharedCalendar, b: SharedCalendar) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
                                     .map((calendar: SharedCalendar) => renderCalendarItem(calendar, true))}
