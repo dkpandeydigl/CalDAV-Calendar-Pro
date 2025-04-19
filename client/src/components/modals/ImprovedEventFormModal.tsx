@@ -107,6 +107,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const { createEvent, updateEvent, deleteEvent, cancelEvent } = useCalendarEvents();
   const { selectedTimezone } = useCalendarContext();
   const { toast } = useToast();
+  const { user } = useAuth(); // Add the user auth context at the component level
   
   // Use the UID persistence hook with the current event ID
   // This will either retrieve an existing UID or generate a new one if not found
@@ -1508,8 +1509,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       else {
         try {
           // For new events, we need to prepare the full event data
-          // Get current user information from auth context if available
-          const { user } = useAuth();
+          // User auth context is already available at the component level
           
           const newEventData = {
             ...eventData,
