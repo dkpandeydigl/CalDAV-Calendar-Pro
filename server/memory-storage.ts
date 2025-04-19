@@ -514,6 +514,12 @@ export class MemStorage implements IStorage {
     return calendars;
   }
   
+  // Implement the alias method for backward compatibility required by IStorage interface
+  async getSharedCalendarsForUser(userId: number): Promise<Calendar[]> {
+    console.log(`Getting shared calendars for user ${userId} using alias method`);
+    return this.getSharedCalendars(userId);
+  }
+  
   async shareCalendar(insertSharing: InsertCalendarSharing): Promise<CalendarSharing> {
     const id = this.calendarSharingIdCounter++;
     

@@ -4150,47 +4150,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If calendar doesn't exist in personal calendars, it might be a shared calendar
       let calendar = await storage.getCalendar(calendarId);
       
-      // Get all sharing records for this calendar, even if calendar not found
-      const sharingRecords = await storage.getCalendarSharing(calendarId);
-      console.log(`Found ${sharingRecords.length} sharing records for calendar ID ${calendarId}`);
+      // First, handle the case where the user is trying to remove a calendar shared with them
+      const sharedCalendars = await storage.getSharedCalendarsForUser(userId);
+      const isSharedWithUser = sharedCalendars.some(cal => cal.id === calendarId);
       
-      // Filter sharing records to find those related to the current user
-      const userSharingRecords = sharingRecords.filter(record => {
-        const isRecipient = record.sharedWithUserId === userId;
-        const isOwner = calendar && calendar.userId === userId && record.calendarId === calendarId;
-        console.log(`Sharing record ID ${record.id}: User is recipient: ${isRecipient}, User is owner: ${isOwner}`);
-        return isRecipient || isOwner;
-      });
-      
-      console.log(`Found ${userSharingRecords.length} sharing records for user ${userId}`);
-      
-      if (userSharingRecords.length === 0) {
-        // Special case: Check if it's directly a calendar shared with the user
-        const allSharedCalendars = await storage.getSharedCalendarsForUser(userId);
-        const isSharedWithUser = allSharedCalendars.some(cal => cal.id === calendarId);
+      if (isSharedWithUser) {
+        console.log(`Calendar ID ${calendarId} is shared with user ${userId} - finding sharing records`);
         
-        if (isSharedWithUser) {
-          // Find all sharing records where this user is the recipient for this calendar
-          const allSharingRecords = await storage.getAllCalendarSharings();
-          const relevantShares = allSharingRecords.filter(
-            record => record.calendarId === calendarId && record.sharedWithUserId === userId
+        // 1. Try to find it through the sharingId field first (if provided from frontend)
+        let foundSharingRecords: CalendarSharing[] = [];
+        
+        // If this is a calendar shared with the user, find all sharing records 
+        // where this user is the recipient
+        const allSharingRecords = await storage.getAllCalendarSharings();
+        foundSharingRecords = allSharingRecords.filter(record => 
+          record.calendarId === calendarId && 
+          (
+            // Match by user ID (most reliable)
+            record.sharedWithUserId === userId ||
+            // Or by email if user ID match fails (user info might have been added later)
+            (req.user!.email && record.sharedWithEmail === req.user!.email) ||
+            // Or by username as fallback
+            record.sharedWithEmail === req.user!.username
+          )
+        );
+        
+        if (foundSharingRecords.length > 0) {
+          console.log(`Found ${foundSharingRecords.length} sharing records for calendar ${calendarId} shared with user ${userId}`);
+          
+          // Remove all found sharing records
+          const results = await Promise.all(
+            foundSharingRecords.map(record => {
+              console.log(`Removing sharing record ID ${record.id} (calendar ${record.calendarId} shared with ${record.sharedWithEmail})`);
+              return storage.removeCalendarSharing(record.id);
+            })
           );
           
-          if (relevantShares.length > 0) {
-            console.log(`Found ${relevantShares.length} sharing records through full search`);
-            userSharingRecords.push(...relevantShares);
+          // Check if all removals were successful
+          const allSuccessful = results.every(result => result === true);
+          
+          if (allSuccessful) {
+            console.log(`Successfully removed ${results.length} sharing records as participant`);
+            return res.json({ message: "Calendar unshared successfully" });
           } else {
-            return res.status(404).json({ message: "No sharing record found for this calendar and user" });
+            console.error(`Failed to remove some sharing records: ${results}`);
+            return res.status(500).json({ message: "Failed to unshare calendar completely", partial: true });
           }
-        } else {
-          return res.status(404).json({ message: "No sharing record found for this calendar and user" });
         }
       }
       
-      // Remove all relevant sharing records
+      // If we get here, handle the case where the user is the calendar owner
+      // First ensure the user is authorized to remove sharing (i.e., owns the calendar)
+      if (!calendar) {
+        return res.status(404).json({ message: "Calendar not found" });
+      }
+      
+      if (calendar.userId !== userId) {
+        return res.status(403).json({ 
+          message: "Not authorized to remove sharing for this calendar. Only the calendar owner can do that." 
+        });
+      }
+      
+      // Get all sharing records for this calendar
+      const sharingRecords = await storage.getCalendarSharing(calendarId);
+      console.log(`Found ${sharingRecords.length} sharing records for calendar ID ${calendarId} owned by user ${userId}`);
+      
+      if (sharingRecords.length === 0) {
+        return res.status(404).json({ message: "No sharing records found for this calendar" });
+      }
+      
+      // Remove all sharing records for this calendar
       const results = await Promise.all(
-        userSharingRecords.map(record => {
-          console.log(`Removing sharing record ID ${record.id}`);
+        sharingRecords.map(record => {
+          console.log(`Removing sharing record ID ${record.id} as owner`);
           return storage.removeCalendarSharing(record.id);
         })
       );
@@ -4199,7 +4231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allSuccessful = results.every(result => result === true);
       
       if (allSuccessful) {
-        console.log(`Successfully removed ${results.length} sharing records`);
+        console.log(`Successfully removed ${results.length} sharing records as owner`);
         res.json({ message: "Calendar unshared successfully" });
       } else {
         console.error(`Failed to remove some sharing records: ${results}`);
