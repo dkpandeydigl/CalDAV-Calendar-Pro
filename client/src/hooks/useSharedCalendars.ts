@@ -53,9 +53,18 @@ export const useSharedCalendars = () => {
             calendar.permission = calendar.permissionLevel;
           }
           
-          // If for some reason both are undefined, set default to 'view'
-          if (calendar.permissionLevel === undefined && calendar.permission === undefined) {
-            console.log(`Neither permission nor permissionLevel defined, setting defaults to 'view'`);
+          // If we receive the canEdit property directly from the server, use it to set permissions
+          if (calendar.canEdit !== undefined) {
+            const isEditable = calendar.canEdit === true || calendar.canEdit === 'true';
+            console.log(`Server provided canEdit=${calendar.canEdit}, converting to permissionLevel=${isEditable ? 'edit' : 'view'}`);
+            
+            // Set both permission properties based on the canEdit value
+            calendar.permissionLevel = isEditable ? 'edit' : 'view';
+            calendar.permission = isEditable ? 'edit' : 'view';
+          }
+          // If for some reason no permission information is available, set default to 'view'
+          else if (calendar.permissionLevel === undefined && calendar.permission === undefined) {
+            console.log(`Neither permission nor permissionLevel nor canEdit defined, setting defaults to 'view'`);
             calendar.permissionLevel = 'view';
             calendar.permission = 'view';
           }
@@ -399,6 +408,13 @@ export const useSharedCalendars = () => {
         console.log(`[PERMISSION CHECK] Debug info for ${this.id}:`, this._sharingDebug);
       }
       
+      // If the canEdit property was explicitly set from the server or during a previous call, use it
+      // Note: we need to check for boolean values, not the function
+      if (typeof this.canEdit === 'boolean') {
+        console.log(`[PERMISSION CHECK] Using explicit canEdit=${this.canEdit} property`);
+        return this.canEdit;
+      }
+
       // Function to normalize and check if a permission value indicates edit access
       const isEditPermission = (val: string): boolean => {
         if (!val) return false;
@@ -415,6 +431,10 @@ export const useSharedCalendars = () => {
       const hasEditPermission = isEditPermission(permissionLevel) || isEditPermission(permission);
       
       console.log(`[PERMISSION CHECK] hasEditPermission=${hasEditPermission}`);
+      
+      // Update the canEdit property so we don't have to recalculate every time
+      this.canEdit = hasEditPermission;
+      
       return hasEditPermission;
     };
     
