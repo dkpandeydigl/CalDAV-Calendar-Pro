@@ -88,13 +88,17 @@ interface EventDetailModalProps {
   event: Event | null;
   onClose: () => void;
   onEdit: () => void;
+  onCopy?: (event: Event) => void;
+  onPrint?: (event: Event) => void;
 }
 
 const EventDetailModal: React.FC<EventDetailModalProps> = ({ 
   open, 
   event, 
   onClose,
-  onEdit
+  onEdit,
+  onCopy,
+  onPrint
 }) => {
   // Defensive check: ensure we have a valid event object
   if (!event) {
@@ -1291,6 +1295,26 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       >
                         Edit
                       </Button>
+                      {onCopy && (
+                        <Button 
+                          variant="outline"
+                          onClick={() => onCopy(event)}
+                          className="shadow-sm flex items-center gap-1"
+                        >
+                          <Copy className="h-4 w-4 mr-1" />
+                          Copy
+                        </Button>
+                      )}
+                      {onPrint && (
+                        <Button 
+                          variant="outline"
+                          onClick={() => onPrint(event)}
+                          className="shadow-sm flex items-center gap-1"
+                        >
+                          <Printer className="h-4 w-4 mr-1" />
+                          Print
+                        </Button>
+                      )}
                     </>
                   )}
                 </>
