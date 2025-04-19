@@ -3401,81 +3401,142 @@ export class SyncService {
   /**
    * Format a recurrence rule for iCalendar
    */
-  private formatRecurrenceRule(rule: string): string {
+  private formatRecurrenceRule(rule: string | object): string {
     // If rule is empty, return empty string
     if (!rule) return '';
     
     try {
-      // First sanitize the rule to ensure it doesn't contain any invalid data like attendee emails
-      if (typeof rule === 'string' && rule.includes('mailto:')) {
-        rule = this.sanitizeRRULE(rule);
-      }
+      console.log(`[RECURRENCE_RULE] Formatting recurrence rule of type ${typeof rule}`);
       
-      // If the rule is already in FREQ=xxx format after sanitization, return it directly
-      if (typeof rule === 'string' && rule.startsWith('FREQ=')) {
-        return rule;
-      }
-      
-      try {
-        const parsedRule = JSON.parse(rule);
+      // Handle string recurrence rules
+      if (typeof rule === 'string') {
+        // If it's already in FREQ=xxx format, make sure it's clean but preserve it
+        if (rule.includes('FREQ=')) {
+          // Make sure the rule is clean but don't destructively sanitize it
+          // The main issue is when we remove valid RRULE parts during sanitization
+          let cleanedRule = rule;
+          
+          // Only sanitize if it has problematic content
+          if (rule.includes('mailto:') || rule.includes('@') || rule.includes('SCHEDULE-STATUS')) {
+            cleanedRule = this.sanitizeRRULE(rule);
+            console.log(`[RECURRENCE_RULE] Sanitized rule from "${rule}" to "${cleanedRule}"`);
+          }
+          
+          // Make sure the FREQ parameter is still present after sanitization
+          if (cleanedRule.includes('FREQ=')) {
+            return cleanedRule;
+          } else if (rule.includes('FREQ=')) {
+            // If sanitization removed FREQ, extract and use just the FREQ part from original
+            const freqMatch = rule.match(/FREQ=([^;]+)/);
+            if (freqMatch) {
+              console.log(`[RECURRENCE_RULE] Recovered FREQ=${freqMatch[1]} from original rule`);
+              return `FREQ=${freqMatch[1]}`;
+            }
+          }
+        }
         
+        // Try to parse as JSON if it's not a valid RRULE format
+        try {
+          // If it looks like a JSON string, parse it
+          if (rule.startsWith('{') && rule.endsWith('}')) {
+            const parsedRule = JSON.parse(rule);
+            // Continue with the object processing below by setting rule to the parsed object
+            rule = parsedRule;
+            console.log(`[RECURRENCE_RULE] Successfully parsed recurrence rule as JSON`);
+          } else {
+            // Not a valid RRULE or JSON string
+            console.error(`[RECURRENCE_RULE] Not a valid recurrence rule string: ${rule}`);
+            return '';
+          }
+        } catch (jsonError) {
+          console.error(`[RECURRENCE_RULE] Error parsing JSON rule: ${jsonError}`);
+          return '';
+        }
+      }
+      
+      // At this point rule is expected to be an object (either originally or after JSON parsing)
+      if (typeof rule === 'object' && rule !== null) {
         // Start building the RRULE string
         let rrule = '';
         
         // Pattern (FREQ)
-        if (parsedRule.pattern) {
-          rrule += `FREQ=${parsedRule.pattern.toUpperCase()};`;
+        if (rule.pattern) {
+          let freq = '';
+          switch (rule.pattern) {
+            case 'Daily':
+            case 'DAILY':
+              freq = 'DAILY';
+              break;
+            case 'Weekly':
+            case 'WEEKLY':
+              freq = 'WEEKLY';
+              break;
+            case 'Monthly':
+            case 'MONTHLY':
+              freq = 'MONTHLY';
+              break;
+            case 'Yearly':
+            case 'YEARLY':
+              freq = 'YEARLY';
+              break;
+            default:
+              console.warn(`[RECURRENCE_RULE] Unknown recurrence pattern: ${rule.pattern}`);
+              freq = 'DAILY'; // Default to daily if pattern is unrecognized
+          }
+          rrule += `FREQ=${freq};`;
+        } else {
+          console.error(`[RECURRENCE_RULE] Missing pattern in recurrence rule object`);
+          return ''; // Can't create a rule without FREQ
         }
         
         // Interval
-        if (parsedRule.interval && parsedRule.interval > 1) {
-          rrule += `INTERVAL=${parsedRule.interval};`;
+        if (rule.interval && rule.interval > 1) {
+          rrule += `INTERVAL=${rule.interval};`;
         }
         
         // Weekdays (BYDAY) for weekly patterns
-        if (parsedRule.pattern === 'Weekly' && parsedRule.weekdays && parsedRule.weekdays.length > 0) {
-          const days = parsedRule.weekdays.map((day: string) => {
-            switch (day) {
-              case 'Monday': return 'MO';
-              case 'Tuesday': return 'TU';
-              case 'Wednesday': return 'WE';
-              case 'Thursday': return 'TH';
-              case 'Friday': return 'FR';
-              case 'Saturday': return 'SA';
-              case 'Sunday': return 'SU';
-              default: return '';
-            }
-          }).filter(Boolean).join(',');
+        if ((rule.pattern === 'Weekly' || rule.pattern === 'WEEKLY') && 
+            rule.weekdays && Array.isArray(rule.weekdays) && rule.weekdays.length > 0) {
+          const dayMap = {
+            'Monday': 'MO', 'Tuesday': 'TU', 'Wednesday': 'WE', 'Thursday': 'TH',
+            'Friday': 'FR', 'Saturday': 'SA', 'Sunday': 'SU'
+          };
           
+          const days = rule.weekdays
+            .map((day: string) => dayMap[day] || '')
+            .filter(Boolean)
+            .join(',');
+            
           if (days) {
             rrule += `BYDAY=${days};`;
           }
         }
         
         // End type
-        if (parsedRule.endType) {
-          if (parsedRule.endType === 'After' && parsedRule.occurrences) {
-            rrule += `COUNT=${parsedRule.occurrences};`;
-          } else if (parsedRule.endType === 'On' && parsedRule.untilDate) {
-            const untilDate = new Date(parsedRule.untilDate);
+        if (rule.endType) {
+          if (rule.endType === 'After' && rule.occurrences) {
+            rrule += `COUNT=${rule.occurrences};`;
+          } else if (rule.endType === 'On' && rule.untilDate) {
+            const untilDate = new Date(rule.untilDate);
             rrule += `UNTIL=${this.formatICalDate(untilDate)};`;
           }
         }
         
         // Remove trailing semicolon if it exists
-        return rrule.endsWith(';') ? rrule.slice(0, -1) : rrule;
-      } catch (error) {
-        // If JSON parsing fails but we have a string, try to sanitize it
-        if (typeof rule === 'string') {
-          return this.sanitizeRRULE(rule);
-        }
-        
-        console.error(`Error formatting recurrence rule:`, error);
-        return typeof rule === 'string' ? rule : '';
+        const finalRule = rrule.endsWith(';') ? rrule.slice(0, -1) : rrule;
+        console.log(`[RECURRENCE_RULE] Generated rule: ${finalRule}`);
+        return finalRule;
       }
+      
+      console.error(`[RECURRENCE_RULE] Unexpected rule type: ${typeof rule}`);
+      return '';
     } catch (error) {
-      console.error(`Error in formatRecurrenceRule:`, error);
-      return typeof rule === 'string' ? rule : '';
+      console.error(`[RECURRENCE_RULE] Error in formatRecurrenceRule:`, error);
+      // In case of an error, if we have a string with FREQ=, just return it sanitized
+      if (typeof rule === 'string' && rule.includes('FREQ=')) {
+        return this.sanitizeRRULE(rule);
+      }
+      return '';
     }
   }
 
