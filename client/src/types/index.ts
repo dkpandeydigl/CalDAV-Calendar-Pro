@@ -41,7 +41,8 @@ export interface SharedCalendar {
   ownerEmail?: string;
   
   // Utility method to check edit permissions with flexibility
-  canEdit?: () => boolean;
+  // Can be either a function or a direct boolean for server-set permissions
+  canEdit?: boolean | (() => boolean);
   
   // Debug information for sharing/permission troubleshooting
   // This is added by the server to help debug permission issues

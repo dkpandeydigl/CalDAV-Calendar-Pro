@@ -381,62 +381,55 @@ export const useSharedCalendars = () => {
     // Add the canEdit method to each calendar for consistent permission checking
     // This addresses the inconsistency where some parts of the app use permissionLevel
     // and others use permission
-    calendar.canEdit = function(): boolean {
-      // If the current user is the owner of the calendar, they always have edit permissions
-      // This check takes priority over all others
-      if (currentUserId && this.userId === currentUserId) {
-        console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name} - USER IS OWNER, FULL EDIT PERMISSIONS`);
-        return true;
-      }
-      
-      // Check all possible permission field representations
-      // Different parts of the API use different field names
-      const permissionLevel = this.permissionLevel || '';
-      const permission = this.permission || '';
-      
-      // Ensure we have at least one permission field value
-      if (!permissionLevel && !permission) {
-        console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name} - NO PERMISSION VALUES FOUND`);
-        return false;
-      }
-      
-      console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name}`);
-      console.log(`[PERMISSION CHECK] permissionLevel="${permissionLevel}", permission="${permission}"`);
-      
-      // Examine sharingDebug data if available
-      if (this._sharingDebug) {
-        console.log(`[PERMISSION CHECK] Debug info for ${this.id}:`, this._sharingDebug);
-      }
-      
-      // If the canEdit property was explicitly set from the server or during a previous call, use it
-      // Note: we need to check for boolean values, not the function
-      if (typeof this.canEdit === 'boolean') {
-        console.log(`[PERMISSION CHECK] Using explicit canEdit=${this.canEdit} property`);
-        return this.canEdit;
-      }
-
-      // Function to normalize and check if a permission value indicates edit access
-      const isEditPermission = (val: string): boolean => {
-        if (!val) return false;
-        const normalized = val.toLowerCase().trim();
+    // Create a function to check edit permissions if it doesn't already exist as a boolean
+    // Use a regular function (not an arrow function) to keep 'this' context
+    if (typeof calendar.canEdit !== 'boolean') {
+      calendar.canEdit = function(this: SharedCalendar): boolean {
+        // If the current user is the owner of the calendar, they always have edit permissions
+        // This check takes priority over all others
+        if (currentUserId && this.userId === currentUserId) {
+          console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name} - USER IS OWNER, FULL EDIT PERMISSIONS`);
+          return true;
+        }
         
-        // Check for various edit permission formats
-        return [
-          'edit', 'write', 'readwrite', 'read-write', 
-          'modify', 'rw', 'true', '1', 'yes'
-        ].includes(normalized);
+        // Check all possible permission field representations
+        // Different parts of the API use different field names
+        const permissionLevel = this.permissionLevel || '';
+        const permission = this.permission || '';
+        
+        // Ensure we have at least one permission field value
+        if (!permissionLevel && !permission) {
+          console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name} - NO PERMISSION VALUES FOUND`);
+          return false;
+        }
+        
+        console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name}`);
+        console.log(`[PERMISSION CHECK] permissionLevel="${permissionLevel}", permission="${permission}"`);
+        
+        // Examine sharingDebug data if available
+        if (this._sharingDebug) {
+          console.log(`[PERMISSION CHECK] Debug info for ${this.id}:`, this._sharingDebug);
+        }
+
+        // Function to normalize and check if a permission value indicates edit access
+        const isEditPermission = (val: string): boolean => {
+          if (!val) return false;
+          const normalized = val.toLowerCase().trim();
+          
+          // Check for various edit permission formats
+          return [
+            'edit', 'write', 'readwrite', 'read-write', 
+            'modify', 'rw', 'true', '1', 'yes'
+          ].includes(normalized);
+        };
+        
+        // Check both permission fields using the helper function
+        const hasEditPermission = isEditPermission(permissionLevel) || isEditPermission(permission);
+        
+        console.log(`[PERMISSION CHECK] hasEditPermission=${hasEditPermission}`);
+        return hasEditPermission;
       };
-      
-      // Check both permission fields using the helper function
-      const hasEditPermission = isEditPermission(permissionLevel) || isEditPermission(permission);
-      
-      console.log(`[PERMISSION CHECK] hasEditPermission=${hasEditPermission}`);
-      
-      // Update the canEdit property so we don't have to recalculate every time
-      this.canEdit = hasEditPermission;
-      
-      return hasEditPermission;
-    };
+    }
     
     return calendar;
   });
@@ -450,9 +443,10 @@ export const useSharedCalendars = () => {
           name: cal.name,
           permissionLevel: cal.permissionLevel,
           permission: cal.permission || cal.permissionLevel, // Check both fields
-          canEdit: cal.canEdit ? cal.canEdit() : 
+          canEdit: typeof cal.canEdit === 'boolean' ? cal.canEdit : 
+                   (typeof cal.canEdit === 'function' ? cal.canEdit() :
                    (cal.permission ? ['edit', 'write'].includes(cal.permission) : 
-                   ['edit', 'write'].includes(cal.permissionLevel || ''))
+                   ['edit', 'write'].includes(cal.permissionLevel || '')))
         }))
       );
     }
