@@ -4067,8 +4067,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sharedByUserId: req.user!.id
       };
       
+      // Debug logging for permission levels
+      console.log(`Calendar sharing request with permission: ${req.body.permissionLevel}`, sharingData);
+      
       const validatedData = insertCalendarSharingSchema.parse(sharingData);
+      console.log(`Validated calendar sharing data with permission: ${validatedData.permissionLevel}`);
+      
       const newSharing = await storage.shareCalendar(validatedData);
+      console.log(`Created new calendar sharing with ID ${newSharing.id}, permission: ${newSharing.permissionLevel}`);
       
       res.status(201).json(newSharing);
     } catch (err) {

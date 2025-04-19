@@ -54,6 +54,14 @@ export const useSharedCalendars = () => {
             permission: calendar.permission,
             raw: calendar
           });
+          
+          // Enhanced debug information to track permission values
+          if (calendar.permissionLevel) {
+            console.log(`Calendar ${calendar.id} has permissionLevel: ${calendar.permissionLevel}`);
+          }
+          if (calendar.permission) {
+            console.log(`Calendar ${calendar.id} has permission: ${calendar.permission}`);
+          }
           // Create a complete owner object
           if (!calendar.owner) {
             // If we don't have an owner object at all, create one with the best available information
@@ -352,17 +360,27 @@ export const useSharedCalendars = () => {
     // This addresses the inconsistency where some parts of the app use permissionLevel
     // and others use permission
     calendar.canEdit = function(): boolean {
-      // Check both permission and permissionLevel fields
+      // Check all possible permission field representations
       // Different parts of the API use different field names
       const permissionLevel = this.permissionLevel;
       const permission = this.permission;
       
-      // Check if either field contains an edit-level permission
-      // Make sure we always return a boolean value
+      console.log(`[PERMISSION CHECK] Calendar ID ${this.id}, name: ${this.name}`);
+      console.log(`[PERMISSION CHECK] permissionLevel=${permissionLevel}, permission=${permission}`);
+      
+      // Use a direct strict comparison for known edit values first
+      if (permissionLevel === 'edit' || permissionLevel === 'write' || 
+          permission === 'edit' || permission === 'write') {
+        console.log(`[PERMISSION CHECK] Explicit edit/write permission detected`);
+        return true;
+      }
+      
+      // Also check array includes for flexibility with different formats
       const hasEditPermission = 
-        (permissionLevel && ['edit', 'write'].includes(permissionLevel)) || 
-        (permission && ['edit', 'write'].includes(permission));
-        
+        (permissionLevel && ['edit', 'write'].includes(String(permissionLevel).toLowerCase())) || 
+        (permission && ['edit', 'write'].includes(String(permission).toLowerCase()));
+      
+      console.log(`[PERMISSION CHECK] hasEditPermission=${hasEditPermission}`);
       return hasEditPermission === true;
     };
     
