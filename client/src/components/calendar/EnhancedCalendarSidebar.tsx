@@ -752,19 +752,31 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                     sharingId: sharedCal.sharingId
                   });
                   
-                  // Enhanced permission check that's more flexible
+                  // Enhanced permission check with comprehensive checking across all possible fields
+                  const isEditPermission = (val: string | undefined | null): boolean => {
+                    if (!val) return false;
+                    const normalized = val.toLowerCase().trim();
+                    return ['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw', 'true', '1', 'yes'].includes(normalized);
+                  };
+                  
+                  // Direct string comparison check
                   const hasEditPermission = (
-                    (sharedCal.permissionLevel === 'edit' || sharedCal.permissionLevel === 'write') ||
-                    (sharedCal.permission === 'edit' || sharedCal.permission === 'write')
+                    isEditPermission(sharedCal.permissionLevel) || 
+                    isEditPermission(sharedCal.permission)
                   );
                   
-                  // Use both the direct check and the canEdit property/method for maximum flexibility
-                  const canEdit = (
-                    hasEditPermission || 
-                    (typeof sharedCal.canEdit === 'boolean' ? sharedCal.canEdit : 
-                     (typeof sharedCal.canEdit === 'function' ? sharedCal.canEdit() : false)) ||
-                    false
-                  );
+                  // Direct boolean check on canEdit property
+                  const hasCanEditProp = typeof sharedCal.canEdit === 'boolean' && sharedCal.canEdit === true;
+                  
+                  // Function call check if canEdit is a function
+                  const hasCanEditMethod = typeof sharedCal.canEdit === 'function' && sharedCal.canEdit.call(sharedCal);
+                  
+                  // Debug information
+                  console.log(`[Permission Details] ${sharedCal.name}: permissionLevel=${sharedCal.permissionLevel}, permission=${sharedCal.permission}, canEdit=${sharedCal.canEdit}`);
+                  console.log(`[Permission Checks] ${sharedCal.name}: string check=${hasEditPermission}, boolean check=${hasCanEditProp}, method check=${hasCanEditMethod}`);
+                  
+                  // Combined comprehensive check
+                  const canEdit = hasEditPermission || hasCanEditProp || hasCanEditMethod;
                   
                   console.log(`[CalendarDisplay] Permission check result: hasEditPermission=${hasEditPermission}, canEdit=${canEdit}`);
                   
