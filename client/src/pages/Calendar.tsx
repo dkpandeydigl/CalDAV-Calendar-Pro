@@ -366,16 +366,51 @@ function CalendarContent() {
       // Close the detail modal
       setEventDetailOpen(false);
       
-      // Create a new event object with same properties but new UID
-      const copiedEvent = { 
-        ...event,
-        id: undefined, // Remove ID so a new one is created
-        uid: getOrGenerateUID(), // Generate a new RFC-compliant UID
-        title: `Copy of ${event.title}` // Indicate this is a copy
+      // Create a safer copy of the event object with proper typings
+      const eventData = {
+        // Keep all original event fields but with proper typing
+        id: event.id,
+        uid: event.uid,
+        calendarId: event.calendarId,
+        title: `Copy of ${event.title}`,
+        description: event.description,
+        location: event.location,
+        startDate: new Date(event.startDate),
+        endDate: new Date(event.endDate),
+        allDay: event.allDay,
+        timezone: event.timezone,
+        color: event.color,
+        attendees: event.attendees ? [...event.attendees] : [],
+        resources: event.resources ? [...event.resources] : [],
+        rrule: event.rrule,
+        recurrenceRule: event.recurrenceRule,
+        status: event.status || 'CONFIRMED',
+        organizer: event.organizer ? {...event.organizer} : null,
+        rawData: event.rawData,
+        url: event.url,
+        createdAt: event.createdAt,
+        lastModifiedAt: new Date(),
+        lastModifiedBy: event.lastModifiedBy,
+        lastModifiedByName: event.lastModifiedByName,
+        sharingMetadata: event.sharingMetadata ? {...event.sharingMetadata} : null
       };
       
+      // Create a new event with only the necessary modifications
+      const copiedEvent = {
+        ...eventData,
+        id: undefined, // Remove ID so a new one is created
+        uid: getOrGenerateUID(), // Generate a new RFC-compliant UID
+      };
+      
+      console.log('Copying event:', { 
+        original: event.id,
+        title: event.title,
+        copyTitle: copiedEvent.title, 
+        newUID: copiedEvent.uid
+      });
+      
       // Set as the selected event for the form
-      setSelectedEvent(copiedEvent);
+      setSelectedEvent(copiedEvent as any); // Type cast to satisfy TS until we improve the Event type
       
       // Open the event form to let user edit before saving
       setEventFormOpen(true);
