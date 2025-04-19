@@ -436,16 +436,38 @@ export class MemStorage implements IStorage {
       const calendar = await this.getCalendar(sharing.calendarId);
       if (calendar) {
         console.log(`Adding shared calendar "${calendar.name}" to user's shared calendars`);
+        
+        // INSPECT THE ACTUAL SHARING RECORD'S PERMISSION
+        console.log(`[SHARING RECORD] ID ${sharing.id}, CalendarID ${sharing.calendarId}, Permission: ${sharing.permissionLevel}`);
+        
         // Get the full owner information
         const owner = await this.getUser(calendar.userId);
         
-        // Normalize permission level
-        const normalizedPermission = this.normalizePermissionValue(sharing.permissionLevel);
+        // Get the raw permission level directly from the sharing record first
+        const rawPermission = sharing.permissionLevel;
+        
+        // Normalize permission level - critical fix: don't default to 'view'
+        let normalizedPermission;
+        
+        // First try to interpret the permission as an edit permission
+        if (rawPermission === 'edit' || 
+            rawPermission === 'write' || 
+            rawPermission === 'readwrite' || 
+            rawPermission === 'modify' || 
+            rawPermission === true || 
+            rawPermission === 'true') {
+          normalizedPermission = 'edit';
+        } 
+        // If it doesn't match an edit permission, normalize it as view
+        else {
+          normalizedPermission = 'view';
+        }
         
         // Log permission info for debugging
         console.log(`[PERMISSION DEBUG] Calendar ID ${calendar.id}, Name: ${calendar.name}`);
-        console.log(`[PERMISSION DEBUG] Original permission from sharing: ${sharing.permissionLevel}`);
+        console.log(`[PERMISSION DEBUG] Original permission from sharing: ${rawPermission}`);
         console.log(`[PERMISSION DEBUG] Normalized permission: ${normalizedPermission}`);
+        console.log(`[PERMISSION DEBUG] Is Edit: ${normalizedPermission === 'edit'}`);
         
         calendars.push({
           ...calendar,
@@ -463,6 +485,8 @@ export class MemStorage implements IStorage {
           // Add both permission fields to ensure full compatibility
           permissionLevel: normalizedPermission,
           permission: normalizedPermission, // Add duplicate for compatibility
+          // Mark whether user can edit
+          canEdit: normalizedPermission === 'edit',
           // Add sharing ID for permission management
           sharingId: sharing.id,
           // Mark as shared for UI
@@ -475,8 +499,8 @@ export class MemStorage implements IStorage {
               originalPermission: sharing.permissionLevel,
               normalizedPermission: normalizedPermission,
               permissionEquivalents: {
-                isEdit: ['edit', 'write'].includes(normalizedPermission),
-                isView: ['view', 'read'].includes(normalizedPermission)
+                isEdit: normalizedPermission === 'edit',
+                isView: normalizedPermission === 'view'
               },
               sharedWithEmail: sharing.sharedWithEmail,
               sharedWithUserId: sharing.sharedWithUserId,
