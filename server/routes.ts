@@ -4093,8 +4093,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Request body:`, req.body);
       
       // Validate the permission level
-      if (req.body.permissionLevel && !['view', 'edit'].includes(req.body.permissionLevel)) {
-        return res.status(400).json({ message: "Invalid permission level. Must be 'view' or 'edit'." });
+      // CRITICAL FIX: Enhance permission validation to handle more permission format variations
+      const requestedPermission = req.body.permissionLevel ? req.body.permissionLevel.toLowerCase().trim() : '';
+
+      // Normalize variations of edit permissions 
+      if (requestedPermission && !['view', 'edit', 'write', 'readwrite', 'read-write'].includes(requestedPermission)) {
+        // If it contains "edit" or "write" substring, treat as "edit"
+        if (requestedPermission.includes('edit') || requestedPermission.includes('write')) {
+          console.log(`Normalizing permission "${requestedPermission}" to "edit"`);
+          req.body.permissionLevel = 'edit';
+        } else {
+          return res.status(400).json({ 
+            message: "Invalid permission level. Must be 'view' or 'edit' (or variations like 'write', 'readwrite')." 
+          });
+        }
+      }
+      
+      // CRITICAL FIX: Default to "edit" if no permission level is provided
+      if (!req.body.permissionLevel) {
+        console.log(`No permission level specified, defaulting to "edit"`);
+        req.body.permissionLevel = 'edit';
       }
       
       // Get all sharing records and find the one we want to update

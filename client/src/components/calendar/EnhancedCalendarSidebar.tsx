@@ -697,11 +697,28 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                   sharingId: sharedCal.sharingId
                 });
                 
-                // Enhanced permission check with comprehensive checking across all possible fields
+                // CRITICAL FIX: Enhanced permission check with more flexible matching
                 const isEditPermission = (val: string | undefined | null): boolean => {
                   if (!val) return false;
+                  
+                  // First normalize the value
                   const normalized = val.toLowerCase().trim();
-                  return ['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw', 'true', '1', 'yes'].includes(normalized);
+                  
+                  // 1. Check for exact matches on known edit permission values 
+                  if (['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw', 'true', '1', 'yes'].includes(normalized)) {
+                    console.log(`[Permission Match] Exact match found for "${val}" as edit permission`);
+                    return true;
+                  }
+                  
+                  // 2. New: Check for substring matches to catch more permission formats
+                  if (normalized.includes('edit') || normalized.includes('write')) {
+                    console.log(`[Permission Match] Substring match found for "${val}" containing edit/write as edit permission`);
+                    return true;
+                  }
+                  
+                  // 3. Log permission values not recognized
+                  console.log(`[Permission Match] Unrecognized permission value: "${val}"`);
+                  return false;
                 };
                 
                 // COMPREHENSIVE PERMISSION CHECK STRATEGY:
@@ -794,11 +811,28 @@ const EnhancedCalendarSidebar: FC<EnhancedCalendarSidebarProps> = ({
                     sharingId: sharedCal.sharingId
                   });
                   
-                  // Enhanced permission check with comprehensive checking across all possible fields
+                  // CRITICAL FIX: Enhanced permission check with more flexible matching
                   const isEditPermission = (val: string | undefined | null): boolean => {
                     if (!val) return false;
+                    
+                    // First normalize the value
                     const normalized = val.toLowerCase().trim();
-                    return ['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw', 'true', '1', 'yes'].includes(normalized);
+                    
+                    // 1. Check for exact matches on known edit permission values 
+                    if (['edit', 'write', 'readwrite', 'read-write', 'modify', 'rw', 'true', '1', 'yes'].includes(normalized)) {
+                      console.log(`[Permission Match] Exact match found for "${val}" as edit permission`);
+                      return true;
+                    }
+                    
+                    // 2. New: Check for substring matches to catch more permission formats
+                    if (normalized.includes('edit') || normalized.includes('write')) {
+                      console.log(`[Permission Match] Substring match found for "${val}" containing edit/write as edit permission`);
+                      return true;
+                    }
+                    
+                    // 3. Log permission values not recognized
+                    console.log(`[Permission Match] Unrecognized permission value: "${val}"`);
+                    return false;
                   };
                   
                   // Direct string comparison check

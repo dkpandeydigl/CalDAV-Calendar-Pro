@@ -21,7 +21,8 @@ interface ShareCalendarModalProps {
 
 export function SimplifiedShareCalendarModal({ open, onClose, calendar }: ShareCalendarModalProps) {
   const [email, setEmail] = useState('');
-  const [permission, setPermission] = useState<'view' | 'edit'>('view');
+  // CRITICAL FIX: Default to 'edit' instead of 'view' permission
+  const [permission, setPermission] = useState<'view' | 'edit'>('edit');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [shares, setShares] = useState<CalendarSharing[]>([]);
   const [isLoading, setIsLoading] = useState(false);
