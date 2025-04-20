@@ -345,21 +345,21 @@ export class EnhancedSyncService {
             const relatedEvents = await storage.getEventsByUid(preservedUID);
             console.log(`[CRITICAL FIX] Found ${relatedEvents.length} events with UID ${preservedUID}`);
             
-            // There should be only one event at this point - the original
+            // FIXED: Update ALL events with this UID, including the original event
             for (const event of relatedEvents) {
-              console.log(`[CRITICAL FIX] Related event ${event.id} with UID ${event.uid}`);
-              if (event.id !== eventId) {
-                // Just in case there are other events with this UID
-                console.log(`[CRITICAL FIX] Updating another event ${event.id} with same UID`);
-                await storage.updateEvent(event.id, {
-                  isRecurring: true,
-                  recurrenceRule: processedEventData.recurrenceRule,
-                  syncStatus: 'pending'
-                });
-              }
+              console.log(`[CRITICAL FIX] Updating related event ${event.id} with UID ${event.uid}`);
+              
+              // Update ALL events with the same recurrence properties
+              await storage.updateEvent(event.id, {
+                isRecurring: true,
+                recurrenceRule: processedEventData.recurrenceRule,
+                sequence: event.sequence ? (event.sequence + 1) : 1, // Increment sequence for CalDAV
+                dtstamp: new Date().toISOString(), // Update timestamp for CalDAV
+                syncStatus: 'pending'
+              });
             }
           } catch (error) {
-            console.error(`[CRITICAL FIX] Error finding related events:`, error);
+            console.error(`[CRITICAL FIX] Error updating events:`, error);
             // Continue with the main event update
           }
         } 
@@ -373,6 +373,28 @@ export class EnhancedSyncService {
           
           // Ensure syncStatus is set to pending
           processedEventData.syncStatus = 'pending';
+          
+          // FIXED: Find and update all events with the same UID
+          try {
+            const relatedEvents = await storage.getEventsByUid(preservedUID);
+            console.log(`[CRITICAL FIX] Found ${relatedEvents.length} events with UID ${preservedUID} for recurring-to-single conversion`);
+            
+            // Update ALL events with the same non-recurring properties
+            for (const event of relatedEvents) {
+              console.log(`[CRITICAL FIX] Updating related event ${event.id} with UID ${event.uid} to non-recurring`);
+              
+              await storage.updateEvent(event.id, {
+                isRecurring: false,
+                recurrenceRule: null,
+                sequence: event.sequence ? (event.sequence + 1) : 1,
+                dtstamp: new Date().toISOString(),
+                syncStatus: 'pending'
+              });
+            }
+          } catch (error) {
+            console.error(`[CRITICAL FIX] Error updating events to non-recurring:`, error);
+            // Continue with the main event update
+          }
           
           // Note: Locally cached recurrence instances will be cleaned up during the next server sync
         }
