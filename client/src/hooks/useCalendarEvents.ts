@@ -919,8 +919,28 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       if (newEvent.recurrenceRule && typeof newEvent.recurrenceRule === 'object') {
         newEvent = {
           ...newEvent,
-          recurrenceRule: JSON.stringify(newEvent.recurrenceRule)
+          recurrenceRule: JSON.stringify(newEvent.recurrenceRule),
+          // FIXED: Explicitly set isRecurring=true when recurrenceRule is provided as an object
+          isRecurring: true
         };
+        console.log('Setting isRecurring=true for object recurrenceRule during creation');
+      }
+      // FIXED: Handle string-based recurrence rules (RRULE format)
+      else if (newEvent.recurrenceRule && typeof newEvent.recurrenceRule === 'string' && newEvent.recurrenceRule.startsWith('FREQ=')) {
+        newEvent = {
+          ...newEvent,
+          // Keep the recurrenceRule as is since it's already in the correct format
+          isRecurring: true // Ensure isRecurring flag is set correctly
+        };
+        console.log('Setting isRecurring=true for string-based RRULE during creation:', newEvent.recurrenceRule);
+      }
+      // FIXED: Explicitly handle null recurrenceRule
+      else if (newEvent.recurrenceRule === null) {
+        newEvent = {
+          ...newEvent,
+          isRecurring: false
+        };
+        console.log('Setting isRecurring=false for null recurrenceRule during creation');
       }
       
       console.log("Creating event with data:", newEvent);
@@ -949,7 +969,10 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         rawData: null,
         url: null,
         etag: null,
-        recurrenceRule: null,
+        // FIXED: Preserve recurrenceRule from newEventData instead of setting to null
+        recurrenceRule: newEventData.recurrenceRule || null,
+        // FIXED: Preserve isRecurring flag from newEventData
+        isRecurring: !!newEventData.recurrenceRule,
         syncStatus: 'syncing', // Show as syncing initially
         syncError: null,
         lastSyncAttempt: now
@@ -1294,25 +1317,26 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       }
       
       // Make sure recurrenceRule is properly serialized if it's present
-      if (data.recurrenceRule) {
-        if (typeof data.recurrenceRule === 'object') {
-          data = {
-            ...data,
-            recurrenceRule: JSON.stringify(data.recurrenceRule),
-            // FIXED: Explicitly set isRecurring=true when recurrenceRule is provided
-            isRecurring: true
-          };
-        } else if (typeof data.recurrenceRule === 'string' && data.recurrenceRule.startsWith('FREQ=')) {
-          // FIXED: Handle string-based recurrence rules (RRULE format)
-          data = {
-            ...data,
-            // Keep the recurrenceRule as is since it's already in the correct format
-            isRecurring: true // Ensure isRecurring flag is set correctly
-          };
-          console.log('Setting isRecurring=true for string-based RRULE:', data.recurrenceRule);
-        }
-      } else if (data.recurrenceRule === null) {
-        // FIXED: Explicitly handle null recurrenceRule
+      if (data.recurrenceRule && typeof data.recurrenceRule === 'object') {
+        data = {
+          ...data,
+          recurrenceRule: JSON.stringify(data.recurrenceRule),
+          // FIXED: Explicitly set isRecurring=true when recurrenceRule is provided as an object
+          isRecurring: true
+        };
+        console.log('Setting isRecurring=true for object recurrenceRule');
+      } 
+      // FIXED: Handle string-based recurrence rules (RRULE format)
+      else if (data.recurrenceRule && typeof data.recurrenceRule === 'string' && data.recurrenceRule.startsWith('FREQ=')) {
+        data = {
+          ...data,
+          // Keep the recurrenceRule as is since it's already in the correct format
+          isRecurring: true // Ensure isRecurring flag is set correctly
+        };
+        console.log('Setting isRecurring=true for string-based RRULE:', data.recurrenceRule);
+      }
+      // FIXED: Explicitly handle null recurrenceRule
+      else if (data.recurrenceRule === null) {
         data = {
           ...data,
           isRecurring: false
