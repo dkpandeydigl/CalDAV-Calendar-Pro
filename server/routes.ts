@@ -419,6 +419,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerEnhancedEmailTestEndpoints(app);
   console.log('Registered enhanced RFC 5545 compliant email test endpoints');
   
+  // Test endpoint for recurrence rule fix validation
+  app.post('/api/test-recurrence-fix', async (req, res) => {
+    try {
+      console.log(`[RECURRENCE FIX TEST] Starting test for recurrence rule fix`);
+      
+      // Create test event with unique ID
+      const testEvent = {
+        uid: `test-${Date.now()}@caldavclient.local`,
+        title: "Test Recurrence Fix",
+        description: "Testing recurrence rule application",
+        location: "Test Location",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 3600000),
+        isRecurring: false,
+        recurrenceRule: null
+      };
+      
+      console.log(`[RECURRENCE FIX TEST] Step 1: Test non-recurring event ICS generation`);
+      // Generate ICS for non-recurring event
+      const nonRecurringIcs = generateICalEvent(testEvent, {
+        organizer: "test@example.com",
+        organizerName: "Test User",
+        sequence: 0,
+        timestamp: formatICalDate(new Date(), false)
+      });
+      
+      console.log(`[RECURRENCE FIX TEST] Step 2: Converting to recurring event`);
+      // Update event to be recurring
+      const recurringEvent = {
+        ...testEvent,
+        isRecurring: true,
+        recurrenceRule: "FREQ=DAILY;COUNT=3"
+      };
+      
+      // Generate ICS for recurring event
+      const recurringIcs = generateICalEvent(recurringEvent, {
+        organizer: "test@example.com",
+        organizerName: "Test User",
+        sequence: 1,
+        timestamp: formatICalDate(new Date(), false)
+      });
+      
+      console.log(`[RECURRENCE FIX TEST] Step 3: Testing corrupted UID fix`);
+      // Create event with corrupted UID
+      const corruptedEvent = {
+        ...recurringEvent,
+        uid: `${recurringEvent.uid}\r\nDESCRIPTION:Corrupted`
+      };
+      
+      // Generate ICS with corrupted UID
+      const corruptedIcs = generateICalEvent(corruptedEvent, {
+        organizer: "test@example.com",
+        organizerName: "Test User",
+        sequence: 2,
+        timestamp: formatICalDate(new Date(), false)
+      });
+      
+      // Check if corrupted UID was sanitized
+      const originalUid = recurringEvent.uid;
+      const uidSanitized = corruptedIcs.includes(`UID:${originalUid}`) && 
+                           !corruptedIcs.includes(`UID:${corruptedEvent.uid}`);
+      
+      console.log(`[RECURRENCE FIX TEST] Step 4: Testing missing recurrence rule fix`);
+      // Create recurring event with missing recurrence rule
+      const incompleteEvent = {
+        ...testEvent,
+        isRecurring: true,
+        recurrenceRule: null // Deliberately missing recurrence rule
+      };
+      
+      // Generate ICS with missing recurrence rule
+      const incompleteIcs = generateICalEvent(incompleteEvent, {
+        organizer: "test@example.com",
+        organizerName: "Test User",
+        sequence: 3,
+        timestamp: formatICalDate(new Date(), false)
+      });
+      
+      // Check if emergency recurrence rule was added
+      const hasEmergencyRule = incompleteIcs.includes('RRULE:');
+      
+      console.log(`[RECURRENCE FIX TEST] Test completed successfully`);
+      // Return results
+      res.json({
+        success: true,
+        results: {
+          nonRecurringHasRrule: nonRecurringIcs.includes('RRULE:'),
+          recurringHasRrule: recurringIcs.includes('RRULE:'),
+          uidSanitized: uidSanitized,
+          emergencyRuleAdded: hasEmergencyRule,
+          icsExcerpts: {
+            nonRecurring: nonRecurringIcs.substring(0, 200) + '...',
+            recurring: recurringIcs.substring(0, 200) + '...',
+            sanitized: corruptedIcs.substring(0, 200) + '...',
+            emergency: incompleteIcs.substring(0, 200) + '...'
+          }
+        }
+      });
+    } catch (error) {
+      console.error('[RECURRENCE FIX TEST] Error:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
   // Test endpoint for verifying cancellation ICS transformation (no auth required)
   app.post('/api/test-cancellation-ics', async (req, res) => {
     try {

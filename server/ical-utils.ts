@@ -307,6 +307,31 @@ export function generateICalEvent(event: any, options: {
     event.uid = `emergency-fallback-${Date.now()}@caldavclient.local`;
   }
   
+  // CRITICAL FIX: Sanitize corrupted UIDs that contain line breaks or other control characters
+  // This is critical for RFC 5545 compliance as malformed UIDs can break iCalendar parsing
+  if (typeof event.uid === 'string' && 
+      (event.uid.includes('\r') || event.uid.includes('\n') || 
+       event.uid.includes(':') && !event.uid.startsWith('UID:'))) {
+    
+    console.error(`[ICAL-GEN] CRITICAL: Corrupted UID detected: ${event.uid.substring(0, 50)}...`);
+    
+    // Extract only the first segment before any line breaks or control characters
+    const cleanUid = event.uid.split(/[\r\n:]/)[0].trim();
+    
+    if (cleanUid && cleanUid.length > 5) {
+      // Use the sanitized portion if it's substantial enough
+      console.log(`[ICAL-GEN] Using sanitized UID: ${cleanUid}`);
+      event.uid = cleanUid;
+    } else {
+      // If sanitized UID is too short or empty, generate a new one
+      // but preserve any original prefix if possible
+      const prefix = event.uid.match(/^[a-z0-9_-]+/) ? event.uid.match(/^[a-z0-9_-]+/)[0] : 'event';
+      const newUid = `${prefix}-sanitized-${Date.now()}@caldavclient.local`;
+      console.log(`[ICAL-GEN] Generated replacement UID: ${newUid}`);
+      event.uid = newUid;
+    }
+  }
+  
   // For cancellations, this UID MUST match the original event exactly (RFC 5546 requirement)
   console.log(`Generating ICS with UID: ${event.uid} (Method: ${options.method || 'REQUEST'})`);
   lines.push(formatContentLine('UID', event.uid));
