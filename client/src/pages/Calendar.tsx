@@ -372,7 +372,7 @@ function CalendarContent() {
         console.debug("Starting copy of event:", event.id, event.title);
         
         // Get a robust, persistently stored UID using proper IndexedDB for RFC compliance
-        const newUID = await getOrGenerateUID();
+        const newUID = await getOrGenerateUID('event');
         console.debug(`Generated new RFC-compliant UID: ${newUID}`);
         
         // Create a complete CalendarEvent object with all required fields
@@ -408,8 +408,7 @@ function CalendarContent() {
           emailError: null,
           lastModifiedBy: null,
           lastModifiedByName: null,
-          lastModifiedAt: new Date(),
-          organizer: null // No organizer initially for a copied event
+          lastModifiedAt: new Date()
         };
         
         // Log for debugging
