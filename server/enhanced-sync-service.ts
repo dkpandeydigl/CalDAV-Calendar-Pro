@@ -1079,9 +1079,39 @@ export class EnhancedSyncService {
    */
   private notifyEventChange(userId: number, action: 'created' | 'updated' | 'deleted', event: Event): void {
     try {
-      notifyEventChanged(userId, event, action);
+      // Determine if this is an attendee or resource update
+      const hasAttendees = !!(event.attendees && 
+        (typeof event.attendees === 'string' ? 
+          (event.attendees !== '[]' && event.attendees !== 'null') : 
+          (Array.isArray(event.attendees) && event.attendees.length > 0)
+        )
+      );
       
-      console.log(`[Enhanced Sync] Sent WebSocket notification for event ${event.id}: ${action}`);
+      const hasResources = !!(event.resources && 
+        (typeof event.resources === 'string' ? 
+          (event.resources !== '[]' && event.resources !== 'null') : 
+          (Array.isArray(event.resources) && event.resources.length > 0)
+        )
+      );
+      
+      // Add flags to indicate attendee and resource status
+      notifyEventChanged(userId, event, action, {
+        wasAttendeeUpdate: hasAttendees,
+        wasResourceUpdate: hasResources,
+        wasRecurrenceStateChange: event.isRecurring === true,
+        attendeeCount: hasAttendees ? 
+          (typeof event.attendees === 'string' ? 
+            JSON.parse(event.attendees).length : 
+            Array.isArray(event.attendees) ? event.attendees.length : 0
+          ) : 0,
+        resourceCount: hasResources ? 
+          (typeof event.resources === 'string' ? 
+            JSON.parse(event.resources).length : 
+            Array.isArray(event.resources) ? event.resources.length : 0
+          ) : 0
+      });
+      
+      console.log(`[Enhanced Sync] Sent WebSocket notification for event ${event.id}: ${action} with attendees=${hasAttendees} resources=${hasResources} recurrence=${event.isRecurring}`);
     } catch (error) {
       console.warn('[Enhanced Sync] Could not broadcast via WebSocket:', error);
     }

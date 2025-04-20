@@ -220,6 +220,58 @@ export function initializeWebSocketNotificationService(wss: WebSocketServer): We
 }
 
 /**
+ * Send an enhanced event change notification with attendee and resource metadata
+ * 
+ * @param userId The user ID
+ * @param event The event object or event ID
+ * @param action The action performed (created, updated, deleted)
+ * @param metadata Additional metadata about the event change
+ */
+export function notifyEventChangeWithMetadata(
+  userId: number, 
+  event: any, 
+  action: 'created' | 'updated' | 'deleted',
+  metadata: {
+    wasAttendeeUpdate?: boolean;
+    wasResourceUpdate?: boolean;
+    wasRecurrenceStateChange?: boolean;
+    attendeeCount?: number;
+    resourceCount?: number;
+    [key: string]: any;
+  } = {}
+): void {
+  try {
+    const service = getWebSocketNotificationService();
+    
+    // Extract eventId and calendarId from the event
+    const eventId = typeof event === 'object' ? event.id : event;
+    const calendarId = typeof event === 'object' ? event.calendarId : 0;
+    
+    // Create a notification about the event change with metadata
+    const notification: WebSocketNotification = {
+      type: 'event',
+      action: action,
+      timestamp: Date.now(),
+      data: {
+        eventId,
+        calendarId,
+        message: `Event ${action}`,
+        ...metadata // Include the metadata in the notification
+      },
+      sourceUserId: userId
+    };
+    
+    // Send the notification to the user
+    service.sendNotificationToUser(userId, notification);
+    
+    // Log the notification
+    console.log(`[WebSocket] Sent enhanced event ${action} notification for event ${eventId} to user ${userId} with metadata: ${JSON.stringify(metadata)}`);
+  } catch (error) {
+    console.error(`[WebSocket] Error sending enhanced event notification:`, error);
+  }
+}
+
+/**
  * Broadcast a UID change notification to all connected clients
  * This static method will be called from the centralUIDService
  * 
