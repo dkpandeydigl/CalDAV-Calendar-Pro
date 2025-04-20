@@ -379,14 +379,25 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
         if (typeof event.resources === 'string') {
           try {
             parsedResources = JSON.parse(event.resources);
-          } catch (e) { /* Silent fail */ }
+          } catch (e) { 
+            console.log('Failed to parse resources string:', e);
+            // Don't give up - if it's a string, it might be a single resource email
+            if (event.resources.includes('@')) {
+              parsedResources = [{ email: event.resources }];
+            }
+          }
         } else if (Array.isArray(event.resources)) {
           parsedResources = event.resources;
+        } else if (typeof event.resources === 'object' && event.resources !== null) {
+          // Handle case where resources is a single object
+          parsedResources = [event.resources];
         }
         
         // Add resources to our map for deduplication
         if (Array.isArray(parsedResources)) {
           parsedResources.forEach((resource, index) => {
+            if (!resource) return; // Skip null/undefined resources
+            
             let email = resource.adminEmail || resource.email; 
             if (email) {
               // Clean the email address
@@ -409,45 +420,63 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       }
       
       // STEP 2: Now extract from VCALENDAR data if available (but don't overwrite existing entries)
-      if (event.rawData && typeof event.rawData === 'string') {
-        const rawDataStr = event.rawData;
+      if (event.rawData) {
+        let rawDataStr = '';
         
-        // Improved regex to better match resource emails in ICS data
-        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:]*?mailto:([^@\s\r\n]+@[^@\s\r\n\\\.,;]+(?:\.[^@\s\r\n\\\.,;]+)+)/g;
-        const matches = Array.from(rawDataStr.matchAll(resourceRegex));
+        // Handle both string and object rawData
+        if (typeof event.rawData === 'string') {
+          rawDataStr = event.rawData;
+        } else if (event.rawData && typeof event.rawData === 'object') {
+          try {
+            rawDataStr = JSON.stringify(event.rawData);
+          } catch (e) {
+            console.log('Failed to stringify rawData object:', e);
+          }
+        }
         
-        if (matches && matches.length > 0) {
-          matches.forEach((match, index) => {
-            const fullLine = match[0]; // The complete ATTENDEE line 
-            let email = match[1]; // The captured email group
+        if (rawDataStr) {
+          // Improved regex to better match resource emails in ICS data
+          const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:]*?mailto:([^@\s\r\n]+@[^@\s\r\n\\\.,;]+(?:\.[^@\s\r\n\\\.,;]+)+)/g;
+          
+          try {
+            const matches = Array.from(rawDataStr.matchAll(resourceRegex));
             
-            // Clean the email address
-            email = cleanEmailAddress(email);
-            const emailKey = email.toLowerCase();
-            
-            // Skip if we already have this resource by email
-            if (email && !resourceMap.has(emailKey)) {
-              // Extract resource name from CN
-              const cnMatch = fullLine.match(/CN=([^;:]+)/);
-              const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
-              
-              // Extract resource type
-              const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
-              const resourceType = typeMatch ? typeMatch[1].trim() : '';
-              
-              // Extract capacity if available
-              const capacityMatch = fullLine.match(/X-RESOURCE-CAPACITY=([0-9]+)/);
-              const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : 1;
-              
-              resourceMap.set(emailKey, {
-                id: `resource-${index}-${Date.now()}`,
-                adminEmail: email,
-                adminName: name,
-                subType: resourceType,
-                capacity: capacity
+            if (matches && matches.length > 0) {
+              matches.forEach((match, index) => {
+                const fullLine = match[0]; // The complete ATTENDEE line 
+                let email = match[1]; // The captured email group
+                
+                // Clean the email address
+                email = cleanEmailAddress(email);
+                const emailKey = email.toLowerCase();
+                
+                // Skip if we already have this resource by email
+                if (email && !resourceMap.has(emailKey)) {
+                  // Extract resource name from CN
+                  const cnMatch = fullLine.match(/CN=([^;:]+)/);
+                  const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
+                  
+                  // Extract resource type
+                  const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
+                  const resourceType = typeMatch ? typeMatch[1].trim() : '';
+                  
+                  // Extract capacity if available
+                  const capacityMatch = fullLine.match(/X-RESOURCE-CAPACITY=([0-9]+)/);
+                  const capacity = capacityMatch ? parseInt(capacityMatch[1], 10) : 1;
+                  
+                  resourceMap.set(emailKey, {
+                    id: `resource-${index}-${Date.now()}`,
+                    adminEmail: email,
+                    adminName: name,
+                    subType: resourceType,
+                    capacity: capacity
+                  });
+                }
               });
             }
-          });
+          } catch (regexError) {
+            console.error('Error processing resource regex:', regexError);
+          }
         }
       }
       
@@ -455,13 +484,15 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       return Array.from(resourceMap.values());
     } catch (error) {
       console.error('Error extracting resources:', error);
+      // Return empty array on error to ensure the component can still render
       return [];
     }
   };
 
-  // Check if this event has attendees or resources with error handling
+  // Check if this event has attendees or resources with enhanced error handling
   const hasAttendees = useMemo(() => {
     try {
+      if (!event) return false;
       return Boolean(
         event.attendees && 
         (Array.isArray(event.attendees) ? event.attendees.length > 0 : true)
@@ -470,7 +501,7 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       console.error('Error checking event attendees:', error);
       return false;
     }
-  }, [event.attendees]);
+  }, [event?.attendees]);
   
   // Always use our enhanced extractResourcesFromRawData function to deduplicate resources
   // from all possible sources
