@@ -3433,13 +3433,22 @@ export class SyncService {
       
       // Handle string recurrence rules
       if (typeof rule === 'string') {
-        // CRITICAL FIX: If the input is a JSON string from our client, preserve it exactly
-        // This ensures the client can parse it properly later
+        // CRITICAL FIX: If the input is a JSON string from our client, parse it and convert to RFC 5545 format
+        // This ensures the server can properly sync it to CalDAV
         if (rule.startsWith('{') && rule.endsWith('}') && 
             (rule.includes('"pattern"') || rule.includes('"interval"') || rule.includes('"weekdays"'))) {
-          console.log(`[RECURRENCE_RULE] Detected client JSON format - preserving intact`);
-          return rule; // Return the JSON string without modification
-        }
+          console.log(`[RECURRENCE_RULE] Detected client JSON format - converting to RFC 5545 format`);
+          try {
+            // Parse the JSON string into an object and process it through the object handling code below
+            const parsedRule = JSON.parse(rule);
+            rule = parsedRule; // Set rule to the parsed object to be processed below
+            console.log(`[RECURRENCE_RULE] Successfully parsed JSON recurrence rule: ${JSON.stringify(parsedRule)}`);
+            // Continue with the object handling below
+          } catch (parseError) {
+            console.error(`[RECURRENCE_RULE] Error parsing JSON recurrence rule: ${parseError}`);
+            return ''; // Return empty if we can't parse
+          }
+        } else
         
         // If it's already in FREQ=xxx format, make sure it's clean but preserve it
         if (rule.includes('FREQ=')) {
