@@ -875,7 +875,7 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
     allQueryKeys?: QueryKey[];
   };
 
-  const createEventMutation = useMutation<Event, Error, Omit<Event, 'id' | 'uid'>, CreateMutationContext>({
+  const createEventMutation = useMutation<Event, Error, Partial<Event>, CreateMutationContext>({
     mutationFn: async (newEvent) => {
       // Short delay to ensure UI updates finish before server request
       await new Promise(resolve => setTimeout(resolve, 10));
