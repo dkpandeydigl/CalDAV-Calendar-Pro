@@ -1298,7 +1298,23 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       let existingEvent = null;
       try {
         const res = await fetch(`/api/events/${id}`, { credentials: 'include' });
-        if (res.ok) {
+        
+        // Check if response is OK
+        if (!res.ok) {
+          console.warn(`ENHANCED FIX: Failed to fetch event ${id} for state comparison: ${res.status}`);
+          return null;
+        }
+        
+        // Check content type to ensure we're parsing JSON
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          console.error(`ENHANCED FIX: Event ${id} returned non-JSON content type: ${contentType}`);
+          const text = await res.text();
+          console.error(`ENHANCED FIX: Response body starts with: ${text.substring(0, 100)}...`);
+          return null;
+        }
+        
+        try {
           existingEvent = await res.json();
           console.log('ENHANCED FIX: Retrieved existing event for recurrence state comparison:', 
             { 
@@ -1307,9 +1323,14 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
               recurrenceRule: existingEvent.recurrenceRule,
               uid: existingEvent.uid
             });
+        } catch (jsonError) {
+          console.error(`ENHANCED FIX: JSON parsing error for event ${id}:`, jsonError);
+          // Try to log part of the response to debug
+          const text = await res.clone().text().catch(() => 'Unable to get response text');
+          console.error(`ENHANCED FIX: Response body begins with: ${text.substring(0, 150)}...`);
         }
       } catch (error) {
-        console.error('ENHANCED FIX: Error fetching current event state:', error);
+        console.error('ENHANCED FIX: Network error fetching current event state:', error);
         // Continue without failing - we'll do best effort fixing
       }
       
@@ -1502,11 +1523,33 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       const fetchEventIfNeeded = async () => {
         try {
           const res = await fetch(`/api/events/${id}`, { credentials: 'include' });
-          if (res.ok) {
+          
+          // Check if response is OK first
+          if (!res.ok) {
+            console.warn(`Event ${id} fetch returned non-OK status: ${res.status}`);
+            return null;
+          }
+          
+          // Check content type to ensure we're parsing JSON
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            console.error(`Event ${id} returned non-JSON content type: ${contentType}`);
+            const text = await res.text();
+            console.error(`Response body starts with: ${text.substring(0, 100)}...`);
+            return null;
+          }
+          
+          try {
             return await res.json();
+          } catch (jsonError) {
+            console.error(`JSON parsing error for event ${id}:`, jsonError);
+            // Try to log part of the response to debug
+            const text = await res.clone().text().catch(() => 'Unable to get response text');
+            console.error(`Response body begins with: ${text.substring(0, 150)}...`);
+            return null;
           }
         } catch (error) {
-          console.error(`Error fetching event ${id}:`, error);
+          console.error(`Network error fetching event ${id}:`, error);
         }
         return null;
       };
