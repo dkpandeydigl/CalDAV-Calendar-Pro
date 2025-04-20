@@ -242,9 +242,12 @@ export function generateEventICalString(event: {
     }
   }
   
-  // Add recurrence rule if provided
+  // FIXED: Enhanced recurrence rule handling with better logging
   if (event.recurrenceRule) {
+    console.log(`[ICAL] Adding recurrence rule to event ${event.uid}: ${event.recurrenceRule}`);
     ics.push(`RRULE:${event.recurrenceRule}`);
+  } else {
+    console.log(`[ICAL] No recurrence rule provided for event ${event.uid}`);
   }
   
   // End event and calendar

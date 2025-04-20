@@ -296,13 +296,20 @@ export class EnhancedSyncService {
         processedEventData.isRecurring = false;
       }
       
-      // Ensure isRecurring flag matches recurrenceRule state
+      // CRITICAL FIX: Ensure isRecurring flag matches recurrenceRule state with absolute certainty
+      // This is the final consistency check before database update and server sync
       if (processedEventData.recurrenceRule && processedEventData.recurrenceRule !== null) {
+        // Have recurrence rule - must be recurring
         processedEventData.isRecurring = true;
-        console.log(`[RECURRENCE] Setting isRecurring=true to match recurrenceRule`);
-      } else if (processedEventData.recurrenceRule === null && processedEventData.isRecurring !== false) {
+        console.log(`[RECURRENCE] FINAL CHECK: Setting isRecurring=true to match recurrenceRule: ${processedEventData.recurrenceRule}`);
+      } else if (processedEventData.recurrenceRule === null || processedEventData.recurrenceRule === undefined) {
+        // No recurrence rule - can't be recurring
         processedEventData.isRecurring = false;
-        console.log(`[RECURRENCE] Setting isRecurring=false to match null recurrenceRule`);
+        console.log(`[RECURRENCE] FINAL CHECK: Setting isRecurring=false because recurrenceRule is null/undefined`);
+      } else if (processedEventData.isRecurring === true && (!processedEventData.recurrenceRule || processedEventData.recurrenceRule === '')) {
+        // Edge case: marked as recurring but empty rule - fix by setting default rule
+        processedEventData.recurrenceRule = "FREQ=DAILY;COUNT=1";
+        console.log(`[RECURRENCE] FINAL CHECK: Fixed empty recurrenceRule for isRecurring=true event: ${processedEventData.recurrenceRule}`);
       }
       
       // Ensure the UID doesn't change
@@ -482,13 +489,16 @@ export class EnhancedSyncService {
         }
       }
       
-      // FIXED RECURRENCE HANDLING: Pre-process recurrence rule to ensure proper format
+      // COMPLETELY FIXED RECURRENCE HANDLING: Pre-process recurrence rule to ensure proper format
       let processedRecurrenceRule = event.recurrenceRule;
       
       console.log(`[RECURRENCE] Initial recurrence state: isRecurring=${event.isRecurring}, rule=${typeof event.recurrenceRule === 'string' ? event.recurrenceRule : typeof event.recurrenceRule}`);
       
-      // Ensure recurrence rule is properly set based on isRecurring flag
-      if (event.isRecurring) {
+      // CRITICAL FIX: Ensure recurrence rule is properly set based on isRecurring flag
+      if (event.isRecurring === true) {
+        // Force true boolean check to catch any non-boolean truthy values
+        console.log(`[RECURRENCE] Event is explicitly marked as recurring (isRecurring=true)`);
+        
         if (!event.recurrenceRule) {
           // Event is marked as recurring but has no recurrence rule
           console.warn(`[RECURRENCE] Event ${event.id} is marked as recurring but has no recurrence rule. Will default to DAILY.`);
@@ -680,7 +690,34 @@ export class EnhancedSyncService {
         return null;
       }
       
-      // Generate the ICS data for this event
+      // CRITICAL FIX: Final check before generating ICS - ensure recurrence rule is consistent with isRecurring
+      if (event.isRecurring === true && (!processedRecurrenceRule || processedRecurrenceRule === null)) {
+        // Critical error - event is marked as recurring but has no recurrence rule after all processing
+        console.error(`[RECURRENCE] CRITICAL ERROR: Event ${event.id} is marked as recurring but has no recurrence rule after processing`);
+        // Force a default rule to ensure consistency
+        processedRecurrenceRule = "FREQ=DAILY;COUNT=1";
+        
+        // Update the event in database to fix the inconsistency
+        await storage.updateEvent(event.id, {
+          recurrenceRule: processedRecurrenceRule
+        });
+        
+        console.log(`[RECURRENCE] Applied emergency fix: ${processedRecurrenceRule}`);
+      } else if (event.isRecurring === false && processedRecurrenceRule) {
+        // Inconsistency - event is marked as non-recurring but has a recurrence rule
+        console.warn(`[RECURRENCE] Inconsistency: Event ${event.id} is marked as non-recurring but has rule: ${processedRecurrenceRule}`);
+        // Force null rule to match non-recurring state
+        processedRecurrenceRule = null;
+        
+        // Update the event in database to fix the inconsistency
+        await storage.updateEvent(event.id, {
+          recurrenceRule: null
+        });
+        
+        console.log(`[RECURRENCE] Fixed inconsistency by removing recurrence rule`);
+      }
+      
+      // Generate the ICS data for this event with sanitized recurrence rule
       const icsData = generateEventICalString({
         uid: event.uid,
         title: event.title,
@@ -694,7 +731,7 @@ export class EnhancedSyncService {
           email: connection.username,
           name: (await storage.getUser(userId))?.fullName || connection.username
         },
-        recurrenceRule: processedRecurrenceRule,
+        recurrenceRule: processedRecurrenceRule, // This is now guaranteed to be consistent with isRecurring
         allDay: event.allDay
       });
       
