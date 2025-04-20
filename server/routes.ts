@@ -4093,6 +4093,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
         uid: existingEvent.uid 
       };
       
+      // CRITICAL BUGFIX: Preserve attendees and resources if they're missing in the update
+      // This prevents attendees/resources from being lost during updates
+      if ((!updateData.attendees || updateData.attendees === '[]' || updateData.attendees === 'null') && existingEvent.attendees) {
+        console.log(`[ATTENDEE PRESERVATION] Preserving existing attendees that were missing or empty in the update`);
+        updateData.attendees = existingEvent.attendees;
+      }
+      
+      if ((!updateData.resources || updateData.resources === '[]' || updateData.resources === 'null') && existingEvent.resources) {
+        console.log(`[RESOURCE PRESERVATION] Preserving existing resources that were missing or empty in the update`);
+        updateData.resources = existingEvent.resources;
+      }
+      
+      // Handle the case where existing attendees/resources are strings that need parsing
+      // ENHANCED PRESERVATION: Compare attendance counts to determine if data might be lost
+      if (updateData.attendees && typeof updateData.attendees === 'string' && existingEvent.attendees && typeof existingEvent.attendees === 'string') {
+        try {
+          const parsedUpdateAttendees = JSON.parse(updateData.attendees);
+          const parsedExistingAttendees = JSON.parse(existingEvent.attendees);
+          
+          // If update has fewer attendees than existing, this might indicate data loss during form submission
+          if (Array.isArray(parsedUpdateAttendees) && Array.isArray(parsedExistingAttendees) && 
+              parsedUpdateAttendees.length < parsedExistingAttendees.length) {
+            console.log(`[ATTENDEE PRESERVATION] Update has fewer attendees (${parsedUpdateAttendees.length}) than existing (${parsedExistingAttendees.length}) - preserving existing`);
+            updateData.attendees = existingEvent.attendees;
+          }
+          // If it's an empty array but we have existing attendees, preserve them
+          else if (Array.isArray(parsedUpdateAttendees) && parsedUpdateAttendees.length === 0 && 
+                   Array.isArray(parsedExistingAttendees) && parsedExistingAttendees.length > 0) {
+            console.log(`[ATTENDEE PRESERVATION] Parsed attendees is an empty array, preserving existing attendees`);
+            updateData.attendees = existingEvent.attendees;
+          }
+        } catch (e) {
+          // If parsing fails, keep the original value
+          console.error(`[ATTENDEE PRESERVATION] Error parsing attendees:`, e);
+        }
+      }
+      
+      // ENHANCED PRESERVATION: Compare resource counts to determine if data might be lost
+      if (updateData.resources && typeof updateData.resources === 'string' && existingEvent.resources && typeof existingEvent.resources === 'string') {
+        try {
+          const parsedUpdateResources = JSON.parse(updateData.resources);
+          const parsedExistingResources = JSON.parse(existingEvent.resources);
+          
+          // If update has fewer resources than existing, this might indicate data loss during form submission
+          if (Array.isArray(parsedUpdateResources) && Array.isArray(parsedExistingResources) && 
+              parsedUpdateResources.length < parsedExistingResources.length) {
+            console.log(`[RESOURCE PRESERVATION] Update has fewer resources (${parsedUpdateResources.length}) than existing (${parsedExistingResources.length}) - preserving existing`);
+            updateData.resources = existingEvent.resources;
+          }
+          // If it's an empty array but we have existing resources, preserve them
+          else if (Array.isArray(parsedUpdateResources) && parsedUpdateResources.length === 0 && 
+                   Array.isArray(parsedExistingResources) && parsedExistingResources.length > 0) {
+            console.log(`[RESOURCE PRESERVATION] Parsed resources is an empty array, preserving existing resources`);
+            updateData.resources = existingEvent.resources;
+          }
+        } catch (e) {
+          // If parsing fails, keep the original value
+          console.error(`[RESOURCE PRESERVATION] Error parsing resources:`, e);
+        }
+      }
+      
       // CRITICAL FIX: Ensure recurrence rule and isRecurring flag consistency
       // This handles the critical case of converting a non-recurring event to a recurring one
       console.log(`[RECURRENCE CRITICAL FIX] Analyzing recurrence update:`, {
