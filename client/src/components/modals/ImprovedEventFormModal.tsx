@@ -1,149 +1,69 @@
-import { useState, useEffect, useRef, useMemo, Fragment, FC } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { format, parseISO, addDays, addHours, isValid } from 'date-fns';
-import { v4 as uuidv4 } from 'uuid';
-import { z } from 'zod';
-import { useForm, FormProvider } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-
-// UI Components
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Calendar } from "@/components/ui/calendar";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { useToast } from "@/hooks/use-toast";
-// Use Input component instead of specialized TimePicker
-
-// Icons
-import { 
-  Check, 
-  X, 
-  CalendarDays, 
-  Users, 
-  Package, 
-  Repeat, 
-  Mail, 
-  Calendar as CalendarIcon, 
-  Clock, 
-  CalendarPlus, 
-  PlusCircle, 
-  Trash,
-  Trash2,
-  UserPlus,
-  UserMinus,
-  Edit,
-  Save,
-  AlertCircle,
-  ArrowUpDown,
-  BellRing,
-  Send,
-  Loader2,
-  CalendarClock,
-  ExternalLink,
-  ChevronRight,
-} from 'lucide-react';
-
-// Hooks
+import React, { useEffect, useState, useRef } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import DescriptionEditor from '@/components/description/DescriptionEditor';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCalendars } from '@/hooks/useCalendars';
 import { useCalendarEvents } from '@/hooks/useCalendarEvents';
-import { useEventUID } from '@/hooks/useEventUID';
-import { useAuth as useUser } from '@/hooks/use-auth';
-import { useMediaQuery } from '@/hooks/use-mobile';
-import { parseRRULEFromEvent } from '@/utils/rrule-sanitizer';
-import { useEmailTemplateStore } from '@/stores/emailTemplateStore';
-
-// Function to create, update, delete events - extracted from useCalendarEvents
-const useCreateEvent = () => {
-  const { createEvent } = useCalendarEvents(); 
-  return { mutateAsync: createEvent };
-};
-
-const useUpdateEvent = () => {
-  const { updateEvent } = useCalendarEvents();
-  return { mutateAsync: updateEvent };
-};
-
-const useDeleteEvent = () => {
-  const { deleteEvent } = useCalendarEvents();
-  return { mutateAsync: deleteEvent };
-};
-
-const useCancelEvent = () => {
-  const { cancelEvent } = useCalendarEvents();
-  return { mutateAsync: cancelEvent || ((id) => Promise.resolve()) };
-};
-
-// Utility helpers
-import { cn } from '@/lib/utils';
+import { getTimezones } from '@/lib/date-utils';
 import { apiRequest } from '@/lib/queryClient';
-
-// Types
-import { Event } from '@shared/schema';
+import { useCalendarContext } from '@/contexts/CalendarContext';
+import { useSharedCalendars } from '@/hooks/useSharedCalendars';
+import { useEventUID } from '@/hooks/useEventUID';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
+import { queryClient } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/use-auth';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { 
+  Ban,
+  Calendar, 
+  CalendarDays, 
+  Clock, 
+  Plus, 
+  X, 
+  Users, 
+  Repeat, 
+  MapPin, 
+  FileText,
+  AlertCircle,
+  Save,
+  Trash2,
+  Loader2,
+  Mail,
+  RefreshCw,
+  Package,
+  Info,
+  Fingerprint
+} from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Badge } from '@/components/ui/badge';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import EmailPreview from '@/components/email/EmailPreview';
+import { useEmailPreview } from '@/hooks/useEmailPreview';
+import ResourceManager, { Resource } from '@/components/resources/ResourceManager';
+import { extractResourcesFromEvent } from '@/lib/resource-utils';
+// Removed DirectResourceExtractor import - now using our enhanced resource extraction function
+import { parseResourcesFromEvent } from '@/utils/resourceUtils';
+import type { Event } from '@shared/schema';
+import { 
+  PREDEFINED_TEMPLATES, 
+  loadCustomTemplates, 
+  saveCustomTemplate, 
+  type DescriptionTemplate 
+} from '@/components/description/templates';
+import SavedTemplateManager from '@/components/description/SavedTemplateManager';
+// UID persistence hook is already imported above
 
 interface EventFormModalProps {
   open: boolean;
@@ -152,15 +72,10 @@ interface EventFormModalProps {
   onClose: () => void;
 }
 
-// Predefined templates for description
-interface DescriptionTemplate {
-  id: string;
-  name: string;
-  content: string;
-}
-
+// Attendee role types
 type AttendeeRole = 'Chairman' | 'Secretary' | 'Member';
 
+// Attendee interface
 interface Attendee {
   id: string;
   email: string;
@@ -168,10 +83,13 @@ interface Attendee {
   role: AttendeeRole;
 }
 
+// Recurrence pattern types
 type RecurrencePattern = 'None' | 'Daily' | 'Weekly' | 'Monthly' | 'Yearly';
 
+// Recurrence end types
 type RecurrenceEndType = 'Never' | 'After' | 'On';
 
+// Recurrence configuration
 interface RecurrenceConfig {
   pattern: RecurrencePattern;
   interval: number;
@@ -183,520 +101,1133 @@ interface RecurrenceConfig {
   endDate?: Date; // For 'On'
 }
 
-export const ImprovedEventFormModal: FC<EventFormModalProps> = ({ 
-  open, 
-  event, 
-  selectedDate,
-  onClose 
-}) => {
-  const queryClient = useQueryClient();
+const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, selectedDate, onClose }) => {
+  const { calendars } = useCalendars();
+  const { sharedCalendars } = useSharedCalendars();
+  const { createEvent, updateEvent, deleteEvent, cancelEvent } = useCalendarEvents();
+  const { selectedTimezone } = useCalendarContext();
   const { toast } = useToast();
-  const { user } = useUser();
-  const { data: calendars } = useCalendars();
-  const { mutateAsync: createEvent } = useCreateEvent();
-  const { mutateAsync: updateEvent } = useUpdateEvent();
-  const { mutateAsync: deleteEvent } = useDeleteEvent();
-  const { mutateAsync: cancelEvent } = useCancelEvent();
-  const { getOrGenerateUID, storeUID } = useEventUID();
-  const descriptionTemplates = useEmailTemplateStore(state => state.templates);
-  const isMobile = useMediaQuery("(max-width: 768px)");
+  const { user } = useAuth(); // Add the user auth context at the component level
   
-  // State management for form tabs
-  const [activeTab, setActiveTab] = useState('basic');
-  
-  // Define the form schema
-  const formSchema = z.object({
-    title: z.string().min(1, "Title is required"),
-    description: z.string().optional(),
-    location: z.string().optional(),
-    calendarId: z.string().min(1, "Calendar is required"),
-    startDate: z.string().min(1, "Start date is required"),
-    endDate: z.string().min(1, "End date is required"),
-    startTime: z.string().min(1, "Start time is required"),
-    endTime: z.string().min(1, "End time is required"),
-    allDay: z.boolean().default(false),
-    timezone: z.string().default("UTC"),
-    isBusy: z.boolean().default(true)
+  // Use the UID persistence hook with the current event ID
+  // This will either retrieve an existing UID or generate a new one if not found
+  const { 
+    uid: persistedUID, 
+    isLoading: uidLoading, 
+    error: uidError, 
+    storeUID,
+    generateUID,
+    loadUID
+  } = useEventUID({
+    eventId: event?.id,
+    uid: event?.uid
   });
   
-  // Create form
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      title: '',
-      description: '',
-      location: '',
-      calendarId: '',
-      startDate: '',
-      endDate: '',
-      startTime: '12:00',
-      endTime: '13:00',
-      allDay: false,
-      timezone: 'UTC',
-      isBusy: true
+  // Generate a UID for new events immediately when the form opens
+  // This ensures we use the SAME UID for preview and creation
+  const [initialEventUID, setInitialEventUID] = useState<string | null>(null);
+  
+  // Initialize a consistent UID when creating a new event
+  useEffect(() => {
+    if (open && !event && !initialEventUID) {
+      // For new events, generate a UID immediately
+      const newUID = generateUID();
+      setInitialEventUID(newUID);
+      console.log(`[ImprovedEventFormModal] Generated initial UID for new event: ${newUID}`);
+    } else if (open && event?.uid && !initialEventUID) {
+      // For existing events, use their UID
+      setInitialEventUID(event.uid);
+      console.log(`[ImprovedEventFormModal] Using existing event UID: ${event.uid}`);
     }
-  });
+  }, [open, event, initialEventUID, generateUID]);
   
-  // Form validation errors
-  const errors = form.formState.errors;
+  // CRITICAL FIX: Reset initialEventUID when modal is closed
+  // This prevents UID reuse across different events
+  useEffect(() => {
+    if (!open) {
+      // Reset initialEventUID when modal closes to ensure a fresh UID for the next event
+      setInitialEventUID(null);
+      console.log(`[ImprovedEventFormModal] Modal closed, cleared initialEventUID to prevent UID reuse`);
+    }
+  }, [open]);
   
-  // Loading states
+  // Debug log for UID persistence
+  useEffect(() => {
+    if (persistedUID) {
+      console.log(`[ImprovedEventFormModal] Using persisted UID: ${persistedUID}`, {
+        eventId: event?.id,
+        eventUID: event?.uid,
+        persistedUID,
+        initialEventUID
+      });
+    }
+  }, [persistedUID, event?.id, event?.uid, initialEventUID]);
+  
+  // Filter shared calendars to only include those with edit permissions
+  // Filter shared calendars with edit permissions
+  const editableSharedCalendars = sharedCalendars.filter(cal => cal.permissionLevel === 'edit');
+  
+  console.log('Shared calendars:', sharedCalendars);
+  console.log('Editable shared calendars:', editableSharedCalendars);
+  
+  // Form refs to handle focus
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  
+  // Basic form state
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [location, setLocation] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [calendarId, setCalendarId] = useState('');
+  const [timezone, setTimezone] = useState(selectedTimezone);
+  const [allDay, setAllDay] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isBusy, setIsBusy] = useState(true);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isNextDayAdjusted, setIsNextDayAdjusted] = useState<boolean>(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
   
-  // Attendees and resources state
+  // Advanced form state
+  const [activeTab, setActiveTab] = useState('basic');
+  
+  // Reset to basic tab whenever modal opens
+  useEffect(() => {
+    if (open) {
+      setActiveTab('basic');
+    }
+  }, [open]);
+  
+  // Watch for tab changes to refresh email preview
+  useEffect(() => {
+    // When switching to the "emails" tab, validate the form and regenerate preview
+    if (activeTab === 'emails') {
+      // Always clear previous preview data
+      clearPreview();
+      setEmailPreviewHtml(null);
+      
+      // Make sure we have valid form data
+      if (validateForm()) {
+        console.log('[EMAIL TAB] Generating fresh email preview');
+        
+        // Generate a fresh preview with current form data
+        let startDateTime, endDateTime;
+        
+        if (allDay) {
+          console.log(`[EMAIL TAB] Creating dates for all-day event`);
+          
+          // Use UTC dates for all-day events to avoid timezone issues
+          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+          startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+          
+          // For the end date, use the same approach
+          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+          
+          // Add one day to the end date per CalDAV convention for all-day events
+          endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+        } else {
+          // For regular events, use the date-time strings
+          startDateTime = new Date(`${startDate}T${startTime}:00`);
+          endDateTime = new Date(`${endDate}T${endTime}:00`);
+        }
+        
+        // Generate a fresh preview with current form data
+        generatePreview({
+          title,
+          description,
+          location,
+          startDate: startDateTime,
+          endDate: endDateTime,
+          attendees,
+          resources,
+          // Include event ID for existing events
+          eventId: event ? event.id : undefined,
+          // Always include our consistent UID to ensure the same UID is used for creation and updates
+          uid: initialEventUID || event?.uid || undefined,
+          // Include recurrence rule if it exists
+          recurrenceRule: recurrence.pattern !== 'None' ? {
+            pattern: recurrence.pattern,
+            interval: recurrence.interval,
+            weekdays: recurrence.weekdays,
+            endType: recurrence.endType,
+            occurrences: recurrence.occurrences,
+            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+          } : undefined
+        }).then(previewResult => {
+          if (previewResult && previewResult.html) {
+            setEmailPreviewHtml(previewResult.html);
+            
+            // If we received a UID in the response, update our initialEventUID if needed
+            if (previewResult.uid && !initialEventUID) {
+              setInitialEventUID(previewResult.uid);
+              console.log(`Received UID from preview: ${previewResult.uid} - storing for consistency`);
+            }
+          }
+        }).catch(error => {
+          console.error('Error generating preview on tab switch:', error);
+        });
+      }
+    }
+  }, [activeTab]);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
-  const [newAttendeeEmail, setNewAttendeeEmail] = useState('');
-  const [newAttendeeName, setNewAttendeeName] = useState('');
-  const [newAttendeeRole, setNewAttendeeRole] = useState<AttendeeRole>('Member');
-  const [resources, setResources] = useState<string[]>([]);
-  const [newResource, setNewResource] = useState('');
+  const [attendeeInput, setAttendeeInput] = useState('');
+  const [attendeeRole, setAttendeeRole] = useState<AttendeeRole>('Member');
+  const [resources, setResources] = useState<Resource[]>([]);
+  
+  // Clear email preview when form data changes to prevent stale previews
+  useEffect(() => {
+    if (open && previewData) {
+      clearPreview();
+      setEmailPreviewHtml(null);
+      console.log('[FORM CHANGE] Cleared email preview due to form field change');
+    }
+  }, [title, description, location, startDate, startTime, endDate, endTime, allDay, attendees, resources, calendarId]);
+  // Enhanced resource extraction function with deduplication
+  const extractResourcesFromRawData = (eventData: any) => {
+    if (!eventData) return [];
+    
+    try {
+      // Create a Map to track resources by email for deduplication
+      const resourceMap = new Map();
+      
+      // STEP 1: Try to get resources from the event.resources field first (highest priority)
+      if (eventData.resources) {
+        let parsedResources = [];
+        
+        if (typeof eventData.resources === 'string') {
+          try {
+            parsedResources = JSON.parse(eventData.resources);
+            console.log('Parsed resources from string JSON:', parsedResources);
+          } catch (e) { 
+            console.warn('Failed to parse resources JSON string:', e);
+          }
+        } else if (Array.isArray(eventData.resources)) {
+          parsedResources = eventData.resources;
+          console.log('Using existing resources array:', parsedResources);
+        }
+        
+        // Add resources to our map for deduplication, preserving ALL properties
+        if (Array.isArray(parsedResources) && parsedResources.length > 0) {
+          parsedResources.forEach((resource, index) => {
+            const email = resource.adminEmail || resource.email; 
+            if (email) {
+              // Store the complete resource object with all properties intact
+              // Just ensure required fields are present
+              const resourceWithId = {
+                ...resource, // Keep all original properties
+                id: resource.id || `resource-${index}-${Date.now()}`,
+                name: resource.name || resource.adminName || 'Resource',
+                adminEmail: email,
+                subType: resource.subType || resource.type || '',
+                capacity: resource.capacity || 1
+              };
+              
+              resourceMap.set(email.toLowerCase(), resourceWithId);
+              console.log(`Added resource from event.resources: ${email}`, resourceWithId);
+            }
+          });
+        }
+      }
+      
+      // STEP 2: Now extract from VCALENDAR data if available (but don't overwrite existing entries)
+      if (eventData.rawData && typeof eventData.rawData === 'string') {
+        const rawDataStr = eventData.rawData.toString();
+        
+        // Use a simple regex to find any ATTENDEE lines containing CUTYPE=RESOURCE
+        const resourceRegex = /ATTENDEE[^:]*?CUTYPE=RESOURCE[^:]*?:[^:\r\n]*mailto:([^\s\r\n]+)/g;
+        const matches = Array.from(rawDataStr.matchAll(resourceRegex));
+        
+        if (matches && matches.length > 0) {
+          console.log(`Found ${matches.length} resource matches in raw data`);
+          
+          // Safe cast to RegExpMatchArray[] for type compatibility
+          const typedMatches = matches as RegExpMatchArray[];
+          
+          typedMatches.forEach((match, index) => {
+            const fullLine = match[0] || ''; // The complete ATTENDEE line 
+            const email = match[1] || ''; // The captured email group
+            
+            // Skip if we already have this resource by email - PRESERVE EXISTING DATA
+            if (email && !resourceMap.has(email.toLowerCase())) {
+              // Extract resource name from CN
+              const cnMatch = fullLine.match(/CN=([^;:]+)/);
+              const name = cnMatch ? cnMatch[1].trim() : `Resource ${index + 1}`;
+              
+              // Extract resource type
+              const typeMatch = fullLine.match(/X-RESOURCE-TYPE=([^;:]+)/);
+              const resourceType = typeMatch ? typeMatch[1].trim() : '';
+              
+              const newResource = {
+                id: `resource-${index}-${Date.now()}`,
+                name: name,
+                adminEmail: email,
+                subType: resourceType || 'Projector', // Default to Projector if no type specified
+                capacity: 1
+              };
+              
+              resourceMap.set(email.toLowerCase(), newResource);
+              console.log(`Added resource from rawData: ${email}`, newResource);
+            }
+          });
+        }
+      }
+      
+      // Convert map back to array
+      const result = Array.from(resourceMap.values());
+      console.log(`Extracted ${result.length} total resources:`, result);
+      return result;
+    } catch (error) {
+      console.error('Error extracting resources:', error);
+      return [];
+    }
+  };
+
+  // This works around a bug in the rendering by creating a useEffect that runs once
+  // and sets the resources directly using our enhanced extraction function
+  useEffect(() => {
+    if (event && open) {
+      console.log('[RESOURCE DEBUG] Event opened for editing:', event);
+      console.log('[RESOURCE DEBUG] Raw data in event:', event.rawData);
+      
+      // Deep inspect the object for resources anywhere in the structure
+      if (event.rawData) {
+        console.log('[RESOURCE DEBUG] Raw data type:', typeof event.rawData);
+        try {
+          if (typeof event.rawData === 'string') {
+            const resourceMatches = (event.rawData as string).match(/CUTYPE=RESOURCE/g);
+            console.log('[RESOURCE DEBUG] CUTYPE=RESOURCE matches in rawData:', resourceMatches);
+          }
+          
+          // Check if resources exist in event directly
+          console.log('[RESOURCE DEBUG] Resources property exists in event?', 'resources' in event);
+          if ('resources' in event) {
+            console.log('[RESOURCE DEBUG] Resources in event:', event.resources);
+            console.log('[RESOURCE DEBUG] Resources type:', typeof event.resources);
+          }
+        } catch (e) {
+          console.error('[RESOURCE DEBUG] Error inspecting rawData:', e);
+        }
+      }
+      
+      // Use our new utility function from resource-utils.ts instead of the local one
+      const extractedResources = extractResourcesFromEvent(event);
+      console.log('[RESOURCE DEBUG] Extracted deduplicated resources:', extractedResources);
+      
+      if (extractedResources.length > 0) {
+        console.log('[RESOURCE DEBUG] Setting resources state with extracted data');
+        setResources(extractedResources);
+      } else {
+        console.warn('[RESOURCE DEBUG] No resources extracted from event data');
+      }
+    }
+  }, [event, open]);
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [previewEventData, setPreviewEventData] = useState<any>(null);
   
   // Recurrence state
-  type RecurrenceSettings = RecurrenceConfig;
-  
-  const [recurrence, setRecurrence] = useState<RecurrenceSettings>({
+  const [recurrence, setRecurrence] = useState<RecurrenceConfig>({
     pattern: 'None',
     interval: 1,
-    endType: 'Never'
+    weekdays: [],
+    endType: 'Never',
+    occurrences: 10
   });
   
-  // Email settings and confirmation
-  const [sendEmails, setSendEmails] = useState(true);
-  const [emailConfirmation, setEmailConfirmation] = useState(false);
-  const [emailPreviewHtml, setEmailPreviewHtml] = useState('');
-  const [emailSubject, setEmailSubject] = useState('');
+  // Template state
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [templateManagerOpen, setTemplateManagerOpen] = useState(false);
   
-  // Dialog controls for cancellation, deletion, etc.
-  const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  // Import templates from components/description/templates.ts
+  const templates = [
+    ...PREDEFINED_TEMPLATES,
+    ...loadCustomTemplates(),
+  ];
+
+  // Week days for recurrence
+  const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   
-  // RFC 5545 compliant RRULE generator
+  // Email preview state
+  const { 
+    previewData, 
+    previewError, 
+    lastSendResult,
+    isLoading: isEmailPreviewLoading,
+    isSending: isEmailSending, 
+    generatePreview, 
+    clearPreview,
+    sendEmail
+  } = useEmailPreview();
+  
+  // RecurrenceSettings type is the same as RecurrenceConfig, which represents our recurrence configuration
+  type RecurrenceSettings = RecurrenceConfig;
+  
+  // RFC 5545 compliant recurrence rule generator
+  /**
+   * Generates an RFC5545 compliant RRULE string from our application's RecurrenceSettings object
+   * This function has been completely rewritten to handle all edge cases properly
+   * @param recurrence The recurrence settings from our application UI
+   * @returns A valid RFC5545 RRULE string or empty string if no recurrence
+   */
   const generateRRuleString = (recurrence: RecurrenceSettings): string => {
-    if (recurrence.pattern === 'None') {
+    // Safety check for missing or "None" recurrence pattern
+    if (!recurrence || !recurrence.pattern || recurrence.pattern === 'None') {
       return '';
     }
     
-    // Start building the RRULE
-    let rrule = 'RRULE:FREQ=';
-    
-    // Add frequency
-    switch (recurrence.pattern) {
-      case 'Daily':
-        rrule += 'DAILY';
-        break;
-      case 'Weekly':
-        rrule += 'WEEKLY';
-        break;
-      case 'Monthly':
-        rrule += 'MONTHLY';
-        break;
-      case 'Yearly':
-        rrule += 'YEARLY';
-        break;
-    }
-    
-    // Add interval
-    if (recurrence.interval > 1) {
-      rrule += `;INTERVAL=${recurrence.interval}`;
-    }
-    
-    // Add specific weekdays for weekly recurrence
-    if (recurrence.pattern === 'Weekly' && recurrence.weekdays && recurrence.weekdays.length > 0) {
-      const dayMap: Record<string, string> = {
-        'Sunday': 'SU',
-        'Monday': 'MO',
-        'Tuesday': 'TU',
-        'Wednesday': 'WE',
-        'Thursday': 'TH',
-        'Friday': 'FR',
-        'Saturday': 'SA'
+    try {
+      // Map pattern names from our UI to standard RFC5545 FREQ values
+      const freqMap: Record<string, string> = {
+        'Daily': 'DAILY',
+        'Weekly': 'WEEKLY',
+        'Monthly': 'MONTHLY',
+        'Yearly': 'YEARLY'
       };
       
-      // Map day names to RFC 5545 format
-      const byDay = recurrence.weekdays.map(day => dayMap[day]).join(',');
-      if (byDay) {
-        rrule += `;BYDAY=${byDay}`;
+      // Get the correct frequency value, defaulting to DAILY if the pattern is invalid
+      const frequencyValue = freqMap[recurrence.pattern] || 'DAILY';
+      
+      // Start building the RRULE with the frequency
+      let ruleComponents = [`FREQ=${frequencyValue}`];
+      
+      // Add interval if it's greater than 1
+      if (recurrence.interval && recurrence.interval > 1) {
+        ruleComponents.push(`INTERVAL=${recurrence.interval}`);
       }
+      
+      // Add weekdays for weekly recurrence
+      if (recurrence.pattern === 'Weekly' && Array.isArray(recurrence.weekdays) && recurrence.weekdays.length > 0) {
+        const dayMap: Record<string, string> = {
+          'Sunday': 'SU',
+          'Monday': 'MO',
+          'Tuesday': 'TU',
+          'Wednesday': 'WE',
+          'Thursday': 'TH',
+          'Friday': 'FR',
+          'Saturday': 'SA'
+        };
+        
+        // Convert day names to RFC5545 two-letter codes
+        const byDayValues = recurrence.weekdays
+          .map(day => dayMap[day] || '')
+          .filter(Boolean); // Remove any empty values
+        
+        if (byDayValues.length > 0) {
+          ruleComponents.push(`BYDAY=${byDayValues.join(',')}`);
+        }
+      }
+      
+      // Add end condition based on endType
+      if (recurrence.endType === 'On' && recurrence.endDate) {
+        try {
+          // Handle different endDate formats (Date object or string)
+          const untilDate = recurrence.endDate instanceof Date 
+            ? recurrence.endDate 
+            : new Date(recurrence.endDate);
+          
+          if (!isNaN(untilDate.getTime())) {
+            // Format date as YYYYMMDDTHHMMSSZ for UNTIL
+            const year = untilDate.getFullYear();
+            const month = String(untilDate.getMonth() + 1).padStart(2, '0');
+            const day = String(untilDate.getDate()).padStart(2, '0');
+            ruleComponents.push(`UNTIL=${year}${month}${day}T235959Z`);
+          }
+        } catch (e) {
+          console.error('[RRULE] Error formatting UNTIL date:', e);
+          // Continue without the UNTIL part if there's an error
+        }
+      } else if (recurrence.endType === 'After' && recurrence.occurrences && recurrence.occurrences > 0) {
+        ruleComponents.push(`COUNT=${recurrence.occurrences}`);
+      }
+      
+      // Join all components with semicolons to create the final RRULE
+      const rrule = ruleComponents.join(';');
+      
+      console.debug(`[RRULE] Generated RFC 5545 compliant RRULE: ${rrule}`);
+      return rrule;
+    } catch (error) {
+      console.error('[RRULE] Error generating RRULE string:', error);
+      // Fallback to basic daily recurrence if there's an error
+      return 'FREQ=DAILY';
     }
-    
-    // Add specific day of month for monthly recurrence
-    if (recurrence.pattern === 'Monthly' && recurrence.dayOfMonth) {
-      rrule += `;BYMONTHDAY=${recurrence.dayOfMonth}`;
-    }
-    
-    // Add end rules
-    if (recurrence.endType === 'After' && recurrence.occurrences) {
-      rrule += `;COUNT=${recurrence.occurrences}`;
-    } else if (recurrence.endType === 'On' && recurrence.endDate) {
-      // RFC 5545 requires end date in YYYYMMDD format with no hyphens
-      const until = format(recurrence.endDate, 'yyyyMMdd') + 'T235959Z';
-      rrule += `;UNTIL=${until}`;
-    }
-    
-    return rrule;
   };
   
-  // Set default times based on user preference and previous selections
-  useEffect(() => {
-    // If a selectedDate is provided, use it to set the initial dates
-    if (selectedDate && !event) {
-      const dateString = format(selectedDate, 'yyyy-MM-dd');
-      setStartDate(dateString);
-      setEndDate(dateString);
-      
-      // For a new event, also set appropriate default times
-      const nowHour = new Date().getHours();
-      const defaultStartTime = `${String(nowHour).padStart(2, '0')}:00`;
-      const defaultEndTime = `${String(nowHour + 1).padStart(2, '0')}:00`;
-      
-      setStartTime(defaultStartTime);
-      setEndTime(defaultEndTime);
-    }
-  }, [selectedDate, event]);
+  // Define interface for event update response
+  interface UpdateEventResponse {
+    success: boolean;
+    event: Event;
+    hasAttendees: boolean;
+  }
   
-  // Initialize the modal state when an event is provided
+  // Store the HTML content for email previews
+  const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
+  
+  // Reset form when modal opens/closes or event changes
   useEffect(() => {
-    if (event) {
-      // Basic event details
-      form.reset({
-        title: event.title || '',
-        description: event.description || '',
-        location: event.location || '',
-        calendarId: event.calendarId?.toString() || '',
-        allDay: !!event.allDay,
-        timezone: event.timezone || 'UTC',
-        isBusy: event.busyStatus === 'busy',
-        startDate: '',  // Will be set later
-        endDate: '',    // Will be set later
-        startTime: '',  // Will be set later
-        endTime: ''     // Will be set later
-      });
+    // Always reset the form when the modal closes to clear stale data
+    if (!open) {
+      resetForm();
+      return;
+    }
+    
+    // Clear email preview when modal opens
+    clearPreview();
+    setEmailPreviewHtml(null);
+    
+    // One-time initialization for the form when modal opens
+    const initializeForm = () => {
+      // First, reset the form to ensure we start with a clean state
+      resetForm();
       
-      // Parse the attendees if available
-      if (event.attendees) {
+      // Focus on title input after modal opens
+      setTimeout(() => {
+        titleInputRef.current?.focus();
+      }, 100);
+      
+      if (event) {
+        // Editing existing event
+        setTitle(event.title);
+        setDescription(event.description || '');
+        setLocation(event.location || '');
+        setCalendarId(event.calendarId.toString());
+        setIsBusy(event.busyStatus === 'busy'); // Default to busy based on busyStatus
+        
+        // Try to parse attendees from event if available
         try {
-          // First try using the utility function
-          let parsedAttendees = [];
-          
-          try {
-            // Always validate attendees data as array of attendee objects
-            const attendeesData = typeof event.attendees === 'string' 
-              ? JSON.parse(event.attendees) 
-              : event.attendees;
+          if (event.attendees) {
+            // If attendees is a string, parse it; if it's already an object, use it directly
+            let parsedAttendees;
             
-            if (Array.isArray(attendeesData)) {
-              parsedAttendees = attendeesData.map(attendee => {
-                // Ensure each attendee has minimum required fields
-                if (!attendee.id) {
-                  attendee.id = uuidv4();
-                }
+            if (typeof event.attendees === 'string') {
+              try {
+                // Try to parse as JSON
+                parsedAttendees = JSON.parse(event.attendees);
+                console.log('Parsed attendees as JSON:', parsedAttendees);
                 
-                if (!attendee.role) {
-                  attendee.role = 'Member';
+                // If we have parsed attendees with "params" and "val", transform them to our format
+                if (Array.isArray(parsedAttendees) && parsedAttendees.length > 0 && parsedAttendees[0].params) {
+                  parsedAttendees = parsedAttendees
+                    // Filter out resource attendees
+                    .filter(att => !att.params.CUTYPE || att.params.CUTYPE !== 'RESOURCE')
+                    .map((att, index) => {
+                      // Extract email from val (remove mailto: prefix)
+                      const email = att.val ? att.val.replace('mailto:', '') : '';
+                      
+                      // Determine role from params
+                      let role: AttendeeRole = 'Member';
+                      if (att.params.ROLE === 'CHAIR' || att.params.ROLE === 'Chairman') {
+                        role = 'Chairman';
+                      } else if (att.params.ROLE === 'REQ-PARTICIPANT' || att.params.ROLE === 'Secretary') {
+                        role = 'Secretary';
+                      }
+                      
+                      // Extract name from CN if available
+                      const name = att.params.CN || '';
+                      
+                      return {
+                        id: att.id || `attendee-${index}-${Date.now()}`,
+                        email,
+                        name, 
+                        role
+                      };
+                    });
+                  
+                  console.log('Transformed attendees from params/val format:', parsedAttendees);
                 }
+              } catch (parseError) {
+                console.warn('Attendees was not valid JSON, attempting to extract from raw data');
                 
-                return attendee;
-              });
+                // If it's a string but not JSON, check if it's in the raw data
+                if (event.rawData) {
+                  const attendeeMatches = typeof event.rawData === 'string' 
+                    ? event.rawData.match(/ATTENDEE[^:\r\n]*(?:(?!CUTYPE=RESOURCE)[^:\r\n])*:[^\r\n]+/g)
+                    : null;
+                    
+                  if (attendeeMatches && attendeeMatches.length > 0) {
+                    console.log(`Found ${attendeeMatches.length} attendee matches in raw data`);
+                    
+                    // Extract strings directly from the RegExpMatchArray
+                    const attendeeLines = [];
+                    for (let i = 0; i < attendeeMatches.length; i++) {
+                      attendeeLines.push(attendeeMatches[i]);
+                    }
+                    
+                    parsedAttendees = attendeeLines.map((line, index) => {
+                      const emailMatch = typeof line === 'string' ? line.match(/mailto:([^>\r\n]+)/) : null;
+                      const email = emailMatch && emailMatch[1] ? emailMatch[1].trim() : `unknown${index}@example.com`;
+                      
+                      const nameMatch = typeof line === 'string' ? line.match(/CN=([^;:]+)/) : null;
+                      const name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : '';
+                      
+                      const roleMatch = typeof line === 'string' ? line.match(/ROLE=([^;:]+)/) : null;
+                      let role: AttendeeRole = 'Member';
+                      
+                      if (roleMatch) {
+                        const rawRole = roleMatch[1].trim();
+                        if (rawRole === 'CHAIR' || rawRole === 'Chairman') {
+                          role = 'Chairman';
+                        } else if (rawRole === 'REQ-PARTICIPANT' || rawRole === 'Secretary') {
+                          role = 'Secretary';
+                        }
+                      }
+                      
+                      return {
+                        id: `attendee-${index}-${Date.now()}`,
+                        email,
+                        name,
+                        role
+                      };
+                    });
+                  }
+                }
+              }
+            } else {
+              // It's already an object
+              parsedAttendees = event.attendees;
             }
-          } catch (parseError) {
-            console.error("Error parsing attendees:", parseError);
-            // If parsing fails, set empty array as fallback
-            parsedAttendees = [];
+              
+            if (Array.isArray(parsedAttendees) && parsedAttendees.length > 0) {
+              // Filter out any invalid entries or resource entries
+              const validAttendees = parsedAttendees.filter(att => 
+                att && 
+                (att.email || att.val) && 
+                (!att.params || att.params.CUTYPE !== 'RESOURCE')
+              );
+              
+              // Make sure each attendee has an id and transform to our format if needed
+              const attendeesWithIds = validAttendees.map((attendee, index) => {
+                // If attendee has val but no email, it might be in params/val format from node-ical
+                if (attendee.val && !attendee.email) {
+                  return {
+                    id: attendee.id || `attendee-${index}-${Date.now()}`,
+                    email: attendee.val.replace('mailto:', ''),
+                    name: attendee.params?.CN || '',
+                    role: attendee.params?.ROLE === 'CHAIR' ? 'Chairman' : 
+                          attendee.params?.ROLE === 'REQ-PARTICIPANT' ? 'Secretary' : 'Member'
+                  };
+                }
+                
+                // Otherwise use standard format
+                return {
+                  ...attendee,
+                  id: attendee.id || `attendee-${index}-${Date.now()}`
+                };
+              });
+              
+              setAttendees(attendeesWithIds);
+              console.log('Successfully parsed attendees:', attendeesWithIds);
+            }
           }
-          
-          setAttendees(parsedAttendees);
         } catch (error) {
-          console.error("Failed to parse attendees:", error);
+          console.error('Failed to parse attendees', error);
+          // Ensure attendees is reset to empty array on error
           setAttendees([]);
         }
-      } else {
-        setAttendees([]);
-      }
-      
-      // Parse the resources if available
-      if (event.resources) {
+        
+        // Try to parse resources from event if available
         try {
-          // Try to handle both string and array formats
-          let parsedResources = [];
+          // DEBUG: Log the entire event object to inspect structure
+          console.log('DEBUG EVENT DATA FOR RESOURCES:', {
+            id: event.id,
+            title: event.title,
+            rawData: typeof event.rawData === 'string' ? (event.rawData.length > 100 ? event.rawData.substring(0, 100) + '...' : event.rawData) : null,
+            attendees: event.attendees,
+            resources: event.resources,
+            hasAttendeeField: !!event.attendees,
+            hasResourcesField: !!event.resources,
+            hasRawData: !!event.rawData
+          });
           
-          if (typeof event.resources === 'string') {
-            try {
-              // First try to parse as JSON
-              parsedResources = JSON.parse(event.resources);
-            } catch (jsonError) {
-              // If not valid JSON, assume comma-separated list
-              try {
-                parsedResources = event.resources.split(',').map(r => r.trim());
-              } catch (splitError) {
-                console.error("Error parsing resources as list:", splitError);
-                parsedResources = [];
+          // First try using the utility function
+          const parsedResources = parseResourcesFromEvent(event);
+          
+          if (parsedResources.length > 0) {
+            setResources(parsedResources);
+            console.log('Successfully parsed resources using utility:', parsedResources);
+          } else if (event.rawData) {
+            // Log full raw data if it's not too long
+            const fullRawData = typeof event.rawData === 'string' ? 
+              (event.rawData.length > 1000 ? event.rawData.substring(0, 1000) + '...' : event.rawData) : null;
+            console.log('Full raw event data for resource extraction:', fullRawData);
+              
+            // Try both the standard pattern and a more flexible one
+            const resourceMatches = typeof event.rawData === 'string'
+              ? event.rawData.match(/ATTENDEE[^:]*CUTYPE=RESOURCE[^:\r\n]*:[^\r\n]+/g) || 
+                event.rawData.match(/ATTENDEE[^:]*CUTYPE="?RESOURCE"?[^:\r\n]*:[^\r\n]+/g) ||
+                event.rawData.match(/ATTENDEE.*?CUTYPE.*?RESOURCE.*?:[^\r\n]+/g)
+              : null;
+            
+            console.log('Resource regex matches:', resourceMatches);
+              
+            // Also check for attendees with resource types  
+            if (event.attendees && typeof event.attendees === 'string') {
+              console.log('Checking attendees string for resources:', event.attendees);
+              
+              // Look for "CUTYPE" or "Resource" in the attendees string
+              if (event.attendees.includes('CUTYPE') || event.attendees.includes('Resource')) {
+                try {
+                  const attendeesData = JSON.parse(event.attendees);
+                  console.log('Parsed attendees data for resource check:', attendeesData);
+                  
+                  // Extract any attendees that have CUTYPE=RESOURCE
+                  const resourceAttendees = Array.isArray(attendeesData) ? 
+                    attendeesData.filter(a => a && a.params && 
+                      (a.params.CUTYPE === 'RESOURCE' || a.params.ROLE === 'NON-PARTICIPANT')) : [];
+                      
+                  console.log('Resource attendees filtered:', resourceAttendees);
+                  
+                  if (resourceAttendees.length > 0) {
+                    const extractedResourcesFromAttendees = resourceAttendees.map((att, index) => {
+                      const email = att.val ? att.val.replace('mailto:', '') : '';
+                      const name = att.params.CN || `Resource ${index + 1}`;
+                      const subType = att.params['X-RESOURCE-TYPE'] || '';
+                      
+                      return {
+                        id: `resource-${index}-${Date.now()}`,
+                        name,
+                        adminEmail: email,
+                        subType,
+                        capacity: 1
+                      };
+                    });
+                    
+                    if (extractedResourcesFromAttendees.length > 0) {
+                      setResources(extractedResourcesFromAttendees);
+                      console.log('Extracted resources from attendees data:', extractedResourcesFromAttendees);
+                      return; // Skip further processing if we found resources
+                    }
+                  }
+                } catch (err) {
+                  console.warn('Failed to parse attendees JSON for resources:', err);
+                }
               }
             }
-          } else if (Array.isArray(event.resources)) {
-            // Already an array
-            parsedResources = event.resources;
+              
+            if (resourceMatches && resourceMatches.length > 0) {
+              console.log(`Found ${resourceMatches.length} resource matches in raw data:`, resourceMatches);
+              
+              // Extract strings safely from the RegExpMatchArray
+              const resourceLines: string[] = [];
+              for (let i = 0; i < resourceMatches.length; i++) {
+                const item = resourceMatches[i];
+                if (item) resourceLines.push(item);
+              }
+              
+              const extractedResources = resourceLines.map((line, index) => {
+                const emailMatch = typeof line === 'string' ? line.match(/mailto:([^>\r\n]+)/) : null;
+                const adminEmail = emailMatch && emailMatch[1] ? emailMatch[1].trim() : '';
+                
+                const nameMatch = typeof line === 'string' ? line.match(/CN="?([^";:]+)"?/) : null;
+                const name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : `Resource ${index + 1}`;
+                
+                // Try several patterns for resource type
+                let typeMatch = null;
+                if (typeof line === 'string') {
+                  typeMatch = line.match(/X-RESOURCE-TYPE="?([^";:]+)"?/) || 
+                             line.match(/RESOURCE-TYPE="?([^";:]+)"?/) ||
+                             line.match(/TYPE="?([^";:]+)"?/);
+                }
+                const subType = typeMatch && typeMatch[1] ? typeMatch[1].trim() : name;
+                
+                return {
+                  id: `resource-${index}-${Date.now()}`,
+                  name,
+                  adminEmail,
+                  subType,
+                  capacity: 1
+                };
+              });
+              
+              if (extractedResources.length > 0) {
+                setResources(extractedResources);
+                console.log('Successfully parsed resources from raw data:', extractedResources);
+              }
+            }
           }
-          
-          setResources(parsedResources);
         } catch (error) {
-          console.error("Failed to parse resources:", error);
+          console.error('Failed to parse resources', error);
+          // Ensure resources is reset to empty array on error
           setResources([]);
         }
-      } else {
-        setResources([]);
-      }
-      
-      // Parse the recurrence rule if available
-      if (event.recurrenceRule) {
+        
+        // Try to parse recurrence from event if available
         try {
-          // Use parseRRULEFromEvent instead of useRRuleFromString (which is a hook)
-          const parsedRecurrence = parseRRULEFromEvent(event);
-          setRecurrence(parsedRecurrence);
-        } catch (error) {
-          console.error("Failed to parse recurrence rule:", error);
-          // Default to no recurrence if parsing fails
-          setRecurrence({
-            pattern: 'None',
-            interval: 1,
-            endType: 'Never'
-          });
-        }
-      } else {
-        // Default to no recurrence if no rule is provided
-        setRecurrence({
-          pattern: 'None',
-          interval: 1,
-          endType: 'Never'
-        });
-      }
-      
-      // Handle date and time parsing for existing events
-      if (event.startDate && event.endDate) {
-        try {
-          const startDateTime = new Date(event.startDate);
-          const endDateTime = new Date(event.endDate);
-          
-          if (isValid(startDateTime) && isValid(endDateTime)) {
-            // Format dates for input fields
-            const formattedStartDate = format(startDateTime, 'yyyy-MM-dd');
-            let formattedEndDate = '';
-            let formattedStartTime = '';
-            let formattedEndTime = '';
-            
-            // For all-day events, adjust the end date display
-            // RFC 5545 specifies end date is exclusive for all-day events
-            // So we subtract 1 day from the end date for display purposes
-            if (event.allDay) {
-              // If the event is an all-day event, subtract 1 day from the end date
-              // because the RFC 5545 standard sets the end date as exclusive
-              const adjustedEndDate = addDays(endDateTime, -1);
-              formattedEndDate = format(adjustedEndDate, 'yyyy-MM-dd');
+          // First check if we have recurrenceRule (from schema) and use that
+          if (event.recurrenceRule) {
+            try {
+              // First try to parse as JSON
+              const recurrenceRule = event.recurrenceRule;
+              let recurrenceConfig: RecurrenceConfig = {
+                pattern: 'None',
+                interval: 1,
+                weekdays: [],
+                endType: 'Never',
+                occurrences: 10
+              };
               
-              // For all-day events, don't set times (they aren't used)
-              formattedStartTime = '00:00';
-              formattedEndTime = '23:59';
+              // Try to parse as JSON first
+              try {
+                // Attempt to parse recurrence rule if it's in our expected format
+                const parsedRecurrence = JSON.parse(recurrenceRule);
+                if (parsedRecurrence && typeof parsedRecurrence === 'object') {
+                  // Default values for any missing fields
+                  recurrenceConfig = {
+                    pattern: parsedRecurrence.pattern || 'None',
+                    interval: parsedRecurrence.interval || 1,
+                    weekdays: parsedRecurrence.weekdays || [],
+                    dayOfMonth: parsedRecurrence.dayOfMonth,
+                    monthOfYear: parsedRecurrence.monthOfYear,
+                    endType: parsedRecurrence.endType || 'Never',
+                    occurrences: parsedRecurrence.occurrences || 10,
+                    endDate: parsedRecurrence.endDate ? new Date(parsedRecurrence.endDate) : undefined
+                  };
+                  console.log('Successfully parsed recurrence rule from JSON:', recurrenceConfig);
+                }
+              } catch (jsonParseError) {
+                // If it's not JSON, check if it's an iCalendar format (FREQ=DAILY;COUNT=3)
+                if (recurrenceRule.includes('FREQ=')) {
+                  console.log('Parsing iCalendar RRULE format:', recurrenceRule);
+                  
+                  // Extract frequency
+                  const freqMatch = recurrenceRule.match(/FREQ=([^;]+)/);
+                  if (freqMatch && freqMatch[1]) {
+                    const freq = freqMatch[1];
+                    if (freq === 'DAILY') recurrenceConfig.pattern = 'Daily';
+                    else if (freq === 'WEEKLY') recurrenceConfig.pattern = 'Weekly';
+                    else if (freq === 'MONTHLY') recurrenceConfig.pattern = 'Monthly';
+                    else if (freq === 'YEARLY') recurrenceConfig.pattern = 'Yearly';
+                    console.log(`Extracted frequency: ${freq}, mapped to pattern: ${recurrenceConfig.pattern}`);
+                  }
+                  
+                  // Extract interval
+                  const intervalMatch = recurrenceRule.match(/INTERVAL=(\d+)/);
+                  if (intervalMatch && intervalMatch[1]) {
+                    recurrenceConfig.interval = parseInt(intervalMatch[1], 10);
+                    console.log(`Extracted interval: ${recurrenceConfig.interval}`);
+                  }
+                  
+                  // Extract count
+                  const countMatch = recurrenceRule.match(/COUNT=(\d+)/);
+                  if (countMatch && countMatch[1]) {
+                    recurrenceConfig.occurrences = parseInt(countMatch[1], 10);
+                    recurrenceConfig.endType = 'After';
+                    console.log(`Extracted count: ${recurrenceConfig.occurrences}, setting endType: After`);
+                  }
+                  
+                  // Extract until
+                  const untilMatch = recurrenceRule.match(/UNTIL=([^;]+)/);
+                  if (untilMatch && untilMatch[1]) {
+                    // Parse iCalendar date format like 20250428T235959Z
+                    const untilStr = untilMatch[1];
+                    let untilDate;
+                    
+                    if (untilStr.includes('T')) {
+                      // Date with time
+                      const year = parseInt(untilStr.substring(0, 4), 10);
+                      const month = parseInt(untilStr.substring(4, 6), 10) - 1; // Month is 0-indexed
+                      const day = parseInt(untilStr.substring(6, 8), 10);
+                      const hour = parseInt(untilStr.substring(9, 11), 10);
+                      const minute = parseInt(untilStr.substring(11, 13), 10);
+                      const second = parseInt(untilStr.substring(13, 15), 10);
+                      
+                      untilDate = new Date(Date.UTC(year, month, day, hour, minute, second));
+                    } else {
+                      // Date only
+                      const year = parseInt(untilStr.substring(0, 4), 10);
+                      const month = parseInt(untilStr.substring(4, 6), 10) - 1;
+                      const day = parseInt(untilStr.substring(6, 8), 10);
+                      
+                      untilDate = new Date(Date.UTC(year, month, day));
+                    }
+                    
+                    recurrenceConfig.endDate = untilDate;
+                    recurrenceConfig.endType = 'On';
+                    console.log(`Extracted until: ${untilStr}, parsed to ${untilDate}, setting endType: On`);
+                  }
+                  
+                  // Extract BYDAY for weekly recurrences
+                  if (recurrenceConfig.pattern === 'Weekly') {
+                    const bydayMatch = recurrenceRule.match(/BYDAY=([^;]+)/);
+                    if (bydayMatch && bydayMatch[1]) {
+                      const days = bydayMatch[1].split(',');
+                      const dayMap: Record<string, string> = {
+                        'SU': 'Sunday',
+                        'MO': 'Monday',
+                        'TU': 'Tuesday',
+                        'WE': 'Wednesday',
+                        'TH': 'Thursday',
+                        'FR': 'Friday',
+                        'SA': 'Saturday'
+                      };
+                      
+                      recurrenceConfig.weekdays = days.map(day => dayMap[day] || day);
+                      console.log(`Extracted BYDAY=${bydayMatch[1]}, mapped to weekdays:`, recurrenceConfig.weekdays);
+                    }
+                  }
+                  
+                  console.log('Successfully parsed iCalendar RRULE:', recurrenceConfig);
+                }
+              }
               
-              console.log(`[DATE DEBUG] All-day event date processing:`, {
-                originalStart: startDateTime,
-                originalEnd: endDateTime,
-                formattedStart: formattedStartDate,
-                adjustedEnd: adjustedEndDate,
-                formattedEnd: formattedEndDate,
-              });
-            } else {
-              // Regular event (not all-day) - use end date as is
-              formattedEndDate = format(endDateTime, 'yyyy-MM-dd');
-              
-              // For regular events, also set the times
-              formattedStartTime = format(startDateTime, 'HH:mm');
-              formattedEndTime = format(endDateTime, 'HH:mm');
-              
-              console.log(`[DATE DEBUG] Regular event time processing:`, {
-                originalStart: startDateTime,
-                originalEnd: endDateTime,
-                formattedStart: formattedStartDate,
-                formattedEnd: formattedEndDate,
-                startTime: formattedStartTime,
-                endTime: formattedEndTime,
-              });
+              // Now set the recurrence config regardless of how it was parsed
+              if (recurrenceConfig.pattern !== 'None') {
+                setRecurrence(recurrenceConfig);
+              }
+            } catch (innerError) {
+              console.error('Failed to parse recurrence rule', innerError);
             }
-            
-            // Update form with the date and time values
-            form.setValue('startDate', formattedStartDate);
-            form.setValue('endDate', formattedEndDate);
-            form.setValue('startTime', formattedStartTime);
-            form.setValue('endTime', formattedEndTime);
-          } else {
-            throw new Error('Invalid date format in event');
           }
-        } catch (dateError) {
-          console.error("Error processing event dates:", dateError);
+        } catch (error) {
+          console.error('Failed to process recurrence', error);
+        }
+        
+        // Safely create date objects
+        let start: Date;
+        let end: Date;
+        
+        try {
+          start = new Date(event.startDate);
+          end = new Date(event.endDate);
           
-          // Set fallback values for dates and times
-          const today = new Date();
-          const formattedToday = format(today, 'yyyy-MM-dd');
+          if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+            console.error(`Invalid event dates for "${event.title}"`);
+            start = new Date();
+            end = new Date();
+            end.setHours(end.getHours() + 1);
+          }
           
-          // Update form with default date and time values
-          form.setValue('startDate', formattedToday);
-          form.setValue('endDate', formattedToday);
-          form.setValue('startTime', '12:00');
-          form.setValue('endTime', '13:00');
+          // For all-day events, the end date in CalDAV is typically the day after
+          // (exclusive end date). So for display purposes, we need to subtract 1 day
+          // from the end date if this is an all-day event.
+          if (event.allDay) {
+            console.log(`All-day event detected for "${event.title}"`);
+            console.log(`Original dates: Start=${start.toISOString()}, End=${end.toISOString()}`);
+            
+            // If end date is after start date, adjust it back by one day for display
+            if (end.getTime() > start.getTime()) {
+              const adjustedEnd = new Date(end);
+              adjustedEnd.setDate(adjustedEnd.getDate() - 1);
+              end = adjustedEnd;
+              console.log(`Adjusted end date for form display: ${end.toISOString()}`);
+            }
+          }
+        } catch (error) {
+          console.error(`Error parsing dates for event "${event.title}":`, error);
+          start = new Date();
+          end = new Date();
+          end.setHours(end.getHours() + 1);
+        }
+        
+        // Format dates for form - now with correct adjustment for all-day events
+        setStartDate(start.toISOString().split('T')[0]);
+        setEndDate(end.toISOString().split('T')[0]);
+        
+        if (!event.allDay) {
+          try {
+            setStartTime(start.toTimeString().slice(0, 5));
+            setEndTime(end.toTimeString().slice(0, 5));
+          } catch (error) {
+            console.error("Error formatting time:", error);
+            setStartTime('09:00');
+            setEndTime('10:00');
+          }
+        } else {
+          setStartTime('00:00');
+          setEndTime('23:59');
+        }
+        
+        setAllDay(event.allDay || false);
+        setTimezone(event.timezone || selectedTimezone);
+      } else if (selectedDate) {
+        // INDUSTRY BEST PRACTICE TIMEZONE HANDLING
+        // Following Google/Outlook standards to preserve "wall time" in user's local timezone
+        
+        console.log(`[DATE DEBUG] ------- Event Form Date Initialization with Best Practices -------`);
+        console.log(`[DATE DEBUG] Received selectedDate: ${selectedDate instanceof Date ? selectedDate.toString() : selectedDate}`);
+        console.log(`[DATE DEBUG] User timezone: ${selectedTimezone}`);
+        console.log(`[DATE DEBUG] Browser timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+        
+        // Create a proper date object from the selected date
+        const localDate = new Date(selectedDate);
+        
+        if (!isNaN(localDate.getTime())) {
+          // Extract date components IN LOCAL TIMEZONE to preserve the calendar day the user clicked on
+          const year = localDate.getFullYear();
+          const month = (localDate.getMonth() + 1).toString().padStart(2, '0');
+          const day = localDate.getDate().toString().padStart(2, '0');
+          const formattedDate = `${year}-${month}-${day}`;
           
-          // Show notification about date format issue
-          toast({
-            title: 'Date Format Issue',
-            description: 'Could not parse event dates. Default values have been set.',
-            variant: 'destructive'
+          console.log(`[DATE DEBUG] Selected date components (local timezone): year=${year}, month=${month}, day=${day}`);
+          console.log(`[DATE DEBUG] Formatted as YYYY-MM-DD: ${formattedDate}`);
+          
+          // Set the same date for both start and end
+          setStartDate(formattedDate);
+          setEndDate(formattedDate);
+          
+          // Default to regular time-based events (not all-day) when clicking on a day
+          setAllDay(false);
+          
+          // BEST PRACTICE: Use 9:00 AM as default start time instead of current time
+          // This follows Google/Outlook convention of using reasonable business hours as defaults
+          const defaultStartHour = 9;  // 9:00 AM
+          const defaultEndHour = 10;   // 10:00 AM (1 hour meeting)
+          const defaultMinute = 0;
+          
+          // Format default times (9 AM - 10 AM)
+          const formattedStartTime = `${String(defaultStartHour).padStart(2, '0')}:${String(defaultMinute).padStart(2, '0')}`;
+          const formattedEndTime = `${String(defaultEndHour).padStart(2, '0')}:${String(defaultMinute).padStart(2, '0')}`;
+          
+          setStartTime(formattedStartTime);
+          setEndTime(formattedEndTime);
+          
+          // Always use the user's selected timezone
+          setTimezone(selectedTimezone);
+          
+          console.log(`[DATE DEBUG] Form values set with industry standard defaults:`, {
+            startDate: formattedDate,
+            endDate: formattedDate,
+            startTime: formattedStartTime, 
+            endTime: formattedEndTime,
+            allDay: false,
+            timezone: selectedTimezone
           });
         }
-      }
-    } else {
-      // For new events, set default values if selectedDate is not provided
-      if (!selectedDate) {
-        const now = new Date();
-        const formattedDate = format(now, 'yyyy-MM-dd');
-        const hourNow = now.getHours();
-        const hourNext = hourNow < 23 ? hourNow + 1 : 23;
-        const startTime = `${String(hourNow).padStart(2, '0')}:00`;
-        const endTime = `${String(hourNext).padStart(2, '0')}:00`;
         
-        // Update form with default date and time values
-        form.setValue('startDate', formattedDate);
-        form.setValue('endDate', formattedDate);
-        form.setValue('startTime', startTime);
-        form.setValue('endTime', endTime);
-        
-        console.log(`[DATE DEBUG] Form values set with industry standard defaults:`, {
-          startDate: formattedDate,
-          endDate: formattedDate,
-          startTime: startTime,
-          endTime: endTime,
-        });
-      }
-      
-      // For new events, default to the first available calendar
-      if (calendars && calendars.length > 0 && !form.getValues('calendarId')) {
-        const primaryCalendar = calendars.find(cal => cal.isPrimary);
-        if (primaryCalendar) {
-          form.setValue('calendarId', primaryCalendar.id.toString());
-        } else if (calendars[0]) {
-          form.setValue('calendarId', calendars[0].id.toString());
+        // Default to first available calendar
+        if (calendars.length > 0) {
+          setCalendarId(calendars[0].id.toString());
         }
       }
       
-      // Always add the current user as an attendee if we're creating a new event
-      if (user && attendees.length === 0) {
-        const defaultAttendees = [{
-          id: uuidv4(),
-          email: user.email,
-          name: user.name || '',
-          role: 'Chairman' // Default the creator to Chairman
-        }];
-        setAttendees(defaultAttendees);
-        form.setValue('attendees', defaultAttendees);
-      }
-      
-      // Set default values for other form fields
-      form.setValue('title', '');
-      form.setValue('description', '');
-      form.setValue('location', '');
-      form.setValue('allDay', false);
-      form.setValue('timezone', 'UTC');
-      form.setValue('isBusy', true);
-      form.setValue('resources', []);
-      form.setValue('recurrence', {
-        pattern: 'None',
-        interval: 1,
-        endType: 'Never'
-      });
-      form.setValue('sendEmails', true);
+      // Clear any previous errors
+      setErrors({});
     }
     
-    // Reset form errors
-    setErrors({});
+    // Call the initialization function once
+    initializeForm();
     
-    // Reset loading states
-    setIsSubmitting(false);
-    setIsDeleting(false);
-    
-    // Always start on the basic tab
-    setActiveTab('basic');
-  }, [event, selectedDate, calendars, user, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, event, selectedDate]);
   
-  // Validate the form before submission
-  const validateForm = () => {
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setLocation('');
+    setStartDate('');
+    setStartTime('');
+    setEndDate('');
+    setEndTime('');
+    setTimezone(selectedTimezone);
+    setAllDay(false);
+    setCalendarId('');
+    setAttendees([]);
+    setAttendeeInput('');
+    setAttendeeRole('Member');
+    setResources([]);
+    setRecurrence({
+      pattern: 'None',
+      interval: 1,
+      weekdays: [],
+      endType: 'Never',
+      occurrences: 10
+    });
+    setSelectedTemplate(null);
+    setIsBusy(true);
+    setErrors({});
+    setIsNextDayAdjusted(false);
+  };
+  
+  // This function handles the automatic next-day adjustment when end time is earlier than start time
+  const checkAndAdjustNextDay = () => {
+    if (allDay || !startDate || !endDate || !startTime || !endTime) return;
+    
+    // Only apply this when the user has selected the same date for start and end
+    if (startDate === endDate) {
+      // Create date objects to compare times
+      const [startHour, startMinute] = startTime.split(':').map(Number);
+      const [endHour, endMinute] = endTime.split(':').map(Number);
+      
+      // Compare times - if end time is earlier than start time on the same day
+      if ((endHour < startHour) || (endHour === startHour && endMinute < startMinute)) {
+        // Calculate next day date
+        const startDateObj = new Date(startDate);
+        const nextDay = new Date(startDateObj);
+        nextDay.setDate(nextDay.getDate() + 1);
+        
+        // Format the next day as YYYY-MM-DD
+        const nextDayFormatted = nextDay.toISOString().split('T')[0];
+        
+        // Set the end date to the next day and mark as adjusted
+        setEndDate(nextDayFormatted);
+        setIsNextDayAdjusted(true);
+        
+        // Clear any endDate validation errors since we've fixed the issue
+        if (errors.endDate) {
+          const { endDate, ...restErrors } = errors;
+          setErrors(restErrors);
+        }
+        
+        console.log(`[AUTO ADJUST] End time ${endTime} is earlier than start time ${startTime}, adjusted end date to next day: ${nextDayFormatted}`);
+      } else if (isNextDayAdjusted) {
+        // If times are now valid and we previously adjusted, reset back to same day
+        setEndDate(startDate);
+        setIsNextDayAdjusted(false);
+        console.log(`[AUTO ADJUST] Times are now valid, reset end date to match start date: ${startDate}`);
+      }
+    }
+  };
+  
+  // Helper function that determines which tabs have errors
+  const getErrorsByTab = (errors: Record<string, string>) => {
+    return {
+      basic: !!errors.title || !!errors.startDate || !!errors.endDate || !!errors.startTime || 
+             !!errors.endTime || !!errors.calendarId,
+      attendees: !!errors.attendees || !!errors.attendeeInput,
+      resources: !!errors.resources,
+      recurrence: !!errors.recurrence,
+      emails: !!errors.emails
+    };
+  };
+
+  const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     
-    // Basic validation
-    if (!title.trim()) {
-      newErrors.title = 'Title is required';
-    }
-    
-    if (!calendarId) {
-      newErrors.calendarId = 'Calendar is required';
-    }
-    
-    if (!startDate) {
-      newErrors.startDate = 'Start date is required';
-    }
-    
-    if (!endDate) {
-      newErrors.endDate = 'End date is required';
-    }
-    
+    // Required fields
+    if (!title.trim()) newErrors.title = 'Title is required';
+    if (!startDate) newErrors.startDate = 'Start date is required';
+    if (!endDate) newErrors.endDate = 'End date is required';
     if (!allDay) {
-      if (!startTime) {
-        newErrors.startTime = 'Start time is required';
-      }
+      if (!startTime) newErrors.startTime = 'Start time is required';
+      if (!endTime) newErrors.endTime = 'End time is required';
+    }
+    if (!calendarId) newErrors.calendarId = 'Calendar is required';
+    
+    // Date validation
+    if (startDate && endDate) {
+      const start = new Date(`${startDate}T${startTime || '00:00'}`);
+      const end = new Date(`${endDate}T${endTime || '23:59'}`);
       
-      if (!endTime) {
-        newErrors.endTime = 'End time is required';
-      }
-      
-      // Check if end time is before start time on the same day
-      if (startDate === endDate && startTime && endTime) {
-        const [startHours, startMinutes] = startTime.split(':').map(Number);
-        const [endHours, endMinutes] = endTime.split(':').map(Number);
-        
-        if (endHours < startHours || (endHours === startHours && endMinutes < startMinutes)) {
-          newErrors.endTime = 'End time must be after start time';
-        }
+      // For same-day events with end time before start time, we'll auto-adjust to next day when submitting
+      // so we should only show the validation error if different days are explicitly chosen and end is still before start
+      if (end < start && startDate !== endDate) {
+        newErrors.endDate = 'End date/time must be after start date/time';
       }
     }
     
-    // Validate recurrence
-    if (recurrence.pattern !== 'None') {
-      if (recurrence.interval < 1) {
-        newErrors.recurrenceInterval = 'Interval must be at least 1';
+    // Attendee validation
+    if (attendees.length > 0) {
+      const chairmen = attendees.filter(a => a.role === 'Chairman').length;
+      const secretaries = attendees.filter(a => a.role === 'Secretary').length;
+      
+      if (chairmen > 1) {
+        newErrors.attendees = 'Only one Chairman allowed';
       }
       
-      if (recurrence.pattern === 'Weekly' && (!recurrence.weekdays || recurrence.weekdays.length === 0)) {
-        newErrors.recurrenceWeekdays = 'At least one weekday must be selected';
-      }
-      
-      if (recurrence.pattern === 'Monthly' && (!recurrence.dayOfMonth || recurrence.dayOfMonth < 1 || recurrence.dayOfMonth > 31)) {
-        newErrors.recurrenceDayOfMonth = 'Day of month must be between 1 and 31';
-      }
-      
-      if (recurrence.endType === 'After' && (!recurrence.occurrences || recurrence.occurrences < 1)) {
-        newErrors.recurrenceOccurrences = 'Number of occurrences must be at least 1';
-      }
-      
-      if (recurrence.endType === 'On' && !recurrence.endDate) {
-        newErrors.recurrenceEndDate = 'End date is required';
-      }
-    }
-    
-    // Validate attendees
-    for (let i = 0; i < attendees.length; i++) {
-      const attendee = attendees[i];
-      
-      if (!attendee.email) {
-        newErrors[`attendee_${i}_email`] = 'Email is required';
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(attendee.email)) {
-        newErrors[`attendee_${i}_email`] = 'Invalid email format';
+      if (secretaries > 1) {
+        newErrors.attendees = 'Only one Secretary allowed';
       }
     }
     
@@ -704,37 +1235,102 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
     return Object.keys(newErrors).length === 0;
   };
   
-  // Group errors by tab for UI indication
-  const getErrorsByTab = (errors: Record<string, string>) => {
-    const result = {
-      basic: false,
-      attendees: false,
-      resources: false,
-      recurrence: false,
-      emails: false
+  const handleAddAttendee = () => {
+    if (!attendeeInput.trim()) return;
+    
+    // Basic email validation
+    if (!attendeeInput.includes('@')) {
+      setErrors({ ...errors, attendeeInput: 'Invalid email format' });
+      return;
+    }
+    
+    // Check for duplicates
+    if (attendees.some(a => a.email.toLowerCase() === attendeeInput.toLowerCase())) {
+      setErrors({ ...errors, attendeeInput: 'Attendee already added' });
+      return;
+    }
+    
+    const newAttendee: Attendee = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      email: attendeeInput,
+      role: attendeeRole
     };
     
-    // Check for errors in basic tab fields
-    const basicFields = ['title', 'calendarId', 'startDate', 'endDate', 'startTime', 'endTime'];
-    result.basic = basicFields.some(field => field in errors);
+    // Add the new attendee to the list
+    const updatedAttendees = [...attendees, newAttendee];
+    setAttendees(updatedAttendees);
+    setAttendeeInput('');
     
-    // Check for errors in attendees tab
-    result.attendees = Object.keys(errors).some(key => key.startsWith('attendee_'));
+    // Remove error if it exists
+    if (errors.attendeeInput) {
+      const { attendeeInput, ...rest } = errors;
+      setErrors(rest);
+    }
     
-    // Check for errors in resources tab
-    result.resources = Object.keys(errors).some(key => key.startsWith('resource_'));
-    
-    // Check for errors in recurrence tab
-    const recurrenceFields = ['recurrenceInterval', 'recurrenceWeekdays', 'recurrenceDayOfMonth', 'recurrenceOccurrences', 'recurrenceEndDate'];
-    result.recurrence = recurrenceFields.some(field => field in errors);
-    
-    // Check for errors in emails tab
-    result.emails = Object.keys(errors).some(key => key.startsWith('email_'));
-    
-    return result;
+    // Don't automatically switch to email preview tab - let user control this
+    // Just show a toast notification that attendee was added
+    toast({
+      title: 'Attendee added',
+      description: `${attendeeInput} has been added as a ${attendeeRole}`,
+      duration: 3000,
+    });
   };
   
-  // Handler for submitting the form
+  const handleRemoveAttendee = (id: string) => {
+    setAttendees(attendees.filter(a => a.id !== id));
+  };
+  
+  const handleUpdateAttendeeRole = (id: string, role: AttendeeRole) => {
+    setAttendees(attendees.map(a => 
+      a.id === id ? { ...a, role } : a
+    ));
+  };
+  
+  const handleWeekdayToggle = (day: string) => {
+    const currentWeekdays = recurrence.weekdays || [];
+    
+    if (currentWeekdays.includes(day)) {
+      setRecurrence({
+        ...recurrence,
+        weekdays: currentWeekdays.filter(d => d !== day)
+      });
+    } else {
+      setRecurrence({
+        ...recurrence,
+        weekdays: [...currentWeekdays, day]
+      });
+    }
+  };
+  
+  const handleRecurrenceEndDateChange = (date: Date | undefined) => {
+    setRecurrence({
+      ...recurrence,
+      endDate: date
+    });
+  };
+  
+  const handleApplyTemplate = (templateId: string) => {
+    if (templateId === "none") {
+      // Clear the description when "None" is selected
+      setDescription("");
+      setSelectedTemplate(null);
+      return;
+    }
+    
+    // Find template in both predefined and custom templates
+    const template = templates.find(t => t.id === templateId);
+    if (template) {
+      setDescription(template.content);
+      setSelectedTemplate(templateId);
+    }
+  };
+  
+  const handleSelectTemplate = (template: DescriptionTemplate) => {
+    setDescription(template.content);
+    setSelectedTemplate(template.id);
+    setTemplateManagerOpen(false);
+  };
+  
   const handleSubmit = async () => {
     if (!validateForm()) {
       // If there are errors, check which tab has errors and switch to it
@@ -802,86 +1398,204 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
           // Same careful approach for end date
           const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
           
-          // Add 1 day to the end date for all-day events (per RFC 5545 requirements)
-          // This ensures the event ends at midnight of the following day
-          endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+          // Create end date with Date.UTC
+          const endDateTemp = new Date(Date.UTC(endYear, endMonth - 1, endDay, 0, 0, 0));
           
           console.log(`[CRITICAL DATE DEBUG] All-day event end date breakdown:`, {
             date: endDate,
             year: endYear,
-            month: endMonth,
-            monthForJS: endMonth - 1,
+            month: endMonth, // Original month (1-indexed)
+            monthForJS: endMonth - 1, // Adjusted for JS Date (0-indexed)
             day: endDay,
-            dayAdjusted: endDay + 1, // Added 1 day for RFC 5545 compliance
-            createdDateUTC: endDateTime.toUTCString(),
-            createdDateISO: endDateTime.toISOString(),
-            createdDateLocal: endDateTime.toString()
+            createdDateUTC: endDateTemp.toUTCString(),
+            createdDateISO: endDateTemp.toISOString(),
+            createdDateLocal: endDateTemp.toString()
           });
-        } else {
-          // For time-specific events, we need to handle the timezone explicitly
-          // Create a DateTime string that combines date and time with the user's preferred timezone
-          startDateTime = new Date(`${startDate}T${startTime}:00${timezone === 'UTC' ? 'Z' : ''}`);
-          endDateTime = new Date(`${endDate}T${endTime}:00${timezone === 'UTC' ? 'Z' : ''}`);
           
-          console.log(`[CRITICAL DATE DEBUG] Time-specific event date creation:`, {
-            startRaw: `${startDate}T${startTime}:00`,
-            endRaw: `${endDate}T${endTime}:00`,
-            timezone,
-            startCreated: startDateTime.toISOString(),
-            endCreated: endDateTime.toISOString()
+          // For all-day events in CalDAV, if start and end date are the same, 
+          // we add a day to the end date per the CalDAV spec
+          if (startDateTime.getTime() === endDateTemp.getTime()) {
+            // Create a proper next day using UTC to avoid timezone issues
+            const nextDay = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+            endDateTime = nextDay;
+            
+            console.log(`[CRITICAL DATE DEBUG] Adjusted end date to next day:`, {
+              original: endDateTemp.toISOString(),
+              adjusted: nextDay.toISOString()
+            });
+          } else {
+            // If dates are already different, just use the end date as is
+            endDateTime = endDateTemp;
+          }
+          
+          console.log(`[CRITICAL DATE DEBUG] Final all-day event date objects:`, {
+            startDateTime: startDateTime.toISOString(),
+            endDateTime: endDateTime.toISOString(),
+            timezoneOffset: new Date().getTimezoneOffset()
           });
+          console.log(`[CRITICAL DATE DEBUG] ************************`);
+        } else {
+          console.log(`[CRITICAL DATE DEBUG] ************************`);
+          console.log(`[CRITICAL DATE DEBUG] Regular timed event submission - BEST PRACTICE IMPLEMENTATION`);
+          console.log(`[CRITICAL DATE DEBUG] Form date strings:`, { startDate, endDate, startTime, endTime });
+          console.log(`[CRITICAL DATE DEBUG] User selected timezone: ${timezone}`);
+          console.log(`[CRITICAL DATE DEBUG] Browser timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+          
+          // BEST PRACTICE: Create date objects in the user's specified timezone
+          // When applying the "wall time principle" we need to ensure the time displayed to the user
+          // matches exactly what they expect in their timezone
+          
+          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+          const [startHour, startMinute] = startTime.split(':').map(Number);
+          
+          // BEST PRACTICE: Preserve the wall time exactly as the user entered it
+          // Use Date constructor with explicit components to ensure timezone is properly applied
+          startDateTime = new Date(startYear, startMonth - 1, startDay, startHour, startMinute);
+          
+          // For debugging, log the timezone-aware creation information
+          console.log(`[CRITICAL DATE DEBUG] Creating start date with details:`, {
+            inputDate: startDate,
+            inputTime: startTime,
+            year: startYear,
+            month: startMonth, // Original month (1-indexed)
+            monthForJS: startMonth - 1, // JS month (0-indexed)
+            day: startDay,
+            hour: startHour,
+            minute: startMinute,
+            createdDateISO: startDateTime.toISOString(),
+            createdDateLocale: startDateTime.toString(),
+            userTimezone: timezone
+          });
+          
+          // Get end date and time components
+          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+          const [endHour, endMinute] = endTime.split(':').map(Number);
+          
+          // Handle end date/time creation with timezone preservation
+          if (startDate === endDate) {
+            // For same-day events, ensure the end time reflects what the user sees
+            endDateTime = new Date(startYear, startMonth - 1, startDay, endHour, endMinute);
+            
+            // AUTOMATIC NEXT-DAY ADJUSTMENT (Google/Outlook behavior):
+            // If end time is earlier than start time, adjust to next day 
+            if (endDateTime < startDateTime) {
+              // End time is earlier than start time on the same day, move to next day
+              endDateTime.setDate(endDateTime.getDate() + 1);
+              console.log(`[CRITICAL DATE DEBUG] Automatically adjusted end date to next day (industry standard practice)`);
+            } else {
+              console.log(`[CRITICAL DATE DEBUG] Using same date for end time (wall time preserved)`);
+            }
+          } else {
+            // Different dates selected, create exact end date as specified by user
+            endDateTime = new Date(endYear, endMonth - 1, endDay, endHour, endMinute);
+            console.log(`[CRITICAL DATE DEBUG] Using different dates for multi-day event (user explicitly selected)`);
+          }
+          
+          console.log(`[CRITICAL DATE DEBUG] Regular event date objects:`, {
+            startDateTime: startDateTime.toISOString(),
+            endDateTime: endDateTime.toISOString(),
+            datesEqual: startDate === endDate
+          });
+          console.log(`[CRITICAL DATE DEBUG] ************************`);
         }
         
-        // Final validation of dates
+        // Final validation to ensure we have valid dates
         if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
-          throw new Error(`Invalid date values: Start ${startDateTime} or End ${endDateTime} resulted in NaN timestamps`);
+          throw new Error('Invalid date/time values');
         }
-      } catch (dateError) {
-        console.error("Date parsing error:", dateError);
+      } catch (error) {
+        console.error('Error creating date objects:', error);
         toast({
-          title: 'Invalid Date',
-          description: 'Could not process the date values. Please check your inputs.',
+          title: 'Invalid date/time',
+          description: 'Please check the date and time values',
           variant: 'destructive'
         });
         setIsSubmitting(false);
-        return;
+        return; // Stop submission if dates are invalid
       }
       
-      // Serialize attendees and resources for storage
+      // Handle timezone adjustments if needed
+      // (could add timezone conversion logic here if needed)
+      
+      // Prepare attendees and recurrence data for storage
       const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
-      // Resources should already be an array
       
-      // Check for recurrence rule and convert to proper format
-      const isRecurringEvent = recurrence.pattern !== 'None';
-      
-      // Create a sanitized RRULE for RFC 5545 compliance
+      /**************************************************************
+       * COMPLETELY REWRITTEN RECURRENCE RULE HANDLING FOR RFC 5545
+       * This solves the issue with recurrence rules not being properly 
+       * recognized by the server and CalDAV clients
+       **************************************************************/
       let recurrenceRule = null;
+      const isRecurringEvent = recurrence && recurrence.pattern && recurrence.pattern !== 'None';
+      
       if (isRecurringEvent) {
-        // Generate the standardized recurrence rule string
-        recurrenceRule = generateRRuleString(recurrence);
-        console.log(`[RECURRENCE] Generated RFC 5545 RRULE: ${recurrenceRule}`);
+        console.debug('[RECURRENCE DEBUG] Processing recurrence for event submission', recurrence);
+        
+        try {
+          // Step 1: Generate the RFC 5545 RRULE string directly
+          const rruleString = generateRRuleString(recurrence);
+          
+          if (rruleString) {
+            // Step 2: Instead of a complex nested object, we'll send a simpler format
+            // that the server can understand more easily
+            recurrenceRule = rruleString;
+            
+            // Log the pure RRULE string format
+            console.log('[RECURRENCE DEBUG] Using pure RRULE string format:', recurrenceRule);
+          } else {
+            console.warn('[RECURRENCE DEBUG] Generated RRULE string was empty, recurrence will not be set');
+            recurrenceRule = null;
+          }
+        } catch (recurrenceError) {
+          console.error('[RECURRENCE DEBUG] Error generating recurrence rule:', recurrenceError);
+          // No fallback - if we can't generate a valid RRULE, we won't set recurrence
+          recurrenceRule = null;
+        }
+      } else {
+        console.debug('[RECURRENCE DEBUG] Event is not recurring, skipping RRULE generation');
       }
       
-      // Determine the correct UID for the event
+      // Debug log for recurrence configuration
+      console.log('[RECURRENCE DEBUG] Preparing event with recurrence:', {
+        pattern: recurrence.pattern,
+        isRecurring: isRecurringEvent,
+        recurrenceRule
+      });
+            
+      // Get or create a UID as needed
       let eventUID: string;
-      
+
       try {
-        // If the event already exists, keep the same UID
-        if (event && event.uid) {
+        if (event?.uid) {
+          // For existing events, always use the existing UID
           eventUID = event.uid;
+          console.log(`Using existing event UID: ${eventUID}`);
+        } else if (initialEventUID) {
+          // CRITICAL FIX: For new events, use the UID we generated when the form was opened
+          // This ensures consistent UID from creation through all updates
+          eventUID = initialEventUID;
+          console.log(`Using initial UID generated at form open: ${eventUID}`);
+        } else if (persistedUID) {
+          // Fallback to persisted UID if initialEventUID somehow isn't available
+          eventUID = persistedUID;
+          console.log(`Fallback: Using persisted UID from IndexedDB: ${eventUID}`);
+        } else {
+          // Last resort: For completely new events without any UID, generate a new one
+          eventUID = generateUID();
+          console.log(`Last resort: Generated new UID for event: ${eventUID}`);
         }
-        // For a new event, generate a new UID
-        else {
-          // Use the hook to get a new RFC-compliant UID
-          const newUID = await getOrGenerateUID('event');
-          
-          if (!newUID) {
-            throw new Error('Failed to generate a valid UID');
-          }
-          
-          eventUID = newUID;
-        }
-        
+
+        // Log the UID source for debugging
+        console.log(`Final event UID (${event ? 'update' : 'create'}): ${eventUID}`, {
+          source: event?.uid 
+            ? 'existing' 
+            : (initialEventUID ? 'initialGenerated' : (persistedUID ? 'persisted' : 'lastResortGenerated')),
+          eventId: event?.id,
+          initialEventUID,
+          persistedUID
+        });
+
+        // Validate that we have a valid UID
         if (!eventUID) {
           throw new Error('Failed to get or create a valid UID for the event');
         }
@@ -916,49 +1630,10 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
         uid: eventUID,
       };
       
-      // Handle existing events or copies
+      // Handle existing event update
       if (event) {
-        // Check if this is a copy operation by looking for "Copy of" in the title
-        const isCopyEvent = title.startsWith('Copy of ');
-        
-        if (isCopyEvent) {
-          console.log("Creating a new event from copy", { title, eventUID });
-          
-          try {
-            // For copied events, prepare complete event data
-            const newEventData = {
-              ...eventData,
-              etag: null,
-              url: null,
-              rawData: null,
-              syncError: null,
-              lastSyncAttempt: null,
-              emailSent: null,
-              emailError: null,
-              lastModifiedBy: null, 
-              lastModifiedByName: null,
-              lastModifiedAt: null,
-            };
-            
-            // Create the new event
-            await createEvent(newEventData);
-            
-            // Creation successful - refresh events and close modal
-            queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-            
-            toast({
-              title: "Event Copy Created",
-              description: "The event copy was created successfully.",
-            });
-            
-            onClose();
-          } catch (createError) {
-            console.error("Failed to create event copy:", createError);
-            throw createError; // Will be caught by the outer catch block
-          }
-        } else {
-          // Regular update of an existing event
-          try {
+        // Update existing event - need to use the { id, data } format required by updateEvent
+        try {
             // Call the regular update function to update the event
             updateEvent({ 
               id: event.id, 
@@ -969,13 +1644,13 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
             // We no longer automatically show email preview or send emails on regular update
             queryClient.invalidateQueries({ queryKey: ['/api/events'] });
             onClose();
-          } catch (updateError) {
-            console.error("Failed to update event:", updateError);
-            throw updateError; // Will be caught by the outer catch block
-          }
+        } catch (updateError) {
+          console.error("Failed to update event:", updateError);
+          throw updateError; // Will be caught by the outer catch block
         }
-      } else {
-        // Handle new event creation
+      } 
+      // Handle new event creation
+      else {
         try {
           // For new events, we need to prepare the full event data
           // User auth context is already available at the component level
@@ -1071,7 +1746,7 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
     }
   };
   
-  // Handler for Cancel Event action - opens a dialog to confirm cancellation
+  // Handle Cancel Event action - opens a dialog to confirm cancellation
   const handleCancelEvent = () => {
     // Only allow cancellation if there are attendees
     if (!event || !event.id) {
@@ -1124,176 +1799,26 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
     }
   };
   
-  // Handler for adding a new attendee
-  const handleAddAttendee = () => {
-    if (!newAttendeeEmail) {
-      setErrors({
-        ...errors,
-        newAttendeeEmail: 'Email is required'
-      });
-      return;
-    }
-    
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newAttendeeEmail)) {
-      setErrors({
-        ...errors,
-        newAttendeeEmail: 'Invalid email format'
-      });
-      return;
-    }
-    
-    // Check for duplicates
-    if (attendees.some(a => a.email.toLowerCase() === newAttendeeEmail.toLowerCase())) {
-      setErrors({
-        ...errors,
-        newAttendeeEmail: 'Attendee already added'
-      });
-      return;
-    }
-    
-    const newAttendee: Attendee = {
-      id: uuidv4(),
-      email: newAttendeeEmail,
-      name: newAttendeeName || undefined,
-      role: newAttendeeRole
-    };
-    
-    setAttendees([...attendees, newAttendee]);
-    setNewAttendeeEmail('');
-    setNewAttendeeName('');
-    setNewAttendeeRole('Member');
-    
-    // Clear any errors
-    const { newAttendeeEmail: _, ...rest } = errors;
-    setErrors(rest);
-  };
-  
-  // Handler for removing an attendee
-  const handleRemoveAttendee = (id: string) => {
-    setAttendees(attendees.filter(a => a.id !== id));
-  };
-  
-  // Handler for updating an attendee's role
-  const handleUpdateAttendeeRole = (id: string, role: AttendeeRole) => {
-    setAttendees(attendees.map(a => 
-      a.id === id ? { ...a, role } : a
-    ));
-  };
-  
-  // Handler for adding a new resource
-  const handleAddResource = () => {
-    if (!newResource) {
-      setErrors({
-        ...errors,
-        newResource: 'Resource name is required'
-      });
-      return;
-    }
-    
-    // Check for duplicates
-    if (resources.some(r => r.toLowerCase() === newResource.toLowerCase())) {
-      setErrors({
-        ...errors,
-        newResource: 'Resource already added'
-      });
-      return;
-    }
-    
-    setResources([...resources, newResource]);
-    setNewResource('');
-    
-    // Clear any errors
-    const { newResource: _, ...rest } = errors;
-    setErrors(rest);
-  };
-  
-  // Handler for removing a resource
-  const handleRemoveResource = (index: number) => {
-    const newResources = [...resources];
-    newResources.splice(index, 1);
-    setResources(newResources);
-  };
-  
-  // Select a description template
-  const handleSelectTemplate = (template: DescriptionTemplate) => {
-    setDescription(template.content);
-  };
-  
-  // Handler for form cancellation
-  const handleCancel = () => {
-    onClose();
-  };
-  
-  // Determine if the form has been modified
-  const isFormModified = () => {
-    // For existing events, check if values have changed
-    if (event) {
-      return (
-        title !== (event.title || '') ||
-        description !== (event.description || '') ||
-        location !== (event.location || '') ||
-        calendarId !== (event.calendarId?.toString() || '') ||
-        allDay !== !!event.allDay ||
-        timezone !== (event.timezone || 'UTC') ||
-        (isBusy ? 'busy' : 'free') !== event.busyStatus
-        // Omitting deeper objects like attendees, resources, and dates for simplicity
-      );
-    }
-    
-    // For new events, check if values have been entered
-    return (
-      !!title ||
-      !!description ||
-      !!location ||
-      recurrence.pattern !== 'None' ||
-      attendees.length > 1 || // More than just the creator
-      resources.length > 0
-    );
-  };
-  
-  // Determine the form title based on whether we're editing or creating
-  const formTitle = event
-    ? `Edit: ${event.title}`
-    : 'Create New Event';
-  
-  // Determine the submit button text based on event state
-  const getSubmitButtonText = () => {
-    if (isSubmitting) {
-      return 'Saving...';
-    }
-    
-    if (event) {
-      // Check if this is a copy operation
-      if (title.startsWith('Copy of ')) {
-        return 'Create Copy';
-      }
-      return 'Update Event';
-    }
-    
-    return 'Create Event';
-  };
-  
   return (
     <>
       <Dialog open={open} onOpenChange={open => {
         if (!open) onClose();
       }}>
         <DialogContent className="sm:max-w-[950px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
-          <FormProvider {...form}>
-            <DialogHeader className="pb-4 border-b">
-              <DialogTitle className="flex items-center gap-2 text-lg">
-                {event ? (
-                  <>
-                    <span className="text-primary">{form.getValues('title') || 'Event Details'}</span>
-                  </>
-                ) : (
-                  <>
-                    <CalendarDays className="h-5 w-5 text-primary" />
-                    <span>Create New Event</span>
-                  </>
-                )}
-              </DialogTitle>
-            </DialogHeader>
+          <DialogHeader className="pb-4 border-b">
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              {event ? (
+                <>
+                  <span className="text-primary">{title || 'Event Details'}</span>
+                </>
+              ) : (
+                <>
+                  <CalendarDays className="h-5 w-5 text-primary" />
+                  <span>Create New Event</span>
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
           
           <Tabs
             defaultValue="basic"
@@ -1311,12 +1836,12 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
                   <TabsList className="flex flex-wrap h-auto min-h-12 w-full justify-evenly rounded-lg overflow-visible gap-1 p-1 bg-muted/20 border border-muted/30">
                     <TabsTrigger 
                       value="basic" 
-                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${form.getValues('title') || form.getValues('location') || form.getValues('description') ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.basic ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${title || location || description ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.basic ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
                     >
                       {tabErrors.basic && (
                         <AlertCircle className="h-4 w-4 text-red-500 absolute top-1 left-1" />
                       )}
-                      <Calendar className={`h-4 w-4 ${form.getValues('title') || form.getValues('location') || form.getValues('description') ? 'text-primary' : ''} ${tabErrors.basic ? 'text-red-500' : ''}`} />
+                      <Calendar className={`h-4 w-4 ${title || location || description ? 'text-primary' : ''} ${tabErrors.basic ? 'text-red-500' : ''}`} />
                       <span className={tabErrors.basic ? 'text-red-500 font-medium' : ''}>Details</span>
                     </TabsTrigger>
                     
@@ -1371,444 +1896,345 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
             </div>
             
             <ScrollArea className="flex-1 p-4 overflow-y-auto">
-              <TabsContent value="basic" className="mt-2 min-h-[50vh]">
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TabsContent value="basic" className="mt-0 p-0 min-h-[500px]">
+                {/* Basic Details Form */}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Title <span className="text-destructive">*</span></Label>
+                    <Input
+                      id="title"
+                      ref={titleInputRef}
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Event Title"
+                      className={errors.title ? 'border-destructive' : ''}
+                    />
+                    {errors.title && (
+                      <p className="text-destructive text-xs">{errors.title}</p>
+                    )}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <FormField
-                        control={form.control}
-                        name="title"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel htmlFor="title" className="text-sm font-medium">
-                              Title
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                id="title"
-                                placeholder="Event title"
-                                className={form.formState.errors.title ? 'border-red-500' : ''}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
+                      <Label htmlFor="start-date">Start Date <span className="text-destructive">*</span></Label>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Input
+                            id="start-date"
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => {
+                              const newStartDate = e.target.value;
+                              setStartDate(newStartDate);
+                              
+                              // If dates were previously the same, update end date to match new start date
+                              // This keeps the behavior consistent with how calendar apps typically work
+                              if (startDate === endDate) {
+                                setEndDate(newStartDate);
+                              }
+                              
+                              // Reset adjustment flag since user manually changed the date
+                              setIsNextDayAdjusted(false);
+                            }}
+                            className={errors.startDate ? 'border-destructive' : ''}
+                          />
+                          {errors.startDate && (
+                            <p className="text-destructive text-xs">{errors.startDate}</p>
+                          )}
+                        </div>
+                        
+                        {!allDay && (
+                          <div className="flex-1">
+                            <Input
+                              id="start-time"
+                              type="time"
+                              value={startTime}
+                              onChange={(e) => {
+                                setStartTime(e.target.value);
+                                // Check for adjustment after setting time
+                                setTimeout(checkAndAdjustNextDay, 0);
+                              }}
+                              className={`${errors.startTime ? 'border-destructive' : ''} [&::-webkit-calendar-picker-indicator]:z-50 [&::-webkit-calendar-picker-indicator]:relative`}
+                            />
+                            {errors.startTime && (
+                              <p className="text-destructive text-xs">{errors.startTime}</p>
+                            )}
+                          </div>
                         )}
-                      />
+                      </div>
                     </div>
                     
                     <div className="space-y-2">
-                      <FormLabel htmlFor="calendar" className="text-sm font-medium">
-                        Calendar
-                      </FormLabel>
-                      <Select value={calendarId} onValueChange={setCalendarId}>
-                        <SelectTrigger 
-                          className={`w-full ${errors.calendarId ? 'border-red-500' : ''}`}
-                        >
-                          <SelectValue placeholder="Select a calendar" />
+                      <Label htmlFor="end-date">End Date <span className="text-destructive">*</span></Label>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Input
+                            id="end-date"
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => {
+                              setEndDate(e.target.value);
+                              // Reset the next day adjustment flag when date is manually changed
+                              setIsNextDayAdjusted(false);
+                            }}
+                            className={errors.endDate ? 'border-destructive' : ''}
+                          />
+                          {errors.endDate && (
+                            <p className="text-destructive text-xs">{errors.endDate}</p>
+                          )}
+                        </div>
+                        
+                        {!allDay && (
+                          <div className="flex-1">
+                            <Input
+                              id="end-time"
+                              type="time"
+                              value={endTime}
+                              onChange={(e) => {
+                                setEndTime(e.target.value);
+                                // Check for adjustment after setting time
+                                setTimeout(checkAndAdjustNextDay, 0);
+                              }}
+                              className={`${errors.endTime ? 'border-destructive' : ''} [&::-webkit-calendar-picker-indicator]:z-50 [&::-webkit-calendar-picker-indicator]:relative`}
+                            />
+                            {errors.endTime && (
+                              <p className="text-destructive text-xs">{errors.endTime}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="all-day"
+                      checked={allDay}
+                      onCheckedChange={(checked) => {
+                        const isChecked = checked === true;
+                        setAllDay(isChecked);
+                        
+                        // When switching to all-day events, default to 00:00-23:59 in UTC
+                        if (isChecked) {
+                          setStartTime('00:00');
+                          setEndTime('23:59');
+                          setTimezone('UTC');
+                        } else {
+                          // When unchecking all-day, restore user's preferred timezone
+                          setTimezone(selectedTimezone);
+                          
+                          // Set default time values for non-all-day events to current time
+                          const now = new Date();
+                          const currentHour = now.getHours();
+                          const currentMinute = now.getMinutes();
+                          // Format current time as HH:MM
+                          const formattedStartTime = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+                          // End time is 1 hour later
+                          const endHour = (currentHour + 1) % 24; // Handle wrap around midnight
+                          const formattedEndTime = `${String(endHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+                          
+                          setStartTime(formattedStartTime);
+                          setEndTime(formattedEndTime);
+                        }
+                      }}
+                    />
+                    <Label htmlFor="all-day" className="cursor-pointer">All Day Event</Label>
+                  </div>
+                  
+                  {/* Only show timezone selector for non-all-day events */}
+                  {!allDay && (
+                    <div className="space-y-2">
+                      <Label htmlFor="timezone">Timezone</Label>
+                      <Select
+                        value={timezone}
+                        onValueChange={setTimezone}
+                      >
+                        <SelectTrigger id="timezone">
+                          <SelectValue placeholder="Select Timezone" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectGroup>
-                            <SelectLabel>Available Calendars</SelectLabel>
-                            {calendars?.map(calendar => (
-                              <SelectItem 
-                                key={calendar.id} 
-                                value={calendar.id.toString()}
-                                className="flex items-center gap-2"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <div 
-                                    className="h-3 w-3 rounded-full"
-                                    style={{ backgroundColor: calendar.color || '#4285F4' }} 
-                                  />
-                                  {calendar.name}
-                                  {calendar.isPrimary && <Badge variant="secondary" className="ml-2 text-xs">Primary</Badge>}
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
+                          {getTimezones().map((tz) => (
+                            <SelectItem
+                              key={tz.value}
+                              value={tz.value}
+                            >
+                              {tz.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-                      {errors.calendarId && (
-                        <p className="text-xs text-red-500">{errors.calendarId}</p>
-                      )}
                     </div>
+                  )}
+                  
+                  {/* Show a note about UTC timezone for all-day events */}
+                  {allDay && (
+                    <div className="space-y-1 bg-muted/40 p-2 rounded-md border border-muted">
+                      <div className="text-sm font-medium flex items-center gap-1.5">
+                        <Info className="h-4 w-4 text-muted-foreground" />
+                        Timezone: UTC (fixed for all-day events)
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        All-day events use UTC timezone to avoid date shifting problems
+                      </p>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="calendar">Calendar <span className="text-destructive">*</span></Label>
+                    <Select
+                      value={calendarId}
+                      onValueChange={setCalendarId}
+                    >
+                      <SelectTrigger id="calendar" className={errors.calendarId ? 'border-destructive' : ''}>
+                        <SelectValue placeholder="Select Calendar" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {calendars.map((calendar) => (
+                          <SelectItem
+                            key={calendar.id}
+                            value={calendar.id.toString()}
+                          >
+                            {calendar.name}
+                          </SelectItem>
+                        ))}
+                        
+                        {editableSharedCalendars.length > 0 && (
+                          <>
+                            <Separator className="my-1" />
+                            <p className="px-2 py-1.5 text-xs text-muted-foreground">Shared with me (editable)</p>
+                            {editableSharedCalendars.map((calendar) => (
+                              <SelectItem
+                                key={calendar.id}
+                                value={calendar.id.toString()}
+                              >
+                                {calendar.name} (shared)
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {errors.calendarId && (
+                      <p className="text-destructive text-xs">{errors.calendarId}</p>
+                    )}
                   </div>
                   
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <FormLabel htmlFor="location" className="text-sm font-medium">
-                        Location
-                      </FormLabel>
+                  <div className="space-y-2">
+                    <Label htmlFor="location">Location</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                       <Input
                         id="location"
-                        placeholder="Event location (optional)"
                         value={location}
-                        onChange={e => setLocation(e.target.value)}
+                        onChange={(e) => setLocation(e.target.value)}
+                        placeholder="Event Location"
+                        className="pl-8"
                       />
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 gap-4">
-                    <div className="space-y-2">
-                      <FormLabel htmlFor="description" className="text-sm font-medium flex justify-between items-center">
-                        <span>Description</span>
-                        
-                        {descriptionTemplates.length > 0 && (
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button variant="outline" size="sm" className="h-7 text-xs">
-                                <span>Templates</span>
-                                <ChevronRight className="h-3 w-3 ml-1" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-80">
-                              <div className="space-y-2">
-                                <h4 className="font-medium text-sm">Description Templates</h4>
-                                <div className="max-h-60 overflow-y-auto space-y-1">
-                                  {descriptionTemplates.map(template => (
-                                    <div
-                                      key={template.id}
-                                      role="button"
-                                      tabIndex={0}
-                                      className="w-full text-left font-normal text-xs h-auto py-2 px-3 hover:bg-secondary rounded cursor-pointer"
-                                      onClick={() => handleSelectTemplate(template)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                          handleSelectTemplate(template);
-                                        }
-                                      }}
-                                    >
-                                      {template.name}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </PopoverContent>
-                          </Popover>
-                        )}
-                      </FormLabel>
-                      <Textarea
-                        id="description"
-                        placeholder="Event description (optional)"
-                        value={description}
-                        onChange={e => setDescription(e.target.value)}
-                        className="min-h-[100px]"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Checkbox 
-                        id="allDay" 
-                        checked={allDay} 
-                        onCheckedChange={checked => {
-                          setAllDay(!!checked);
-                          // If switching to all-day, set appropriate times
-                          if (checked) {
-                            setStartTime('00:00');
-                            setEndTime('23:59');
-                          } else {
-                            // If switching to timed event, set reasonable default times
-                            const now = new Date();
-                            const hour = now.getHours();
-                            setStartTime(`${String(hour).padStart(2, '0')}:00`);
-                            setEndTime(`${String(hour + 1).padStart(2, '0')}:00`);
-                          }
-                        }}
-                      />
-                      <FormLabel htmlFor="allDay" className="text-sm font-medium">
-                        All-day event
-                      </FormLabel>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <FormLabel htmlFor="startDate" className="text-sm font-medium">
-                          Start
-                        </FormLabel>
-                        <div className="flex flex-col md:flex-row gap-2">
-                          <div className="flex-1">
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  className={`w-full justify-start text-left font-normal ${errors.startDate ? 'border-red-500' : ''}`}
-                                >
-                                  <CalendarIcon className="h-4 w-4 mr-2" />
-                                  {startDate ? format(new Date(startDate), 'PPP') : <span>Pick a date</span>}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                  mode="single"
-                                  selected={startDate ? new Date(startDate) : undefined}
-                                  onSelect={date => {
-                                    if (date) {
-                                      const formattedDate = format(date, 'yyyy-MM-dd');
-                                      setStartDate(formattedDate);
-                                      
-                                      // If end date is before start date, update it
-                                      if (endDate) {
-                                        const endD = new Date(endDate);
-                                        const startD = date;
-                                        if (endD < startD) {
-                                          setEndDate(formattedDate);
-                                        }
-                                      } else {
-                                        // If no end date set, make it same as start
-                                        setEndDate(formattedDate);
-                                      }
-                                      
-                                      // Clear any date-related errors
-                                      const { startDate: _, ...rest } = errors;
-                                      setErrors(rest);
-                                    }
-                                  }}
-                                />
-                              </PopoverContent>
-                            </Popover>
-                            {errors.startDate && (
-                              <p className="text-xs text-red-500 mt-1">{errors.startDate}</p>
-                            )}
-                          </div>
-                          
-                          {!allDay && (
-                            <div className="w-full md:w-24">
-                              <Input
-                                type="time"
-                                value={startTime}
-                                onChange={e => {
-                                  const time = e.target.value;
-                                  setStartTime(time);
-                                  
-                                  // If end time is earlier than start time on same day, adjust it
-                                  if (startDate === endDate) {
-                                    const [startHour, startMinute] = time.split(':').map(Number);
-                                    const [endHour, endMinute] = endTime.split(':').map(Number);
-                                    
-                                    if (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) {
-                                      // Calculate a new end time 1 hour after start
-                                      let newEndHour = startHour + 1;
-                                      if (newEndHour > 23) {
-                                        newEndHour = 23;
-                                        setEndTime(`${newEndHour}:${startMinute}`);
-                                      } else {
-                                        setEndTime(`${String(newEndHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}`);
-                                      }
-                                      
-                                      console.log(`[CRITICAL DATE DEBUG] Automatically adjusted end time to be after start time`);
-                                    }
-                                  }
-                                  
-                                  // Clear any time-related errors
-                                  const { startTime: _, ...rest } = errors;
-                                  setErrors(rest);
-                                }}
-                                className={errors.startTime ? 'border-red-500' : ''}
-                              />
-                              {errors.startTime && (
-                                <p className="text-xs text-red-500 mt-1">{errors.startTime}</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <FormLabel htmlFor="endDate" className="text-sm font-medium">
-                          End
-                        </FormLabel>
-                        <div className="flex flex-col md:flex-row gap-2">
-                          <div className="flex-1">
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  className={`w-full justify-start text-left font-normal ${errors.endDate ? 'border-red-500' : ''}`}
-                                >
-                                  <CalendarIcon className="h-4 w-4 mr-2" />
-                                  {endDate ? format(new Date(endDate), 'PPP') : <span>Pick a date</span>}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                  mode="single"
-                                  selected={endDate ? new Date(endDate) : undefined}
-                                  onSelect={date => {
-                                    if (date) {
-                                      const formattedDate = format(date, 'yyyy-MM-dd');
-                                      
-                                      // Check if end date is before start date
-                                      if (startDate) {
-                                        const startD = new Date(startDate);
-                                        if (date < startD) {
-                                          // If user selects end date before start, change both
-                                          setStartDate(formattedDate);
-                                        }
-                                      } else {
-                                        // If no start date, set it to same as end
-                                        setStartDate(formattedDate);
-                                      }
-                                      
-                                      setEndDate(formattedDate);
-                                      
-                                      // Clear any date-related errors
-                                      const { endDate: _, ...rest } = errors;
-                                      setErrors(rest);
-                                    }
-                                  }}
-                                  // Only allow dates on or after the start date
-                                  fromDate={startDate ? new Date(startDate) : undefined}
-                                />
-                              </PopoverContent>
-                            </Popover>
-                            {errors.endDate && (
-                              <p className="text-xs text-red-500 mt-1">{errors.endDate}</p>
-                            )}
-                          </div>
-                          
-                          {!allDay && (
-                            <div className="w-full md:w-24">
-                              <Input
-                                type="time"
-                                value={endTime}
-                                onChange={e => {
-                                  const time = e.target.value;
-                                  // Check if end time is valid compared to start time
-                                  if (startDate === endDate) {
-                                    const [startHour, startMinute] = startTime.split(':').map(Number);
-                                    const [endHour, endMinute] = time.split(':').map(Number);
-                                    
-                                    if (endHour < startHour || (endHour === startHour && endMinute <= startMinute)) {
-                                      // If end time is invalid, set a default 1 hour after start
-                                      let newEndHour = startHour + 1;
-                                      if (newEndHour > 23) {
-                                        newEndHour = 23;
-                                        const newTime = `${newEndHour}:${startMinute}`;
-                                        setEndTime(newTime);
-                                        
-                                        console.log(`[CRITICAL DATE DEBUG] Automatically adjusted invalid end time:`, {
-                                          attemptedEndTime: time,
-                                          startTime,
-                                          correctedEndTime: newTime
-                                        });
-                                        
-                                        // Show notification about automatic adjustment
-                                        toast({
-                                          title: 'End time adjusted',
-                                          description: 'End time must be after start time.',
-                                        });
-                                        
-                                        return;
-                                      }
-                                    }
-                                  }
-                                  
-                                  setEndTime(time);
-                                  
-                                  // Clear any time-related errors
-                                  const { endTime: _, ...rest } = errors;
-                                  setErrors(rest);
-                                }}
-                                className={errors.endTime ? 'border-red-500' : ''}
-                              />
-                              {errors.endTime && (
-                                <p className="text-xs text-red-500 mt-1">{errors.endTime}</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                      <div className="space-y-2">
-                        <FormLabel htmlFor="timezone" className="text-sm font-medium">
-                          Timezone
-                        </FormLabel>
-                        <Select value={timezone} onValueChange={setTimezone} disabled={allDay}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select timezone" />
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <Label htmlFor="description">Description</Label>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-muted-foreground">Template:</span>
+                        <Select
+                          value={selectedTemplate || ''}
+                          onValueChange={handleApplyTemplate}
+                        >
+                          <SelectTrigger id="template" className="h-7 w-[130px] text-xs">
+                            <SelectValue placeholder="Select Template" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectGroup>
-                              <SelectLabel>Common Timezones</SelectLabel>
-                              <SelectItem value="UTC">UTC</SelectItem>
-                              <SelectItem value="America/New_York">Eastern Time (ET)</SelectItem>
-                              <SelectItem value="America/Chicago">Central Time (CT)</SelectItem>
-                              <SelectItem value="America/Denver">Mountain Time (MT)</SelectItem>
-                              <SelectItem value="America/Los_Angeles">Pacific Time (PT)</SelectItem>
-                              <SelectItem value="Europe/London">London (GMT)</SelectItem>
-                              <SelectItem value="Europe/Paris">Paris (CET)</SelectItem>
-                              <SelectItem value="Asia/Tokyo">Tokyo (JST)</SelectItem>
-                              <SelectItem value="Australia/Sydney">Sydney (AEST)</SelectItem>
-                            </SelectGroup>
+                            <SelectItem value="none">None</SelectItem>
+                            {templates.map((template) => (
+                              <SelectItem key={template.id} value={template.id}>
+                                {template.name}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
-                        {allDay && (
-                          <p className="text-xs text-muted-foreground">Timezone is fixed to UTC for all-day events per RFC 5545.</p>
-                        )}
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <FormLabel htmlFor="busy-status" className="text-sm font-medium">
-                          Status
-                        </FormLabel>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <Checkbox 
-                              id="busy" 
-                              checked={isBusy} 
-                              onCheckedChange={checked => setIsBusy(!!checked)}
-                            />
-                            <FormLabel htmlFor="busy" className="text-sm">
-                              Show as busy
-                            </FormLabel>
-                          </div>
-                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-7 text-xs px-2 flex items-center gap-1"
+                          onClick={() => setTemplateManagerOpen(true)}
+                        >
+                          <Save className="h-3 w-3" />
+                          Manage
+                        </Button>
                       </div>
                     </div>
+                    
+                    {/* Template Manager Modal */}
+                    <SavedTemplateManager 
+                      open={templateManagerOpen}
+                      onOpenChange={setTemplateManagerOpen}
+                      onSelectTemplate={handleSelectTemplate}
+                    />
+                    <div className="rich-text-editor-container">
+                      <DescriptionEditor
+                        value={description}
+                        onChange={setDescription}
+                        placeholder="Event Description"
+                        eventData={{
+                          title,
+                          location,
+                          startDate: startDate ? new Date(`${startDate}${allDay ? '' : `T${startTime}`}`) : null,
+                          endDate: endDate ? new Date(`${endDate}${allDay ? '' : `T${endTime}`}`) : null,
+                          attendees,
+                          resources
+                        }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="busy-status"
+                      checked={isBusy}
+                      onCheckedChange={(checked) => setIsBusy(checked === true)}
+                    />
+                    <Label htmlFor="busy-status" className="cursor-pointer">Show as busy during this event</Label>
                   </div>
                 </div>
               </TabsContent>
               
-              <TabsContent value="attendees" className="mt-2 min-h-[50vh]">
-                <div className="space-y-6">
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="text-lg font-medium">Attendees</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Add people to invite to this event. They will receive an email notification.
-                      </p>
-                    </div>
+              <TabsContent value="attendees" className="mt-0 p-0 min-h-[500px]">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Add Attendees</h3>
                     
-                    <div className="flex flex-col md:flex-row gap-2">
-                      <div className="flex-1">
+                    <div className="flex space-x-3 items-end">
+                      <div className="flex-1 space-y-2">
+                        <Label htmlFor="attendee-email">Email</Label>
                         <Input
-                          placeholder="Email address"
-                          value={newAttendeeEmail}
-                          onChange={e => setNewAttendeeEmail(e.target.value)}
-                          className={errors.newAttendeeEmail ? 'border-red-500' : ''}
+                          id="attendee-email"
+                          type="email"
+                          value={attendeeInput}
+                          onChange={(e) => setAttendeeInput(e.target.value)}
+                          placeholder="attendee@example.com"
+                          className={errors.attendeeInput ? 'border-destructive' : ''}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddAttendee();
+                            }
+                          }}
                         />
-                        {errors.newAttendeeEmail && (
-                          <p className="text-xs text-red-500 mt-1">{errors.newAttendeeEmail}</p>
+                        {errors.attendeeInput && (
+                          <p className="text-destructive text-xs">{errors.attendeeInput}</p>
                         )}
                       </div>
                       
-                      <div className="flex-1">
-                        <Input
-                          placeholder="Name (optional)"
-                          value={newAttendeeName}
-                          onChange={e => setNewAttendeeName(e.target.value)}
-                        />
-                      </div>
-                      
-                      <div className="w-full md:w-32">
-                        <Select value={newAttendeeRole} onValueChange={value => setNewAttendeeRole(value as AttendeeRole)}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Role" />
+                      <div className="w-[150px] space-y-2">
+                        <Label htmlFor="attendee-role">Role</Label>
+                        <Select
+                          value={attendeeRole}
+                          onValueChange={(value) => setAttendeeRole(value as AttendeeRole)}
+                        >
+                          <SelectTrigger id="attendee-role">
+                            <SelectValue placeholder="Select Role" />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="Chairman">Chairman</SelectItem>
@@ -1818,161 +2244,979 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
                         </Select>
                       </div>
                       
-                      <Button onClick={handleAddAttendee} type="button" className="w-full md:w-auto">
-                        <UserPlus className="h-4 w-4 mr-2" />
-                        Add
+                      <Button 
+                        onClick={handleAddAttendee}
+                        size="icon"
+                        className="mb-[1px]"
+                      >
+                        <Plus className="h-4 w-4" />
                       </Button>
                     </div>
-                    
-                    <div className="border rounded-md">
-                      {attendees.length === 0 ? (
-                        <div className="p-4 text-center text-muted-foreground">
-                          No attendees added yet.
-                        </div>
-                      ) : (
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Email</TableHead>
-                              <TableHead>Name</TableHead>
-                              <TableHead>Role</TableHead>
-                              <TableHead className="w-20">Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {attendees.map(attendee => (
-                              <TableRow key={attendee.id}>
-                                <TableCell>{attendee.email}</TableCell>
-                                <TableCell>{attendee.name || '-'}</TableCell>
-                                <TableCell>
-                                  <Select 
-                                    value={attendee.role} 
-                                    onValueChange={value => handleUpdateAttendeeRole(attendee.id, value as AttendeeRole)}
-                                  >
-                                    <SelectTrigger className="h-8 w-28">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="Chairman">Chairman</SelectItem>
-                                      <SelectItem value="Secretary">Secretary</SelectItem>
-                                      <SelectItem value="Member">Member</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    onClick={() => handleRemoveAttendee(attendee.id)}
-                                    className="h-8 w-8"
-                                  >
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                  </div>
+                  
+                  {/* Error display for attendees */}
+                  {errors.attendees && (
+                    <Alert variant="destructive" className="py-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{errors.attendees}</AlertDescription>
+                    </Alert>
+                  )}
+                  
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium flex items-center">
+                      Attendees
+                      {attendees.length > 0 && (
+                        <Badge variant="outline" className="ml-2">
+                          {attendees.length}
+                        </Badge>
                       )}
+                    </h3>
+                    
+                    {attendees.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No attendees added yet</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {attendees.map((attendee) => (
+                          <div 
+                            key={attendee.id}
+                            className="flex items-center justify-between gap-2 py-2 px-3 rounded-md bg-secondary/30 border border-border/40"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm truncate">{attendee.email}</p>
+                            </div>
+                            
+                            <Select
+                              value={attendee.role}
+                              onValueChange={(value) => handleUpdateAttendeeRole(attendee.id, value as AttendeeRole)}
+                            >
+                              <SelectTrigger className="h-7 w-[110px] text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Chairman">Chairman</SelectItem>
+                                <SelectItem value="Secretary">Secretary</SelectItem>
+                                <SelectItem value="Member">Member</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleRemoveAttendee(attendee.id)}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {attendees.length > 0 && (
+                    <div className="pt-4 mt-2 border-t">
+                      <Button 
+                        onClick={() => {
+                          // Validate required fields
+                          if (!title || !startDate || !endDate) {
+                            toast({
+                              title: 'Missing information',
+                              description: 'Please fill in all required fields',
+                              variant: 'destructive'
+                            });
+                            setActiveTab('basic');
+                            return;
+                          }
+                          
+                          // Navigate to email tab and generate preview
+                          setActiveTab('emails');
+                          
+                          // Generate email preview with proper date handling
+                          let startDateTime, endDateTime;
+                          
+                          // Use the same careful date construction that we use in the form submission
+                          if (allDay) {
+                            console.log(`[EMAIL PREVIEW] Creating dates for all-day event preview`);
+                            
+                            // Use UTC dates for all-day events to avoid timezone issues
+                            const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                            startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                            
+                            // For the end date, use the same approach
+                            const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                            
+                            // Add one day to the end date per CalDAV convention for all-day events
+                            endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                            
+                            console.log(`[EMAIL PREVIEW] All-day event dates created:`, {
+                              startDateTime: startDateTime.toISOString(),
+                              endDateTime: endDateTime.toISOString()
+                            });
+                          } else {
+                            // For regular events, use the date-time strings
+                            startDateTime = new Date(`${startDate}T${startTime}:00`);
+                            endDateTime = new Date(`${endDate}T${endTime}:00`);
+                            
+                            console.log(`[EMAIL PREVIEW] Regular event dates created:`, {
+                              startDateTime: startDateTime.toISOString(),
+                              endDateTime: endDateTime.toISOString()
+                            });
+                          }
+                          
+                          generatePreview({
+                            title,
+                            description,
+                            location,
+                            startDate: startDateTime,
+                            endDate: endDateTime,
+                            attendees,
+                            resources,
+                            // Include recurrence rule if it exists
+                            recurrenceRule: recurrence.pattern !== 'None' ? {
+                              pattern: recurrence.pattern,
+                              interval: recurrence.interval,
+                              weekdays: recurrence.weekdays,
+                              endType: recurrence.endType,
+                              occurrences: recurrence.occurrences,
+                              untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                            } : undefined
+                          });
+                        }}
+                        type="button"
+                        className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                      >
+                        <Mail className="h-4 w-4 mr-1" />
+                        Preview Email
+                      </Button>
                     </div>
+                  )}
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="resources" className="mt-0 p-0 min-h-[500px]">
+                {/* No need for DirectResourceExtractor since resources are already extracted and deduplicated */}
+                <ResourceManager 
+                  resources={resources}
+                  onResourcesChange={setResources}
+                />
+              </TabsContent>
+              
+              <TabsContent value="recurrence" className="mt-0 p-0 min-h-[500px]">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Recurrence Pattern</Label>
+                    <RadioGroup
+                      value={recurrence.pattern}
+                      onValueChange={(value) => setRecurrence({
+                        ...recurrence,
+                        pattern: value as RecurrencePattern
+                      })}
+                      className="grid grid-cols-3 gap-3"
+                    >
+                      <div>
+                        <RadioGroupItem 
+                          value="None" 
+                          id="r-none" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-none"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>None</span>
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem 
+                          value="Daily" 
+                          id="r-daily" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-daily"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>Daily</span>
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem 
+                          value="Weekly" 
+                          id="r-weekly" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-weekly"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>Weekly</span>
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem 
+                          value="Monthly" 
+                          id="r-monthly" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-monthly"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>Monthly</span>
+                        </Label>
+                      </div>
+                      <div>
+                        <RadioGroupItem 
+                          value="Yearly" 
+                          id="r-yearly" 
+                          className="peer sr-only" 
+                        />
+                        <Label
+                          htmlFor="r-yearly"
+                          className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary"
+                        >
+                          <span>Yearly</span>
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                  
+                  {recurrence.pattern !== 'None' && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="interval">Repeat every</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            id="interval"
+                            type="number"
+                            min="1"
+                            max="99"
+                            value={recurrence.interval.toString()}
+                            onChange={(e) => setRecurrence({
+                              ...recurrence,
+                              interval: parseInt(e.target.value) || 1
+                            })}
+                            className="w-20"
+                          />
+                          <span className="text-sm">
+                            {recurrence.pattern.toLowerCase()}
+                            {recurrence.interval !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {recurrence.pattern === 'Weekly' && (
+                        <div className="space-y-2">
+                          <Label>On these days</Label>
+                          <div className="flex flex-wrap gap-2">
+                            {weekDays.map((day) => (
+                              <div 
+                                key={day}
+                                onClick={() => handleWeekdayToggle(day)}
+                                className={`
+                                  cursor-pointer rounded-md px-2.5 py-1 text-sm border 
+                                  ${(recurrence.weekdays || []).includes(day) 
+                                    ? 'bg-primary text-primary-foreground border-primary' 
+                                    : 'bg-secondary text-secondary-foreground border-border'}
+                                `}
+                              >
+                                {day.slice(0, 3)}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <Separator />
+                      
+                      <div className="space-y-3">
+                        <Label>End</Label>
+                        <RadioGroup
+                          value={recurrence.endType}
+                          onValueChange={(value) => setRecurrence({
+                            ...recurrence,
+                            endType: value as RecurrenceEndType
+                          })}
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="Never" id="r-end-never" />
+                            <Label htmlFor="r-end-never">Never</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="After" id="r-end-after" />
+                            <Label htmlFor="r-end-after">After</Label>
+                            <Input
+                              type="number"
+                              min="1"
+                              max="999"
+                              value={recurrence.occurrences?.toString() || "10"}
+                              onChange={(e) => setRecurrence({
+                                ...recurrence,
+                                occurrences: parseInt(e.target.value) || 10
+                              })}
+                              className="w-20 ml-2"
+                              disabled={recurrence.endType !== 'After'}
+                            />
+                            <span className="text-sm">occurrences</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="On" id="r-end-on" />
+                            <Label htmlFor="r-end-on">On</Label>
+                            <div className="ml-2">
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    className={`w-[200px] justify-start text-left font-normal ${recurrence.endType !== 'On' ? 'opacity-50' : ''}`}
+                                    disabled={recurrence.endType !== 'On'}
+                                  >
+                                    <CalendarDays className="mr-2 h-4 w-4" />
+                                    {recurrence.endDate ? (
+                                      format(recurrence.endDate, "PPP")
+                                    ) : (
+                                      <span>Pick a date</span>
+                                    )}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0">
+                                  <CalendarComponent
+                                    mode="single"
+                                    selected={recurrence.endDate}
+                                    onSelect={handleRecurrenceEndDateChange}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="emails" className="mt-0 p-0 min-h-[500px]">
+                <div className="space-y-4">
+                  <div className="flex-1 min-h-[500px]">
+                    <EmailPreview 
+                      isLoading={isEmailPreviewLoading}
+                      html={emailPreviewHtml}
+                      error={previewError}
+                      lastSendResult={lastSendResult}
+                      isSending={isEmailSending}
+                      showSendButton={true}
+                      onSend={() => {
+                        // Prepare the data for sending
+                        if (!title || !startDate || !endDate) {
+                          toast({
+                            title: 'Missing information',
+                            description: 'Please fill in all required fields',
+                            variant: 'destructive'
+                          });
+                          setActiveTab('basic');
+                          return;
+                        }
+                        
+                        // Use the same careful date handling as in preview and submission
+                        let startDateTime, endDateTime;
+                        
+                        if (allDay) {
+                          console.log(`[EMAIL SEND] Creating dates for all-day event`);
+                          
+                          // Use UTC dates for all-day events to avoid timezone issues
+                          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                          startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                          
+                          // For the end date, use the same approach
+                          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                          
+                          // Add one day to the end date per CalDAV convention for all-day events
+                          endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                          
+                          console.log(`[EMAIL SEND] All-day event dates created:`, {
+                            startDateTime: startDateTime.toISOString(),
+                            endDateTime: endDateTime.toISOString()
+                          });
+                        } else {
+                          // For regular events, use the date-time strings
+                          startDateTime = new Date(`${startDate}T${startTime}:00`);
+                          endDateTime = new Date(`${endDate}T${endTime}:00`);
+                          
+                          console.log(`[EMAIL SEND] Regular event dates created:`, {
+                            startDateTime: startDateTime.toISOString(),
+                            endDateTime: endDateTime.toISOString()
+                          });
+                        }
+                        
+                        // Prepare email data
+                        const emailData = {
+                          title,
+                          description,
+                          location,
+                          startDate: startDateTime,
+                          endDate: endDateTime,
+                          attendees,
+                          resources,
+                          // Include eventId for existing events
+                          eventId: event ? event.id : undefined,
+                          // Include recurrence rule if it exists
+                          recurrenceRule: recurrence.pattern !== 'None' ? {
+                            pattern: recurrence.pattern,
+                            interval: recurrence.interval,
+                            weekdays: recurrence.weekdays,
+                            endType: recurrence.endType,
+                            occurrences: recurrence.occurrences,
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                          } : undefined
+                        };
+                        
+                        // Send email
+                        sendEmail(emailData).then(() => {
+                          // Display success toast
+                          toast({
+                            title: 'Email sent',
+                            description: 'Invitation email was sent successfully to all attendees',
+                          });
+                          
+                          // Mark the event as having email sent if it's an existing event
+                          if (event) {
+                            updateEvent({
+                              id: event.id,
+                              data: {
+                                emailSent: new Date().toISOString(), // Convert date to ISO string for the database
+                                emailError: null
+                              }
+                            });
+                          }
+                          
+                          // Close the modal
+                          onClose();
+                        }).catch(error => {
+                          toast({
+                            title: 'Email sending failed',
+                            description: 'The email could not be sent. Please check your SMTP settings.',
+                            variant: 'destructive'
+                          });
+                        });
+                      }}
+                      onRefresh={() => {
+                        // Use the same careful date handling approach
+                        let startDateTime, endDateTime;
+                        
+                        if (allDay) {
+                          console.log(`[EMAIL REFRESH] Creating dates for all-day event`);
+                          
+                          // Use UTC dates for all-day events to avoid timezone issues
+                          const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                          startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                          
+                          // For the end date, use the same approach
+                          const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                          
+                          // Add one day to the end date per CalDAV convention for all-day events
+                          endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                          
+                          console.log(`[EMAIL REFRESH] All-day event dates created:`, {
+                            startDateTime: startDateTime.toISOString(),
+                            endDateTime: endDateTime.toISOString()
+                          });
+                        } else {
+                          // For regular events, use the date-time strings
+                          startDateTime = new Date(`${startDate}T${startTime}:00`);
+                          endDateTime = new Date(`${endDate}T${endTime}:00`);
+                          
+                          console.log(`[EMAIL REFRESH] Regular event dates created:`, {
+                            startDateTime: startDateTime.toISOString(),
+                            endDateTime: endDateTime.toISOString()
+                          });
+                        }
+                        
+                        const previewParams = {
+                          title,
+                          description,
+                          location,
+                          startDate: startDateTime,
+                          endDate: endDateTime,
+                          attendees,
+                          resources,
+                          // Include event ID for existing events
+                          eventId: event ? event.id : undefined,
+                          // Always include our consistent UID to ensure the same UID is used for creation and updates
+                          uid: initialEventUID || event?.uid || undefined,
+                          // Include recurrence rule if it exists
+                          recurrenceRule: recurrence.pattern !== 'None' ? {
+                            pattern: recurrence.pattern,
+                            interval: recurrence.interval,
+                            weekdays: recurrence.weekdays,
+                            endType: recurrence.endType,
+                            occurrences: recurrence.occurrences,
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                          } : undefined
+                        };
+                        
+                        generatePreview(previewParams)
+                          .then(previewResult => {
+                            // If we received a UID in the response, update our initialEventUID if needed
+                            if (previewResult?.uid && !initialEventUID) {
+                              setInitialEventUID(previewResult.uid);
+                              console.log(`Received UID from event preview: ${previewResult.uid} - storing for consistency`);
+                            }
+                            
+                            if (previewResult && previewResult.html) {
+                              setEmailPreviewHtml(previewResult.html);
+                            }
+                          })
+                          .catch(error => {
+                            console.error("Error refreshing email preview:", error);
+                          });
+                      }}
+                    />
                   </div>
                 </div>
               </TabsContent>
             </ScrollArea>
           </Tabs>
           
-          <DialogFooter className="px-4 py-4 border-t flex-col sm:flex-row gap-2">
-            <div className="flex gap-2 ml-auto">
-              {/* Delete button - only show for existing events that are not copies */}
-              {event && !title.startsWith('Copy of ') && (
-                <Button
-                  variant="destructive"
-                  onClick={() => setShowDeleteDialog(true)}
-                  disabled={isSubmitting || isDeleting}
-                >
-                  {isDeleting ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Trash className="h-4 w-4 mr-2" />
+          <DialogFooter className="border-t p-4 gap-y-3">
+            <div className="flex-1 flex justify-start gap-2">
+              {event && (
+                <>
+                  <Button 
+                    variant="destructive" 
+                    onClick={handleDelete}
+                    disabled={isSubmitting || isDeleting || isEmailSending || isCancelling}
+                    type="button"
+                    className="flex items-center gap-2 shadow-sm transition-all hover:shadow-md hover:bg-destructive/90"
+                  >
+                    {isDeleting ? 
+                      <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                      <Trash2 className="h-4 w-4 mr-1" />
+                    }
+                    {isDeleting ? 'Deleting...' : 'Delete Event'}
+                  </Button>
+                  
+                  {/* Only show Cancel Event button for existing events with attendees */}
+                  {attendees.length > 0 && (
+                    <Button 
+                      variant="secondary" 
+                      onClick={handleCancelEvent}
+                      disabled={isSubmitting || isDeleting || isEmailSending || isCancelling}
+                      type="button"
+                      className="flex items-center gap-2 shadow-sm transition-all hover:shadow-md bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300"
+                    >
+                      {isCancelling ? 
+                        <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                        <Ban className="h-4 w-4 mr-1" />
+                      }
+                      {isCancelling ? 'Cancelling...' : 'Cancel Event'}
+                    </Button>
                   )}
-                  Delete
-                </Button>
+                </>
               )}
-              
-              {/* Cancel button - only show for existing events with attendees that are not copies */}
-              {event && attendees.length > 0 && !title.startsWith('Copy of ') && (
-                <Button
-                  variant="outline"
-                  onClick={handleCancelEvent}
-                  disabled={isSubmitting || isDeleting || isCancelling}
-                  className="border-amber-500 text-amber-600 hover:bg-amber-50"
-                >
-                  {isCancelling ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <BellRing className="h-4 w-4 mr-2" />
-                  )}
-                  Cancel Event
-                </Button>
-              )}
-              
-              <Button variant="outline" onClick={handleCancel}>
-                <X className="h-4 w-4 mr-2" />
-                Cancel
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={onClose}
+                disabled={isSubmitting || isDeleting || isEmailSending || isCancelling}
+                type="button"
+                className="border border-primary/20 hover:bg-primary/5 transition-all"
+              >
+                Close
               </Button>
               
-              <Button onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Check className="h-4 w-4 mr-2" />
-                )}
-                {getSubmitButtonText()}
+              {/* Show Send Mail button for both new and existing events with attendees */}
+              {attendees.length > 0 && (
+                <Button
+                  onClick={async () => {
+                    if (!validateForm()) {
+                      // If there are errors, check which tab has errors and switch to it
+                      const tabErrors = getErrorsByTab(errors);
+                      
+                      // Find the first tab with errors
+                      if (tabErrors.basic) {
+                        setActiveTab('basic');
+                      } else if (tabErrors.attendees) {
+                        setActiveTab('attendees');
+                      } else if (tabErrors.resources) {
+                        setActiveTab('resources');
+                      } else if (tabErrors.recurrence) {
+                        setActiveTab('recurrence');
+                      } else if (tabErrors.emails) {
+                        setActiveTab('emails');
+                      }
+                      
+                      return; // Stop form submission
+                    }
+                    
+                    // Prepare date objects using the consistent approach
+                    let startDateTime, endDateTime;
+                    
+                    if (allDay) {
+                      console.log(`[SEND BUTTON] Creating dates for all-day event`);
+                      
+                      // Use UTC dates for all-day events to avoid timezone issues
+                      const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                      startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                      
+                      // For the end date, use the same approach
+                      const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                      
+                      // Add one day to the end date per CalDAV convention for all-day events
+                      endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                      
+                      console.log(`[SEND BUTTON] All-day event dates created:`, {
+                        startDateTime: startDateTime.toISOString(),
+                        endDateTime: endDateTime.toISOString()
+                      });
+                    } else {
+                      // For regular events, use the date-time strings
+                      startDateTime = new Date(`${startDate}T${startTime}:00`);
+                      endDateTime = new Date(`${endDate}T${endTime}:00`);
+                      
+                      console.log(`[SEND BUTTON] Regular event dates created:`, {
+                        startDateTime: startDateTime.toISOString(),
+                        endDateTime: endDateTime.toISOString()
+                      });
+                    }
+                    
+                    // Store the event data for use in the alert dialog
+                    const eventData = {
+                      title,
+                      description,
+                      location,
+                      startDate: startDateTime,
+                      endDate: endDateTime,
+                      attendees,
+                      resources,
+                      // Include event ID for existing events
+                      eventId: event ? event.id : undefined,
+                      // Always include our consistent UID to ensure the same UID is used for creation and updates
+                      uid: initialEventUID || event?.uid || undefined,
+                      // Include recurrence rule if it exists
+                      recurrenceRule: recurrence.pattern !== 'None' ? {
+                        pattern: recurrence.pattern,
+                        interval: recurrence.interval,
+                        weekdays: recurrence.weekdays,
+                        endType: recurrence.endType,
+                        occurrences: recurrence.occurrences,
+                        untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                      } : undefined
+                    };
+                    
+                    // Set the event data for later use
+                    setPreviewEventData(eventData);
+                    
+                    // If already on the email preview tab, don't show the confirmation dialog
+                    if (activeTab === 'emails') {
+                      // User is already viewing the preview, send directly
+                      // Note: isEmailSending state is handled by the sendEmail hook internally
+                      
+                      sendEmail(eventData).then(() => {
+                        // On success, create/update the event and close the modal
+                        toast({
+                          title: 'Email sent',
+                          description: 'Invitation email was sent successfully to all attendees',
+                        });
+                        
+                        // Mark the event as having email sent if it's an existing event
+                        if (event) {
+                          // Prepare full event data with consistent date handling
+                          let startDateTime, endDateTime;
+                          
+                          if (allDay) {
+                            console.log(`[EMAIL SENT UPDATE] Creating dates for all-day event`);
+                            
+                            // Use UTC dates for all-day events to avoid timezone issues
+                            const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                            startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                            
+                            // For the end date, use the same approach
+                            const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                            
+                            // Add one day to the end date per CalDAV convention for all-day events
+                            endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                            
+                            console.log(`[EMAIL SENT UPDATE] All-day event dates created:`, {
+                              startDateTime: startDateTime.toISOString(),
+                              endDateTime: endDateTime.toISOString()
+                            });
+                          } else {
+                            // For regular events, use the date-time strings
+                            startDateTime = new Date(`${startDate}T${startTime}:00`);
+                            endDateTime = new Date(`${endDate}T${endTime}:00`);
+                            
+                            console.log(`[EMAIL SENT UPDATE] Regular event dates created:`, {
+                              startDateTime: startDateTime.toISOString(),
+                              endDateTime: endDateTime.toISOString()
+                            });
+                          }
+                          
+                          // Prepare recurrence rule if it exists
+                          const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify({
+                            pattern: recurrence.pattern,
+                            interval: recurrence.interval,
+                            weekdays: recurrence.weekdays,
+                            endType: recurrence.endType,
+                            occurrences: recurrence.occurrences,
+                            untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                          }) : null;
+                          
+                          // Prepare attendees and resources
+                          const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
+                          const resourcesJson = resources.length > 0 ? JSON.stringify(resources) : null;
+                          
+                          // Update the entire event with all properties
+                          updateEvent({
+                            id: event.id,
+                            data: {
+                              title,
+                              description,
+                              location,
+                              startDate: startDateTime,
+                              endDate: endDateTime,
+                              allDay,
+                              timezone,
+                              calendarId: parseInt(calendarId),
+                              busyStatus: isBusy ? 'busy' : 'free',
+                              attendees: attendeesJson,
+                              resources: resourcesJson,
+                              recurrenceRule,
+                              syncStatus: 'local',
+                              emailSent: new Date().toISOString(), // Convert date to ISO string for the database
+                              emailError: null
+                            }
+                          });
+                          
+                          // Close the modal
+                          onClose();
+                        } else {
+                          // If it's a new event, create it
+                          handleSubmit();
+                        }
+                      }).catch(error => {
+                        console.error('Email sending error:', error);
+                        // Show detailed error message from the exception
+                        toast({
+                          title: 'Email sending failed',
+                          description: error.message || 'The email could not be sent. Please check your SMTP settings.',
+                          variant: 'destructive'
+                        });
+                      });
+                    } else {
+                      // Show confirmation dialog only if not on email preview tab
+                      setAlertDialogOpen(true);
+                    }
+                  }}
+                  disabled={isSubmitting || isDeleting || isEmailSending}
+                  type="button"
+                  className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all min-w-[180px] justify-center text-white"
+                >
+                  {isSubmitting || isEmailSending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <Mail className="h-4 w-4 mr-1" />
+                  )}
+                  {isSubmitting || isEmailSending 
+                    ? 'Processing...' 
+                    : event ? 'Send Mail and Update' : 'Send Mail and Create'}
+                </Button>
+              )}
+              
+              <Button
+                onClick={handleSubmit}
+                disabled={isSubmitting || isDeleting || isEmailSending}
+                type="button"
+                className="flex items-center gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-sm hover:shadow-md transition-all min-w-[120px] justify-center"
+              >
+                {isSubmitting ? 
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" /> : 
+                  <Save className="h-4 w-4 mr-1" />
+                }
+                {isSubmitting
+                  ? (event ? 'Updating...' : 'Creating...')
+                  : (event ? 'Update Event' : 'Create Event')}
               </Button>
             </div>
           </DialogFooter>
-          </FormProvider>
         </DialogContent>
       </Dialog>
       
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      {/* Alert Dialog for email preview confirmation */}
+      <AlertDialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Event</AlertDialogTitle>
+            <AlertDialogTitle>{event ? 'Send Update Notification' : 'Send Email Invitation'}</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this event? This action cannot be undone.
+              Would you like to preview the email before sending it to {attendees.length} attendee{attendees.length !== 1 ? 's' : ''}?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete}
-              className="bg-red-500 text-white hover:bg-red-600"
-            >
-              Delete
+            <AlertDialogCancel onClick={() => {
+              // User chose not to preview, proceed with sending directly
+              if (previewEventData) {
+                // Note: isEmailSending state is handled by the sendEmail hook internally
+                
+                sendEmail(previewEventData).then(() => {
+                  // Display success toast
+                  toast({
+                    title: 'Email sent',
+                    description: event 
+                      ? 'Update notification was sent successfully to all attendees' 
+                      : 'Invitation email was sent successfully to all attendees',
+                  });
+                  
+                  // If it's an existing event, mark it as having email sent
+                  if (event) {
+                    // Prepare full event data with consistent date handling
+                    let startDateTime, endDateTime;
+                    
+                    if (allDay) {
+                      console.log(`[ALERT DIALOG] Creating dates for all-day event`);
+                      
+                      // Use UTC dates for all-day events to avoid timezone issues
+                      const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+                      startDateTime = new Date(Date.UTC(startYear, startMonth - 1, startDay, 0, 0, 0));
+                      
+                      // For the end date, use the same approach
+                      const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+                      
+                      // Add one day to the end date per CalDAV convention for all-day events
+                      endDateTime = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1, 0, 0, 0));
+                      
+                      console.log(`[ALERT DIALOG] All-day event dates created:`, {
+                        startDateTime: startDateTime.toISOString(),
+                        endDateTime: endDateTime.toISOString()
+                      });
+                    } else {
+                      // For regular events, use the date-time strings
+                      startDateTime = new Date(`${startDate}T${startTime}:00`);
+                      endDateTime = new Date(`${endDate}T${endTime}:00`);
+                      
+                      console.log(`[ALERT DIALOG] Regular event dates created:`, {
+                        startDateTime: startDateTime.toISOString(),
+                        endDateTime: endDateTime.toISOString()
+                      });
+                    }
+                    
+                    // Prepare recurrence rule if it exists
+                    const recurrenceRule = recurrence.pattern !== 'None' ? JSON.stringify({
+                      pattern: recurrence.pattern,
+                      interval: recurrence.interval,
+                      weekdays: recurrence.weekdays,
+                      endType: recurrence.endType,
+                      occurrences: recurrence.occurrences,
+                      untilDate: recurrence.endDate ? recurrence.endDate.toISOString() : undefined
+                    }) : null;
+                    
+                    // DEBUGGING RECURRENCE: Log the recurrence rule we're sending to the server
+                    console.log(`[CLIENT RECURRENCE DEBUG] Sending recurrence rule to server:`, {
+                      recurrenceRule,
+                      recurrencePattern: recurrence.pattern,
+                      hasRecurrence: recurrence.pattern !== 'None',
+                      recurrenceObj: recurrence.pattern !== 'None' ? {
+                        pattern: recurrence.pattern,
+                        interval: recurrence.interval,
+                        weekdays: recurrence.weekdays,
+                        endType: recurrence.endType,
+                        occurrences: recurrence.occurrences,
+                        endDate: recurrence.endDate
+                      } : null
+                    });
+                    
+                    // Prepare attendees and resources
+                    const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
+                    const resourcesJson = resources.length > 0 ? JSON.stringify(resources) : null;
+                    
+                    // Update the entire event with all properties
+                    updateEvent({
+                      id: event.id,
+                      data: {
+                        title,
+                        description,
+                        location,
+                        startDate: startDateTime,
+                        endDate: endDateTime,
+                        allDay,
+                        timezone,
+                        calendarId: parseInt(calendarId),
+                        busyStatus: isBusy ? 'busy' : 'free',
+                        attendees: attendeesJson,
+                        resources: resourcesJson,
+                        recurrenceRule,
+                        // Set isRecurring based on recurrenceRule
+                        isRecurring: recurrence.pattern !== 'None',
+                        syncStatus: 'local',
+                        emailSent: new Date().toISOString(), // Convert date to ISO string for the database
+                        emailError: null
+                      }
+                    });
+                    onClose();
+                  } else {
+                    // If it's a new event, create it
+                    handleSubmit();
+                  }
+                }).catch(error => {
+                  console.error('Email sending error:', error);
+                  // Show detailed error message from the exception
+                  toast({
+                    title: 'Email sending failed',
+                    description: error.message || 'The email could not be sent. Please check your SMTP settings.',
+                    variant: 'destructive'
+                  });
+                });
+              }
+            }}>
+              Send Without Preview
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              // Navigate to email tab and show preview
+              setActiveTab('emails');
+              if (previewEventData) {
+                generatePreview(previewEventData);
+              }
+            }}>
+              Preview First
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      
-      {/* Cancel Event Confirmation Dialog */}
+
+      {/* Alert Dialog for cancel event confirmation */}
       <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel Event</AlertDialogTitle>
             <AlertDialogDescription>
-              This will mark the event as canceled and send notifications to all attendees.
-              The event will remain visible in the calendar but will be displayed as canceled.
+              Are you sure you want to cancel this event? 
+              This will notify all {attendees.length} attendee{attendees.length !== 1 ? 's' : ''} that the event has been cancelled.
+              This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Nevermind</AlertDialogCancel>
+            <AlertDialogCancel 
+              onClick={() => setShowCancelDialog(false)}
+              disabled={isCancelling}
+            >
+              No, Keep Event
+            </AlertDialogCancel>
             <AlertDialogAction 
               onClick={executeCancellation}
-              className="bg-amber-500 text-white hover:bg-amber-600"
+              disabled={isCancelling}
+              className="bg-amber-500 hover:bg-amber-600 text-white"
             >
-              Yes, Cancel Event
+              {isCancelling ? 
+                <div className="flex items-center">
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  <span>Cancelling...</span>
+                </div>
+               : 
+                <div className="flex items-center">
+                  <Ban className="h-4 w-4 mr-1" />
+                  <span>Yes, Cancel Event</span>
+                </div>
+              }
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -382,7 +382,6 @@ function CalendarContent() {
           uid: newUID,
           calendarId: event.calendarId,
           title: `Copy of ${event.title}`,
-          // Don't include a special flag - we'll use the "Copy of" prefix to identify it is a copy
           description: event.description,
           location: event.location,
           startDate: new Date(event.startDate),
@@ -398,8 +397,6 @@ function CalendarContent() {
           // RFC 5545 requires all attendee invitations to be explicit
           attendees: null,
           resources: null,
-          
-          // We use the "Copy of" prefix in the title to identify it as a copy rather than using a special flag
           
           // Additional required fields with sensible defaults
           etag: null,
