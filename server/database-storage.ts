@@ -746,6 +746,13 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0 ? result[0] : undefined;
   }
   
+  async getEventsByUid(uid: string): Promise<Event[]> {
+    console.log(`[RECURRENCE FIX] Getting all events with UID ${uid}`);
+    return await db.select()
+      .from(events)
+      .where(eq(events.uid, uid));
+  }
+  
   async createEvent(insertEvent: InsertEvent): Promise<Event> {
     const result = await db.insert(events)
       .values(insertEvent)

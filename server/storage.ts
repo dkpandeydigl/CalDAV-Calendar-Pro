@@ -55,6 +55,7 @@ export interface IStorage {
   getEvents(calendarId: number): Promise<Event[]>;
   getEvent(id: number): Promise<Event | undefined>;
   getEventByUID(uid: string): Promise<Event | undefined>;
+  getEventsByUid(uid: string): Promise<Event[]>; // Get all events with the same UID (for recurrence consistency)
   createEvent(event: InsertEvent): Promise<Event>;
   updateEvent(id: number, event: Partial<Event>): Promise<Event | undefined>;
   deleteEvent(id: number): Promise<boolean>;
