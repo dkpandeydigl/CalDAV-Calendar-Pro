@@ -1502,9 +1502,25 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       const fetchEventIfNeeded = async () => {
         try {
           const res = await fetch(`/api/events/${id}`, { credentials: 'include' });
-          if (res.ok) {
-            return await res.json();
+          
+          if (!res.ok) {
+            const errorText = await res.text(); // Get the error text, not JSON, in case it's HTML
+            const statusCode = res.status;
+            console.error(`Error fetching event ${id}: Status ${statusCode}`, errorText);
+            return null;
           }
+          
+          // Check the content type to make sure it's JSON
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            const errorText = await res.text();
+            console.error(`Received non-JSON response for event ${id}:`, errorText);
+            return null;
+          }
+          
+          // Now safely parse JSON
+          const data = await res.json();
+          return data;
         } catch (error) {
           console.error(`Error fetching event ${id}:`, error);
         }

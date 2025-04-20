@@ -2857,6 +2857,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET single event by ID endpoint
+  app.get("/api/events/:id", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const eventId = parseInt(req.params.id);
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: 'Invalid event ID' });
+      }
+      
+      // Get all calendars for the user
+      const userCalendars = await storage.getCalendars(userId);
+      const sharedCalendars = await storage.getSharedCalendars(userId);
+      const allCalendarIds = [...userCalendars, ...sharedCalendars].map(cal => cal.id);
+      
+      // Try to find the event in any of the user's calendars
+      let event = null;
+      for (const calendarId of allCalendarIds) {
+        const events = await storage.getEvents(calendarId);
+        const foundEvent = events.find(e => e.id === eventId);
+        
+        if (foundEvent) {
+          event = foundEvent;
+          break;
+        }
+      }
+      
+      if (!event) {
+        return res.status(404).json({ message: 'Event not found' });
+      }
+      
+      // Return the event
+      res.json(event);
+    } catch (err) {
+      console.error("Error fetching event by ID:", err);
+      res.status(500).json({ message: "Failed to fetch event" });
+    }
+  });
+
   app.get("/api/events", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;

@@ -140,6 +140,7 @@ const WebSocketTestPage: React.FC = () => {
   const getTypeColor = (type: string) => {
     switch (type) {
       case 'event': return 'bg-blue-100 text-blue-800';
+      case 'event_changed': return 'bg-blue-100 text-blue-800';
       case 'calendar': return 'bg-green-100 text-green-800';
       case 'system': return 'bg-purple-100 text-purple-800';
       case 'resource': return 'bg-orange-100 text-orange-800';
