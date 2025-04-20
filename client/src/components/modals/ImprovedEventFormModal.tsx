@@ -4,6 +4,7 @@ import { format, parseISO, addDays, addHours, isValid } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { useForm, FormProvider } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 
 // UI Components
 import {
@@ -200,22 +201,44 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
   const descriptionTemplates = useEmailTemplateStore(state => state.templates);
   const isMobile = useMediaQuery("(max-width: 768px)");
   
-  // State management for form
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [location, setLocation] = useState('');
-  const [calendarId, setCalendarId] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [startTime, setStartTime] = useState('12:00');
-  const [endTime, setEndTime] = useState('13:00');
-  const [allDay, setAllDay] = useState(false);
-  const [timezone, setTimezone] = useState('UTC');
-  const [isBusy, setIsBusy] = useState(true);
+  // State management for form tabs
   const [activeTab, setActiveTab] = useState('basic');
   
+  // Define the form schema
+  const formSchema = z.object({
+    title: z.string().min(1, "Title is required"),
+    description: z.string().optional(),
+    location: z.string().optional(),
+    calendarId: z.string().min(1, "Calendar is required"),
+    startDate: z.string().min(1, "Start date is required"),
+    endDate: z.string().min(1, "End date is required"),
+    startTime: z.string().min(1, "Start time is required"),
+    endTime: z.string().min(1, "End time is required"),
+    allDay: z.boolean().default(false),
+    timezone: z.string().default("UTC"),
+    isBusy: z.boolean().default(true)
+  });
+  
+  // Create form
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      title: '',
+      description: '',
+      location: '',
+      calendarId: '',
+      startDate: '',
+      endDate: '',
+      startTime: '12:00',
+      endTime: '13:00',
+      allDay: false,
+      timezone: 'UTC',
+      isBusy: true
+    }
+  });
+  
   // Form validation errors
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const errors = form.formState.errors;
   
   // Loading states
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -337,13 +360,19 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
   useEffect(() => {
     if (event) {
       // Basic event details
-      setTitle(event.title || '');
-      setDescription(event.description || '');
-      setLocation(event.location || '');
-      setCalendarId(event.calendarId?.toString() || '');
-      setAllDay(!!event.allDay);
-      setTimezone(event.timezone || 'UTC');
-      setIsBusy(event.busyStatus === 'busy');
+      form.reset({
+        title: event.title || '',
+        description: event.description || '',
+        location: event.location || '',
+        calendarId: event.calendarId?.toString() || '',
+        allDay: !!event.allDay,
+        timezone: event.timezone || 'UTC',
+        isBusy: event.busyStatus === 'busy',
+        startDate: '',  // Will be set later
+        endDate: '',    // Will be set later
+        startTime: '',  // Will be set later
+        endTime: ''     // Will be set later
+      });
       
       // Parse the attendees if available
       if (event.attendees) {
@@ -451,7 +480,10 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
           
           if (isValid(startDateTime) && isValid(endDateTime)) {
             // Format dates for input fields
-            setStartDate(format(startDateTime, 'yyyy-MM-dd'));
+            const formattedStartDate = format(startDateTime, 'yyyy-MM-dd');
+            let formattedEndDate = '';
+            let formattedStartTime = '';
+            let formattedEndTime = '';
             
             // For all-day events, adjust the end date display
             // RFC 5545 specifies end date is exclusive for all-day events
@@ -460,36 +492,42 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
               // If the event is an all-day event, subtract 1 day from the end date
               // because the RFC 5545 standard sets the end date as exclusive
               const adjustedEndDate = addDays(endDateTime, -1);
-              setEndDate(format(adjustedEndDate, 'yyyy-MM-dd'));
+              formattedEndDate = format(adjustedEndDate, 'yyyy-MM-dd');
               
               // For all-day events, don't set times (they aren't used)
-              setStartTime('00:00');
-              setEndTime('23:59');
+              formattedStartTime = '00:00';
+              formattedEndTime = '23:59';
               
               console.log(`[DATE DEBUG] All-day event date processing:`, {
                 originalStart: startDateTime,
                 originalEnd: endDateTime,
-                formattedStart: format(startDateTime, 'yyyy-MM-dd'),
+                formattedStart: formattedStartDate,
                 adjustedEnd: adjustedEndDate,
-                formattedEnd: format(adjustedEndDate, 'yyyy-MM-dd'),
+                formattedEnd: formattedEndDate,
               });
             } else {
               // Regular event (not all-day) - use end date as is
-              setEndDate(format(endDateTime, 'yyyy-MM-dd'));
+              formattedEndDate = format(endDateTime, 'yyyy-MM-dd');
               
               // For regular events, also set the times
-              setStartTime(format(startDateTime, 'HH:mm'));
-              setEndTime(format(endDateTime, 'HH:mm'));
+              formattedStartTime = format(startDateTime, 'HH:mm');
+              formattedEndTime = format(endDateTime, 'HH:mm');
               
               console.log(`[DATE DEBUG] Regular event time processing:`, {
                 originalStart: startDateTime,
                 originalEnd: endDateTime,
-                formattedStart: format(startDateTime, 'yyyy-MM-dd'),
-                formattedEnd: format(endDateTime, 'yyyy-MM-dd'),
-                startTime: format(startDateTime, 'HH:mm'),
-                endTime: format(endDateTime, 'HH:mm'),
+                formattedStart: formattedStartDate,
+                formattedEnd: formattedEndDate,
+                startTime: formattedStartTime,
+                endTime: formattedEndTime,
               });
             }
+            
+            // Update form with the date and time values
+            form.setValue('startDate', formattedStartDate);
+            form.setValue('endDate', formattedEndDate);
+            form.setValue('startTime', formattedStartTime);
+            form.setValue('endTime', formattedEndTime);
           } else {
             throw new Error('Invalid date format in event');
           }
@@ -498,10 +536,13 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
           
           // Set fallback values for dates and times
           const today = new Date();
-          setStartDate(format(today, 'yyyy-MM-dd'));
-          setEndDate(format(today, 'yyyy-MM-dd'));
-          setStartTime('12:00');
-          setEndTime('13:00');
+          const formattedToday = format(today, 'yyyy-MM-dd');
+          
+          // Update form with default date and time values
+          form.setValue('startDate', formattedToday);
+          form.setValue('endDate', formattedToday);
+          form.setValue('startTime', '12:00');
+          form.setValue('endTime', '13:00');
           
           // Show notification about date format issue
           toast({
@@ -515,57 +556,62 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
       // For new events, set default values if selectedDate is not provided
       if (!selectedDate) {
         const now = new Date();
-        setStartDate(format(now, 'yyyy-MM-dd'));
-        setEndDate(format(now, 'yyyy-MM-dd'));
-        
+        const formattedDate = format(now, 'yyyy-MM-dd');
         const hourNow = now.getHours();
         const hourNext = hourNow < 23 ? hourNow + 1 : 23;
+        const startTime = `${String(hourNow).padStart(2, '0')}:00`;
+        const endTime = `${String(hourNext).padStart(2, '0')}:00`;
         
-        setStartTime(`${String(hourNow).padStart(2, '0')}:00`);
-        setEndTime(`${String(hourNext).padStart(2, '0')}:00`);
+        // Update form with default date and time values
+        form.setValue('startDate', formattedDate);
+        form.setValue('endDate', formattedDate);
+        form.setValue('startTime', startTime);
+        form.setValue('endTime', endTime);
         
         console.log(`[DATE DEBUG] Form values set with industry standard defaults:`, {
-          startDate: format(now, 'yyyy-MM-dd'),
-          endDate: format(now, 'yyyy-MM-dd'),
-          startTime: `${String(hourNow).padStart(2, '0')}:00`,
-          endTime: `${String(hourNext).padStart(2, '0')}:00`,
+          startDate: formattedDate,
+          endDate: formattedDate,
+          startTime: startTime,
+          endTime: endTime,
         });
       }
       
       // For new events, default to the first available calendar
-      if (calendars && calendars.length > 0 && !calendarId) {
+      if (calendars && calendars.length > 0 && !form.getValues('calendarId')) {
         const primaryCalendar = calendars.find(cal => cal.isPrimary);
         if (primaryCalendar) {
-          setCalendarId(primaryCalendar.id.toString());
+          form.setValue('calendarId', primaryCalendar.id.toString());
         } else if (calendars[0]) {
-          setCalendarId(calendars[0].id.toString());
+          form.setValue('calendarId', calendars[0].id.toString());
         }
       }
       
       // Always add the current user as an attendee if we're creating a new event
       if (user && attendees.length === 0) {
-        setAttendees([{
+        const defaultAttendees = [{
           id: uuidv4(),
           email: user.email,
           name: user.name || '',
           role: 'Chairman' // Default the creator to Chairman
-        }]);
+        }];
+        setAttendees(defaultAttendees);
+        form.setValue('attendees', defaultAttendees);
       }
       
-      // Reset all other form values
-      setTitle('');
-      setDescription('');
-      setLocation('');
-      setAllDay(false);
-      setTimezone('UTC');
-      setIsBusy(true);
-      setResources([]);
-      setRecurrence({
+      // Set default values for other form fields
+      form.setValue('title', '');
+      form.setValue('description', '');
+      form.setValue('location', '');
+      form.setValue('allDay', false);
+      form.setValue('timezone', 'UTC');
+      form.setValue('isBusy', true);
+      form.setValue('resources', []);
+      form.setValue('recurrence', {
         pattern: 'None',
         interval: 1,
         endType: 'Never'
       });
-      setSendEmails(true);
+      form.setValue('sendEmails', true);
     }
     
     // Reset form errors
@@ -1233,20 +1279,21 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
         if (!open) onClose();
       }}>
         <DialogContent className="sm:max-w-[950px] max-h-[90vh] overflow-hidden flex flex-col bg-gradient-to-br from-background to-background/95 border-[0.5px] border-primary/10 shadow-xl">
-          <DialogHeader className="pb-4 border-b">
-            <DialogTitle className="flex items-center gap-2 text-lg">
-              {event ? (
-                <>
-                  <span className="text-primary">{title || 'Event Details'}</span>
-                </>
-              ) : (
-                <>
-                  <CalendarDays className="h-5 w-5 text-primary" />
-                  <span>Create New Event</span>
-                </>
-              )}
-            </DialogTitle>
-          </DialogHeader>
+          <FormProvider {...form}>
+            <DialogHeader className="pb-4 border-b">
+              <DialogTitle className="flex items-center gap-2 text-lg">
+                {event ? (
+                  <>
+                    <span className="text-primary">{form.getValues('title') || 'Event Details'}</span>
+                  </>
+                ) : (
+                  <>
+                    <CalendarDays className="h-5 w-5 text-primary" />
+                    <span>Create New Event</span>
+                  </>
+                )}
+              </DialogTitle>
+            </DialogHeader>
           
           <Tabs
             defaultValue="basic"
@@ -1328,19 +1375,26 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <FormLabel htmlFor="title" className="text-sm font-medium">
-                        Title
-                      </FormLabel>
-                      <Input
-                        id="title"
-                        placeholder="Event title"
-                        value={title}
-                        onChange={e => setTitle(e.target.value)}
-                        className={errors.title ? 'border-red-500' : ''}
+                      <FormField
+                        control={form.control}
+                        name="title"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel htmlFor="title" className="text-sm font-medium">
+                              Title
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                id="title"
+                                placeholder="Event title"
+                                className={form.formState.errors.title ? 'border-red-500' : ''}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                      {errors.title && (
-                        <p className="text-xs text-red-500">{errors.title}</p>
-                      )}
                     </div>
                     
                     <div className="space-y-2">
@@ -1872,6 +1926,7 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
               </Button>
             </div>
           </DialogFooter>
+          </FormProvider>
         </DialogContent>
       </Dialog>
       
