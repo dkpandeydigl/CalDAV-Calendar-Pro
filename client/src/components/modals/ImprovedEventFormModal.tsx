@@ -1491,6 +1491,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         console.debug('[RECURRENCE DEBUG] Converting recurrence to RFC 5545 format', recurrence);
         
         try {
+          // Generate the RFC 5545 RRULE string
+          const rruleString = generateRRuleString(recurrence);
+          
           // Create a proper recurrence rule object that includes both the original data
           // and a formatted iCalendar RRULE string for RFC 5545 compliance
           const rruleObj = {
@@ -1498,7 +1501,11 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             originalData: recurrence,
             
             // Add the properly formatted RFC 5545 RRULE string
-            rruleString: generateRRuleString(recurrence),
+            rruleString: rruleString,
+            
+            // Additionally, store the direct RRULE string at the top level
+            // This ensures it will be picked up by the server-side parser
+            rrule: rruleString,
             
             // Track when this rule was created/modified
             createdAt: new Date().toISOString()
@@ -1506,6 +1513,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           
           // Stringify the complete object for storage
           recurrenceRule = JSON.stringify(rruleObj);
+          
+          // Ensure the isRecurring flag is properly set, since we've confirmed recurrence exists
+          isRecurringEvent = true;
           
           console.debug('[RECURRENCE DEBUG] Successfully created RFC 5545 compliant recurrence rule', {
             recurrence: recurrence,
