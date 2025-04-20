@@ -101,12 +101,14 @@ const WebSocketTestPage: React.FC = () => {
     
     if (selectedType === 'event') {
       notification = {
-        type: 'event_changed',
+        type: 'event',
         action: selectedAction,
         timestamp: Date.now(),
-        eventId: 12345,
-        changeType: selectedAction as 'created' | 'updated' | 'deleted',
-        data: notificationData,
+        data: {
+          ...notificationData,
+          eventId: 12345,
+          changeType: selectedAction,
+        },
         sourceUserId: user?.id
       };
     } else {

@@ -30,7 +30,8 @@ import fetch from "node-fetch";
 import { escapeICalString, formatICalDate, formatContentLine, generateICalEvent } from "./ical-utils";
 import { syncService } from "./sync-service";
 import { webdavSyncService } from "./webdav-sync";
-import { notifyCalendarChanged, notifyEventChanged } from "./websocket-handler";
+import { notifyCalendarChanged } from "./websocket-handler";
+import { notifyEventChangeWithMetadata } from "./websocket-notifications";
 import { notificationService } from "./memory-notification-service";
 import { registerEmailTestEndpoints } from "./email-test-endpoint";
 import { registerEnhancedEmailTestEndpoints } from "./enhanced-email-test";
@@ -4820,8 +4821,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          // Notify the user who made the change
-          notifyEventChanged(req.user.id, eventId, 'updated', {
+          // Notify the user who made the change using enhanced notification system
+          notifyEventChangeWithMetadata(req.user.id, {
+            id: eventId,
+            calendarId: updatedEvent.calendarId
+          }, 'updated', {
             title: updatedEvent.title,
             calendarId: updatedEvent.calendarId,
             calendarName: (await storage.getCalendar(updatedEvent.calendarId))?.name || 'Unknown',
@@ -4831,10 +4835,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             wasRecurrenceStateChange, // Add flag for recurrence state change
             wasAttendeeUpdate, // Add flag for attendee updates
             wasResourceUpdate, // Add flag for resource updates
+            attendeeCount: hasAttendees ? 
+              (typeof updatedEvent.attendees === 'string' ? 
+                JSON.parse(updatedEvent.attendees).length : 
+                Array.isArray(updatedEvent.attendees) ? updatedEvent.attendees.length : 0) 
+              : 0,
+            resourceCount: (() => {
+              try {
+                return updatedEvent.resources ? 
+                  (typeof updatedEvent.resources === 'string' ? 
+                    JSON.parse(updatedEvent.resources).length : 
+                    Array.isArray(updatedEvent.resources) ? updatedEvent.resources.length : 0) 
+                  : 0;
+              } catch (e) {
+                console.error('[WEBSOCKET] Error parsing resources for notification count:', e);
+                return 0;
+              }
+            })(),
             recurrenceRule: updatedEvent.recurrenceRule,
             isRecurring: updatedEvent.isRecurring,
             hasAttendees, // Include info about whether the event has attendees
-            // Safely check for resources with proper error handling
             hasResources: (() => {
               try {
                 return updatedEvent.resources ? 
