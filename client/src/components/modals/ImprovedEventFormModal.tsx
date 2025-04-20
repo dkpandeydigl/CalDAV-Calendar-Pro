@@ -1481,11 +1481,12 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       
       // Prepare attendees and recurrence data for storage
       const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
-      const isRecurringEvent = recurrence.pattern !== 'None';
       
       // BUGFIX: Ensure proper recurrence rule handling for RFC 5545 compliance
       // First convert our frontend recurrence model to a properly formatted recurrence rule
       let recurrenceRule = null;
+      // Determine if this is a recurring event based on the pattern
+      const isRecurringEvent = recurrence.pattern !== 'None';
       
       if (isRecurringEvent) {
         console.debug('[RECURRENCE DEBUG] Converting recurrence to RFC 5545 format', recurrence);
@@ -1513,9 +1514,6 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           
           // Stringify the complete object for storage
           recurrenceRule = JSON.stringify(rruleObj);
-          
-          // Ensure the isRecurring flag is properly set, since we've confirmed recurrence exists
-          isRecurringEvent = true;
           
           console.debug('[RECURRENCE DEBUG] Successfully created RFC 5545 compliant recurrence rule', {
             recurrence: recurrence,
