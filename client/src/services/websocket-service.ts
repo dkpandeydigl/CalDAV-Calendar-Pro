@@ -1,244 +1,216 @@
+import { ConnectionState, createWebSocketConnection, SharedWebSocketConnection } from '@/utils/websocket';
+
 /**
- * WebSocket Service
- * 
- * This service wraps the WebSocket utility to provide higher-level
- * functionality specific to our application needs.
+ * Message types for WebSocket communication
  */
-
-import { sharedWebSocket, ConnectionState } from '../utils/websocket';
-
-// WebSocket message types - used to identify different types of messages
 export enum MessageType {
-  // Calendar event notifications
+  PING = 'ping',
+  PONG = 'pong',
+  CONNECT = 'connect',
+  DISCONNECT = 'disconnect',
   EVENT_CREATED = 'event_created',
   EVENT_UPDATED = 'event_updated',
   EVENT_DELETED = 'event_deleted',
-  EVENT_CANCELLED = 'event_cancelled',
-  
-  // Calendar notifications
-  CALENDAR_CREATED = 'calendar_created',
   CALENDAR_UPDATED = 'calendar_updated',
-  CALENDAR_DELETED = 'calendar_deleted',
-  CALENDAR_SHARED = 'calendar_shared',
-  CALENDAR_UNSHARED = 'calendar_unshared',
-  
-  // User notifications
-  USER_CONNECTED = 'user_connected',
-  USER_DISCONNECTED = 'user_disconnected',
-  
-  // Synchronization notifications
-  SYNC_STARTED = 'sync_started',
-  SYNC_COMPLETED = 'sync_completed',
-  SYNC_FAILED = 'sync_failed',
-  
-  // Server notifications
   SERVER_INFO = 'server_info',
   SERVER_ERROR = 'server_error',
-  
-  // Client commands
-  PING = 'ping',
-  PONG = 'pong',
-  CLIENT_INFO = 'client_info'
+  CLIENT_INFO = 'client_info',
+  CLIENT_ERROR = 'client_error',
+  DEBUG = 'debug'
 }
 
-// Standard message format for all WebSocket communications
+/**
+ * WebSocket message interface
+ */
 export interface WebSocketMessage {
   type: MessageType;
   payload?: any;
   timestamp?: number;
-  id?: string;
+  direction?: 'incoming' | 'outgoing';
 }
 
-// Listener callback type
-export type MessageListener = (message: WebSocketMessage) => void;
+/**
+ * Callback type for message listeners
+ */
+type MessageListener = (message: WebSocketMessage) => void;
 
-// WebSocket service for handling application-specific WebSocket communication
-class WebSocketService {
-  private listeners: Map<MessageType, Set<MessageListener>> = new Map();
-  private globalListeners: Set<MessageListener> = new Set();
-  private connected = false;
-  private pingInterval: ReturnType<typeof setInterval> | null = null;
-  private readonly PING_INTERVAL = 30000; // 30 seconds
+/**
+ * WebSocket service that handles connection management and message passing
+ */
+export class WebSocketService {
+  private connection: SharedWebSocketConnection;
+  private messageListeners: Map<string, MessageListener[]> = new Map();
+  private globalListeners: MessageListener[] = [];
+  private listenerIdCounter: number = 0;
   
   constructor() {
-    // Listen for connection state changes
-    sharedWebSocket.on('stateChange', this.handleConnectionStateChange.bind(this));
-    
-    // Listen for WebSocket messages
-    sharedWebSocket.on('message', this.handleWebSocketMessage.bind(this));
-    
-    // Connect the WebSocket
-    if (typeof window !== 'undefined') {
-      this.connect();
-    }
-  }
-  
-  // Connect to the WebSocket server
-  public connect(): void {
-    sharedWebSocket.connect();
-  }
-  
-  // Disconnect from the WebSocket server
-  public disconnect(): void {
-    this.stopPing();
-    sharedWebSocket.disconnect();
-  }
-  
-  // Get the current connection state
-  public getConnectionState(): ConnectionState {
-    return sharedWebSocket.getState();
-  }
-  
-  // Check if the WebSocket is connected
-  public isConnected(): boolean {
-    return sharedWebSocket.isConnected();
-  }
-  
-  // Send a message to the server
-  public sendMessage(message: WebSocketMessage): boolean {
-    // Add timestamp if not present
-    if (!message.timestamp) {
-      message.timestamp = Date.now();
-    }
-    
-    return sharedWebSocket.sendJson(message);
-  }
-  
-  // Send a ping message to keep the connection alive
-  private sendPing(): void {
-    this.sendMessage({
-      type: MessageType.PING,
-      timestamp: Date.now()
+    // Create or reuse the shared WebSocket connection
+    this.connection = createWebSocketConnection({
+      onMessage: this.handleMessage.bind(this),
+      onStateChange: this.handleStateChange.bind(this),
+      autoReconnect: true,
+      debug: true
     });
   }
   
-  // Start sending regular pings to keep the connection alive
-  private startPing(): void {
-    this.stopPing(); // Clear any existing interval
-    
-    this.pingInterval = setInterval(() => {
-      this.sendPing();
-    }, this.PING_INTERVAL);
+  /**
+   * Connect to the WebSocket server
+   */
+  connect() {
+    this.connection.connect();
   }
   
-  // Stop sending pings
-  private stopPing(): void {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = null;
-    }
+  /**
+   * Disconnect from the WebSocket server
+   */
+  disconnect() {
+    this.connection.disconnect();
   }
   
-  // Handle connection state changes
-  private handleConnectionStateChange(state: ConnectionState): void {
-    console.log(`[WebSocketService] Connection state changed: ${state}`);
-    
-    if (state === ConnectionState.OPEN) {
-      this.connected = true;
-      this.startPing();
-      
-      // Send client info when connected
-      this.sendMessage({
-        type: MessageType.CLIENT_INFO,
-        payload: {
-          userAgent: navigator.userAgent,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          language: navigator.language,
-          timestamp: Date.now()
-        }
-      });
-    } else if (state === ConnectionState.CLOSED || state === ConnectionState.CLOSING) {
-      this.connected = false;
-      this.stopPing();
-    }
+  /**
+   * Get the current connection state
+   */
+  getConnectionState(): ConnectionState {
+    return this.connection.getState();
   }
   
-  // Parse and handle incoming WebSocket messages
-  private handleWebSocketMessage(event: MessageEvent): void {
+  /**
+   * Handle incoming messages
+   * @param event WebSocket message event
+   */
+  private handleMessage(event: MessageEvent) {
     try {
-      // Parse the message
       const message = JSON.parse(event.data) as WebSocketMessage;
       
-      // Call global listeners
-      this.globalListeners.forEach(listener => {
-        try {
-          listener(message);
-        } catch (error) {
-          console.error('[WebSocketService] Error in global message listener:', error);
-        }
-      });
+      // Attach timestamp if not present
+      if (!message.timestamp) {
+        message.timestamp = Date.now();
+      }
       
-      // Call specific listeners for this message type
-      const typeListeners = this.listeners.get(message.type);
-      if (typeListeners) {
-        typeListeners.forEach(listener => {
+      // Mark as incoming message
+      const incomingMessage = { ...message, direction: 'incoming' as const };
+      
+      // Dispatch message to topic-specific listeners
+      if (this.messageListeners.has(message.type)) {
+        const listeners = this.messageListeners.get(message.type) || [];
+        listeners.forEach(listener => {
           try {
-            listener(message);
+            listener(incomingMessage);
           } catch (error) {
-            console.error(`[WebSocketService] Error in message listener for type ${message.type}:`, error);
+            console.error(`Error in message listener for type ${message.type}:`, error);
           }
         });
       }
       
-      // Special handling for ping/pong
+      // Dispatch to global listeners
+      this.globalListeners.forEach(listener => {
+        try {
+          listener(incomingMessage);
+        } catch (error) {
+          console.error('Error in global message listener:', error);
+        }
+      });
+      
+      // Special handling for ping/pong for connection testing
       if (message.type === MessageType.PING) {
         this.sendMessage({
           type: MessageType.PONG,
-          timestamp: Date.now()
+          payload: { 
+            receivedAt: Date.now(),
+            originalTimestamp: message.timestamp 
+          }
         });
       }
-    } catch (error) {
-      console.error('[WebSocketService] Error parsing WebSocket message:', error, event.data);
-    }
-  }
-  
-  // Add a listener for a specific message type
-  public addListener(type: MessageType, listener: MessageListener): () => void {
-    if (!this.listeners.has(type)) {
-      this.listeners.set(type, new Set());
-    }
-    
-    const typeListeners = this.listeners.get(type)!;
-    typeListeners.add(listener);
-    
-    // Return a function to remove this listener
-    return () => {
-      if (this.listeners.has(type)) {
-        const listeners = this.listeners.get(type)!;
-        listeners.delete(listener);
-        
-        if (listeners.size === 0) {
-          this.listeners.delete(type);
-        }
-      }
-    };
-  }
-  
-  // Add a listener for all message types
-  public addGlobalListener(listener: MessageListener): () => void {
-    this.globalListeners.add(listener);
-    
-    // Return a function to remove this listener
-    return () => {
-      this.globalListeners.delete(listener);
-    };
-  }
-  
-  // Remove a listener for a specific message type
-  public removeListener(type: MessageType, listener: MessageListener): void {
-    if (this.listeners.has(type)) {
-      const typeListeners = this.listeners.get(type)!;
-      typeListeners.delete(listener);
       
-      if (typeListeners.size === 0) {
-        this.listeners.delete(type);
-      }
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error);
     }
   }
   
-  // Remove a global listener
-  public removeGlobalListener(listener: MessageListener): void {
-    this.globalListeners.delete(listener);
+  /**
+   * Handle connection state changes
+   */
+  private handleStateChange(state: ConnectionState) {
+    // Notify global listeners about state change
+    this.globalListeners.forEach(listener => {
+      try {
+        listener({
+          type: MessageType.CLIENT_INFO,
+          payload: { connectionState: state },
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        console.error('Error in state change listener:', error);
+      }
+    });
+  }
+  
+  /**
+   * Send a message to the server
+   * @param message Message to send
+   * @returns boolean indicating if message was sent
+   */
+  sendMessage(message: WebSocketMessage): boolean {
+    if (this.connection.getState() !== ConnectionState.OPEN) {
+      console.warn('Cannot send message: WebSocket is not open');
+      return false;
+    }
+    
+    try {
+      // Ensure timestamp is present
+      const messageToSend: WebSocketMessage = {
+        ...message,
+        timestamp: message.timestamp || Date.now()
+      };
+      
+      // Send as JSON string
+      this.connection.send(JSON.stringify(messageToSend));
+      return true;
+    } catch (error) {
+      console.error('Error sending WebSocket message:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Add a listener for a specific message type
+   * @param type Message type to listen for
+   * @param callback Callback function
+   * @returns Function to remove the listener
+   */
+  addListener(type: MessageType, callback: MessageListener): () => void {
+    if (!this.messageListeners.has(type)) {
+      this.messageListeners.set(type, []);
+    }
+    
+    const listeners = this.messageListeners.get(type)!;
+    const id = this.listenerIdCounter++;
+    
+    listeners.push(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      const updatedListeners = this.messageListeners.get(type) || [];
+      this.messageListeners.set(
+        type,
+        updatedListeners.filter((_, i) => i !== id)
+      );
+    };
+  }
+  
+  /**
+   * Add a global listener for all message types
+   * @param callback Callback function
+   * @returns Function to remove the listener
+   */
+  addGlobalListener(callback: MessageListener): () => void {
+    const id = this.globalListeners.length;
+    this.globalListeners.push(callback);
+    
+    // Return unsubscribe function
+    return () => {
+      this.globalListeners = this.globalListeners.filter((_, i) => i !== id);
+    };
   }
 }
 

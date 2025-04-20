@@ -1,288 +1,408 @@
 /**
- * WebSocket utility for establishing and maintaining connections to the server
- * Provides resilient behavior with automatic reconnection
+ * WebSocket connection state enum
  */
-
-// WebSocket connection states
 export enum ConnectionState {
-  CONNECTING = 'connecting',
-  OPEN = 'open',
-  CLOSING = 'closing',
-  CLOSED = 'closed',
-  RECONNECTING = 'reconnecting'
+  CONNECTING = 0,
+  OPEN = 1,
+  CLOSING = 2,
+  CLOSED = 3,
+  RECONNECTING = 4
 }
-
-// Configuration options for the WebSocket connection
-interface WebSocketOptions {
-  reconnectInterval?: number; // Time in ms to wait before reconnecting
-  maxReconnectAttempts?: number; // Maximum number of reconnect attempts
-  debug?: boolean; // Enable debug logging
-  useFallbackPath?: boolean; // Whether to use the fallback WebSocket path
-}
-
-// Default options
-const DEFAULT_OPTIONS: WebSocketOptions = {
-  reconnectInterval: 2000,
-  maxReconnectAttempts: 10,
-  debug: false,
-  useFallbackPath: false
-};
 
 /**
- * Creates a resilient WebSocket connection to the server
- * Handles automatic reconnection if the connection is lost
+ * WebSocket connection options
  */
-export function createWebSocketConnection(options: WebSocketOptions = DEFAULT_OPTIONS) {
-  const config = { ...DEFAULT_OPTIONS, ...options };
+export interface WebSocketConnectionOptions {
+  url?: string;
+  fallbackUrl?: string;
+  autoReconnect?: boolean;
+  reconnectInterval?: number;
+  maxReconnectAttempts?: number;
+  onMessage?: (event: MessageEvent) => void;
+  onStateChange?: (state: ConnectionState) => void;
+  debug?: boolean;
+}
+
+/**
+ * Interface for the shared WebSocket connection
+ */
+export interface SharedWebSocketConnection {
+  connect: () => void;
+  disconnect: () => void;
+  send: (data: string) => void;
+  getState: () => ConnectionState;
+  on: (event: string, callback: any) => () => void;
+}
+
+// Singleton instance of the shared WebSocket connection
+let sharedInstance: SharedWebSocketConnection | null = null;
+
+/**
+ * Create a shared WebSocket connection that can be used across components
+ * 
+ * @param options Configuration options for the WebSocket connection
+ * @returns Shared WebSocket connection interface
+ */
+export function createWebSocketConnection(options: WebSocketConnectionOptions = {}): SharedWebSocketConnection {
+  // If a shared instance already exists, return it
+  if (sharedInstance) {
+    if (options.debug) {
+      console.log('[WebSocket] Returning existing shared WebSocket instance');
+    }
+    return sharedInstance;
+  }
   
-  // Internal state
+  // Default options
+  const {
+    url = determineWebSocketUrl('/api/ws'),
+    fallbackUrl = determineWebSocketUrl('/ws'),
+    autoReconnect = true,
+    reconnectInterval = 3000,
+    maxReconnectAttempts = 10,
+    onMessage,
+    onStateChange,
+    debug = false
+  } = options;
+  
+  // WebSocket instance
   let socket: WebSocket | null = null;
-  let connectionState: ConnectionState = ConnectionState.CLOSED;
+  
+  // Connection state
+  let state: ConnectionState = ConnectionState.CLOSED;
+  
+  // Reconnection tracking
   let reconnectAttempts = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let isFallbackActive = false;
   
-  // Event callbacks
-  const eventListeners: Record<string, Function[]> = {
-    'open': [],
-    'close': [],
-    'message': [],
-    'error': [],
-    'reconnect': [],
-    'stateChange': []
+  // Event listeners
+  const eventListeners: Record<string, Array<(...args: any[]) => void>> = {
+    message: [],
+    open: [],
+    close: [],
+    error: [],
+    stateChange: []
   };
   
-  // Helper to determine the correct WebSocket URL
-  const getWebSocketUrl = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    
-    // Use the correct path based on configuration
-    // Some environments require specific WebSocket paths
-    const path = config.useFallbackPath ? '/ws' : '/api/ws';
-    
-    return `${protocol}//${host}${path}`;
-  };
-  
-  // Update connection state and notify listeners
+  /**
+   * Update the connection state and notify listeners
+   */
   const updateState = (newState: ConnectionState) => {
-    if (connectionState !== newState) {
-      if (config.debug) {
-        console.log(`[WebSocket] State changed: ${connectionState} -> ${newState}`);
+    if (state !== newState) {
+      state = newState;
+      
+      if (debug) {
+        console.log(`[WebSocket] State changed to: ${ConnectionState[newState]}`);
       }
       
-      connectionState = newState;
-      triggerEvent('stateChange', connectionState);
-    }
-  };
-  
-  // Trigger event callbacks
-  const triggerEvent = (eventName: string, ...args: any[]) => {
-    if (eventListeners[eventName]) {
-      eventListeners[eventName].forEach(callback => {
+      // Notify state change listeners
+      eventListeners.stateChange.forEach(listener => {
         try {
-          callback(...args);
+          listener(newState);
         } catch (error) {
-          console.error(`[WebSocket] Error in ${eventName} handler:`, error);
+          console.error('[WebSocket] Error in state change listener:', error);
         }
       });
+      
+      // Notify external state change handler if provided
+      if (onStateChange) {
+        try {
+          onStateChange(newState);
+        } catch (error) {
+          console.error('[WebSocket] Error in external state change handler:', error);
+        }
+      }
     }
   };
   
-  // Attempt to reconnect to the server
-  const reconnect = () => {
-    if (reconnectAttempts >= (config.maxReconnectAttempts || 0)) {
-      if (config.debug) {
-        console.log(`[WebSocket] Max reconnect attempts reached (${reconnectAttempts})`);
+  /**
+   * Attempt to connect to the WebSocket server
+   */
+  const connect = () => {
+    // Prevent connection attempts if already connecting or connected
+    if (state === ConnectionState.CONNECTING || state === ConnectionState.OPEN) {
+      if (debug) {
+        console.log(`[WebSocket] Already ${ConnectionState[state]}, ignoring connect() call`);
       }
       return;
     }
     
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-    }
-    
-    reconnectTimer = setTimeout(() => {
-      if (config.debug) {
-        console.log(`[WebSocket] Reconnecting... Attempt ${reconnectAttempts + 1}`);
-      }
-      
-      updateState(ConnectionState.RECONNECTING);
-      reconnectAttempts++;
-      connect();
-      
-      triggerEvent('reconnect', reconnectAttempts);
-    }, config.reconnectInterval);
-  };
-  
-  // Handle WebSocket events
-  const setupEventHandlers = () => {
-    if (!socket) return;
-    
-    socket.onopen = (event) => {
-      updateState(ConnectionState.OPEN);
-      reconnectAttempts = 0;
-      triggerEvent('open', event);
-    };
-    
-    socket.onclose = (event) => {
-      updateState(ConnectionState.CLOSED);
-      triggerEvent('close', event);
-      
-      // Attempt to reconnect if the close wasn't initiated by the user
-      if (!event.wasClean) {
-        reconnect();
-      }
-    };
-    
-    socket.onmessage = (event) => {
-      triggerEvent('message', event);
-    };
-    
-    socket.onerror = (event) => {
-      triggerEvent('error', event);
-      
-      if (config.debug) {
-        console.error('[WebSocket] Connection error:', event);
-      }
-    };
-  };
-  
-  // Connect to the WebSocket server
-  const connect = () => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      return; // Already connected
-    }
-    
-    // If there's an existing connection, clean it up first
-    if (socket) {
-      socket.onopen = null;
-      socket.onclose = null;
-      socket.onmessage = null;
-      socket.onerror = null;
-      
+    // Clean up any existing socket
+    if (socket !== null) {
       try {
+        socket.onopen = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.onmessage = null;
         socket.close();
-      } catch (e) {
-        // Ignore any errors when closing
+      } catch (error) {
+        console.error('[WebSocket] Error closing existing socket:', error);
       }
+      socket = null;
     }
+    
+    updateState(ConnectionState.CONNECTING);
     
     try {
-      updateState(ConnectionState.CONNECTING);
-      socket = new WebSocket(getWebSocketUrl());
-      setupEventHandlers();
-    } catch (error) {
-      updateState(ConnectionState.CLOSED);
-      console.error('[WebSocket] Failed to create connection:', error);
+      // Choose URL based on fallback state
+      const currentUrl = isFallbackActive ? fallbackUrl : url;
       
-      // Try to reconnect
-      reconnect();
+      if (debug) {
+        console.log(`[WebSocket] Connecting to ${currentUrl} (fallback: ${isFallbackActive})`);
+      }
+      
+      // Create new WebSocket
+      socket = new WebSocket(currentUrl);
+      
+      // Configure handlers
+      socket.onopen = (event) => {
+        reconnectAttempts = 0;
+        updateState(ConnectionState.OPEN);
+        
+        if (debug) {
+          console.log('[WebSocket] Connection established');
+        }
+        
+        // Trigger event listeners
+        eventListeners.open.forEach(listener => {
+          try {
+            listener(event);
+          } catch (error) {
+            console.error('[WebSocket] Error in open listener:', error);
+          }
+        });
+      };
+      
+      socket.onclose = (event) => {
+        const wasConnected = state === ConnectionState.OPEN;
+        updateState(ConnectionState.CLOSED);
+        
+        if (debug) {
+          console.log(`[WebSocket] Connection closed with code ${event.code}, reason: ${event.reason || 'Unknown'}`);
+        }
+        
+        // Trigger event listeners
+        eventListeners.close.forEach(listener => {
+          try {
+            listener(event);
+          } catch (error) {
+            console.error('[WebSocket] Error in close listener:', error);
+          }
+        });
+        
+        // Handle reconnection if auto-reconnect is enabled
+        if (autoReconnect && wasConnected) {
+          handleReconnect();
+        }
+      };
+      
+      socket.onerror = (event) => {
+        // Don't change state on error, wait for close
+        if (debug) {
+          console.error('[WebSocket] Connection error:', event);
+        }
+        
+        // Trigger event listeners
+        eventListeners.error.forEach(listener => {
+          try {
+            listener(event);
+          } catch (error) {
+            console.error('[WebSocket] Error in error listener:', error);
+          }
+        });
+        
+        // If we're in connecting state and an error occurs,
+        // probably means the connection failed - try fallback URL
+        if (state === ConnectionState.CONNECTING && !isFallbackActive) {
+          if (debug) {
+            console.log('[WebSocket] Primary connection failed, trying fallback URL');
+          }
+          
+          // Use fallback URL next time
+          isFallbackActive = true;
+          
+          // Reconnect immediately with fallback
+          if (autoReconnect) {
+            // Reset the socket first
+            socket = null;
+            handleReconnect(0);
+          }
+        }
+      };
+      
+      socket.onmessage = (event) => {
+        if (debug) {
+          console.log('[WebSocket] Message received:', event.data);
+        }
+        
+        // Trigger event listeners
+        eventListeners.message.forEach(listener => {
+          try {
+            listener(event);
+          } catch (error) {
+            console.error('[WebSocket] Error in message listener:', error);
+          }
+        });
+        
+        // Call external message handler if provided
+        if (onMessage) {
+          try {
+            onMessage(event);
+          } catch (error) {
+            console.error('[WebSocket] Error in external message handler:', error);
+          }
+        }
+      };
+    } catch (error) {
+      console.error('[WebSocket] Error creating connection:', error);
+      updateState(ConnectionState.CLOSED);
+      
+      // If auto-reconnect is enabled, try reconnecting
+      if (autoReconnect) {
+        handleReconnect();
+      }
     }
   };
   
-  // Disconnect from the WebSocket server
-  const disconnect = () => {
-    if (!socket) return;
-    
-    updateState(ConnectionState.CLOSING);
-    
-    if (reconnectTimer) {
+  /**
+   * Handle reconnection logic
+   */
+  const handleReconnect = (delay = reconnectInterval) => {
+    // Clear any existing reconnect timer
+    if (reconnectTimer !== null) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
     
-    try {
-      socket.close();
-    } catch (error) {
-      console.error('[WebSocket] Error closing connection:', error);
-    }
-    
-    updateState(ConnectionState.CLOSED);
-    reconnectAttempts = 0;
-  };
-  
-  // Send data to the server
-  const send = (data: string | ArrayBufferLike | Blob | ArrayBufferView) => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      if (config.debug) {
-        console.warn('[WebSocket] Cannot send message - connection not open');
+    // Check if we've exceeded the maximum reconnect attempts
+    if (reconnectAttempts >= maxReconnectAttempts) {
+      if (debug) {
+        console.log(`[WebSocket] Maximum reconnect attempts (${maxReconnectAttempts}) reached`);
       }
-      return false;
+      return;
     }
     
-    try {
-      socket.send(data);
-      return true;
-    } catch (error) {
-      console.error('[WebSocket] Error sending message:', error);
-      return false;
+    reconnectAttempts++;
+    updateState(ConnectionState.RECONNECTING);
+    
+    if (debug) {
+      console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+    }
+    
+    // Schedule reconnection
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  };
+  
+  /**
+   * Disconnect from the WebSocket server
+   */
+  const disconnect = () => {
+    // Clear any reconnect timer
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    
+    if (socket !== null) {
+      if (state === ConnectionState.OPEN || state === ConnectionState.CONNECTING) {
+        updateState(ConnectionState.CLOSING);
+        
+        try {
+          // Remove handlers to prevent reconnection
+          socket.onclose = () => {
+            updateState(ConnectionState.CLOSED);
+            
+            if (debug) {
+              console.log('[WebSocket] Connection closed');
+            }
+          };
+          
+          // Close the connection
+          socket.close(1000, 'Normal closure');
+        } catch (error) {
+          console.error('[WebSocket] Error closing connection:', error);
+          updateState(ConnectionState.CLOSED);
+        }
+      }
+    } else {
+      updateState(ConnectionState.CLOSED);
     }
   };
   
-  // Send a JSON object to the server
-  const sendJson = (data: any) => {
-    try {
-      return send(JSON.stringify(data));
-    } catch (error) {
-      console.error('[WebSocket] Error stringifying JSON data:', error);
-      return false;
-    }
-  };
-  
-  // Add an event listener
-  const on = (eventName: string, callback: Function) => {
-    if (!eventListeners[eventName]) {
-      eventListeners[eventName] = [];
-    }
-    
-    eventListeners[eventName].push(callback);
-    
-    // If the event is 'stateChange' and we have a current state, trigger immediately
-    if (eventName === 'stateChange') {
+  /**
+   * Send data through the WebSocket connection
+   */
+  const send = (data: string) => {
+    if (socket !== null && state === ConnectionState.OPEN) {
       try {
-        callback(connectionState);
+        socket.send(data);
+        return true;
       } catch (error) {
-        console.error('[WebSocket] Error in initial stateChange callback:', error);
+        console.error('[WebSocket] Error sending data:', error);
+        return false;
       }
+    } else {
+      if (debug) {
+        console.warn(`[WebSocket] Cannot send data, socket is ${socket ? ConnectionState[state] : 'null'}`);
+      }
+      return false;
+    }
+  };
+  
+  /**
+   * Add an event listener
+   */
+  const on = (event: string, callback: (...args: any[]) => void): (() => void) => {
+    if (!eventListeners[event]) {
+      eventListeners[event] = [];
     }
     
-    return () => off(eventName, callback); // Return a function to remove the listener
+    eventListeners[event].push(callback);
+    
+    // Return a function to remove this listener
+    return () => {
+      eventListeners[event] = eventListeners[event].filter(listener => listener !== callback);
+    };
   };
   
-  // Remove an event listener
-  const off = (eventName: string, callback: Function) => {
-    if (eventListeners[eventName]) {
-      const index = eventListeners[eventName].indexOf(callback);
-      
-      if (index !== -1) {
-        eventListeners[eventName].splice(index, 1);
-      }
-    }
-  };
+  /**
+   * Get the current connection state
+   */
+  const getState = () => state;
   
-  // Get current connection state
-  const getState = () => connectionState;
-  
-  // Check if the connection is currently open
-  const isConnected = () => socket?.readyState === WebSocket.OPEN;
-  
-  // Public API
-  return {
+  // Create a shared instance interface
+  const sharedConnectionInterface: SharedWebSocketConnection = {
     connect,
     disconnect,
-    reconnect,
     send,
-    sendJson,
-    on,
-    off,
     getState,
-    isConnected
+    on
   };
+  
+  // Store the singleton instance
+  sharedInstance = sharedConnectionInterface;
+  
+  // Return the shared interface
+  return sharedConnectionInterface;
 }
 
-// Create a shared WebSocket instance for the entire app
+/**
+ * Shared WebSocket connection instance
+ */
 export const sharedWebSocket = createWebSocketConnection({
-  debug: true,
-  reconnectInterval: 3000,
-  maxReconnectAttempts: 20
+  autoReconnect: true,
+  debug: true
 });
+
+/**
+ * Determine the WebSocket URL based on the current environment and endpoint
+ */
+function determineWebSocketUrl(path: string): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}${path}`;
+}
+
+export default sharedWebSocket;
