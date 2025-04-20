@@ -1,0 +1,52 @@
+Warning: validateDOMNesting(...): <button> cannot appear as a descendant of <button>.
+    at button
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28394:12
+    at div
+    at Navigation (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28408:12)
+    at CaptionNavigation (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28427:24)
+    at div
+    at Caption (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28450:12)
+    at div
+    at Month (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:29390:19)
+    at div
+    at Months (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:29419:12)
+    at div
+    at Root (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:29424:25)
+    at FocusProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28945:20)
+    at ModifiersProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28758:19)
+    at SelectRangeProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28593:31)
+    at SelectMultipleProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28498:34)
+    at SelectSingleProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:29025:32)
+    at NavigationProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28338:19)
+    at DayPickerProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:28171:28)
+    at RootProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/react-day-picker.js?v=e99060a4:29465:24)
+    at DayPicker
+    at Calendar (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/components/ui/calendar.tsx:22:3)
+    at button
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-CPFL7ZFD.js?v=e99060a4:41:13
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-DKHUMOWT.js?v=e99060a4:52:11
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-DKHUMOWT.js?v=e99060a4:33:11
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-CPFL7ZFD.js?v=e99060a4:41:13
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-DKHUMOWT.js?v=e99060a4:52:11
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-DKHUMOWT.js?v=e99060a4:33:11
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OKX5DAGM.js?v=e99060a4:109:15
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXG2BKNQ.js?v=e99060a4:207:7
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=e99060a4:121:13
+    at _c3 (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/components/ui/tabs.tsx:47:12)
+    at div
+    at https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vit
+printWarning @ chunk-RPCDYKBN.js?v=e99060a4:521
+error @ chunk-RPCDYKBN.js?v=e99060a4:505
+validateDOMNesting @ chunk-RPCDYKBN.js?v=e99060a4:8256
+createInstance @ chunk-RPCDYKBN.js?v=e99060a4:8328
+completeWork @ chunk-RPCDYKBN.js?v=e99060a4:16290
+completeUnitOfWork @ chunk-RPCDYKBN.js?v=e99060a4:19224
+performUnitOfWork @ chunk-RPCDYKBN.js?v=e99060a4:19206
+workLoopSync @ chunk-RPCDYKBN.js?v=e99060a4:19137
+renderRootSync @ chunk-RPCDYKBN.js?v=e99060a4:19116
+performSyncWorkOnRoot @ chunk-RPCDYKBN.js?v=e99060a4:18874
+flushSyncCallbacks @ chunk-RPCDYKBN.js?v=e99060a4:9119
+(anonymous) @ chunk-RPCDYKBN.js?v=e99060a4:18627Understand this error
+10form.tsx:45 Uncaught TypeError: Cannot destructure property 'getFieldState' of 'useFormContext(...)' as it is null.
+    at useFormField (form.tsx:45:11)
+    at form.tsx:91:33
