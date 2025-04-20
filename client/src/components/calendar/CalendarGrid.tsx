@@ -593,11 +593,28 @@ const CalendarGrid: FC<CalendarGridProps> = ({ events, isLoading, onEventClick, 
           console.log(`[RECURRENCE] Total recurrence dates: ${recurrenceDates.length}`);
           
           // Process each recurrence date
+          // CRITICAL FIX: Always ensure the original event is properly marked as recurring
+          // This solves a key issue where events aren't properly updated when switching from non-recurring to recurring
+          if (event.recurrenceRule && !event.isRecurring) {
+            console.log(`[RECURRENCE CRITICAL FIX] Found inconsistency in event ${event.id}: has recurrenceRule but isRecurring=false`);
+            
+            // Create a reference to update it in-place for all caches
+            // This ensures the original event is also displayed as recurring in various modals and views
+            (event as any).isRecurring = true;
+            console.log(`[RECURRENCE CRITICAL FIX] Fixed event ${event.id} by setting isRecurring=true`);
+          }
+          
           recurrenceDates.forEach((date, index) => {
             // Skip processing the original event date if it's already processed
             // This is only true for the first entry in the array which should be the start date
             if (index === 0 && date.toDateString() === new Date(startRecurDate).toDateString()) {
               console.log(`[RECURRENCE] Skipping first occurrence as it matches the original event`);
+              // CRITICAL FIX: Update the original event to ensure it's marked as recurring
+              // This is needed because the UI uses isRecurring to display the recurrence icon
+              if (!event.isRecurring && event.recurrenceRule) {
+                console.log(`[RECURRENCE CRITICAL FIX] Updating first occurrence to be recurring`);
+                (event as any).isRecurring = true;
+              }
               return;
             }
             
@@ -613,6 +630,7 @@ const CalendarGrid: FC<CalendarGridProps> = ({ events, isLoading, onEventClick, 
               startDate: date,
               endDate: recEndDate,
               isRecurrence: true,
+              isRecurring: true, // CRITICAL FIX: Ensure all occurrences have isRecurring=true
               recurrenceIndex: index
             };
             
