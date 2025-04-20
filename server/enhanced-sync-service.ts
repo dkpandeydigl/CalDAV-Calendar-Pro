@@ -318,42 +318,47 @@ export class EnhancedSyncService {
         uid: preservedUID
       };
       
-      // CRITICAL FIX: Update all events with the same UID when recurrence state changes
-      // This ensures all events with the same UID have consistent recurrence properties
+      // IMPROVED FIX: When recurrence state changes, we only need to update the original event
+      // The CalDAV server will handle recurrence expansion during the next fetch
       if (originalEvent.isRecurring !== processedEventData.isRecurring || 
           originalEvent.recurrenceRule !== processedEventData.recurrenceRule) {
-        try {
-          console.log(`[RECURRENCE UID FIX] Recurrence state changed for event with UID ${preservedUID}`);
-          console.log(`[RECURRENCE UID FIX] Finding all events with the same UID for consistency update`);
+        
+        console.log(`[RECURRENCE RFC FIX] Recurrence state changed for event with UID ${preservedUID}`);
+        
+        // Case 1: Converting to recurring event
+        if (!originalEvent.isRecurring && processedEventData.isRecurring) {
+          console.log(`[RECURRENCE RFC FIX] Converting single event to recurring event`);
           
-          // Find all events with the same UID
-          const eventsWithSameUid = await storage.getEventsByUid(preservedUID);
+          // We need to ensure the original event has the recurrence properties
+          // but we don't need to update other instances - the server will handle that
           
-          if (eventsWithSameUid && eventsWithSameUid.length > 1) {
-            console.log(`[RECURRENCE UID FIX] Found ${eventsWithSameUid.length} events with UID ${preservedUID}`);
-            
-            // Update all events except the one we are already updating
-            for (const event of eventsWithSameUid) {
-              if (event.id !== eventId) {
-                console.log(`[RECURRENCE UID FIX] Updating recurrence state for event ${event.id} with UID ${event.uid}`);
-                
-                // Update only the recurrence properties to maintain consistency
-                await storage.updateEvent(event.id, {
-                  isRecurring: processedEventData.isRecurring,
-                  recurrenceRule: processedEventData.recurrenceRule,
-                  syncStatus: 'pending' // Mark for sync
-                });
-              }
-            }
-            
-            console.log(`[RECURRENCE UID FIX] Successfully updated all events with UID ${preservedUID}`);
-          } else {
-            console.log(`[RECURRENCE UID FIX] No additional events found with UID ${preservedUID}`);
+          // Ensure syncStatus is set to pending - this is crucial
+          processedEventData.syncStatus = 'pending';
+          
+          // If this was a recurrence instance that's being converted to a recurring series,
+          // we need to clear the recurrenceId
+          if (processedEventData.recurrenceId) {
+            console.log(`[RECURRENCE RFC FIX] Clearing recurrenceId for new recurring series`);
+            processedEventData.recurrenceId = null;
           }
-        } catch (uidUpdateError) {
-          console.error(`[RECURRENCE UID FIX] Error updating events with same UID:`, uidUpdateError);
-          // Continue without failing the main update
+          
+        } 
+        // Case 2: Converting from recurring to single event
+        else if (originalEvent.isRecurring && !processedEventData.isRecurring) {
+          console.log(`[RECURRENCE RFC FIX] Converting recurring event to single event`);
+          
+          // For a recurring to non-recurring conversion, we need to:
+          // 1. Update the original event
+          // 2. Let the server handle removing recurrence instances
+          
+          // Ensure syncStatus is set to pending
+          processedEventData.syncStatus = 'pending';
+          
+          // Note: Locally cached recurrence instances will be cleaned up during the next server sync
         }
+        
+        // After updating the event, we'll perform a fresh sync to get the updated instances from the server
+        console.log(`[RECURRENCE RFC FIX] Will perform a fresh sync after update to refresh instances`);
       }
       
       // Update the event in local storage

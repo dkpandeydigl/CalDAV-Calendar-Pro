@@ -562,6 +562,12 @@ export class MemStorage implements IStorage {
     );
   }
   
+  async getEventsByUid(uid: string): Promise<Event[]> {
+    return Array.from(this.eventsMap.values()).filter(
+      (event) => event.uid === uid
+    );
+  }
+  
   async createEvent(insertEvent: InsertEvent): Promise<Event> {
     const id = this.eventIdCounter++;
     
