@@ -181,7 +181,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   const [startTime, setStartTime] = useState('');
   const [endDate, setEndDate] = useState('');
   const [endTime, setEndTime] = useState('');
-  const [calendarId, setCalendarId] = useState('');
+  // Default calendar ID state from the first available calendar  
+  const [calendarId, setCalendarId] = useState(calendars.length > 0 ? calendars[0].id.toString() : '');
   const [timezone, setTimezone] = useState(selectedTimezone);
   const [allDay, setAllDay] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
