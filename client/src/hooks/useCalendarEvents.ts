@@ -1316,32 +1316,66 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         };
       }
       
-      // Make sure recurrenceRule is properly serialized if it's present
+      // CRITICAL FIX: Make sure recurrenceRule is properly serialized and isRecurring is set correctly
+      // The most important part here is handling when a regular event is being converted to recurring
+      console.log('Original recurrence data:', { 
+        recurrenceRule: data.recurrenceRule, 
+        isRecurring: data.isRecurring,
+        type: data.recurrenceRule ? typeof data.recurrenceRule : 'undefined'
+      });
+      
+      // Case 1: Object recurrence rule
       if (data.recurrenceRule && typeof data.recurrenceRule === 'object') {
         data = {
           ...data,
           recurrenceRule: JSON.stringify(data.recurrenceRule),
-          // FIXED: Explicitly set isRecurring=true when recurrenceRule is provided as an object
+          // Explicitly set isRecurring=true when recurrenceRule is provided as an object
           isRecurring: true
         };
-        console.log('Setting isRecurring=true for object recurrenceRule');
+        console.log('CRITICAL FIX: Setting isRecurring=true for object recurrenceRule');
       } 
-      // FIXED: Handle string-based recurrence rules (RRULE format)
+      // Case 2: String-based RRULE format (already formatted)
       else if (data.recurrenceRule && typeof data.recurrenceRule === 'string' && data.recurrenceRule.startsWith('FREQ=')) {
         data = {
           ...data,
           // Keep the recurrenceRule as is since it's already in the correct format
           isRecurring: true // Ensure isRecurring flag is set correctly
         };
-        console.log('Setting isRecurring=true for string-based RRULE:', data.recurrenceRule);
+        console.log('CRITICAL FIX: Setting isRecurring=true for string-based RRULE:', data.recurrenceRule);
       }
-      // FIXED: Explicitly handle null recurrenceRule
-      else if (data.recurrenceRule === null) {
+      // Case 3: String-based JSON format that needs to be parsed
+      else if (data.recurrenceRule && typeof data.recurrenceRule === 'string' && 
+              (data.recurrenceRule.startsWith('{') || data.recurrenceRule.includes('"pattern"'))) {
+        try {
+          const parsedRule = JSON.parse(data.recurrenceRule);
+          // Keep the JSON string but ensure isRecurring is true
+          data = {
+            ...data,
+            isRecurring: true
+          };
+          console.log('CRITICAL FIX: Setting isRecurring=true for JSON string recurrenceRule');
+        } catch (e) {
+          console.error('Error parsing recurrenceRule JSON string:', e);
+          // Leave as is if parsing fails
+        }
+      }
+      // Case 4: Explicit recurring flag without rule (fix by adding a default rule)
+      else if (data.isRecurring === true && (!data.recurrenceRule || data.recurrenceRule === '')) {
         data = {
           ...data,
+          isRecurring: true,
+          recurrenceRule: "FREQ=DAILY;COUNT=1" // Add a default rule
+        };
+        console.log('CRITICAL FIX: Added default recurrenceRule for isRecurring=true with no rule');
+      }
+      // Case 5: Null or explicit non-recurring
+      else if (data.recurrenceRule === null || data.isRecurring === false) {
+        data = {
+          ...data,
+          recurrenceRule: null,
           isRecurring: false
         };
-        console.log('Setting isRecurring=false for null recurrenceRule');
+        console.log('CRITICAL FIX: Setting isRecurring=false and clearing recurrenceRule');
       }
       
       // Make sure resources are properly serialized if they're present

@@ -3967,12 +3967,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         editMode
       });
       
-      // Process the update data - CRITICAL: Always preserve the UID
-      const updateData = { 
+      // Process the update data - CRITICAL: Always preserve the UID and ensure recurrence rule consistency
+      let updateData = { 
         ...req.body,
         // CRITICAL FIX: Always preserve the original UID to maintain event identity
         uid: existingEvent.uid 
       };
+      
+      // CRITICAL FIX: Ensure recurrence rule and isRecurring flag consistency
+      // This handles the critical case of converting a non-recurring event to a recurring one
+      console.log(`[RECURRENCE CRITICAL FIX] Analyzing recurrence update:`, {
+        existingIsRecurring: existingEvent.isRecurring,
+        newIsRecurring: updateData.isRecurring,
+        existingRule: existingEvent.recurrenceRule,
+        newRule: updateData.recurrenceRule,
+        ruleType: typeof updateData.recurrenceRule
+      });
+      
+      // Case 1: Event is explicitly marked as recurring
+      if (updateData.isRecurring === true) {
+        // Ensure recurrenceRule exists - particularly important when converting from non-recurring to recurring
+        if (!updateData.recurrenceRule) {
+          console.log(`[RECURRENCE CRITICAL FIX] Adding default recurrenceRule for isRecurring=true`);
+          updateData.recurrenceRule = "FREQ=DAILY;COUNT=1";
+        } 
+        // If recurrenceRule is an object, convert to string in correct format
+        else if (typeof updateData.recurrenceRule === 'object') {
+          console.log(`[RECURRENCE CRITICAL FIX] Converting object recurrenceRule to string`);
+          const formattedRule = JSON.stringify(updateData.recurrenceRule);
+          updateData.recurrenceRule = formattedRule;
+        }
+      } 
+      // Case 2: Event is explicitly marked as non-recurring
+      else if (updateData.isRecurring === false) {
+        console.log(`[RECURRENCE CRITICAL FIX] Clearing recurrenceRule for isRecurring=false`);
+        updateData.recurrenceRule = null;
+      }
+      // Case 3: Recurrence rule exists but isRecurring flag is not set
+      else if (updateData.recurrenceRule && updateData.isRecurring === undefined) {
+        console.log(`[RECURRENCE CRITICAL FIX] Setting isRecurring=true to match existing recurrenceRule`);
+        updateData.isRecurring = true;
+      }
       
       // Log UID preservation for debugging
       if (req.body.uid && req.body.uid !== existingEvent.uid) {
