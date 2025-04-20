@@ -4182,8 +4182,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn('Event modified without user context - cannot track changes properly');
       }
       
+      // Mark the event as needing sync if recurrence rule has changed
+      if (updateData.recurrenceRule !== undefined && 
+          (existingEvent.recurrenceRule !== updateData.recurrenceRule ||
+           existingEvent.isRecurring !== updateData.isRecurring)) {
+        console.log(`[RECURRENCE DEBUG] Recurrence changed for event ${eventId}, marking for sync`);
+        updateData.syncStatus = 'pending';
+        updateData.lastSyncAttempt = new Date(); // Update sync timestamp
+      }
+      
       // Update the event
       const updatedEvent = await storage.updateEvent(eventId, updateData);
+      
+      // Trigger immediate sync if recurrence was changed
+      if (updateData.syncStatus === 'pending' && req.user) {
+        try {
+          console.log(`[RECURRENCE DEBUG] Triggering immediate sync for updated event with recurrence change`);
+          // Get syncService from the app
+          const syncService = app.get('syncService');
+          if (syncService) {
+            await syncService.pushLocalEvents(req.user.id, updatedEvent.calendarId);
+            console.log(`[RECURRENCE DEBUG] Immediate sync triggered for event ${eventId}`);
+          } else {
+            console.error(`[RECURRENCE DEBUG] SyncService not available for immediate sync`);
+          }
+        } catch (syncError) {
+          console.error(`[RECURRENCE DEBUG] Error triggering immediate sync:`, syncError);
+          // Continue without failing the request
+        }
+      }
       
       // Check if the event has attendees to determine if email workflow is needed
       let hasAttendees = false;
