@@ -2688,11 +2688,35 @@ export class SyncService {
     try {
       console.log(`Sanitizing RRULE: ${rrule}`);
       
-      // SPECIAL CASE: For JSON object recurrence rules, preserve them entirely
+      // SPECIAL CASE: For JSON object recurrence rules, convert them to RFC 5545 format
       // If it starts with { and ends with }, it's likely a JSON object from our client
       if (rrule.startsWith('{') && rrule.endsWith('}')) {
-        console.log(`Detected JSON format recurrence rule, preserving as-is`);
-        return rrule; // Return the JSON object string without modification
+        console.log(`Detected JSON format recurrence rule, converting to RFC 5545 format`);
+        try {
+          // Parse the JSON object and use formatRecurrenceRule to generate proper RFC 5545 format
+          const jsonObj = JSON.parse(rrule);
+          
+          // Check if this is our client's format with pattern, interval, etc.
+          if (jsonObj && typeof jsonObj === 'object' && 
+             (jsonObj.pattern || jsonObj.originalData?.pattern)) {
+             
+            // Access nested pattern if needed (for originalData format)
+            const pattern = jsonObj.pattern || (jsonObj.originalData ? jsonObj.originalData.pattern : null);
+            
+            if (pattern) {
+              console.log(`Found valid recurrence pattern: ${pattern}`);
+              // Use our standard formatter to convert to proper RFC 5545 format
+              const formatted = this.formatRecurrenceRule(jsonObj);
+              if (formatted && formatted.includes('FREQ=')) {
+                console.log(`Successfully converted JSON recurrence to RFC 5545: ${formatted}`);
+                return formatted;
+              }
+            }
+          }
+        } catch (jsonErr) {
+          console.error(`Error parsing JSON recurrence rule:`, jsonErr);
+          // Continue with normal sanitization if JSON parsing fails
+        }
       }
       
       // Check for specific malformed patterns (emails merged with resource types)
@@ -2716,15 +2740,6 @@ export class SyncService {
           // If we can't recover a FREQ, return a default daily recurrence
           console.log('Could not recover FREQ from corrupted RRULE, using default DAILY');
           return 'FREQ=DAILY';
-        }
-      }
-      
-      // If it's already an object in string form, parse it and let our formatter handle it
-      if (rrule.startsWith('{') && rrule.endsWith('}')) {
-        try {
-          return this.formatRecurrenceRule(rrule);
-        } catch (e) {
-          console.error("Error parsing recurrence rule JSON:", e);
         }
       }
       
