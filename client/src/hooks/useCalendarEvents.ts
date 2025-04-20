@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest, getQueryFn } from '@/lib/queryClient';
+import { apiRequest, getQueryFn, safeParseJson } from '@/lib/queryClient';
 import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import type { Event } from '@shared/schema';
@@ -1465,15 +1465,8 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         
         const res = await apiRequest('PUT', url, data);
         
-        // Check if the response is JSON before parsing
-        const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const textContent = await res.text();
-          console.error('Non-JSON response from server:', textContent);
-          throw new Error('Server returned an invalid response format. Please try again.');
-        }
-        
-        const result = await res.json();
+        // Use the new safeParseJson function from queryClient.ts for better error handling
+        const result = await safeParseJson(res);
         
         // ENHANCED FIX: If we've changed recurrence state, trigger a fresh data fetch
         // This ensures we get all the updated instances from the server
@@ -1530,22 +1523,11 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
             return null;
           }
           
-          // Check content type to ensure we're parsing JSON
-          const contentType = res.headers.get('content-type');
-          if (!contentType || !contentType.includes('application/json')) {
-            console.error(`Event ${id} returned non-JSON content type: ${contentType}`);
-            const text = await res.text();
-            console.error(`Response body starts with: ${text.substring(0, 100)}...`);
-            return null;
-          }
-          
+          // Use our enhanced safeParseJson function to handle non-JSON responses properly
           try {
-            return await res.json();
+            return await safeParseJson(res);
           } catch (jsonError) {
-            console.error(`JSON parsing error for event ${id}:`, jsonError);
-            // Try to log part of the response to debug
-            const text = await res.clone().text().catch(() => 'Unable to get response text');
-            console.error(`Response body begins with: ${text.substring(0, 150)}...`);
+            console.error(`Error parsing response for event ${id}:`, jsonError);
             return null;
           }
         } catch (error) {
@@ -1677,9 +1659,50 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       return { previousEvents, eventToUpdate, updatedEvent, allQueryKeys };
     },
     onSuccess: (response, variables, context) => {
-      // In our updated PUT endpoint, the response includes event and hasAttendees properties
-      const serverEvent = response.event || response;
-      const hasAttendees = response.hasAttendees || false;
+      // Check for null or invalid response first
+      if (!response) {
+        console.error('Null response received from server during event update');
+        toast({
+          title: "Update Failed",
+          description: "Server returned an invalid response. Please try again.",
+          variant: "destructive"
+        });
+        return; // Exit early to prevent further processing with null data
+      }
+      
+      // Safely extract the event data with better error handling
+      let serverEvent;
+      let hasAttendees = false;
+      
+      try {
+        // If response has event property, use that structure
+        if (response.event) {
+          serverEvent = response.event;
+          hasAttendees = response.hasAttendees || false;
+        } 
+        // If response has an id and calendarId, assume it's a direct event object
+        else if (response.id && response.calendarId) {
+          serverEvent = response;
+        }
+        // Otherwise we have an unexpected response format
+        else {
+          console.error('Invalid response format from server:', response);
+          toast({
+            title: "Update Error",
+            description: "Server returned an unexpected format. Please refresh and try again.",
+            variant: "destructive"
+          });
+          return; // Exit early
+        }
+      } catch (err) {
+        console.error('Error processing server response:', err, response);
+        toast({
+          title: "Update Error",
+          description: "Error processing server response. Please try again.",
+          variant: "destructive"
+        });
+        return;
+      }
       
       console.log(`Event updated successfully on server:`, serverEvent, 'Has attendees:', hasAttendees);
       
