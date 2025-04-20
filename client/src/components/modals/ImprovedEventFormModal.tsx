@@ -344,7 +344,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         if (matches && matches.length > 0) {
           console.log(`Found ${matches.length} resource matches in raw data`);
           
-          matches.forEach((match: RegExpMatchArray, index) => {
+          // Safe cast to RegExpMatchArray[] for type compatibility
+          const typedMatches = matches as RegExpMatchArray[];
+          
+          typedMatches.forEach((match, index) => {
             const fullLine = match[0] || ''; // The complete ATTENDEE line 
             const email = match[1] || ''; // The captured email group
             
