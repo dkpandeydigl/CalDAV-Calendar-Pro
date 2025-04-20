@@ -318,6 +318,44 @@ export class EnhancedSyncService {
         uid: preservedUID
       };
       
+      // CRITICAL FIX: Update all events with the same UID when recurrence state changes
+      // This ensures all events with the same UID have consistent recurrence properties
+      if (originalEvent.isRecurring !== processedEventData.isRecurring || 
+          originalEvent.recurrenceRule !== processedEventData.recurrenceRule) {
+        try {
+          console.log(`[RECURRENCE UID FIX] Recurrence state changed for event with UID ${preservedUID}`);
+          console.log(`[RECURRENCE UID FIX] Finding all events with the same UID for consistency update`);
+          
+          // Find all events with the same UID
+          const eventsWithSameUid = await storage.getEventsByUid(preservedUID);
+          
+          if (eventsWithSameUid && eventsWithSameUid.length > 1) {
+            console.log(`[RECURRENCE UID FIX] Found ${eventsWithSameUid.length} events with UID ${preservedUID}`);
+            
+            // Update all events except the one we are already updating
+            for (const event of eventsWithSameUid) {
+              if (event.id !== eventId) {
+                console.log(`[RECURRENCE UID FIX] Updating recurrence state for event ${event.id} with UID ${event.uid}`);
+                
+                // Update only the recurrence properties to maintain consistency
+                await storage.updateEvent(event.id, {
+                  isRecurring: processedEventData.isRecurring,
+                  recurrenceRule: processedEventData.recurrenceRule,
+                  syncStatus: 'pending' // Mark for sync
+                });
+              }
+            }
+            
+            console.log(`[RECURRENCE UID FIX] Successfully updated all events with UID ${preservedUID}`);
+          } else {
+            console.log(`[RECURRENCE UID FIX] No additional events found with UID ${preservedUID}`);
+          }
+        } catch (uidUpdateError) {
+          console.error(`[RECURRENCE UID FIX] Error updating events with same UID:`, uidUpdateError);
+          // Continue without failing the main update
+        }
+      }
+      
       // Update the event in local storage
       const updatedEvent = await storage.updateEvent(eventId, eventWithUID);
       
