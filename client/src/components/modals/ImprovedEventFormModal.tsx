@@ -611,14 +611,20 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   if (attendeeMatches && attendeeMatches.length > 0) {
                     console.log(`Found ${attendeeMatches.length} attendee matches in raw data`);
                     
-                    parsedAttendees = attendeeMatches.map((line, index) => {
-                      const emailMatch = line.match(/mailto:([^>\r\n]+)/);
-                      const email = emailMatch ? emailMatch[1].trim() : `unknown${index}@example.com`;
+                    // Extract strings directly from the RegExpMatchArray
+                    const attendeeLines = [];
+                    for (let i = 0; i < attendeeMatches.length; i++) {
+                      attendeeLines.push(attendeeMatches[i]);
+                    }
+                    
+                    parsedAttendees = attendeeLines.map((line, index) => {
+                      const emailMatch = typeof line === 'string' ? line.match(/mailto:([^>\r\n]+)/) : null;
+                      const email = emailMatch && emailMatch[1] ? emailMatch[1].trim() : `unknown${index}@example.com`;
                       
-                      const nameMatch = line.match(/CN=([^;:]+)/);
-                      const name = nameMatch ? nameMatch[1].trim() : '';
+                      const nameMatch = typeof line === 'string' ? line.match(/CN=([^;:]+)/) : null;
+                      const name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : '';
                       
-                      const roleMatch = line.match(/ROLE=([^;:]+)/);
+                      const roleMatch = typeof line === 'string' ? line.match(/ROLE=([^;:]+)/) : null;
                       let role: AttendeeRole = 'Member';
                       
                       if (roleMatch) {
@@ -765,19 +771,28 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             if (resourceMatches && resourceMatches.length > 0) {
               console.log(`Found ${resourceMatches.length} resource matches in raw data:`, resourceMatches);
               
-              const extractedResources = resourceMatches.map((line, index) => {
-                const emailMatch = line.match(/mailto:([^>\r\n]+)/);
-                const adminEmail = emailMatch ? emailMatch[1].trim() : '';
+              // Extract strings safely from the RegExpMatchArray
+              const resourceLines: string[] = [];
+              for (let i = 0; i < resourceMatches.length; i++) {
+                const item = resourceMatches[i];
+                if (item) resourceLines.push(item);
+              }
+              
+              const extractedResources = resourceLines.map((line, index) => {
+                const emailMatch = typeof line === 'string' ? line.match(/mailto:([^>\r\n]+)/) : null;
+                const adminEmail = emailMatch && emailMatch[1] ? emailMatch[1].trim() : '';
                 
-                const nameMatch = line.match(/CN="?([^";:]+)"?/);
-                const name = nameMatch ? nameMatch[1].trim() : `Resource ${index + 1}`;
+                const nameMatch = typeof line === 'string' ? line.match(/CN="?([^";:]+)"?/) : null;
+                const name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : `Resource ${index + 1}`;
                 
                 // Try several patterns for resource type
-                const typeMatch = 
-                  line.match(/X-RESOURCE-TYPE="?([^";:]+)"?/) || 
-                  line.match(/RESOURCE-TYPE="?([^";:]+)"?/) ||
-                  line.match(/TYPE="?([^";:]+)"?/);
-                const subType = typeMatch ? typeMatch[1].trim() : name;
+                let typeMatch = null;
+                if (typeof line === 'string') {
+                  typeMatch = line.match(/X-RESOURCE-TYPE="?([^";:]+)"?/) || 
+                             line.match(/RESOURCE-TYPE="?([^";:]+)"?/) ||
+                             line.match(/TYPE="?([^";:]+)"?/);
+                }
+                const subType = typeMatch && typeMatch[1] ? typeMatch[1].trim() : name;
                 
                 return {
                   id: `resource-${index}-${Date.now()}`,
@@ -1621,6 +1636,10 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
             lastSyncAttempt: null,
             emailSent: null,
             emailError: null,
+            // Add required properties for the type validation
+            lastModifiedBy: null, 
+            lastModifiedByName: null,
+            lastModifiedAt: null,
             // Frontend should not set these - let the backend handle it with actual authenticated user
             // This ensures consistent handling of modification tracking
           };
