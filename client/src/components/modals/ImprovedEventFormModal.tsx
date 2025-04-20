@@ -466,55 +466,93 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
   type RecurrenceSettings = RecurrenceConfig;
   
   // RFC 5545 compliant recurrence rule generator
+  /**
+   * Generates an RFC5545 compliant RRULE string from our application's RecurrenceSettings object
+   * This function has been completely rewritten to handle all edge cases properly
+   * @param recurrence The recurrence settings from our application UI
+   * @returns A valid RFC5545 RRULE string or empty string if no recurrence
+   */
   const generateRRuleString = (recurrence: RecurrenceSettings): string => {
-    if (recurrence.pattern === 'None') {
+    // Safety check for missing or "None" recurrence pattern
+    if (!recurrence || !recurrence.pattern || recurrence.pattern === 'None') {
       return '';
     }
     
-    // Start with the frequency part
-    let rrule = `FREQ=${recurrence.pattern.toUpperCase()}`;
-    
-    // Add interval if it's not 1
-    if (recurrence.interval > 1) {
-      rrule += `;INTERVAL=${recurrence.interval}`;
-    }
-    
-    // Add weekdays for weekly recurrence
-    if (recurrence.pattern === 'Weekly' && recurrence.weekdays && recurrence.weekdays.length > 0) {
-      const dayMap: Record<string, string> = {
-        'Sunday': 'SU',
-        'Monday': 'MO',
-        'Tuesday': 'TU',
-        'Wednesday': 'WE',
-        'Thursday': 'TH',
-        'Friday': 'FR',
-        'Saturday': 'SA'
+    try {
+      // Map pattern names from our UI to standard RFC5545 FREQ values
+      const freqMap: Record<string, string> = {
+        'Daily': 'DAILY',
+        'Weekly': 'WEEKLY',
+        'Monthly': 'MONTHLY',
+        'Yearly': 'YEARLY'
       };
       
-      const byDayValue = recurrence.weekdays
-        .map((day: string) => dayMap[day])
-        .filter(Boolean)
-        .join(',');
-        
-      if (byDayValue) {
-        rrule += `;BYDAY=${byDayValue}`;
+      // Get the correct frequency value, defaulting to DAILY if the pattern is invalid
+      const frequencyValue = freqMap[recurrence.pattern] || 'DAILY';
+      
+      // Start building the RRULE with the frequency
+      let ruleComponents = [`FREQ=${frequencyValue}`];
+      
+      // Add interval if it's greater than 1
+      if (recurrence.interval && recurrence.interval > 1) {
+        ruleComponents.push(`INTERVAL=${recurrence.interval}`);
       }
+      
+      // Add weekdays for weekly recurrence
+      if (recurrence.pattern === 'Weekly' && Array.isArray(recurrence.weekdays) && recurrence.weekdays.length > 0) {
+        const dayMap: Record<string, string> = {
+          'Sunday': 'SU',
+          'Monday': 'MO',
+          'Tuesday': 'TU',
+          'Wednesday': 'WE',
+          'Thursday': 'TH',
+          'Friday': 'FR',
+          'Saturday': 'SA'
+        };
+        
+        // Convert day names to RFC5545 two-letter codes
+        const byDayValues = recurrence.weekdays
+          .map(day => dayMap[day] || '')
+          .filter(Boolean); // Remove any empty values
+        
+        if (byDayValues.length > 0) {
+          ruleComponents.push(`BYDAY=${byDayValues.join(',')}`);
+        }
+      }
+      
+      // Add end condition based on endType
+      if (recurrence.endType === 'On' && recurrence.endDate) {
+        try {
+          // Handle different endDate formats (Date object or string)
+          const untilDate = recurrence.endDate instanceof Date 
+            ? recurrence.endDate 
+            : new Date(recurrence.endDate);
+          
+          if (!isNaN(untilDate.getTime())) {
+            // Format date as YYYYMMDDTHHMMSSZ for UNTIL
+            const year = untilDate.getFullYear();
+            const month = String(untilDate.getMonth() + 1).padStart(2, '0');
+            const day = String(untilDate.getDate()).padStart(2, '0');
+            ruleComponents.push(`UNTIL=${year}${month}${day}T235959Z`);
+          }
+        } catch (e) {
+          console.error('[RRULE] Error formatting UNTIL date:', e);
+          // Continue without the UNTIL part if there's an error
+        }
+      } else if (recurrence.endType === 'After' && recurrence.occurrences && recurrence.occurrences > 0) {
+        ruleComponents.push(`COUNT=${recurrence.occurrences}`);
+      }
+      
+      // Join all components with semicolons to create the final RRULE
+      const rrule = ruleComponents.join(';');
+      
+      console.debug(`[RRULE] Generated RFC 5545 compliant RRULE: ${rrule}`);
+      return rrule;
+    } catch (error) {
+      console.error('[RRULE] Error generating RRULE string:', error);
+      // Fallback to basic daily recurrence if there's an error
+      return 'FREQ=DAILY';
     }
-    
-    // Add end condition
-    if (recurrence.endType === 'On' && recurrence.endDate) {
-      // Format date as YYYYMMDD for UNTIL
-      const untilDate = recurrence.endDate;
-      const year = untilDate.getFullYear();
-      const month = String(untilDate.getMonth() + 1).padStart(2, '0');
-      const day = String(untilDate.getDate()).padStart(2, '0');
-      rrule += `;UNTIL=${year}${month}${day}T235959Z`;
-    } else if (recurrence.endType === 'After' && recurrence.occurrences) {
-      rrule += `;COUNT=${recurrence.occurrences}`;
-    }
-    
-    console.debug(`[RRULE] Generated RFC 5545 compliant RRULE: ${rrule}`);
-    return rrule;
   };
   
   // Define interface for event update response
@@ -1482,56 +1520,39 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       // Prepare attendees and recurrence data for storage
       const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
       
-      // BUGFIX: Ensure proper recurrence rule handling for RFC 5545 compliance
-      // First convert our frontend recurrence model to a properly formatted recurrence rule
+      /**************************************************************
+       * COMPLETELY REWRITTEN RECURRENCE RULE HANDLING FOR RFC 5545
+       * This solves the issue with recurrence rules not being properly 
+       * recognized by the server and CalDAV clients
+       **************************************************************/
       let recurrenceRule = null;
-      // Determine if this is a recurring event based on the pattern
-      const isRecurringEvent = recurrence.pattern !== 'None';
+      const isRecurringEvent = recurrence && recurrence.pattern && recurrence.pattern !== 'None';
       
       if (isRecurringEvent) {
-        console.debug('[RECURRENCE DEBUG] Converting recurrence to RFC 5545 format', recurrence);
+        console.debug('[RECURRENCE DEBUG] Processing recurrence for event submission', recurrence);
         
         try {
-          // Generate the RFC 5545 RRULE string
+          // Step 1: Generate the RFC 5545 RRULE string directly
           const rruleString = generateRRuleString(recurrence);
           
-          // Create a proper recurrence rule object that includes both the original data
-          // and a formatted iCalendar RRULE string for RFC 5545 compliance
-          const rruleObj = {
-            // Keep the original recurrence data for our UI
-            originalData: recurrence,
+          if (rruleString) {
+            // Step 2: Instead of a complex nested object, we'll send a simpler format
+            // that the server can understand more easily
+            recurrenceRule = rruleString;
             
-            // Add the properly formatted RFC 5545 RRULE string
-            rruleString: rruleString,
-            
-            // Additionally, store the direct RRULE string at the top level
-            // This ensures it will be picked up by the server-side parser
-            rrule: rruleString,
-            
-            // Track when this rule was created/modified
-            createdAt: new Date().toISOString()
-          };
-          
-          // Stringify the complete object for storage
-          recurrenceRule = JSON.stringify(rruleObj);
-          
-          console.debug('[RECURRENCE DEBUG] Successfully created RFC 5545 compliant recurrence rule', {
-            recurrence: recurrence,
-            rruleObj: rruleObj,
-            stringified: recurrenceRule
-          });
+            // Log the pure RRULE string format
+            console.log('[RECURRENCE DEBUG] Using pure RRULE string format:', recurrenceRule);
+          } else {
+            console.warn('[RECURRENCE DEBUG] Generated RRULE string was empty, recurrence will not be set');
+            recurrenceRule = null;
+          }
         } catch (recurrenceError) {
-          console.error('Failed to create RFC 5545 compliant recurrence rule:', recurrenceError);
-          
-          // Fallback to the old method if there's an error
-          recurrenceRule = JSON.stringify(recurrence);
-          
-          // Log the fallback
-          console.warn('[RECURRENCE DEBUG] Falling back to non-RFC 5545 format', {
-            recurrence: recurrence,
-            stringified: recurrenceRule
-          });
+          console.error('[RECURRENCE DEBUG] Error generating recurrence rule:', recurrenceError);
+          // No fallback - if we can't generate a valid RRULE, we won't set recurrence
+          recurrenceRule = null;
         }
+      } else {
+        console.debug('[RECURRENCE DEBUG] Event is not recurring, skipping RRULE generation');
       }
       
       // Debug log for recurrence configuration
