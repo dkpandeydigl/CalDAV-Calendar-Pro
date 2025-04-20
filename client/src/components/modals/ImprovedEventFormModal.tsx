@@ -1567,10 +1567,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       let eventUID: string;
 
       try {
-        if (event?.uid) {
-          // For existing events, always use the existing UID
+        if (event?.uid && !title.startsWith('Copy of')) {
+          // For existing events that are not copies, use the existing UID
           eventUID = event.uid;
           console.log(`Using existing event UID: ${eventUID}`);
+        } else if (title.startsWith('Copy of')) {
+          // For copied events, always generate a new UID
+          eventUID = generateUID();
+          console.log(`Generated new UID for copied event: ${eventUID}`);
         } else if (initialEventUID) {
           // CRITICAL FIX: For new events, use the UID we generated when the form was opened
           // This ensures consistent UID from creation through all updates
@@ -1631,8 +1635,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
         uid: eventUID,
       };
       
-      // Handle existing event update
-      if (event) {
+      // Handle existing event update, but if title starts with "Copy of", treat it as a new event
+      if (event && !title.startsWith('Copy of')) {
         // Update existing event - need to use the { id, data } format required by updateEvent
         try {
             // Call the regular update function to update the event
@@ -1650,7 +1654,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           throw updateError; // Will be caught by the outer catch block
         }
       } 
-      // Handle new event creation
+      // Handle new event creation (also handles copies of existing events)
       else {
         try {
           // For new events, we need to prepare the full event data
