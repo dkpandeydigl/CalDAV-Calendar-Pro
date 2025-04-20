@@ -3949,7 +3949,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get the edit mode from query parameter (default to 'all')
       const editMode = req.query.editMode === 'single' ? 'single' : 'all';
-      console.log(`[RECURRENCE] Edit mode for event ${eventId}: ${editMode}`);
+      
+      // NEW ENHANCED FIX: Check if this is a recurrence state change request
+      const isRecurrenceStateChange = req.query.recurrenceChanged === 'true';
+      
+      console.log(`[RECURRENCE] Edit mode for event ${eventId}: ${editMode}, Recurrence change: ${isRecurrenceStateChange}`);
       
       // Get the existing event
       const existingEvent = await storage.getEvent(eventId);
@@ -3964,7 +3968,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isRecurring: existingEvent.isRecurring,
         incomingRecurrenceRule: req.body.recurrenceRule,
         incomingRecurrenceType: typeof req.body.recurrenceRule,
-        editMode
+        editMode,
+        isRecurrenceStateChange
       });
       
       // Process the update data - CRITICAL: Always preserve the UID and ensure recurrence rule consistency
@@ -3981,8 +3986,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         newIsRecurring: updateData.isRecurring,
         existingRule: existingEvent.recurrenceRule,
         newRule: updateData.recurrenceRule,
-        ruleType: typeof updateData.recurrenceRule
+        ruleType: typeof updateData.recurrenceRule,
+        isRecurrenceStateChange
       });
+      
+      // ENHANCED FIX: Extra handling for explicit recurrence state changes
+      if (isRecurrenceStateChange) {
+        console.log(`[ENHANCED FIX] Handling explicit recurrence state change request`);
+        
+        // For non-recurring to recurring conversions, ensure proper flags
+        if (!existingEvent.isRecurring && (updateData.isRecurring === true || updateData.recurrenceRule)) {
+          console.log(`[ENHANCED FIX] Converting non-recurring to recurring event for ${existingEvent.uid}`);
+          
+          try {
+            // Find events with the same UID to ensure they're all updated
+            const sameUidEvents = await storage.getEventsByUid(existingEvent.uid);
+            
+            if (sameUidEvents && sameUidEvents.length > 0) {
+              console.log(`[ENHANCED FIX] Found ${sameUidEvents.length} events with UID ${existingEvent.uid}`);
+              
+              // Make sure they're all marked as pending sync
+              for (const event of sameUidEvents) {
+                if (event.id !== eventId) {
+                  console.log(`[ENHANCED FIX] Marking related event ${event.id} for sync`);
+                  
+                  await storage.updateEvent(event.id, {
+                    isRecurring: updateData.isRecurring,
+                    recurrenceRule: updateData.recurrenceRule,
+                    syncStatus: 'pending'
+                  });
+                }
+              }
+            }
+          } catch (error) {
+            console.error(`[ENHANCED FIX] Error handling related events:`, error);
+            // Continue with the main event update
+          }
+        }
+        
+        // Force sync status to pending for this update
+        updateData.syncStatus = 'pending';
+      }
       
       // Case 1: Event is explicitly marked as recurring
       if (updateData.isRecurring === true) {

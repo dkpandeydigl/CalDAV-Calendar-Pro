@@ -1294,6 +1294,35 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       // Short delay to ensure UI updates finish before server request
       await new Promise(resolve => setTimeout(resolve, 10));
       
+      // NEW ENHANCED FIX: First get the current event to check recurrence state
+      let existingEvent = null;
+      try {
+        const res = await fetch(`/api/events/${id}`, { credentials: 'include' });
+        if (res.ok) {
+          existingEvent = await res.json();
+          console.log('ENHANCED FIX: Retrieved existing event for recurrence state comparison:', 
+            { 
+              id: existingEvent.id, 
+              isRecurring: existingEvent.isRecurring, 
+              recurrenceRule: existingEvent.recurrenceRule,
+              uid: existingEvent.uid
+            });
+        }
+      } catch (error) {
+        console.error('ENHANCED FIX: Error fetching current event state:', error);
+        // Continue without failing - we'll do best effort fixing
+      }
+      
+      // Track recurrence state change
+      const recurrenceChanging = existingEvent && 
+        ((existingEvent.isRecurring === false && data.isRecurring === true) || 
+         (existingEvent.isRecurring === true && data.isRecurring === false));
+      
+      if (recurrenceChanging) {
+        console.log('ENHANCED FIX: Detected recurrence state change from', 
+          existingEvent.isRecurring, 'to', data.isRecurring);
+      }
+      
       // Handle the rawData object that might contain attendees and other information from the advanced form
       // Make sure rawData is properly serialized if it's present
       if (data.rawData && typeof data.rawData === 'object') {
@@ -1392,7 +1421,28 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       }
       
       try {
-        const res = await apiRequest('PUT', `/api/events/${id}`, data);
+        // Before making the request, add special query parameter for recurrence changes
+        let url = `/api/events/${id}`;
+        
+        // If we've detected a recurrence state change, add it to the request
+        if (recurrenceChanging) {
+          console.log('ENHANCED FIX: Adding recurrenceChanged=true parameter to update request');
+          url += '?recurrenceChanged=true';
+        }
+        
+        // Also add edit mode for recurring events
+        // Default to 'all' to update all occurrences
+        if (data.isRecurring === true || (existingEvent && existingEvent.isRecurring === true)) {
+          // If URL already has a query parameter, append with &
+          if (url.includes('?')) {
+            url += '&editMode=all';
+          } else {
+            url += '?editMode=all';
+          }
+          console.log('ENHANCED FIX: Adding editMode=all parameter for recurring event update');
+        }
+        
+        const res = await apiRequest('PUT', url, data);
         
         // Check if the response is JSON before parsing
         const contentType = res.headers.get('content-type');
@@ -1402,7 +1452,38 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           throw new Error('Server returned an invalid response format. Please try again.');
         }
         
-        return await res.json();
+        const result = await res.json();
+        
+        // ENHANCED FIX: If we've changed recurrence state, trigger a fresh data fetch
+        // This ensures we get all the updated instances from the server
+        if (recurrenceChanging) {
+          console.log('ENHANCED FIX: Recurrence state changed - will trigger data refresh after update');
+          
+          try {
+            // Wait a moment to allow server to process the changes
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Trigger immediate re-sync with server
+            const syncRes = await fetch('/api/sync?forceRefresh=true', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (syncRes.ok) {
+              console.log('ENHANCED FIX: Successfully triggered server sync after recurrence change');
+            } else {
+              console.warn('ENHANCED FIX: Failed to trigger sync after recurrence change:', await syncRes.text());
+            }
+          } catch (syncError) {
+            console.error('ENHANCED FIX: Error triggering sync after recurrence change:', syncError);
+            // Continue without failing - the regular sync will eventually catch up
+          }
+        }
+        
+        return result;
       } catch (error) {
         console.error('Error in event update request:', error);
         throw error;
@@ -1558,6 +1639,25 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       const hasAttendees = response.hasAttendees || false;
       
       console.log(`Event updated successfully on server:`, serverEvent, 'Has attendees:', hasAttendees);
+      
+      // ENHANCED FIX: Check if this was a recurrence state change
+      const originalEvent = context?.eventToUpdate;
+      const recurrenceStateChanged = originalEvent && 
+        ((originalEvent.isRecurring === false && serverEvent.isRecurring === true) ||
+         (originalEvent.isRecurring === true && serverEvent.isRecurring === false));
+      
+      if (recurrenceStateChanged) {
+        console.log(`ENHANCED FIX: Detected recurrence state change in success handler: 
+          ${originalEvent?.isRecurring} -> ${serverEvent.isRecurring}`);
+        
+        // Immediately trigger a refresh of the events to get any new recurrence instances
+        queryClient.invalidateQueries(['/api/events']);
+        
+        // Also invalidate calendar-specific cache to ensure all instances are updated
+        if (serverEvent.calendarId) {
+          queryClient.invalidateQueries(['/api/calendars', serverEvent.calendarId, 'events']);
+        }
+      }
       
       // Show success toast
       toast({
