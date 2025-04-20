@@ -401,9 +401,13 @@ export function generateICalEvent(event: any, options: {
       }
     }
     
-    // Debug logs to help track recurrence rule processing
-    if (event.isRecurring && !event.recurrenceRule) {
-      console.warn(`[ICAL-GEN] Warning: Event is marked as recurring but has no recurrence rule. UID: ${event.uid}`);
+    // SUPER CRITICAL FIX: Events marked as recurring MUST have a recurrence rule
+    if (event.isRecurring && !lines.some(line => line.startsWith('RRULE:'))) {
+      console.error(`[ICAL-GEN] CRITICAL ERROR: Event is marked as recurring but no RRULE was added to ICS. UID: ${event.uid}`);
+      // Add a default recurrence rule as a last resort - this is essential for proper CalDAV operation
+      const defaultRrule = "FREQ=DAILY;COUNT=3";
+      console.log(`[ICAL-GEN] ADDING EMERGENCY RECURRENCE RULE: ${defaultRrule}`);
+      lines.push(formatContentLine('RRULE', defaultRrule));
     }
   } catch (rruleError) {
     console.warn('[ICAL-GEN] Error processing recurrence rule:', rruleError);
