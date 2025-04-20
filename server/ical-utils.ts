@@ -349,12 +349,41 @@ export function generateICalEvent(event: any, options: {
     if (event.recurrenceRule) {
       // Check if it's already a string in RRULE format (starts with FREQ=)
       if (typeof event.recurrenceRule === 'string' && event.recurrenceRule.includes('FREQ=')) {
+        console.log(`[ICAL-GEN] Using RRULE directly from event: ${event.recurrenceRule}`);
         lines.push(formatContentLine('RRULE', event.recurrenceRule));
       } else {
-        // Otherwise try to format it
-        const rrule = formatRecurrenceRule(event.recurrenceRule);
-        if (rrule) {
-          lines.push(formatContentLine('RRULE', rrule));
+        // If it's a JSON string, parse it and format
+        if (typeof event.recurrenceRule === 'string' && (
+            event.recurrenceRule.startsWith('{') || 
+            event.recurrenceRule.includes('"pattern"') || 
+            event.recurrenceRule.includes('"frequency"')
+        )) {
+          try {
+            // Try to parse the JSON string
+            const parsedRule = JSON.parse(event.recurrenceRule);
+            // Format the parsed object
+            console.log(`[ICAL-GEN] Parsed recurrence rule from JSON string`);
+            const rrule = formatRecurrenceRule(parsedRule);
+            if (rrule) {
+              console.log(`[ICAL-GEN] Formatted recurrence rule: ${rrule}`);
+              lines.push(formatContentLine('RRULE', rrule));
+            }
+          } catch (jsonError) {
+            console.error(`[ICAL-GEN] Error parsing recurrence rule JSON: ${jsonError}`);
+            // Try to format the string directly as a fallback
+            const rrule = formatRecurrenceRule(event.recurrenceRule);
+            if (rrule) {
+              console.log(`[ICAL-GEN] Formatted recurrence rule (fallback): ${rrule}`);
+              lines.push(formatContentLine('RRULE', rrule));
+            }
+          }
+        } else {
+          // Otherwise try to format it using the helper function
+          const rrule = formatRecurrenceRule(event.recurrenceRule);
+          if (rrule) {
+            console.log(`[ICAL-GEN] Formatted recurrence rule from object/other: ${rrule}`);
+            lines.push(formatContentLine('RRULE', rrule));
+          }
         }
       }
     }
@@ -367,12 +396,17 @@ export function generateICalEvent(event: any, options: {
         : null;
       
       if (rruleMatch && rruleMatch[1]) {
-        console.log(`Extracted RRULE from raw ICS data for cancellation: ${rruleMatch[1]}`);
+        console.log(`[ICAL-GEN] Extracted RRULE from raw ICS data for cancellation: ${rruleMatch[1]}`);
         lines.push(formatContentLine('RRULE', rruleMatch[1]));
       }
     }
+    
+    // Debug logs to help track recurrence rule processing
+    if (event.isRecurring && !event.recurrenceRule) {
+      console.warn(`[ICAL-GEN] Warning: Event is marked as recurring but has no recurrence rule. UID: ${event.uid}`);
+    }
   } catch (rruleError) {
-    console.warn('Error processing recurrence rule:', rruleError);
+    console.warn('[ICAL-GEN] Error processing recurrence rule:', rruleError);
     // Continue without recurrence rule if there's an error
   }
   

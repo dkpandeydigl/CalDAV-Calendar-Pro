@@ -109,9 +109,26 @@ export class EnhancedSyncService {
       // Preserve the original UID - never change it during updates
       const preservedUID = preserveOrGenerateUID(originalEvent, eventData.rawData);
       
+      // Handle recurrence rule consistency when updating
+      let processedEventData = { ...eventData };
+      
+      // Fix inconsistency between isRecurring flag and recurrenceRule property
+      if (processedEventData.isRecurring === true && !processedEventData.recurrenceRule) {
+        console.log(`[Enhanced Sync] Warning: Event marked as recurring but has no recurrence rule. Using original if available.`);
+        // If isRecurring is true but no recurrenceRule, check if original had one
+        if (originalEvent.recurrenceRule) {
+          processedEventData.recurrenceRule = originalEvent.recurrenceRule;
+          console.log(`[Enhanced Sync] Restored original recurrence rule: ${originalEvent.recurrenceRule}`);
+        }
+      } else if (processedEventData.isRecurring === false && processedEventData.recurrenceRule) {
+        // Clear recurrence rule if isRecurring is false
+        console.log(`[Enhanced Sync] Clearing recurrence rule for non-recurring event`);
+        processedEventData.recurrenceRule = null;
+      }
+      
       // Ensure the UID doesn't change
       const eventWithUID = {
-        ...eventData,
+        ...processedEventData,
         uid: preservedUID
       };
       
@@ -286,6 +303,35 @@ export class EnhancedSyncService {
         }
       }
       
+      // Pre-process recurrence rule to ensure proper format
+      let processedRecurrenceRule = event.recurrenceRule;
+      
+      // Ensure recurrence rule is properly set based on isRecurring flag
+      if (event.isRecurring && event.recurrenceRule) {
+        // If recurrenceRule is an object or JSON string, format it properly
+        if (typeof event.recurrenceRule === 'object') {
+          // If it's already an object, convert to string
+          processedRecurrenceRule = JSON.stringify(event.recurrenceRule);
+        } else if (typeof event.recurrenceRule === 'string') {
+          // If it's a string, check if it's already in RRULE format
+          if (!event.recurrenceRule.startsWith('FREQ=')) {
+            try {
+              // Try to parse as JSON if not in RRULE format
+              const parsed = JSON.parse(event.recurrenceRule);
+              processedRecurrenceRule = JSON.stringify(parsed);
+            } catch (e) {
+              // Keep as is if can't parse
+              console.log(`[Enhanced Sync] Keeping recurrence rule as-is: ${event.recurrenceRule}`);
+            }
+          }
+        }
+        console.log(`[Enhanced Sync] Processing recurrence rule for event ${event.id}: ${processedRecurrenceRule}`);
+      } else if (!event.isRecurring) {
+        // Ensure recurrenceRule is undefined for non-recurring events
+        processedRecurrenceRule = undefined;
+        console.log(`[Enhanced Sync] Event ${event.id} is not recurring, clearing recurrence rule`);
+      }
+      
       // Generate the ICS data for this event
       const icsData = generateEventICalString({
         uid: event.uid,
@@ -300,7 +346,8 @@ export class EnhancedSyncService {
           email: connection.username,
           name: (await storage.getUser(userId))?.fullName || connection.username
         },
-        recurrenceRule: event.recurrenceRule || undefined
+        recurrenceRule: processedRecurrenceRule,
+        allDay: event.allDay
       });
       
       // Check if this event already exists on the server
