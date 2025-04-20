@@ -207,9 +207,32 @@ export function useCalendarSync() {
                   'A new event was added';
               } else if (data.changeType === 'updated') {
                 title = 'Event Updated';
-                description = data.data?.title ? 
-                  `"${data.data.title}" was updated ${data.data.isExternalChange ? 'in an external client' : ''}` : 
-                  'An event was updated';
+                
+                // Check for specific update types to provide more detailed notifications
+                if (data.data?.wasAttendeeUpdate) {
+                  // Attendee-specific update notification
+                  title = 'Event Attendees Updated';
+                  description = data.data?.title ? 
+                    `Attendees for "${data.data.title}" were updated` : 
+                    'Event attendees were updated';
+                } else if (data.data?.wasResourceUpdate) {
+                  // Resource-specific update notification
+                  title = 'Event Resources Updated';
+                  description = data.data?.title ? 
+                    `Resources for "${data.data.title}" were updated` : 
+                    'Event resources were updated';
+                } else if (data.data?.wasRecurrenceStateChange) {
+                  // Recurrence-specific update notification
+                  title = 'Event Recurrence Updated';
+                  description = data.data?.title ? 
+                    `Recurrence settings for "${data.data.title}" were updated` : 
+                    'Event recurrence settings were updated';
+                } else {
+                  // Default update notification
+                  description = data.data?.title ? 
+                    `"${data.data.title}" was updated ${data.data.isExternalChange ? 'in an external client' : ''}` : 
+                    'An event was updated';
+                }
               } else if (data.changeType === 'deleted') {
                 title = 'Event Removed';
                 description = data.data?.count > 1 ? 
@@ -307,6 +330,23 @@ export function useCalendarSync() {
                   queryKey: ['/api/events', data.eventId],
                   refetchType: 'all'
                 });
+                
+                // Check for attendees/resources and invalidate related queries if needed
+                if (data.data?.hasAttendees) {
+                  console.log('Event has attendees, invalidating attendee-related queries');
+                  queryClient.invalidateQueries({
+                    queryKey: ['/api/attendees'],
+                    refetchType: 'all'
+                  });
+                }
+                
+                if (data.data?.hasResources) {
+                  console.log('Event has resources, invalidating resource-related queries');
+                  queryClient.invalidateQueries({
+                    queryKey: ['/api/resources'],
+                    refetchType: 'all'
+                  });
+                }
               }
               
               // Add a slight delay then force refetch again to handle race conditions
