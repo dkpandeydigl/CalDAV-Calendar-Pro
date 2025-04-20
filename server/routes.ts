@@ -2966,6 +2966,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid event ID" });
       }
       
+      // Get the edit mode from query parameter (default to 'all')
+      const editMode = req.query.editMode === 'single' ? 'single' : 'all';
+      console.log(`[RECURRENCE] Edit mode for event ${eventId} in update-with-sync: ${editMode}`);
+      
       const eventData = req.body;
       
       // Convert arrays to JSON strings if needed
@@ -2978,7 +2982,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Use enhanced sync service for update with immediate sync
-      const result = await enhancedSyncService.updateEventWithSync(userId, eventId, eventData);
+      const result = await enhancedSyncService.updateEventWithSync(userId, eventId, eventData, editMode as 'single' | 'all');
       
       // Return the updated event with sync status
       res.status(200).json({
@@ -3943,6 +3947,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid event ID" });
       }
       
+      // Get the edit mode from query parameter (default to 'all')
+      const editMode = req.query.editMode === 'single' ? 'single' : 'all';
+      console.log(`[RECURRENCE] Edit mode for event ${eventId}: ${editMode}`);
+      
       // Get the existing event
       const existingEvent = await storage.getEvent(eventId);
       if (!existingEvent) {
@@ -3955,7 +3963,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         existingRecurrenceType: typeof existingEvent.recurrenceRule,
         isRecurring: existingEvent.isRecurring,
         incomingRecurrenceRule: req.body.recurrenceRule,
-        incomingRecurrenceType: typeof req.body.recurrenceRule
+        incomingRecurrenceType: typeof req.body.recurrenceRule,
+        editMode
       });
       
       // Process the update data - CRITICAL: Always preserve the UID
