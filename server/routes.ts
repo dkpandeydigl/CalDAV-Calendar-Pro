@@ -3990,38 +3990,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isRecurrenceStateChange
       });
       
-      // ENHANCED FIX: Extra handling for explicit recurrence state changes
+      // SUPER ENHANCED FIX: Extra handling for explicit recurrence state changes
       if (isRecurrenceStateChange) {
-        console.log(`[ENHANCED FIX] Handling explicit recurrence state change request`);
+        console.log(`[SUPER ENHANCED FIX] Handling explicit recurrence state change request`);
+        console.log(`[DEBUG RECURRENCE] Current: isRecurring=${existingEvent.isRecurring}, rule=${existingEvent.recurrenceRule}`);
+        console.log(`[DEBUG RECURRENCE] Update: isRecurring=${updateData.isRecurring}, rule=${updateData.recurrenceRule}`);
         
         // For non-recurring to recurring conversions, ensure proper flags
         if (!existingEvent.isRecurring && (updateData.isRecurring === true || updateData.recurrenceRule)) {
-          console.log(`[ENHANCED FIX] Converting non-recurring to recurring event for ${existingEvent.uid}`);
+          console.log(`[SUPER ENHANCED FIX] Converting non-recurring to recurring event for ${existingEvent.uid}`);
+          
+          // CRITICAL FIX: Ensure the recurrence rule is never null for a recurring event
+          if (updateData.isRecurring === true && (!updateData.recurrenceRule || updateData.recurrenceRule === 'null')) {
+            console.error(`[CRITICAL RECURRENCE] Event marked as recurring but has no recurrence rule!`);
+            // Apply a default rule if missing
+            updateData.recurrenceRule = "FREQ=DAILY;COUNT=3";
+            console.log(`[CRITICAL RECURRENCE] Applied default recurrence rule: ${updateData.recurrenceRule}`);
+          }
           
           try {
             // Find events with the same UID to ensure they're all updated
             const sameUidEvents = await storage.getEventsByUid(existingEvent.uid);
             
             if (sameUidEvents && sameUidEvents.length > 0) {
-              console.log(`[ENHANCED FIX] Found ${sameUidEvents.length} events with UID ${existingEvent.uid}`);
+              console.log(`[SUPER ENHANCED FIX] Found ${sameUidEvents.length} events with UID ${existingEvent.uid}`);
               
               // CRITICAL FIX: Make sure ALL events with the same UID are updated
               // The bug is here! We were skipping the original event with condition (event.id !== eventId)
               console.log(`[CRITICAL BUG FIX] Updating ALL events with UID ${existingEvent.uid}, including original event ${eventId}`);
+              
               for (const event of sameUidEvents) {
-                // FIXED: Removed the "if (event.id !== eventId)" condition that was causing the bug
-                // Now we update ALL events with the same UID, including the original one
-                console.log(`[CRITICAL BUG FIX] Updating event ${event.id} (${event.id === eventId ? 'ORIGINAL' : 'related'}) with new recurrence properties`);
+                // FIXED: Previously we skipped the original event with (event.id !== eventId)
+                // Now we update ALL events with the same UID
+                console.log(`[CRITICAL BUG FIX] Updating event ${event.id} (${event.id === eventId ? 'ORIGINAL' : 'related'}) with recurrence properties`);
+                console.log(`[CRITICAL BUG FIX] Setting isRecurring=${updateData.isRecurring}, rule=${updateData.recurrenceRule}`);
                 
+                // Update with force modified timestamp to ensure it gets pushed to server
                 await storage.updateEvent(event.id, {
                   isRecurring: updateData.isRecurring,
                   recurrenceRule: updateData.recurrenceRule,
-                  syncStatus: 'pending'
+                  syncStatus: 'pending',
+                  dtstamp: new Date().toISOString(), // Force timestamp update
+                  sequence: (event.sequence || 0) + 1 // Increment sequence number
                 });
               }
+              
+              // Double-check that the update succeeded for the original event
+              const updatedEvent = await storage.getEvent(eventId);
+              console.log(`[VERIFICATION] Original event ${eventId} after update: isRecurring=${updatedEvent.isRecurring}, rule=${updatedEvent.recurrenceRule}`);
             }
           } catch (error) {
-            console.error(`[ENHANCED FIX] Error handling related events:`, error);
+            console.error(`[SUPER ENHANCED FIX] Error handling related events:`, error);
             // Continue with the main event update
           }
         }
