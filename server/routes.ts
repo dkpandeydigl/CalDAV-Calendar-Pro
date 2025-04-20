@@ -4630,6 +4630,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const { notifyEventChanged } = require('./websocket-handler');
           
+          // Check if this was a recurrence state change
+          const wasRecurrenceStateChange = existingEvent.isRecurring !== updateData.isRecurring ||
+            existingEvent.recurrenceRule !== updateData.recurrenceRule;
+          
           // Notify the user who made the change
           notifyEventChanged(req.user.id, eventId, 'updated', {
             title: updatedEvent.title,
@@ -4637,7 +4641,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             calendarName: (await storage.getCalendar(updatedEvent.calendarId))?.name || 'Unknown',
             isExternalChange: false,
             editMode: editMode, // Include the edit mode in the notification
-            synced: syncSuccessful // Include sync status
+            synced: syncSuccessful, // Include sync status
+            wasRecurrenceStateChange, // Add flag for recurrence state change
+            recurrenceRule: updatedEvent.recurrenceRule,
+            isRecurring: updatedEvent.isRecurring
           });
           
           console.log(`WebSocket notification sent for event update: ${updatedEvent.title} (ID: ${eventId})`);
