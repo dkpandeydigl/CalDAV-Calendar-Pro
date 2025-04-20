@@ -4231,24 +4231,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.lastSyncAttempt = new Date(); // Update sync timestamp
       }
       
-      // Update the event
-      const updatedEvent = await storage.updateEvent(eventId, updateData);
+      // Instead of using regular update and sync, use the enhanced sync service with edit mode support
+      console.log(`[RECURRENCE] Using enhanced sync service to update event ${eventId} with edit mode: ${editMode}`);
       
-      // Trigger immediate sync if recurrence was changed
-      if (updateData.syncStatus === 'pending' && req.user) {
-        try {
-          console.log(`[RECURRENCE DEBUG] Triggering immediate sync for updated event with recurrence change`);
-          // Get syncService from the app
-          const syncService = app.get('syncService');
-          if (syncService) {
-            await syncService.pushLocalEvents(req.user.id, updatedEvent.calendarId);
-            console.log(`[RECURRENCE DEBUG] Immediate sync triggered for event ${eventId}`);
-          } else {
-            console.error(`[RECURRENCE DEBUG] SyncService not available for immediate sync`);
+      let updatedEvent;
+      let syncSuccessful = false;
+      
+      try {
+        // Use enhanced sync service for update with immediate sync
+        const result = await enhancedSyncService.updateEventWithSync(
+          req.user!.id,
+          eventId,
+          updateData,
+          editMode as 'single' | 'all'
+        );
+        
+        updatedEvent = result.event;
+        syncSuccessful = result.synced;
+        
+        // Log sync results
+        console.log(`[RECURRENCE] Event ${eventId} updated with enhanced sync. Result: ${result.synced ? 'Synced' : 'Not synced'}`);
+        if (!result.synced) {
+          console.warn(`[RECURRENCE] Enhanced sync failed for event ${eventId}. Details:`, result.syncDetails);
+        }
+      } catch (enhancedSyncError) {
+        console.error(`[RECURRENCE] Error updating with enhanced sync:`, enhancedSyncError);
+        
+        // Fallback to regular update if enhanced sync fails
+        console.warn(`[RECURRENCE] Falling back to regular update for event ${eventId}`);
+        updatedEvent = await storage.updateEvent(eventId, updateData);
+        
+        // Trigger immediate sync if recurrence was changed
+        if (updateData.syncStatus === 'pending' && req.user) {
+          try {
+            console.log(`[RECURRENCE DEBUG] Triggering immediate sync for updated event with recurrence change`);
+            // Get syncService from the app
+            const syncService = app.get('syncService');
+            if (syncService) {
+              await syncService.pushLocalEvents(req.user.id, updatedEvent.calendarId);
+              console.log(`[RECURRENCE DEBUG] Immediate sync triggered for event ${eventId}`);
+              syncSuccessful = true;
+            } else {
+              console.error(`[RECURRENCE DEBUG] SyncService not available for immediate sync`);
+            }
+          } catch (syncError) {
+            console.error(`[RECURRENCE DEBUG] Error triggering immediate sync:`, syncError);
+            // Continue without failing the request
           }
-        } catch (syncError) {
-          console.error(`[RECURRENCE DEBUG] Error triggering immediate sync:`, syncError);
-          // Continue without failing the request
         }
       }
       
@@ -4277,25 +4306,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
             title: updatedEvent.title,
             calendarId: updatedEvent.calendarId,
             calendarName: (await storage.getCalendar(updatedEvent.calendarId))?.name || 'Unknown',
-            isExternalChange: false
+            isExternalChange: false,
+            editMode: editMode, // Include the edit mode in the notification
+            synced: syncSuccessful // Include sync status
           });
           
           console.log(`WebSocket notification sent for event update: ${updatedEvent.title} (ID: ${eventId})`);
           
           // Create notification in the database
           const { createNotification } = await import('./notification-service');
+          
+          // Add recurrence information to the notification
+          const recurrenceInfo = updatedEvent.isRecurring ? 
+            `recurring (${editMode === 'single' ? 'this occurrence only' : 'all occurrences'})` : 
+            'non-recurring';
+            
           await createNotification({
             userId: req.user.id,
             type: 'event_update',
             title: 'Event Updated',
-            message: `"${updatedEvent.title}" was updated`,
+            message: `"${updatedEvent.title}" was updated (${recurrenceInfo})`,
             priority: 'medium',
             relatedEventId: updatedEvent.id,
             relatedEventUid: updatedEvent.uid,
             requiresAction: false,
             isRead: false,
             isDismissed: false,
-            actionTaken: false
+            actionTaken: false,
+            metadata: JSON.stringify({
+              editMode: editMode,
+              isRecurring: updatedEvent.isRecurring,
+              synced: syncSuccessful
+            })
           });
         } catch (wsError) {
           console.error("Error sending WebSocket notification:", wsError);
@@ -4308,7 +4350,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(200).json({ 
         success: true, 
         event: updatedEvent,
-        hasAttendees
+        hasAttendees,
+        recurrenceInfo: {
+          isRecurring: updatedEvent.isRecurring,
+          recurrenceRule: updatedEvent.recurrenceRule,
+          editMode: editMode
+        },
+        syncStatus: {
+          synced: syncSuccessful,
+          syncTime: new Date().toISOString()
+        }
       });
     } catch (err) {
       console.error("Error updating event:", err);
