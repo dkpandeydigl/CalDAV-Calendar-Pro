@@ -312,13 +312,7 @@ export class EnhancedSyncService {
         console.log(`[RECURRENCE] FINAL CHECK: Fixed empty recurrenceRule for isRecurring=true event: ${processedEventData.recurrenceRule}`);
       }
       
-      // Ensure the UID doesn't change
-      const eventWithUID = {
-        ...processedEventData,
-        uid: preservedUID
-      };
-      
-      // IMPROVED FIX: When recurrence state changes, we only need to update the original event
+      // IMPROVED FIX: When recurrence state changes, we need special handling
       // The CalDAV server will handle recurrence expansion during the next fetch
       if (originalEvent.isRecurring !== processedEventData.isRecurring || 
           originalEvent.recurrenceRule !== processedEventData.recurrenceRule) {
@@ -342,6 +336,32 @@ export class EnhancedSyncService {
             processedEventData.recurrenceId = null;
           }
           
+          // CRITICAL FIX FOR RECURRING CONVERSION
+          console.log(`[CRITICAL FIX] Special handling for non-recurring to recurring conversion`);
+          console.log(`[CRITICAL FIX] Original event UID: ${preservedUID}`);
+          
+          // Get all events with the same UID - should just be the original event at this point
+          try {
+            const relatedEvents = await storage.getEventsByUid(preservedUID);
+            console.log(`[CRITICAL FIX] Found ${relatedEvents.length} events with UID ${preservedUID}`);
+            
+            // There should be only one event at this point - the original
+            for (const event of relatedEvents) {
+              console.log(`[CRITICAL FIX] Related event ${event.id} with UID ${event.uid}`);
+              if (event.id !== eventId) {
+                // Just in case there are other events with this UID
+                console.log(`[CRITICAL FIX] Updating another event ${event.id} with same UID`);
+                await storage.updateEvent(event.id, {
+                  isRecurring: true,
+                  recurrenceRule: processedEventData.recurrenceRule,
+                  syncStatus: 'pending'
+                });
+              }
+            }
+          } catch (error) {
+            console.error(`[CRITICAL FIX] Error finding related events:`, error);
+            // Continue with the main event update
+          }
         } 
         // Case 2: Converting from recurring to single event
         else if (originalEvent.isRecurring && !processedEventData.isRecurring) {
@@ -361,35 +381,14 @@ export class EnhancedSyncService {
         console.log(`[RECURRENCE RFC FIX] Will perform a fresh sync after update to refresh instances`);
       }
       
-      // CRITICAL FIX FOR RELATED EVENTS
-      // For non-recurring to recurring transitions, we need to update ALL events with same UID
-      if (originalEvent.isRecurring !== processedEventData.isRecurring) {
-        console.log(`[CRITICAL FIX] Recurrence state changed from ${originalEvent.isRecurring} to ${processedEventData.isRecurring}`);
-        console.log(`[CRITICAL FIX] Will update ALL events with UID: ${preservedUID}`);
-        
-        try {
-          // Get all events with the same UID
-          const relatedEvents = await storage.getEventsByUid(preservedUID);
-          console.log(`[CRITICAL FIX] Found ${relatedEvents.length} events with UID ${preservedUID}`);
-          
-          // For each related event (except the current one), update recurrence properties
-          for (const event of relatedEvents) {
-            if (event.id !== eventId) {
-              console.log(`[CRITICAL FIX] Updating related event ${event.id} with same recurrence state`);
-              
-              // Update with same recurrence properties
-              await storage.updateEvent(event.id, {
-                isRecurring: processedEventData.isRecurring,
-                recurrenceRule: processedEventData.recurrenceRule,
-                syncStatus: 'pending'
-              });
-            }
-          }
-        } catch (error) {
-          console.error(`[CRITICAL FIX] Error updating related events:`, error);
-          // Continue with updating the main event
-        }
-      }
+      // Ensure the UID doesn't change
+      const eventWithUID = {
+        ...processedEventData,
+        uid: preservedUID
+      };
+      
+      // First special handling of related events was moved to be integrated with other recurrence changes above
+      // Single unified implementation improves code clarity
       
       // Update the main event in local storage
       const updatedEvent = await storage.updateEvent(eventId, eventWithUID);
@@ -402,6 +401,22 @@ export class EnhancedSyncService {
       
       // Immediately sync to server
       const syncResult = await this.syncEventToServer(userId, updatedEvent);
+      
+      // CRITICAL FIX: If this was a recurrence state change, force a bidirectional sync
+      // to ensure server and client are in sync with all occurrences
+      if (originalEvent.isRecurring !== eventWithUID.isRecurring || 
+          originalEvent.recurrenceRule !== eventWithUID.recurrenceRule) {
+        console.log(`[CRITICAL FIX] Recurrence state changed, forcing bidirectional sync`);
+        
+        // Force a sync in the background
+        this.forceBidirectionalSync(userId, updatedEvent.calendarId)
+          .then(result => {
+            console.log(`[CRITICAL FIX] Forced sync completed:`, result);
+          })
+          .catch(error => {
+            console.error(`[CRITICAL FIX] Error during forced sync:`, error);
+          });
+      }
       
       // Broadcast the change via WebSocket
       this.notifyEventChange(userId, 'updated', updatedEvent);
