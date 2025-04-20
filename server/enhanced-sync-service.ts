@@ -14,9 +14,8 @@ import { syncService } from './sync-service';
 import { preserveOrGenerateUID, registerUIDMapping } from './uid-management';
 import { Event, InsertEvent, ServerConnection } from '../shared/schema';
 import { generateEventICalString, prepareAttendeeForIcal, prepareResourceForIcal } from './ical-helpers';
-import { broadcastMessage, getActiveConnections } from './websocket-handler';
+import { notifyEventChanged, broadcastMessage, getActiveConnections } from './websocket-handler';
 import { WebSocket } from 'ws';
-import { notifyEventChangeWithMetadata } from './websocket-notifications';
 
 // Define relevant message types for WebSocket notifications
 export type SyncOperationType = 'create' | 'update' | 'delete' | 'sync';
@@ -1080,39 +1079,9 @@ export class EnhancedSyncService {
    */
   private notifyEventChange(userId: number, action: 'created' | 'updated' | 'deleted', event: Event): void {
     try {
-      // Determine if this is an attendee or resource update
-      const hasAttendees = !!(event.attendees && 
-        (typeof event.attendees === 'string' ? 
-          (event.attendees !== '[]' && event.attendees !== 'null') : 
-          (Array.isArray(event.attendees) && event.attendees.length > 0)
-        )
-      );
+      notifyEventChanged(userId, event, action);
       
-      const hasResources = !!(event.resources && 
-        (typeof event.resources === 'string' ? 
-          (event.resources !== '[]' && event.resources !== 'null') : 
-          (Array.isArray(event.resources) && event.resources.length > 0)
-        )
-      );
-      
-      // Use the enhanced notification function with metadata
-      notifyEventChangeWithMetadata(userId, event, action, {
-        wasAttendeeUpdate: hasAttendees,
-        wasResourceUpdate: hasResources,
-        wasRecurrenceStateChange: event.isRecurring === true,
-        attendeeCount: hasAttendees ? 
-          (typeof event.attendees === 'string' ? 
-            JSON.parse(event.attendees).length : 
-            Array.isArray(event.attendees) ? event.attendees.length : 0
-          ) : 0,
-        resourceCount: hasResources ? 
-          (typeof event.resources === 'string' ? 
-            JSON.parse(event.resources).length : 
-            Array.isArray(event.resources) ? event.resources.length : 0
-          ) : 0
-      });
-      
-      console.log(`[Enhanced Sync] Sent WebSocket notification for event ${event.id}: ${action} with attendees=${hasAttendees} resources=${hasResources} recurrence=${event.isRecurring}`);
+      console.log(`[Enhanced Sync] Sent WebSocket notification for event ${event.id}: ${action}`);
     } catch (error) {
       console.warn('[Enhanced Sync] Could not broadcast via WebSocket:', error);
     }

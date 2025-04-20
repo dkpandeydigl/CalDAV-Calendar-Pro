@@ -13,86 +13,6 @@ function isJsonResponse(res: Response): boolean {
   return contentType !== null && contentType.includes('application/json');
 }
 
-// Enhanced function for safe JSON parsing with detailed error handling
-export async function safeParseJson<T>(res: Response): Promise<T> {
-  // Check content type first
-  if (!isJsonResponse(res)) {
-    // Clone the response so we can read the body as text
-    const clonedRes = res.clone();
-    try {
-      const textContent = await clonedRes.text();
-      const preview = textContent.length > 300 ? 
-        `${textContent.substring(0, 300)}...` : textContent;
-      
-      console.error(`Non-JSON response (${res.status}) with content type: ${res.headers.get('content-type')}`);
-      console.error(`Response body preview: ${preview}`);
-      
-      // If it's HTML, it might be a server error page or authentication redirect
-      if (textContent.includes('<!DOCTYPE html>') || textContent.includes('<html')) {
-        // Force revalidation of session through a separate authentication check
-        try {
-          console.log('Session appears to be invalid, attempting to refresh authentication status');
-          
-          // Try to re-verify the session using a synchronous request
-          const authCheckRes = await fetch('/api/user', {
-            method: 'GET',
-            credentials: 'include',
-            cache: 'no-cache',
-            headers: {
-              "X-Requested-With": "XMLHttpRequest",
-              "Accept": "application/json",
-              "Cache-Control": "no-cache, no-store, must-revalidate"
-            }
-          });
-          
-          console.log(`Authentication check returned status: ${authCheckRes.status}`);
-          
-          if (authCheckRes.ok) {
-            console.log('Authentication check succeeded, session appears valid');
-            throw new Error('Server returned HTML instead of JSON, but session appears valid. Please try again.');
-          } else {
-            console.log('Authentication check failed, session appears invalid');
-            // Check if we can get useful error info from the auth check
-            try {
-              const authErrorText = await authCheckRes.text();
-              console.log('Auth error details:', authErrorText);
-            } catch (e) {
-              console.error('Failed to read auth error response:', e);
-            }
-            
-            // If we're receiving HTML and auth check fails, it's likely a session issue
-            if (textContent.includes('login') || textContent.includes('sign in')) {
-              throw new Error('Session expired. Please refresh the page and log in again.');
-            } else {
-              throw new Error('Authentication issue. Please refresh the page to restore your session.');
-            }
-          }
-        } catch (authError) {
-          console.error('Error during authentication check:', authError);
-          // Fall back to a generic error
-          throw new Error('Session validation failed. Please refresh the page and try again.');
-        }
-      }
-      
-      throw new Error(`Server returned non-JSON content: ${preview.substring(0, 50)}...`);
-    } catch (textError) {
-      if (textError instanceof Error) {
-        throw textError; // Throw our specific error if we created one
-      }
-      // Generic error if we couldn't read the response as text
-      throw new Error(`Server returned non-JSON content (${res.status})`);
-    }
-  }
-  
-  // Now try to parse as JSON
-  try {
-    return await res.json();
-  } catch (jsonError) {
-    console.error('Failed to parse JSON response:', jsonError);
-    throw new Error('Invalid JSON response from server. Please try again.');
-  }
-}
-
 export async function apiRequest(
   method: string,
   url: string,
@@ -319,8 +239,14 @@ export const getQueryFn: <T>(options: {
       
       await throwIfResNotOk(res);
       
-      // Use our enhanced safe JSON parsing function
-      return await safeParseJson(res);
+      // Safely check content type before parsing as JSON
+      if (!isJsonResponse(res)) {
+        const textContent = await res.text();
+        console.error('Non-JSON response from server:', textContent);
+        throw new Error('Server returned an invalid response format. Please try again.');
+      }
+      
+      return await res.json();
       
     } catch (fetchError) {
       console.error(`[API Error] Failed request to ${url}:`, fetchError);

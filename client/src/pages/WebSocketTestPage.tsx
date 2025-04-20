@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { AlertCircle, ArrowLeft, Send, UserPlus, Briefcase, Calendar, Repeat } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Send } from 'lucide-react';
 import { useLocation } from 'wouter';
 import WebSocketStatusIndicator from '@/components/WebSocketStatusIndicator';
 import useWebSocket from '@/hooks/useWebSocket';
@@ -13,7 +13,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Switch } from '@/components/ui/switch';
 import { WebSocketNotification } from '@/services/websocketService';
 
 const WebSocketTestPage: React.FC = () => {
@@ -101,14 +100,12 @@ const WebSocketTestPage: React.FC = () => {
     
     if (selectedType === 'event') {
       notification = {
-        type: 'event',
+        type: 'event_changed',
         action: selectedAction,
         timestamp: Date.now(),
-        data: {
-          ...notificationData,
-          eventId: 12345,
-          changeType: selectedAction,
-        },
+        eventId: 12345,
+        changeType: selectedAction as 'created' | 'updated' | 'deleted',
+        data: notificationData,
         sourceUserId: user?.id
       };
     } else {
@@ -288,41 +285,38 @@ const WebSocketTestPage: React.FC = () => {
             {selectedType === 'event' && selectedAction === 'updated' && (
               <div className="space-y-2 p-3 bg-gray-50 rounded-md">
                 <h3 className="text-sm font-medium">Event Update Flags:</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="flex items-center space-x-2 p-2 rounded-md bg-blue-50">
-                    <Switch
+                <div className="flex flex-wrap gap-3">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
                       id="attendee-flag"
                       checked={includeAttendeeFlag}
-                      onCheckedChange={setIncludeAttendeeFlag}
+                      onChange={(e) => setIncludeAttendeeFlag(e.target.checked)}
+                      className="rounded"
                     />
-                    <Label htmlFor="attendee-flag" className="flex items-center cursor-pointer">
-                      <UserPlus className="h-4 w-4 mr-2 text-blue-600" />
-                      Include wasAttendeeUpdate
-                    </Label>
+                    <Label htmlFor="attendee-flag">Include wasAttendeeUpdate</Label>
                   </div>
                   
-                  <div className="flex items-center space-x-2 p-2 rounded-md bg-orange-50">
-                    <Switch
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
                       id="resource-flag"
                       checked={includeResourceFlag}
-                      onCheckedChange={setIncludeResourceFlag}
+                      onChange={(e) => setIncludeResourceFlag(e.target.checked)}
+                      className="rounded"
                     />
-                    <Label htmlFor="resource-flag" className="flex items-center cursor-pointer">
-                      <Briefcase className="h-4 w-4 mr-2 text-orange-600" />
-                      Include wasResourceUpdate
-                    </Label>
+                    <Label htmlFor="resource-flag">Include wasResourceUpdate</Label>
                   </div>
                   
-                  <div className="flex items-center space-x-2 p-2 rounded-md bg-green-50">
-                    <Switch
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
                       id="recurrence-flag"
                       checked={includeRecurrenceFlag}
-                      onCheckedChange={setIncludeRecurrenceFlag}
+                      onChange={(e) => setIncludeRecurrenceFlag(e.target.checked)}
+                      className="rounded"
                     />
-                    <Label htmlFor="recurrence-flag" className="flex items-center cursor-pointer">
-                      <Repeat className="h-4 w-4 mr-2 text-green-600" />
-                      Include wasRecurrenceStateChange
-                    </Label>
+                    <Label htmlFor="recurrence-flag">Include wasRecurrenceStateChange</Label>
                   </div>
                 </div>
               </div>
@@ -378,37 +372,10 @@ const WebSocketTestPage: React.FC = () => {
                               {new Date(msg.timestamp).toLocaleTimeString()}
                             </span>
                           </div>
-                          <div className="text-sm bg-gray-50 p-2 rounded space-y-2">
-                            {/* Enhanced metadata indicators for event notifications */}
-                            {msg.type === 'event' && typeof msg.data === 'object' && (
-                              <div className="flex flex-wrap gap-2 mb-1">
-                                {msg.data.wasAttendeeUpdate && (
-                                  <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-300 flex items-center">
-                                    <UserPlus className="h-3 w-3 mr-1" />
-                                    Attendee Update
-                                  </Badge>
-                                )}
-                                {msg.data.wasResourceUpdate && (
-                                  <Badge variant="outline" className="bg-orange-50 text-orange-800 border-orange-300 flex items-center">
-                                    <Briefcase className="h-3 w-3 mr-1" />
-                                    Resource Update
-                                  </Badge>
-                                )}
-                                {msg.data.wasRecurrenceStateChange && (
-                                  <Badge variant="outline" className="bg-green-50 text-green-800 border-green-300 flex items-center">
-                                    <Repeat className="h-3 w-3 mr-1" />
-                                    Recurrence Change
-                                  </Badge>
-                                )}
-                              </div>
-                            )}
-                            
-                            {/* Message data */}
-                            <pre className="text-xs overflow-auto max-h-[200px]">
-                              {typeof msg.data === 'object' 
-                                ? JSON.stringify(msg.data, null, 2) 
-                                : msg.data}
-                            </pre>
+                          <div className="text-sm bg-gray-50 p-2 rounded">
+                            {typeof msg.data === 'object' 
+                              ? JSON.stringify(msg.data, null, 2) 
+                              : msg.data}
                           </div>
                           {index < messages.length - 1 && <Separator />}
                         </div>

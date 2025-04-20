@@ -193,17 +193,10 @@ export function useWebSocketClient() {
           const data = JSON.parse(event.data);
           
           // Enhanced logging for event changes to trace UID across lifecycle
-          if (data.type === 'event') {
-            // Support both direct data properties and nested data structure
-            const eventData = data.data || data;
-            const changeType = data.action || eventData.changeType || 'unknown';
-            const eventId = eventData.eventId || 'unknown';
-            const uid = eventData.uid || 'none';
-            const calendarId = eventData.calendarId || 'unknown';
-            
+          if (data.type === 'event_changed') {
             console.log(
-              `[WS Received] Event ${changeType}: ID=${eventId}, ` + 
-              `UID=${uid}, Calendar=${calendarId}`
+              `[WS Received] Event ${data.changeType}: ID=${data.eventId}, ` + 
+              `UID=${data.uid || 'none'}, Calendar=${data.calendarId || 'unknown'}`
             );
           }
           

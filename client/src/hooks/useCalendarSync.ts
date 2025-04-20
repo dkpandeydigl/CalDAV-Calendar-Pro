@@ -193,24 +193,19 @@ export function useCalendarSync() {
                 }
               }
             } 
-            else if (data.type === 'event') {
-              console.log('Event notification received:', data);
+            else if (data.type === 'event_changed') {
+              console.log('Event changed notification received:', data);
               
               // Generate a more specific and informative notification message
               let title = 'Calendar Event';
               let description = '';
               
-              // Support both old and new formats (changeType or action)
-              const eventAction = data.changeType || data.action;
-              // Extract event data, supporting both nesting patterns
-              const eventData = data.data || data;
-              
-              if (eventAction === 'added' || eventAction === 'created') {
+              if (data.changeType === 'added') {
                 title = 'New Event Added';
-                description = eventData?.title ? 
-                  `"${eventData.title}" was added to ${eventData.calendarName || 'calendar'}` : 
+                description = data.data?.title ? 
+                  `"${data.data.title}" was added to ${data.data.calendarName || 'calendar'}` : 
                   'A new event was added';
-              } else if (eventAction === 'updated') {
+              } else if (data.changeType === 'updated') {
                 title = 'Event Updated';
                 
                 // Check for specific update types to provide more detailed notifications
@@ -238,18 +233,17 @@ export function useCalendarSync() {
                     `"${data.data.title}" was updated ${data.data.isExternalChange ? 'in an external client' : ''}` : 
                     'An event was updated';
                 }
-              } else if (eventAction === 'deleted') {
+              } else if (data.changeType === 'deleted') {
                 title = 'Event Removed';
-                description = eventData?.count > 1 ? 
-                  `${eventData.count} events were removed from ${eventData.calendarName || 'calendar'}` :
-                  eventData?.title ? 
-                    `"${eventData.title}" was removed from ${eventData.calendarName || 'calendar'}` :
+                description = data.data?.count > 1 ? 
+                  `${data.data.count} events were removed from ${data.data.calendarName || 'calendar'}` :
+                  data.data?.title ? 
+                    `"${data.data.title}" was removed from ${data.data.calendarName || 'calendar'}` :
                     'An event was removed';
                 
                 // For deleted events, we need to cleanup any local references to prevent 
                 // stuck "syncing" indicators in the UI
-                const eventId = eventData.eventId || data.eventId;
-                if (eventId) {
+                if (data.eventId) {
                   console.log(`⚠️ Event deleted, cleaning up event ID: ${data.eventId} from all caches`);
                   
                   // Clean up all queries that might have the deleted event cached
@@ -315,7 +309,7 @@ export function useCalendarSync() {
               });
               
               // For all changes, we now force an immediate refresh
-              console.log(`Event change detected (${eventAction}), forcing immediate refresh`);
+              console.log(`Event change detected (${data.changeType}), forcing immediate refresh`);
               
               // Invalidate all calendar queries to ensure latest data
               queryClient.invalidateQueries({ 
@@ -364,7 +358,7 @@ export function useCalendarSync() {
                 });
                 
                 // For deleted events, perform one more delayed check to ensure they stay deleted
-                if (eventAction === 'deleted' && (eventData.eventId || data.eventId)) {
+                if (data.changeType === 'deleted' && data.eventId) {
                   // Store the deleted event info in sessionStorage for additional verification
                   const deletedEventsKey = 'recently_deleted_events';
                   const deletedEvents = JSON.parse(sessionStorage.getItem(deletedEventsKey) || '[]');
