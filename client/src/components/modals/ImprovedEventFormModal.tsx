@@ -1401,7 +1401,9 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
                       <FormLabel htmlFor="calendar" className="text-sm font-medium">
                         Calendar
                       </FormLabel>
-                      <Select value={calendarId} onValueChange={setCalendarId}>
+                      <Select 
+                        value={form.getValues('calendarId')} 
+                        onValueChange={(value) => form.setValue('calendarId', value)}>
                         <SelectTrigger 
                           className={`w-full ${errors.calendarId ? 'border-red-500' : ''}`}
                         >
@@ -1440,11 +1442,20 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
                       <FormLabel htmlFor="location" className="text-sm font-medium">
                         Location
                       </FormLabel>
-                      <Input
-                        id="location"
-                        placeholder="Event location (optional)"
-                        value={location}
-                        onChange={e => setLocation(e.target.value)}
+                      <FormField
+                        control={form.control}
+                        name="location"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                id="location"
+                                placeholder="Event location (optional)"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
                       />
                     </div>
                   </div>
@@ -1483,12 +1494,21 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
                           </Popover>
                         )}
                       </FormLabel>
-                      <Textarea
-                        id="description"
-                        placeholder="Event description (optional)"
-                        value={description}
-                        onChange={e => setDescription(e.target.value)}
-                        className="min-h-[100px]"
+                      <FormField
+                        control={form.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Textarea
+                                {...field}
+                                id="description"
+                                placeholder="Event description (optional)"
+                                className="min-h-[100px]"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
                       />
                     </div>
                   </div>
