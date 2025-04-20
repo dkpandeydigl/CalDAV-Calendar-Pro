@@ -107,27 +107,34 @@ import {
 } from 'lucide-react';
 
 // Hooks
-// Mock hooks for calendar functionality since we're temporarily fixing the import issues
-const useCalendars = () => ({ data: [] });
-const useCreateEvent = () => ({ mutateAsync: async (data) => console.log('Create event:', data) });
-const useUpdateEvent = () => ({ mutateAsync: async (data) => console.log('Update event:', data) });
-const useDeleteEvent = () => ({ mutateAsync: async (id) => console.log('Delete event:', id) });
-const useCancelEvent = () => ({ mutateAsync: async (id) => console.log('Cancel event:', id) });
-// Mock more hooks for temporary compatibility
-const useUser = () => ({ user: { email: 'user@example.com', name: 'Test User' } });
-const useEventUID = () => ({ 
-  getOrGenerateUID: async () => 'mockuid-' + Math.random().toString(36).substring(2, 15),
-  storeUID: async (id, uid) => console.log('Storing UID:', { id, uid })
-});
-const useMediaQuery = () => false;
-const useRRuleFromString = (ruleString) => ({ 
-  parsedRecurrence: { 
-    pattern: 'None',
-    interval: 1,
-    endType: 'Never'
-  } 
-});
-const useEmailTemplateStore = () => ({ templates: [] });
+import { useCalendars } from '@/hooks/useCalendars';
+import { useCalendarEvents } from '@/hooks/useCalendarEvents';
+import { useEventUID } from '@/hooks/useEventUID';
+import { useAuth as useUser } from '@/hooks/use-auth';
+import { useMediaQuery } from '@/hooks/use-mobile';
+import { parseRRULEFromEvent } from '@/utils/rrule-sanitizer';
+import { useEmailTemplateStore } from '@/stores/emailTemplateStore';
+
+// Function to create, update, delete events - extracted from useCalendarEvents
+const useCreateEvent = () => {
+  const { createEvent } = useCalendarEvents(); 
+  return { mutateAsync: createEvent };
+};
+
+const useUpdateEvent = () => {
+  const { updateEvent } = useCalendarEvents();
+  return { mutateAsync: updateEvent };
+};
+
+const useDeleteEvent = () => {
+  const { deleteEvent } = useCalendarEvents();
+  return { mutateAsync: deleteEvent };
+};
+
+const useCancelEvent = () => {
+  const { cancelEvent } = useCalendarEvents();
+  return { mutateAsync: cancelEvent || ((id) => Promise.resolve()) };
+};
 
 // Utility helpers
 import { cn } from '@/lib/utils';
@@ -414,7 +421,8 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
       // Parse the recurrence rule if available
       if (event.recurrenceRule) {
         try {
-          const { parsedRecurrence } = useRRuleFromString(event.recurrenceRule);
+          // Use parseRRULEFromEvent instead of useRRuleFromString (which is a hook)
+          const parsedRecurrence = parseRRULEFromEvent(event);
           setRecurrence(parsedRecurrence);
         } catch (error) {
           console.error("Failed to parse recurrence rule:", error);

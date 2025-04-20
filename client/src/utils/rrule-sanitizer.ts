@@ -1,271 +1,248 @@
+import { CalendarEvent } from '@shared/schema';
+
+// Types for recurrence
+export type RecurrencePattern = 'None' | 'Daily' | 'Weekly' | 'Monthly' | 'Yearly';
+export type RecurrenceEndType = 'Never' | 'After' | 'On';
+
+export interface RecurrenceConfig {
+  pattern: RecurrencePattern;
+  interval: number;
+  weekdays?: string[]; // For weekly: ['Monday', 'Wednesday', etc.]
+  dayOfMonth?: number; // For monthly/yearly
+  monthOfYear?: number; // For yearly
+  endType: RecurrenceEndType;
+  occurrences?: number; // For 'After'
+  endDate?: Date; // For 'On'
+}
+
 /**
- * RRULE Sanitizer and Parser
+ * Parse a RRULE string into a structured RecurrenceConfig object
+ * Implements RFC 5545 parsing for recurrence rules
  * 
- * Utilities for cleaning, validating, and parsing iCalendar recurrence rules
- * to ensure they're compliant with RFC 5545.
+ * @param rruleString - The RRULE string from an ICS file
+ * @returns Object containing the parsed recurrence settings
  */
-
-// Types for parsed RRULE components
-export interface ParsedRRULE {
-  pattern: string;       // 'Daily', 'Weekly', 'Monthly', 'Yearly'
-  interval: number;      // Repeat every X days/weeks/months/years
-  weekdays?: string[];   // Array of weekday names for weekly patterns
-  endType: string;       // 'After' (occurrence count) or 'Until' (specific date)
-  occurrences?: number;  // Number of occurrences if endType is 'After'
-  untilDate?: string;    // ISO string of end date if endType is 'Until'
-  originalRrule?: string; // The original RRULE string for reference
-}
-
-/**
- * Sanitize an RRULE string to remove invalid or malformed parts
- * @param rrule The raw RRULE string to sanitize
- * @returns A cleaned RRULE string
- */
-export function sanitizeRRULE(rrule: string): string {
-  if (!rrule) return '';
-  
-  console.log('SANITIZER INPUT:', rrule);
-  
-  // Replace any instances of "mailto:" in the RRULE
-  // This is a common issue when copy-pasting from email clients
-  let cleaned = rrule.replace(/mailto:[^;,]+/g, '');
-  
-  // Fix double commas that might be left after removing mailto
-  cleaned = cleaned.replace(/,,/g, ',');
-  
-  // Remove trailing commas from parameter values
-  cleaned = cleaned.replace(/,;/g, ';');
-  
-  // Ensure there's no trailing semicolon
-  cleaned = cleaned.replace(/;$/g, '');
-  
-  // Fix any incorrectly encoded characters
-  cleaned = cleaned.replace(/%20/g, ' ');
-  
-  // Ensure FREQ parameter exists and is valid
-  if (!cleaned.includes('FREQ=')) {
-    // If no FREQ, default to DAILY
-    cleaned = `FREQ=DAILY;${cleaned}`;
-  }
-  
-  // Ensure FREQ value is valid
-  const validFreqs = ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'];
-  const freqMatch = cleaned.match(/FREQ=([^;]+)/);
-  if (freqMatch && !validFreqs.includes(freqMatch[1])) {
-    // Replace invalid FREQ with DAILY
-    cleaned = cleaned.replace(/FREQ=[^;]+/, 'FREQ=DAILY');
-  }
-  
-  // Split into parameters for further cleaning
-  const params = cleaned.split(';');
-  const cleanedParams = params.map(param => {
-    // Skip empty parameters
-    if (!param.includes('=')) return null;
-    
-    const [name, value] = param.split('=');
-    // Skip parameters with empty values
-    if (!value) return null;
-    
-    // Special handling for specific parameters
-    if (name === 'COUNT') {
-      // Ensure COUNT is a valid number
-      const count = parseInt(value, 10);
-      if (isNaN(count) || count <= 0) return null;
-      return `${name}=${count}`;
-    }
-    else if (name === 'INTERVAL') {
-      // Ensure INTERVAL is a valid number
-      const interval = parseInt(value, 10);
-      if (isNaN(interval) || interval <= 0) return null;
-      return `${name}=${interval}`;
-    }
-    else if (name === 'UNTIL') {
-      // Validate date format at least roughly
-      // Complete validation would be much more complex
-      if (!value.match(/^\d{8}(T\d{6}Z?)?$/)) return null;
-      return `${name}=${value}`;
-    }
-    
-    // Return the original parameter if no special handling needed
-    return param;
-  }).filter(Boolean);
-  
-  // Rejoin parameters and return
-  const result = cleanedParams.join(';');
-  console.log('SANITIZER OUTPUT:', result);
-  return result;
-}
-
-/**
- * Parse a sanitized RRULE string into a structured object
- * @param rrule The RRULE string to parse
- * @returns A structured object representing the recurrence rule
- */
-export function parseRRULE(rrule: string): ParsedRRULE | null {
-  if (!rrule) return null;
-  
-  // First sanitize the RRULE
-  const sanitized = sanitizeRRULE(rrule);
-  if (!sanitized) return null;
-  
-  console.log(`PARSER INPUT (after sanitization): ${sanitized}`);
-  
-  // Initialize with default values
-  const recurrenceData: ParsedRRULE = {
-    pattern: 'Daily', // Default to daily
+export function useRRuleFromString(rruleString: string): { parsedRecurrence: RecurrenceConfig } {
+  // Default recurrence configuration
+  const parsedRecurrence: RecurrenceConfig = {
+    pattern: 'None',
     interval: 1,
-    weekdays: [],
-    endType: 'After',
-    occurrences: 10, // Default to 10 occurrences
-    originalRrule: rrule // Store the original for reference
+    endType: 'Never',
   };
   
-  try {
-    // Extract frequency
-    const freqMatch = sanitized.match(/FREQ=([^;]+)/);
-    if (freqMatch && freqMatch[1]) {
-      const freq = freqMatch[1];
-      if (freq === 'DAILY') recurrenceData.pattern = 'Daily';
-      else if (freq === 'WEEKLY') recurrenceData.pattern = 'Weekly';
-      else if (freq === 'MONTHLY') recurrenceData.pattern = 'Monthly';
-      else if (freq === 'YEARLY') recurrenceData.pattern = 'Yearly';
-      console.log(`PARSER: Extracted FREQ=${freq}, setting pattern to ${recurrenceData.pattern}`);
-    }
-    
-    // Extract interval
-    const intervalMatch = sanitized.match(/INTERVAL=(\d+)/);
-    if (intervalMatch && intervalMatch[1]) {
-      recurrenceData.interval = parseInt(intervalMatch[1], 10) || 1;
-      console.log(`PARSER: Extracted INTERVAL=${recurrenceData.interval}`);
-    }
-    
-    // Extract count
-    const countMatch = sanitized.match(/COUNT=(\d+)/);
-    if (countMatch && countMatch[1]) {
-      recurrenceData.occurrences = parseInt(countMatch[1], 10) || 10;
-      recurrenceData.endType = 'After';
-      console.log(`PARSER: Extracted COUNT=${recurrenceData.occurrences}, setting endType to ${recurrenceData.endType}`);
-    }
-    
-    // Extract until
-    const untilMatch = sanitized.match(/UNTIL=([^;]+)/);
-    if (untilMatch && untilMatch[1]) {
-      // Parse iCalendar date format like 20250428T235959Z
-      const untilStr = untilMatch[1];
-      let untilDate;
-      
-      if (untilStr.includes('T')) {
-        // Date with time
-        const year = parseInt(untilStr.substring(0, 4), 10);
-        const month = parseInt(untilStr.substring(4, 6), 10) - 1; // Month is 0-indexed
-        const day = parseInt(untilStr.substring(6, 8), 10);
-        const hour = parseInt(untilStr.substring(9, 11), 10) || 0;
-        const minute = parseInt(untilStr.substring(11, 13), 10) || 0;
-        const second = parseInt(untilStr.substring(13, 15), 10) || 0;
-        
-        untilDate = new Date(Date.UTC(year, month, day, hour, minute, second));
-      } else {
-        // Date only - assume end of day
-        const year = parseInt(untilStr.substring(0, 4), 10);
-        const month = parseInt(untilStr.substring(4, 6), 10) - 1;
-        const day = parseInt(untilStr.substring(6, 8), 10);
-        
-        untilDate = new Date(Date.UTC(year, month, day, 23, 59, 59));
-      }
-      
-      recurrenceData.untilDate = untilDate.toISOString();
-      recurrenceData.endType = 'Until';
-      console.log(`PARSER: Extracted UNTIL=${untilStr}, parsed to ${recurrenceData.untilDate}, setting endType to ${recurrenceData.endType}`);
-      
-      // If we have both COUNT and UNTIL, prefer UNTIL as per RFC 5545
-      if (countMatch) {
-        console.log('PARSER: Both COUNT and UNTIL found, preferring UNTIL as per RFC 5545');
-      }
-    }
-    
-    // Extract BYDAY for weekly recurrences
-    if (recurrenceData.pattern === 'Weekly') {
-      const bydayMatch = sanitized.match(/BYDAY=([^;]+)/);
-      if (bydayMatch && bydayMatch[1]) {
-        const days = bydayMatch[1].split(',');
-        const dayMap: Record<string, string> = {
-          'SU': 'Sunday',
-          'MO': 'Monday',
-          'TU': 'Tuesday',
-          'WE': 'Wednesday',
-          'TH': 'Thursday',
-          'FR': 'Friday',
-          'SA': 'Saturday'
-        };
-        
-        recurrenceData.weekdays = days.map(day => dayMap[day] || day);
-        console.log(`PARSER: Extracted BYDAY=${bydayMatch[1]}, mapped to weekdays:`, recurrenceData.weekdays);
-      }
-    }
-    
-    return recurrenceData;
-  } catch (error) {
-    console.error('Error parsing RRULE:', error);
-    return null;
+  if (!rruleString) {
+    return { parsedRecurrence };
   }
+  
+  try {
+    // Remove 'RRULE:' prefix if present
+    const rrule = rruleString.startsWith('RRULE:') ? rruleString.substring(6) : rruleString;
+    
+    // Split into components
+    const components = rrule.split(';').reduce((acc, part) => {
+      const [key, value] = part.split('=');
+      if (key && value) {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as Record<string, string>);
+    
+    // Parse frequency
+    if (components.FREQ) {
+      switch (components.FREQ) {
+        case 'DAILY':
+          parsedRecurrence.pattern = 'Daily';
+          break;
+        case 'WEEKLY':
+          parsedRecurrence.pattern = 'Weekly';
+          break;
+        case 'MONTHLY':
+          parsedRecurrence.pattern = 'Monthly';
+          break;
+        case 'YEARLY':
+          parsedRecurrence.pattern = 'Yearly';
+          break;
+        default:
+          console.warn(`Unknown frequency in RRULE: ${components.FREQ}`);
+      }
+    }
+    
+    // Parse interval
+    if (components.INTERVAL) {
+      const interval = parseInt(components.INTERVAL, 10);
+      if (!isNaN(interval) && interval > 0) {
+        parsedRecurrence.interval = interval;
+      }
+    }
+    
+    // Parse weekdays for weekly recurrence
+    if (components.BYDAY && parsedRecurrence.pattern === 'Weekly') {
+      const dayMap: Record<string, string> = {
+        'SU': 'Sunday',
+        'MO': 'Monday',
+        'TU': 'Tuesday',
+        'WE': 'Wednesday',
+        'TH': 'Thursday',
+        'FR': 'Friday',
+        'SA': 'Saturday'
+      };
+      
+      const days = components.BYDAY.split(',');
+      parsedRecurrence.weekdays = days
+        .map(day => dayMap[day])
+        .filter(Boolean);
+    }
+    
+    // Parse monthly recurrence
+    if (components.BYMONTHDAY && parsedRecurrence.pattern === 'Monthly') {
+      parsedRecurrence.dayOfMonth = parseInt(components.BYMONTHDAY, 10);
+    }
+    
+    // Parse end rules
+    if (components.COUNT) {
+      parsedRecurrence.endType = 'After';
+      parsedRecurrence.occurrences = parseInt(components.COUNT, 10);
+    } else if (components.UNTIL) {
+      parsedRecurrence.endType = 'On';
+      
+      // Parse the UNTIL date (format: 20230822T235959Z)
+      try {
+        // Extract date part (remove time component)
+        const dateStr = components.UNTIL.substring(0, 8);
+        const year = parseInt(dateStr.substring(0, 4), 10);
+        const month = parseInt(dateStr.substring(4, 6), 10) - 1; // JS months are 0-based
+        const day = parseInt(dateStr.substring(6, 8), 10);
+        
+        const endDate = new Date(Date.UTC(year, month, day));
+        if (isNaN(endDate.getTime())) {
+          throw new Error(`Invalid UNTIL date: ${components.UNTIL}`);
+        }
+        
+        parsedRecurrence.endDate = endDate;
+      } catch (error) {
+        console.error('Error parsing UNTIL date:', error);
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error parsing RRULE:', error, rruleString);
+  }
+  
+  return { parsedRecurrence };
 }
 
 /**
- * Convert a ParsedRRULE object back to a valid RRULE string
- * @param parsed The parsed RRULE object
- * @returns A valid RRULE string
+ * Clean and sanitize RRULE data from an event
+ * Helps ensure RFC 5545 compliance
+ * 
+ * @param event - The calendar event containing recurrence data
+ * @returns Sanitized RRULE string
  */
-export function formatToRRULE(parsed: ParsedRRULE): string {
-  if (!parsed) return '';
+export function sanitizeRRULE(rruleString: string): string {
+  if (!rruleString) return '';
   
-  const parts: string[] = [];
+  console.log(`Sanitizing RRULE: ${rruleString}`);
   
-  // Add FREQ
-  let freq = 'DAILY';
-  if (parsed.pattern === 'Daily') freq = 'DAILY';
-  else if (parsed.pattern === 'Weekly') freq = 'WEEKLY';
-  else if (parsed.pattern === 'Monthly') freq = 'MONTHLY';
-  else if (parsed.pattern === 'Yearly') freq = 'YEARLY';
-  parts.push(`FREQ=${freq}`);
-  
-  // Add INTERVAL if not 1
-  if (parsed.interval && parsed.interval > 1) {
-    parts.push(`INTERVAL=${parsed.interval}`);
-  }
-  
-  // Add weekdays for weekly recurrence
-  if (parsed.pattern === 'Weekly' && parsed.weekdays && parsed.weekdays.length > 0) {
-    const dayMap: Record<string, string> = {
-      'Sunday': 'SU',
-      'Monday': 'MO',
-      'Tuesday': 'TU',
-      'Wednesday': 'WE',
-      'Thursday': 'TH',
-      'Friday': 'FR',
-      'Saturday': 'SA'
-    };
-    
-    const daysStr = parsed.weekdays
-      .map(day => dayMap[day] || day)
-      .join(',');
-    
-    if (daysStr) {
-      parts.push(`BYDAY=${daysStr}`);
+  try {
+    // Check for JSON-like structure accidentally stored as RRULE
+    if (rruleString.includes('originalData') || 
+        rruleString.includes('mailto:') || 
+        rruleString.includes(':')) {
+      console.log('Found mailto: or colon in RRULE - cleaning it properly');
+      
+      // If it contains a colon, only keep the part after RRULE:
+      if (rruleString.includes('RRULE:')) {
+        const parts = rruleString.split('RRULE:');
+        if (parts.length > 1) {
+          return parts[1];
+        }
+      }
+      
+      // If it looks like JSON, try extracting RRULE from it
+      if (rruleString.startsWith('{') || rruleString.includes('originalData')) {
+        console.log(`Split RRULE at colon, keeping only: ${rruleString.split(':')[0]}`);
+        
+        try {
+          // Try parsing as JSON
+          const jsonData = JSON.parse(rruleString);
+          if (jsonData.rrule) {
+            return jsonData.rrule;
+          }
+        } catch (e) {
+          console.log(`Could not sanitize RRULE: ${rruleString}, returning empty string`);
+          return '';
+        }
+      }
     }
-  }
-  
-  // Add end condition
-  if (parsed.endType === 'After' && parsed.occurrences) {
-    parts.push(`COUNT=${parsed.occurrences}`);
-  } else if (parsed.endType === 'Until' && parsed.untilDate) {
-    // Convert ISO date to RRULE format (YYYYMMDDTHHMMSSZ)
-    const date = new Date(parsed.untilDate);
-    const untilStr = date.toISOString()
-      .replace(/[-:]/g, '')  // Remove dashes and colons
-      .replace(/\.\d{3}/, ''); // Remove milliseconds
     
-    parts.push(`UNTIL=${untilStr}`);
+    // Return valid RRULE strings as-is
+    if (rruleString.startsWith('FREQ=') || 
+        rruleString.startsWith('RRULE:FREQ=')) {
+      return rruleString;
+    }
+    
+  } catch (error) {
+    console.error('Error sanitizing RRULE:', error);
+    return '';
   }
   
-  return parts.join(';');
+  return rruleString;
+}
+
+/**
+ * Extracts recurrence rule from raw ICS data if available
+ */
+export function extractRRULEFromRawData(event: CalendarEvent): string {
+  if (!event.rawData) return '';
+  
+  try {
+    // If rawData is a string containing ICS data
+    if (typeof event.rawData === 'string' && event.rawData.includes('RRULE:')) {
+      const lines = event.rawData.split('\n');
+      
+      // Find the RRULE line
+      for (const line of lines) {
+        if (line.trim().startsWith('RRULE:')) {
+          return line.trim().substring(6); // Remove the 'RRULE:' prefix
+        }
+      }
+    }
+    
+    // If rawData is an object that might contain RRULE
+    if (typeof event.rawData === 'object' && event.rawData !== null) {
+      const data = event.rawData as any;
+      
+      // Check various possible paths for RRULE
+      if (data.rrule) return data.rrule;
+      if (data.recurrenceRule) return data.recurrenceRule;
+      if (data.properties?.rrule?.value) return data.properties.rrule.value;
+    }
+  } catch (error) {
+    console.error('Error extracting RRULE from raw data:', error);
+  }
+  
+  return '';
+}
+
+export const parseRRULE = parseRRULEFromEvent;
+
+export function parseRRULEFromEvent(event: CalendarEvent): RecurrenceConfig {
+  if (!event.recurrenceRule) {
+    return {
+      pattern: 'None',
+      interval: 1,
+      endType: 'Never'
+    };
+  }
+  
+  // First sanitize the RRULE
+  const sanitizedRule = sanitizeRRULE(event.recurrenceRule);
+  console.log(`Extracted RRULE from raw ICS data: ${sanitizedRule}`);
+  
+  // If sanitized rule couldn't be properly extracted, try getting it from raw data
+  const finalRule = sanitizedRule || extractRRULEFromRawData(event);
+  
+  // Parse the rule
+  const { parsedRecurrence } = useRRuleFromString(finalRule);
+  return parsedRecurrence;
 }

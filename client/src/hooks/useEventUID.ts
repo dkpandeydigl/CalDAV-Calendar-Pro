@@ -68,6 +68,27 @@ export function useEventUID({ eventId, uid: initialUid, autoLoad = true }: UseEv
     return newUid;
   }, []);
   
+  // Generate or retrieve a UID as needed (convenience method)
+  const getOrGenerateUID = useCallback(async (id?: number) => {
+    // If we have an ID, try to load first
+    if (id) {
+      const existingUID = await loadUID(id);
+      if (existingUID) {
+        return existingUID;
+      }
+    }
+    
+    // No UID found for ID or no ID provided, generate new one
+    const newUid = generateUID();
+    
+    // If we have an ID, store the new UID
+    if (id) {
+      await storeUID(id, newUid);
+    }
+    
+    return newUid;
+  }, [loadUID, generateUID, storeUID]);
+  
   // Handle auto-loading on mount or when eventId changes
   useEffect(() => {
     if (autoLoad && eventId && !uid) {
@@ -124,6 +145,7 @@ export function useEventUID({ eventId, uid: initialUid, autoLoad = true }: UseEv
     loadUID,
     storeUID,
     generateUID,
+    getOrGenerateUID,
     getEventIdByUID,
     deleteUIDMapping,
     isServiceReady: uidPersistenceService.isReady()

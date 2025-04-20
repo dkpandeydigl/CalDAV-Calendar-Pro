@@ -1,204 +1,236 @@
-import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Send, RefreshCw } from 'lucide-react';
-import { Separator } from '@/components/ui/separator';
-import websocketService from '../services/websocket-service';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { MessageType, websocketService, WebSocketMessage } from '@/services/websocket-service';
+import { ConnectionState } from '@/utils/websocket';
+import WebSocketStatus from './WebSocketStatus';
 
-/**
- * A simple component that demonstrates WebSocket connectivity
- * This can be included in the app to provide real-time WebSocket status information
- */
-export function WebSocketDemo() {
-  const [messages, setMessages] = useState<{ type: string; data?: any; timestamp: number }[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-
-  // Initialize WebSocket on component mount
+export const WebSocketDemo: React.FC = () => {
+  const { toast } = useToast();
+  const [messages, setMessages] = useState<WebSocketMessage[]>([]);
+  const [inputMessage, setInputMessage] = useState<string>('');
+  const [selectedMessageType, setSelectedMessageType] = useState<MessageType>(MessageType.PING);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [connectionState, setConnectionState] = useState<ConnectionState>(
+    websocketService.getConnectionState()
+  );
+  const messageEndRef = useRef<HTMLDivElement>(null);
+  
+  // Subscribe to WebSocket messages
   useEffect(() => {
-    // Connect to the WebSocket server
-    websocketService.connect();
-
-    // Set up connection and disconnection handlers
-    const connectUnsubscribe = websocketService.onConnect(() => {
-      setIsConnected(true);
-      addMessage({ type: 'system', data: 'Connected to WebSocket server', timestamp: Date.now() });
+    // Connection state changes
+    const removeStateListener = websocketService.addGlobalListener((message) => {
+      setMessages((prev) => [...prev, message]);
     });
-
-    const disconnectUnsubscribe = websocketService.onDisconnect(() => {
-      setIsConnected(false);
-      addMessage({ type: 'system', data: 'Disconnected from WebSocket server', timestamp: Date.now() });
+    
+    // Listen for connection state changes 
+    const stateListener = websocketService.addGlobalListener(() => {
+      setConnectionState(websocketService.getConnectionState());
     });
-
-    // Set up message handlers
-    const messageUnsubscribe = websocketService.subscribe('*', (data) => {
-      addMessage({ type: data.type, data: data.data, timestamp: data.timestamp || Date.now() });
-    });
-
-    // Check initial connection state
-    setIsConnected(websocketService.isWebSocketConnected());
-
-    // Clean up event handlers on unmount
+    
     return () => {
-      connectUnsubscribe();
-      disconnectUnsubscribe();
-      messageUnsubscribe();
+      removeStateListener();
+      stateListener();
     };
   }, []);
-
-  // Helper function to add a message to the list
-  const addMessage = (message: { type: string; data?: any; timestamp: number }) => {
-    setMessages((prevMessages) => [...prevMessages, message].slice(-10)); // Keep the last 10 messages
-  };
-
-  // Send a test ping message
-  const sendPing = () => {
-    if (!isConnected) {
-      addMessage({ 
-        type: 'error', 
-        data: 'Cannot send message - not connected to WebSocket server', 
-        timestamp: Date.now() 
-      });
-      return;
+  
+  // Auto-scroll to the bottom when new messages arrive
+  useEffect(() => {
+    if (autoScroll && messageEndRef.current) {
+      messageEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-
-    const sent = websocketService.send('ping', { message: 'Ping from WebSocket Demo' });
+  }, [messages, autoScroll]);
+  
+  // Handle sending a message
+  const handleSendMessage = () => {
+    if (!inputMessage.trim()) return;
     
-    if (sent) {
-      addMessage({ 
-        type: 'sent', 
-        data: 'Ping message sent', 
-        timestamp: Date.now() 
-      });
-    } else {
-      addMessage({ 
-        type: 'error', 
-        data: 'Failed to send ping message', 
-        timestamp: Date.now() 
+    try {
+      // Try to parse as JSON if it looks like JSON
+      let payload: any;
+      if (inputMessage.trim().startsWith('{') && inputMessage.trim().endsWith('}')) {
+        try {
+          payload = JSON.parse(inputMessage);
+        } catch (error) {
+          payload = inputMessage;
+        }
+      } else {
+        payload = inputMessage;
+      }
+      
+      const message: WebSocketMessage = {
+        type: selectedMessageType,
+        payload,
+        timestamp: Date.now()
+      };
+      
+      const sent = websocketService.sendMessage(message);
+      
+      if (sent) {
+        setMessages((prev) => [...prev, { ...message, direction: 'outgoing' } as any]);
+        setInputMessage('');
+      } else {
+        toast({
+          title: 'Failed to send message',
+          description: 'WebSocket connection is not open',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error sending message',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive'
       });
     }
   };
-
-  // Test WebSocket connectivity
-  const testConnection = () => {
-    setIsTesting(true);
-    
-    websocketService.testConnectivity((isWorking) => {
-      setIsConnected(isWorking);
-      
-      addMessage({ 
-        type: isWorking ? 'success' : 'error', 
-        data: isWorking ? 'WebSocket connectivity test passed' : 'WebSocket connectivity test failed', 
-        timestamp: Date.now() 
-      });
-      
-      setIsTesting(false);
-    });
+  
+  // Clear messages
+  const handleClearMessages = () => {
+    setMessages([]);
   };
-
+  
+  // Format timestamp
+  const formatTimestamp = (timestamp?: number) => {
+    if (!timestamp) return 'N/A';
+    return new Date(timestamp).toLocaleTimeString();
+  };
+  
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="text-lg">WebSocket Demo</CardTitle>
-        <CardDescription>
-          Test real-time communication functionality
-        </CardDescription>
+    <Card className="w-full max-w-3xl mx-auto">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-xl font-bold">WebSocket Console</CardTitle>
+        <WebSocketStatus />
       </CardHeader>
       
-      <CardContent>
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-2">
-            <div 
-              className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}
-            />
-            <span className="text-sm font-medium">
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
-          
+      <CardContent className="space-y-4">
+        {/* Connection Controls */}
+        <div className="flex space-x-2">
           <Button 
-            size="sm" 
             variant="outline" 
-            onClick={testConnection} 
-            disabled={isTesting}
+            onClick={() => websocketService.connect()}
+            disabled={connectionState === ConnectionState.OPEN || connectionState === ConnectionState.CONNECTING}
           >
-            {isTesting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Testing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Test Connection
-              </>
-            )}
+            Connect
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={() => websocketService.disconnect()}
+            disabled={connectionState === ConnectionState.CLOSED || connectionState === ConnectionState.CLOSING}
+          >
+            Disconnect
           </Button>
         </div>
         
-        {!isConnected && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertTitle>Connection Issue</AlertTitle>
-            <AlertDescription>
-              WebSocket connection is not available. Real-time updates may not work.
-            </AlertDescription>
-          </Alert>
-        )}
-        
-        <Separator className="my-2" />
-        
-        <div className="mt-4">
-          <h3 className="text-sm font-medium mb-2">Recent Messages</h3>
-          <div className="border rounded-md overflow-hidden max-h-[200px] overflow-y-auto">
-            {messages.length === 0 ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">
-                No messages yet. Click "Send Ping" to test WebSocket communication.
-              </div>
-            ) : (
-              <div className="divide-y">
-                {messages.map((msg, index) => (
-                  <div key={index} className="p-2 text-xs">
-                    <div className="flex justify-between items-center">
-                      <span 
-                        className={`font-medium ${
-                          msg.type === 'error' ? 'text-red-500' : 
-                          msg.type === 'success' ? 'text-green-500' :
-                          msg.type === 'sent' ? 'text-blue-500' : ''
-                        }`}
-                      >
-                        {msg.type}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {new Date(msg.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div className="mt-1">
-                      {typeof msg.data === 'string' 
-                        ? msg.data
-                        : JSON.stringify(msg.data)
-                      }
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+        {/* Messages Area */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium">Messages</h3>
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="auto-scroll" 
+                checked={autoScroll} 
+                onCheckedChange={setAutoScroll} 
+              />
+              <Label htmlFor="auto-scroll">Auto-scroll</Label>
+              <Button size="sm" variant="ghost" onClick={handleClearMessages}>Clear</Button>
+            </div>
           </div>
+          
+          <ScrollArea className="h-60 w-full border rounded-md">
+            <div className="p-4 space-y-2">
+              {messages.length === 0 ? (
+                <p className="text-center text-muted-foreground italic">No messages yet</p>
+              ) : (
+                messages.map((message, index) => (
+                  <div 
+                    key={index} 
+                    className={`p-2 rounded-md border text-sm ${
+                      (message as any).direction === 'outgoing' 
+                        ? 'border-blue-200 bg-blue-50' 
+                        : 'border-gray-200 bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant={message.type === MessageType.SERVER_ERROR ? 'destructive' : 'outline'}>
+                        {message.type}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTimestamp(message.timestamp)}
+                      </span>
+                      {(message as any).direction === 'outgoing' && (
+                        <Badge variant="secondary">Sent</Badge>
+                      )}
+                    </div>
+                    <pre className="text-xs overflow-auto whitespace-pre-wrap">
+                      {typeof message.payload === 'object' 
+                        ? JSON.stringify(message.payload, null, 2) 
+                        : String(message.payload)}
+                    </pre>
+                  </div>
+                ))
+              )}
+              <div ref={messageEndRef} />
+            </div>
+          </ScrollArea>
+        </div>
+        
+        {/* Message Composer */}
+        <div className="space-y-2">
+          <div className="flex space-x-2">
+            <Select 
+              value={selectedMessageType} 
+              onValueChange={(value) => setSelectedMessageType(value as MessageType)}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Message Type" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(MessageType).map((type) => (
+                  <SelectItem key={type} value={type}>{type}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <Button 
+              variant="outline" 
+              onClick={() => websocketService.sendMessage({ type: MessageType.PING })}
+              disabled={connectionState !== ConnectionState.OPEN}
+            >
+              Send Ping
+            </Button>
+          </div>
+          
+          <Textarea 
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            placeholder="Enter message payload (plain text or JSON)"
+            rows={3}
+          />
         </div>
       </CardContent>
       
-      <CardFooter>
+      <CardFooter className="flex justify-between">
+        <Button variant="outline" onClick={() => setInputMessage('')}>
+          Clear
+        </Button>
         <Button 
-          onClick={sendPing} 
-          disabled={!isConnected}
-          className="w-full"
+          onClick={handleSendMessage}
+          disabled={connectionState !== ConnectionState.OPEN || !inputMessage.trim()}
         >
-          <Send className="h-4 w-4 mr-2" />
-          Send Ping
+          Send Message
         </Button>
       </CardFooter>
     </Card>
   );
-}
+};
 
 export default WebSocketDemo;

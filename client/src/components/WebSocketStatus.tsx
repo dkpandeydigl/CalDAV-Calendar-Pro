@@ -1,134 +1,105 @@
-import { useState, useEffect } from 'react';
-import websocketService from '../services/websocket-service';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { sharedWebSocket, ConnectionState } from '@/utils/websocket';
+import { Wifi, WifiOff, AlertTriangle } from 'lucide-react';
 
-/**
- * A component that displays the status of the WebSocket connection
- * and allows the user to manually test the connection
- */
-export function WebSocketStatus() {
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting' | 'unknown'>('unknown');
-  const [testing, setTesting] = useState(false);
-  const [lastTestedAt, setLastTestedAt] = useState<Date | null>(null);
+// Map connection states to colors and icons
+interface StatusConfig {
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  icon: React.ReactNode;
+  text: string;
+}
 
-  // Initialize WebSocket connections and listeners
+const statusConfigs: Record<ConnectionState, StatusConfig> = {
+  [ConnectionState.CONNECTING]: {
+    color: 'text-amber-500',
+    bgColor: 'bg-amber-50',
+    borderColor: 'border-amber-200',
+    icon: <Wifi className="h-4 w-4 animate-pulse text-amber-500" />,
+    text: 'Connecting...'
+  },
+  [ConnectionState.OPEN]: {
+    color: 'text-green-600',
+    bgColor: 'bg-green-50',
+    borderColor: 'border-green-200',
+    icon: <Wifi className="h-4 w-4 text-green-600" />,
+    text: 'Connected'
+  },
+  [ConnectionState.CLOSING]: {
+    color: 'text-amber-500',
+    bgColor: 'bg-amber-50',
+    borderColor: 'border-amber-200',
+    icon: <Wifi className="h-4 w-4 text-amber-500" />,
+    text: 'Closing...'
+  },
+  [ConnectionState.CLOSED]: {
+    color: 'text-red-600',
+    bgColor: 'bg-red-50',
+    borderColor: 'border-red-200',
+    icon: <WifiOff className="h-4 w-4 text-red-600" />,
+    text: 'Disconnected'
+  },
+  [ConnectionState.RECONNECTING]: {
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-50',
+    borderColor: 'border-blue-200',
+    icon: <AlertTriangle className="h-4 w-4 animate-ping text-blue-600" />,
+    text: 'Reconnecting...'
+  }
+};
+
+export const WebSocketStatus: React.FC = () => {
+  const [connectionState, setConnectionState] = useState<ConnectionState>(
+    sharedWebSocket.getState()
+  );
+  
+  // Track message exchange to show activity
+  const [lastActivity, setLastActivity] = useState<number>(0);
+  const [showActivity, setShowActivity] = useState<boolean>(false);
+  
   useEffect(() => {
-    // Initial connection
-    websocketService.connect();
-
-    // Set up listeners
-    const connectListener = () => setConnectionStatus('connected');
-    const disconnectListener = () => setConnectionStatus('disconnected');
-
-    // Subscribe to connection/disconnection events
-    const connectUnsubscribe = websocketService.onConnect(connectListener);
-    const disconnectUnsubscribe = websocketService.onDisconnect(disconnectListener);
-
-    // Update status if already connected
-    if (websocketService.isWebSocketConnected()) {
-      setConnectionStatus('connected');
+    // Listen for state changes
+    const removeStateListener = sharedWebSocket.on('stateChange', (state: ConnectionState) => {
+      setConnectionState(state);
+    });
+    
+    // Listen for messages to show activity
+    const removeMessageListener = sharedWebSocket.on('message', () => {
+      setLastActivity(Date.now());
+      setShowActivity(true);
+      
+      // Reset activity indicator after a delay
+      setTimeout(() => {
+        setShowActivity(false);
+      }, 500);
+    });
+    
+    // Auto-connect on mount
+    if (sharedWebSocket.getState() === ConnectionState.CLOSED) {
+      sharedWebSocket.connect();
     }
-
-    // Clean up event listeners on unmount
+    
+    // Clean up listeners on unmount
     return () => {
-      connectUnsubscribe();
-      disconnectUnsubscribe();
+      removeStateListener();
+      removeMessageListener();
     };
   }, []);
-
-  // Function to test the WebSocket connection
-  const testConnection = () => {
-    setTesting(true);
-    setConnectionStatus('connecting');
-
-    websocketService.testConnectivity((isWorking) => {
-      setConnectionStatus(isWorking ? 'connected' : 'disconnected');
-      setTesting(false);
-      setLastTestedAt(new Date());
-    });
-  };
-
-  // Determine status badge color and text
-  const getStatusBadge = () => {
-    switch (connectionStatus) {
-      case 'connected':
-        return (
-          <Badge variant="outline" className="bg-green-100 text-green-800 hover:bg-green-100">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Connected
-          </Badge>
-        );
-      case 'disconnected':
-        return (
-          <Badge variant="outline" className="bg-red-100 text-red-800 hover:bg-red-100">
-            <XCircle className="h-3 w-3 mr-1" />
-            Disconnected
-          </Badge>
-        );
-      case 'connecting':
-        return (
-          <Badge variant="outline" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
-            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-            Connecting...
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="outline" className="bg-gray-100 text-gray-800 hover:bg-gray-100">
-            Unknown
-          </Badge>
-        );
-    }
-  };
-
+  
+  const config = statusConfigs[connectionState];
+  
   return (
-    <div className="p-4 border rounded-md shadow-sm">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-medium">WebSocket Status</h3>
-        {getStatusBadge()}
+    <div className={`flex items-center gap-2 py-1 px-2 rounded-md border ${config.borderColor} ${config.bgColor}`}>
+      <div className="relative">
+        {config.icon}
+        {showActivity && (
+          <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-green-500 animate-ping" />
+        )}
       </div>
-
-      {connectionStatus === 'disconnected' && (
-        <Alert variant="destructive" className="mb-3">
-          <AlertTitle className="text-xs font-medium">Connection Issue Detected</AlertTitle>
-          <AlertDescription className="text-xs">
-            The WebSocket connection is not working. This may affect real-time updates.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="flex items-center space-x-2 mt-3">
-        <Button 
-          size="sm" 
-          variant="outline" 
-          onClick={testConnection} 
-          disabled={testing}
-          className="text-xs h-7"
-        >
-          {testing ? (
-            <>
-              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-              Testing...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="h-3 w-3 mr-1" />
-              Test Connection
-            </>
-          )}
-        </Button>
-      </div>
-
-      {lastTestedAt && (
-        <p className="text-xs text-muted-foreground mt-2">
-          Last tested: {lastTestedAt.toLocaleTimeString()}
-        </p>
-      )}
+      <span className={`text-xs font-medium ${config.color}`}>{config.text}</span>
     </div>
   );
-}
+};
 
 export default WebSocketStatus;

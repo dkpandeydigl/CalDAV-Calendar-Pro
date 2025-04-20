@@ -1,145 +1,288 @@
 /**
- * WebSocket utility for the calendar application
- * Handles connection to the server with appropriate fallback mechanisms
+ * WebSocket utility for establishing and maintaining connections to the server
+ * Provides resilient behavior with automatic reconnection
  */
 
-// Function to create a WebSocket connection with proper protocol and path
-export function createWebSocketConnection(onMessage?: (data: any) => void, onOpen?: () => void, onClose?: () => void) {
-  try {
-    // Use the correct protocol based on the current window location
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+// WebSocket connection states
+export enum ConnectionState {
+  CONNECTING = 'connecting',
+  OPEN = 'open',
+  CLOSING = 'closing',
+  CLOSED = 'closed',
+  RECONNECTING = 'reconnecting'
+}
+
+// Configuration options for the WebSocket connection
+interface WebSocketOptions {
+  reconnectInterval?: number; // Time in ms to wait before reconnecting
+  maxReconnectAttempts?: number; // Maximum number of reconnect attempts
+  debug?: boolean; // Enable debug logging
+  useFallbackPath?: boolean; // Whether to use the fallback WebSocket path
+}
+
+// Default options
+const DEFAULT_OPTIONS: WebSocketOptions = {
+  reconnectInterval: 2000,
+  maxReconnectAttempts: 10,
+  debug: false,
+  useFallbackPath: false
+};
+
+/**
+ * Creates a resilient WebSocket connection to the server
+ * Handles automatic reconnection if the connection is lost
+ */
+export function createWebSocketConnection(options: WebSocketOptions = DEFAULT_OPTIONS) {
+  const config = { ...DEFAULT_OPTIONS, ...options };
+  
+  // Internal state
+  let socket: WebSocket | null = null;
+  let connectionState: ConnectionState = ConnectionState.CLOSED;
+  let reconnectAttempts = 0;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  
+  // Event callbacks
+  const eventListeners: Record<string, Function[]> = {
+    'open': [],
+    'close': [],
+    'message': [],
+    'error': [],
+    'reconnect': [],
+    'stateChange': []
+  };
+  
+  // Helper to determine the correct WebSocket URL
+  const getWebSocketUrl = () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
     
-    // Primary WebSocket endpoint
-    const primaryWsUrl = `${protocol}//${window.location.host}/api/ws`;
-    console.log(`Attempting to connect to primary WebSocket endpoint: ${primaryWsUrl}`);
+    // Use the correct path based on configuration
+    // Some environments require specific WebSocket paths
+    const path = config.useFallbackPath ? '/ws' : '/api/ws';
     
-    // Create the WebSocket connection
-    const socket = new WebSocket(primaryWsUrl);
+    return `${protocol}//${host}${path}`;
+  };
+  
+  // Update connection state and notify listeners
+  const updateState = (newState: ConnectionState) => {
+    if (connectionState !== newState) {
+      if (config.debug) {
+        console.log(`[WebSocket] State changed: ${connectionState} -> ${newState}`);
+      }
+      
+      connectionState = newState;
+      triggerEvent('stateChange', connectionState);
+    }
+  };
+  
+  // Trigger event callbacks
+  const triggerEvent = (eventName: string, ...args: any[]) => {
+    if (eventListeners[eventName]) {
+      eventListeners[eventName].forEach(callback => {
+        try {
+          callback(...args);
+        } catch (error) {
+          console.error(`[WebSocket] Error in ${eventName} handler:`, error);
+        }
+      });
+    }
+  };
+  
+  // Attempt to reconnect to the server
+  const reconnect = () => {
+    if (reconnectAttempts >= (config.maxReconnectAttempts || 0)) {
+      if (config.debug) {
+        console.log(`[WebSocket] Max reconnect attempts reached (${reconnectAttempts})`);
+      }
+      return;
+    }
     
-    // Set up event handlers
-    socket.onopen = () => {
-      console.log("WebSocket connection established successfully");
-      if (onOpen) onOpen();
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+    }
+    
+    reconnectTimer = setTimeout(() => {
+      if (config.debug) {
+        console.log(`[WebSocket] Reconnecting... Attempt ${reconnectAttempts + 1}`);
+      }
+      
+      updateState(ConnectionState.RECONNECTING);
+      reconnectAttempts++;
+      connect();
+      
+      triggerEvent('reconnect', reconnectAttempts);
+    }, config.reconnectInterval);
+  };
+  
+  // Handle WebSocket events
+  const setupEventHandlers = () => {
+    if (!socket) return;
+    
+    socket.onopen = (event) => {
+      updateState(ConnectionState.OPEN);
+      reconnectAttempts = 0;
+      triggerEvent('open', event);
     };
     
     socket.onclose = (event) => {
-      console.log(`WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
+      updateState(ConnectionState.CLOSED);
+      triggerEvent('close', event);
       
-      // If the primary connection fails, try the fallback
-      if (event.code !== 1000) { // 1000 = normal closure
-        console.log("Primary WebSocket connection failed. Trying fallback...");
-        tryFallbackConnection();
+      // Attempt to reconnect if the close wasn't initiated by the user
+      if (!event.wasClean) {
+        reconnect();
       }
-      
-      if (onClose) onClose();
-    };
-    
-    socket.onerror = (error) => {
-      console.error("WebSocket error:", error);
     };
     
     socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        console.log("WebSocket message received:", data);
-        if (onMessage) onMessage(data);
-      } catch (err) {
-        console.error("Error processing WebSocket message:", err);
-      }
+      triggerEvent('message', event);
     };
     
-    return socket;
-  } catch (error) {
-    console.error("Error creating WebSocket connection:", error);
-    tryFallbackConnection();
-    return null;
-  }
+    socket.onerror = (event) => {
+      triggerEvent('error', event);
+      
+      if (config.debug) {
+        console.error('[WebSocket] Connection error:', event);
+      }
+    };
+  };
   
-  // Try the fallback WebSocket endpoint
-  function tryFallbackConnection() {
-    try {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const fallbackWsUrl = `${protocol}//${window.location.host}/ws`;
-      console.log(`Attempting to connect to fallback WebSocket endpoint: ${fallbackWsUrl}`);
-      
-      const fallbackSocket = new WebSocket(fallbackWsUrl);
-      
-      fallbackSocket.onopen = () => {
-        console.log("Fallback WebSocket connection established successfully");
-        if (onOpen) onOpen();
-      };
-      
-      fallbackSocket.onclose = (event) => {
-        console.log(`Fallback WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
-        if (onClose) onClose();
-      };
-      
-      fallbackSocket.onerror = (error) => {
-        console.error("Fallback WebSocket error:", error);
-      };
-      
-      fallbackSocket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log("Fallback WebSocket message received:", data);
-          if (onMessage) onMessage(data);
-        } catch (err) {
-          console.error("Error processing fallback WebSocket message:", err);
-        }
-      };
-      
-      return fallbackSocket;
-    } catch (fallbackError) {
-      console.error("Error creating fallback WebSocket connection:", fallbackError);
-      return null;
+  // Connect to the WebSocket server
+  const connect = () => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      return; // Already connected
     }
-  }
+    
+    // If there's an existing connection, clean it up first
+    if (socket) {
+      socket.onopen = null;
+      socket.onclose = null;
+      socket.onmessage = null;
+      socket.onerror = null;
+      
+      try {
+        socket.close();
+      } catch (e) {
+        // Ignore any errors when closing
+      }
+    }
+    
+    try {
+      updateState(ConnectionState.CONNECTING);
+      socket = new WebSocket(getWebSocketUrl());
+      setupEventHandlers();
+    } catch (error) {
+      updateState(ConnectionState.CLOSED);
+      console.error('[WebSocket] Failed to create connection:', error);
+      
+      // Try to reconnect
+      reconnect();
+    }
+  };
+  
+  // Disconnect from the WebSocket server
+  const disconnect = () => {
+    if (!socket) return;
+    
+    updateState(ConnectionState.CLOSING);
+    
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    
+    try {
+      socket.close();
+    } catch (error) {
+      console.error('[WebSocket] Error closing connection:', error);
+    }
+    
+    updateState(ConnectionState.CLOSED);
+    reconnectAttempts = 0;
+  };
+  
+  // Send data to the server
+  const send = (data: string | ArrayBufferLike | Blob | ArrayBufferView) => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      if (config.debug) {
+        console.warn('[WebSocket] Cannot send message - connection not open');
+      }
+      return false;
+    }
+    
+    try {
+      socket.send(data);
+      return true;
+    } catch (error) {
+      console.error('[WebSocket] Error sending message:', error);
+      return false;
+    }
+  };
+  
+  // Send a JSON object to the server
+  const sendJson = (data: any) => {
+    try {
+      return send(JSON.stringify(data));
+    } catch (error) {
+      console.error('[WebSocket] Error stringifying JSON data:', error);
+      return false;
+    }
+  };
+  
+  // Add an event listener
+  const on = (eventName: string, callback: Function) => {
+    if (!eventListeners[eventName]) {
+      eventListeners[eventName] = [];
+    }
+    
+    eventListeners[eventName].push(callback);
+    
+    // If the event is 'stateChange' and we have a current state, trigger immediately
+    if (eventName === 'stateChange') {
+      try {
+        callback(connectionState);
+      } catch (error) {
+        console.error('[WebSocket] Error in initial stateChange callback:', error);
+      }
+    }
+    
+    return () => off(eventName, callback); // Return a function to remove the listener
+  };
+  
+  // Remove an event listener
+  const off = (eventName: string, callback: Function) => {
+    if (eventListeners[eventName]) {
+      const index = eventListeners[eventName].indexOf(callback);
+      
+      if (index !== -1) {
+        eventListeners[eventName].splice(index, 1);
+      }
+    }
+  };
+  
+  // Get current connection state
+  const getState = () => connectionState;
+  
+  // Check if the connection is currently open
+  const isConnected = () => socket?.readyState === WebSocket.OPEN;
+  
+  // Public API
+  return {
+    connect,
+    disconnect,
+    reconnect,
+    send,
+    sendJson,
+    on,
+    off,
+    getState,
+    isConnected
+  };
 }
 
-// Function to check WebSocket connectivity
-export function checkWebSocketConnectivity(callback: (isWorking: boolean) => void) {
-  // Flag for whether any connection succeeded
-  let connectionSucceeded = false;
-  
-  // Create a test connection
-  const testSocket = createWebSocketConnection(
-    // onMessage handler
-    (data) => {
-      // If we get a message, the connection is working
-      if (data && data.type === 'pong') {
-        connectionSucceeded = true;
-        callback(true);
-        testSocket?.close(1000, "Test complete");
-      }
-    },
-    // onOpen handler
-    () => {
-      // Try sending a ping
-      if (testSocket && testSocket.readyState === WebSocket.OPEN) {
-        testSocket.send(JSON.stringify({
-          type: 'ping',
-          timestamp: Date.now()
-        }));
-        
-        // Set a timeout to close the connection if we don't get a response
-        setTimeout(() => {
-          if (!connectionSucceeded) {
-            callback(false);
-            testSocket.close(1000, "Test timeout");
-          }
-        }, 3000);
-      }
-    },
-    // onClose handler
-    () => {
-      if (!connectionSucceeded) {
-        callback(false);
-      }
-    }
-  );
-  
-  // If we couldn't create a connection at all, report failure
-  if (!testSocket) {
-    callback(false);
-  }
-}
+// Create a shared WebSocket instance for the entire app
+export const sharedWebSocket = createWebSocketConnection({
+  debug: true,
+  reconnectInterval: 3000,
+  maxReconnectAttempts: 20
+});
