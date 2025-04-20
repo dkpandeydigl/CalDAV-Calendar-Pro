@@ -23,6 +23,9 @@ const WebSocketTestPage: React.FC = () => {
   const [messageText, setMessageText] = useState('');
   const [selectedType, setSelectedType] = useState<'event' | 'calendar' | 'system' | 'resource' | 'attendee' | 'email' | 'uid'>('system');
   const [selectedAction, setSelectedAction] = useState<'created' | 'updated' | 'deleted' | 'status-change' | 'error' | 'info' | 'add' | 'update' | 'delete'>('info');
+  const [includeAttendeeFlag, setIncludeAttendeeFlag] = useState(false);
+  const [includeResourceFlag, setIncludeResourceFlag] = useState(false);
+  const [includeRecurrenceFlag, setIncludeRecurrenceFlag] = useState(false);
   
   // Use the WebSocket hook
   const { 
@@ -60,17 +63,60 @@ const WebSocketTestPage: React.FC = () => {
     }
 
     // Create a test notification message
-    const notification: WebSocketNotification = {
-      type: selectedType,
-      action: selectedAction,
-      timestamp: Date.now(),
-      data: {
-        message: messageText,
-        userId: user?.id,
-        username: user?.username
-      },
-      sourceUserId: user?.id
+    let notificationData: any = {
+      message: messageText,
+      userId: user?.id,
+      username: user?.username
     };
+    
+    // Add flags for event updates if applicable
+    if (selectedType === 'event' && selectedAction === 'updated') {
+      if (includeAttendeeFlag) {
+        notificationData.wasAttendeeUpdate = true;
+        notificationData.hasAttendees = true;
+      }
+      
+      if (includeResourceFlag) {
+        notificationData.wasResourceUpdate = true;
+        notificationData.hasResources = true;
+      }
+      
+      if (includeRecurrenceFlag) {
+        notificationData.wasRecurrenceStateChange = true;
+        notificationData.isRecurring = true;
+        notificationData.recurrenceRule = "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO";
+      }
+      
+      // Add mock event data for better testing
+      notificationData.title = "Test Event";
+      notificationData.eventId = 12345;
+      notificationData.calendarId = 1;
+      notificationData.calendarName = "Test Calendar";
+    }
+    
+    // For event_changed we need to use a specific format
+    // that matches what the event_changed WebSocket handler expects
+    let notification: WebSocketNotification;
+    
+    if (selectedType === 'event') {
+      notification = {
+        type: 'event_changed',
+        action: selectedAction,
+        timestamp: Date.now(),
+        eventId: 12345,
+        changeType: selectedAction as 'created' | 'updated' | 'deleted',
+        data: notificationData,
+        sourceUserId: user?.id
+      };
+    } else {
+      notification = {
+        type: selectedType,
+        action: selectedAction,
+        timestamp: Date.now(),
+        data: notificationData,
+        sourceUserId: user?.id
+      };
+    }
 
     // Send the notification
     const sent = sendMessage(notification);
@@ -236,6 +282,46 @@ const WebSocketTestPage: React.FC = () => {
               </RadioGroup>
             </div>
 
+            {selectedType === 'event' && selectedAction === 'updated' && (
+              <div className="space-y-2 p-3 bg-gray-50 rounded-md">
+                <h3 className="text-sm font-medium">Event Update Flags:</h3>
+                <div className="flex flex-wrap gap-3">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="attendee-flag"
+                      checked={includeAttendeeFlag}
+                      onChange={(e) => setIncludeAttendeeFlag(e.target.checked)}
+                      className="rounded"
+                    />
+                    <Label htmlFor="attendee-flag">Include wasAttendeeUpdate</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="resource-flag"
+                      checked={includeResourceFlag}
+                      onChange={(e) => setIncludeResourceFlag(e.target.checked)}
+                      className="rounded"
+                    />
+                    <Label htmlFor="resource-flag">Include wasResourceUpdate</Label>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="recurrence-flag"
+                      checked={includeRecurrenceFlag}
+                      onChange={(e) => setIncludeRecurrenceFlag(e.target.checked)}
+                      className="rounded"
+                    />
+                    <Label htmlFor="recurrence-flag">Include wasRecurrenceStateChange</Label>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="flex items-center space-x-2">
               <Input
                 placeholder="Enter message text..."
