@@ -915,6 +915,14 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         };
       }
       
+      // Make sure recurrenceRule is properly serialized if it's present
+      if (newEvent.recurrenceRule && typeof newEvent.recurrenceRule === 'object') {
+        newEvent = {
+          ...newEvent,
+          recurrenceRule: JSON.stringify(newEvent.recurrenceRule)
+        };
+      }
+      
       console.log("Creating event with data:", newEvent);
       const res = await apiRequest('POST', '/api/events', newEvent);
       return res.json();
@@ -1282,6 +1290,14 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         data = {
           ...data,
           attendees: JSON.stringify(data.attendees)
+        };
+      }
+      
+      // Make sure recurrenceRule is properly serialized if it's present
+      if (data.recurrenceRule && typeof data.recurrenceRule === 'object') {
+        data = {
+          ...data,
+          recurrenceRule: JSON.stringify(data.recurrenceRule)
         };
       }
       

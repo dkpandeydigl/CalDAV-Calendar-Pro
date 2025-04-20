@@ -1648,12 +1648,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
           console.log('[EVENT CREATE DEBUG] Complete new event data:', newEventData);
           
           // Create the new event
-          // Use type assertion to ensure TypeScript knows this is a valid event input
-          const createdEvent = await createEvent(newEventData);
+          // Call the mutation and properly typecast the result
+          // This ensures TypeScript understands the return value structure
+          const response = await createEvent(newEventData);
+          const createdEvent = response as unknown as Event;
           
           // After successful creation, store the UID mapping in IndexedDB for future reference
           // The createEvent mutation returns the created event with an ID
-          if (createdEvent?.id) {
+          if (createdEvent && createdEvent.id) {
             try {
               // Use the storeUID function from our enhanced useEventUID hook
               // which only requires eventId and uid (calendarId is not needed)
