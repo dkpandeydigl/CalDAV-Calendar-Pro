@@ -29,10 +29,48 @@ export async function safeParseJson<T>(res: Response): Promise<T> {
       
       // If it's HTML, it might be a server error page or authentication redirect
       if (textContent.includes('<!DOCTYPE html>') || textContent.includes('<html')) {
-        if (textContent.includes('login') || textContent.includes('sign in')) {
-          throw new Error('Session expired. Please refresh and log in again.');
-        } else {
-          throw new Error('Server returned HTML instead of JSON. Please try again later.');
+        // Force revalidation of session through a separate authentication check
+        try {
+          console.log('Session appears to be invalid, attempting to refresh authentication status');
+          
+          // Try to re-verify the session using a synchronous request
+          const authCheckRes = await fetch('/api/user', {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-cache',
+            headers: {
+              "X-Requested-With": "XMLHttpRequest",
+              "Accept": "application/json",
+              "Cache-Control": "no-cache, no-store, must-revalidate"
+            }
+          });
+          
+          console.log(`Authentication check returned status: ${authCheckRes.status}`);
+          
+          if (authCheckRes.ok) {
+            console.log('Authentication check succeeded, session appears valid');
+            throw new Error('Server returned HTML instead of JSON, but session appears valid. Please try again.');
+          } else {
+            console.log('Authentication check failed, session appears invalid');
+            // Check if we can get useful error info from the auth check
+            try {
+              const authErrorText = await authCheckRes.text();
+              console.log('Auth error details:', authErrorText);
+            } catch (e) {
+              console.error('Failed to read auth error response:', e);
+            }
+            
+            // If we're receiving HTML and auth check fails, it's likely a session issue
+            if (textContent.includes('login') || textContent.includes('sign in')) {
+              throw new Error('Session expired. Please refresh the page and log in again.');
+            } else {
+              throw new Error('Authentication issue. Please refresh the page to restore your session.');
+            }
+          }
+        } catch (authError) {
+          console.error('Error during authentication check:', authError);
+          // Fall back to a generic error
+          throw new Error('Session validation failed. Please refresh the page and try again.');
         }
       }
       

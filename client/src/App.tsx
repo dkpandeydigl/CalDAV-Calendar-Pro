@@ -11,6 +11,7 @@ import WebSocketTestPage from "@/pages/WebSocketTestPage";
 import WebSocketDebugPage from "@/pages/WebSocketDebugPage";
 import WebSocketDiagnosticPage from "@/pages/WebSocketDiagnosticPage";
 import WebSocketChatPage from "@/pages/WebSocketChatPage";
+import SimpleWebSocketDemo from "@/pages/SimpleWebSocketDemo";
 import ResourceTestPage from "@/pages/ResourceTestPage";
 import { EmailSettingsPage } from "@/pages/EmailSettingsPage";
 import { ProtectedRoute } from "@/lib/protected-route";
@@ -43,6 +44,9 @@ function Router() {
       </Route>
       <Route path="/websocket-chat">
         {() => <ProtectedRoute component={WebSocketChatPage} />}
+      </Route>
+      <Route path="/websocket-simple">
+        {() => <ProtectedRoute component={SimpleWebSocketDemo} />}
       </Route>
       <Route path="/resource-test">
         {() => <ProtectedRoute component={ResourceTestPage} />}
