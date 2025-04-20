@@ -1409,7 +1409,49 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       // Prepare attendees and recurrence data for storage
       const attendeesJson = attendees.length > 0 ? JSON.stringify(attendees) : null;
       const isRecurringEvent = recurrence.pattern !== 'None';
-      const recurrenceRule = isRecurringEvent ? JSON.stringify(recurrence) : null;
+      
+      // BUGFIX: Ensure proper recurrence rule handling for RFC 5545 compliance
+      // First convert our frontend recurrence model to a properly formatted recurrence rule
+      let recurrenceRule = null;
+      
+      if (isRecurringEvent) {
+        console.debug('[RECURRENCE DEBUG] Converting recurrence to RFC 5545 format', recurrence);
+        
+        try {
+          // Create a proper recurrence rule object that includes both the original data
+          // and a formatted iCalendar RRULE string for RFC 5545 compliance
+          const rruleObj = {
+            // Keep the original recurrence data for our UI
+            originalData: recurrence,
+            
+            // Add the properly formatted RFC 5545 RRULE string
+            rruleString: generateRRuleString(recurrence),
+            
+            // Track when this rule was created/modified
+            createdAt: new Date().toISOString()
+          };
+          
+          // Stringify the complete object for storage
+          recurrenceRule = JSON.stringify(rruleObj);
+          
+          console.debug('[RECURRENCE DEBUG] Successfully created RFC 5545 compliant recurrence rule', {
+            recurrence: recurrence,
+            rruleObj: rruleObj,
+            stringified: recurrenceRule
+          });
+        } catch (recurrenceError) {
+          console.error('Failed to create RFC 5545 compliant recurrence rule:', recurrenceError);
+          
+          // Fallback to the old method if there's an error
+          recurrenceRule = JSON.stringify(recurrence);
+          
+          // Log the fallback
+          console.warn('[RECURRENCE DEBUG] Falling back to non-RFC 5545 format', {
+            recurrence: recurrence,
+            stringified: recurrenceRule
+          });
+        }
+      }
       
       // Debug log for recurrence configuration
       console.log('[RECURRENCE DEBUG] Preparing event with recurrence:', {
