@@ -1,4 +1,14 @@
-import { ConnectionState, createWebSocketConnection, SharedWebSocketConnection } from '@/utils/websocket';
+// Import shared WebSocket utilities
+import { ConnectionState, createWebSocketConnection } from '@/utils/websocket';
+
+// Define the SharedWebSocketConnection interface here to avoid circular imports
+interface SharedWebSocketConnection {
+  connect: () => void;
+  disconnect: () => void;
+  send: (data: string) => void;
+  getState: () => ConnectionState;
+  on: (event: string, callback: any) => () => void;
+}
 
 /**
  * Message types for WebSocket communication
