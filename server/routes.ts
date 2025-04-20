@@ -4175,10 +4175,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 // For the specific event being updated, include the attendees/resources if present
                 if (isCurrentEventUpdate && isAttendeeResourceUpdate) {
                   console.log(`⚠️ [CRITICAL BUGFIX] Including attendees/resources in update for event ID ${eventId}`);
-                  if (hasAttendees) {
+                  if (updatedHasAttendees) {
                     updatePayload.attendees = updateData.attendees;
                   }
-                  if (hasResources) {
+                  if (updatedHasResources) {
                     updatePayload.resources = updateData.resources;
                   }
                 }
