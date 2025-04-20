@@ -3036,8 +3036,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                   <Save className="h-4 w-4 mr-1" />
                 }
                 {isSubmitting
-                  ? (event ? 'Updating...' : 'Creating...')
-                  : (event ? 'Update Event' : 'Create Event')}
+                  ? (title.startsWith('Copy of') ? 'Creating Copy...' : (event ? 'Updating...' : 'Creating...'))
+                  : (title.startsWith('Copy of') ? 'Create Copy' : (event ? 'Update Event' : 'Create Event'))}
               </Button>
             </div>
           </DialogFooter>
