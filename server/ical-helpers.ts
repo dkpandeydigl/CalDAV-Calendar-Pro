@@ -168,7 +168,15 @@ export function generateEventICalString(event: {
   resources?: any[];
   organizer?: { email: string; name?: string };
   recurrenceRule?: string;
+  isRecurring?: boolean; // Add isRecurring flag to help enforce consistent state
 }): string {
+  // CRITICAL BUGFIX: Ensure recurrence rule and isRecurring flag are consistent
+  // If event is marked as recurring but has no rule, provide a default rule
+  if (event.isRecurring === true && !event.recurrenceRule) {
+    console.warn(`[CRITICAL BUGFIX] Event with UID ${event.uid} is marked as recurring but has no recurrence rule`);
+    event.recurrenceRule = "FREQ=DAILY;COUNT=3"; // Default rule
+    console.log(`[CRITICAL BUGFIX] Applied default recurrence rule: ${event.recurrenceRule}`);
+  }
   const now = new Date();
   
   // Begin iCalendar object

@@ -524,6 +524,39 @@ export class EnhancedSyncService {
     console.log(`[Enhanced Sync] Syncing event ${event.id} (${event.uid}) to server for user ${userId}`);
     
     try {
+      // CRITICAL UID FIX: Sanitize event UID before sync
+      if (event.uid && (event.uid.includes('\r') || event.uid.includes('\n') || 
+                        event.uid.includes('BEGIN:VCALENDAR') || event.uid.includes('VEVENT'))) {
+        console.error(`[CRITICAL UID ERROR] Event ${event.id} has corrupted UID with embedded ICS data: ${event.uid.substring(0, 50)}...`);
+        
+        // Extract the clean UID part
+        let cleanUid = event.uid;
+        
+        // Try with a regex pattern first
+        if (event.uid.includes('@caldavclient.local')) {
+          const baseUidRegex = /(event-\d+-[a-z0-9]+@caldavclient\.local)/;
+          const uidMatch = event.uid.match(baseUidRegex);
+          
+          if (uidMatch && uidMatch[1]) {
+            cleanUid = uidMatch[1];
+            console.log(`[CRITICAL UID FIX] Extracted clean UID with pattern match: ${cleanUid}`);
+          } else {
+            // Fallback to splitting on line breaks
+            cleanUid = event.uid.split(/[\r\n]|BEGIN:/)[0].trim();
+            console.log(`[CRITICAL UID FIX] Extracted clean UID with splitting: ${cleanUid}`);
+          }
+          
+          // Update the event with the clean UID
+          await storage.updateEvent(event.id, {
+            uid: cleanUid
+          });
+          
+          console.log(`[CRITICAL UID FIX] Updated event ${event.id} with clean UID: ${cleanUid}`);
+          
+          // Also update our local reference for the current operation
+          event.uid = cleanUid;
+        }
+      }
       // Get the user's server connection
       const connection = await storage.getServerConnection(userId);
       
@@ -865,7 +898,8 @@ export class EnhancedSyncService {
           name: (await storage.getUser(userId))?.fullName || connection.username
         },
         recurrenceRule: processedRecurrenceRule, // This should now never be null for recurring events
-        allDay: event.allDay
+        allDay: event.allDay,
+        isRecurring: event.isRecurring // CRITICAL FIX: Pass the isRecurring flag to ensure consistency checking
       });
       
       // Check if this event already exists on the server
@@ -880,6 +914,24 @@ export class EnhancedSyncService {
       });
       
       let syncResult;
+      
+      // For debugging purposes, log the generated ICS data
+      console.log(`[ICS DATA DEBUG] Generated ICS data for event ${event.uid}, isRecurring=${event.isRecurring}:`);
+      console.log(`[ICS DATA DEBUG] ${icsData.substring(0, 200)}...`);
+      
+      // Check for RRULE presence in the generated ICS data if the event is recurring
+      if (event.isRecurring && !icsData.includes('RRULE:')) {
+        console.error(`[CRITICAL ERROR] Event ${event.id} is marked as recurring but RRULE is missing in ICS data!`);
+        
+        // Add RRULE manually if it's missing
+        const rrule = processedRecurrenceRule || "FREQ=DAILY;COUNT=3";
+        const fixedIcsData = icsData.replace('END:VEVENT', `RRULE:${rrule}\r\nEND:VEVENT`);
+        
+        console.log(`[CRITICAL FIX] Added missing RRULE to ICS data: ${rrule}`);
+        
+        // Update the icsData with the fixed version
+        icsData = fixedIcsData;
+      }
       
       if (existingEvent) {
         // Update the existing event
