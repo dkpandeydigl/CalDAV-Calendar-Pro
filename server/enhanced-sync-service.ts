@@ -361,7 +361,37 @@ export class EnhancedSyncService {
         console.log(`[RECURRENCE RFC FIX] Will perform a fresh sync after update to refresh instances`);
       }
       
-      // Update the event in local storage
+      // CRITICAL FIX FOR RELATED EVENTS
+      // For non-recurring to recurring transitions, we need to update ALL events with same UID
+      if (originalEvent.isRecurring !== processedEventData.isRecurring) {
+        console.log(`[CRITICAL FIX] Recurrence state changed from ${originalEvent.isRecurring} to ${processedEventData.isRecurring}`);
+        console.log(`[CRITICAL FIX] Will update ALL events with UID: ${preservedUID}`);
+        
+        try {
+          // Get all events with the same UID
+          const relatedEvents = await storage.getEventsByUid(preservedUID);
+          console.log(`[CRITICAL FIX] Found ${relatedEvents.length} events with UID ${preservedUID}`);
+          
+          // For each related event (except the current one), update recurrence properties
+          for (const event of relatedEvents) {
+            if (event.id !== eventId) {
+              console.log(`[CRITICAL FIX] Updating related event ${event.id} with same recurrence state`);
+              
+              // Update with same recurrence properties
+              await storage.updateEvent(event.id, {
+                isRecurring: processedEventData.isRecurring,
+                recurrenceRule: processedEventData.recurrenceRule,
+                syncStatus: 'pending'
+              });
+            }
+          }
+        } catch (error) {
+          console.error(`[CRITICAL FIX] Error updating related events:`, error);
+          // Continue with updating the main event
+        }
+      }
+      
+      // Update the main event in local storage
       const updatedEvent = await storage.updateEvent(eventId, eventWithUID);
       
       if (!updatedEvent) {
