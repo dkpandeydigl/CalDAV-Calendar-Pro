@@ -116,6 +116,18 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         if (!response.ok) {
           throw new Error(`Failed to create event: ${response.status} ${response.statusText}`);
         }
+
+        // Check content type to catch HTML responses instead of JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          console.warn('Received HTML response instead of JSON. Session may be expired.');
+          // Return a safe result with helpful message
+          return {
+            success: false,
+            event: eventData,
+            message: 'Authentication expired. Please refresh the page and try again.'
+          };
+        }
         
         return await response.json();
       } catch (error) {
@@ -143,6 +155,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
           throw new Error(`Failed to update event: ${response.status} ${response.statusText}`);
         }
         
+        // Check content type to catch HTML responses instead of JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          console.warn('Received HTML response instead of JSON. Session may be expired.');
+          // Return a safe result with helpful message
+          return {
+            success: false,
+            event: { id },
+            hasAttendees: false,
+            message: 'Authentication expired. Please refresh the page and try again.'
+          };
+        }
+        
         return await response.json();
       } catch (error) {
         console.error('Error in event update request:', error);
@@ -163,6 +188,17 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         
         if (!response.ok) {
           throw new Error(`Failed to delete event: ${response.status} ${response.statusText}`);
+        }
+        
+        // Check content type to catch HTML responses instead of JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          console.warn('Received HTML response instead of JSON. Session may be expired.');
+          // Return a safe result with helpful message
+          return {
+            success: false,
+            message: 'Authentication expired. Please refresh the page and try again.'
+          };
         }
         
         return await response.json();

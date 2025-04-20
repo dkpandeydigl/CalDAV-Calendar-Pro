@@ -42,7 +42,12 @@ export function SimpleWebSocketTest() {
     try {
       // Create WebSocket connection according to guidelines
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      
+      // Add the user ID as a query parameter if available
+      let wsUrl = `${protocol}//${window.location.host}/ws`;
+      if (user?.id) {
+        wsUrl += `?userId=${user.id}`;
+      }
       
       console.log(`Connecting to WebSocket at: ${wsUrl}`);
       
