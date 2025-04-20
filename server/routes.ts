@@ -4695,6 +4695,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const wasRecurrenceStateChange = existingEvent.isRecurring !== updateData.isRecurring ||
             existingEvent.recurrenceRule !== updateData.recurrenceRule;
           
+          // Determine if attendees were updated
+          let wasAttendeeUpdate = false;
+          let wasResourceUpdate = false;
+          
+          // Check if attendees or resources were updated
+          if (updateData.attendees !== undefined) {
+            try {
+              const updatedAttendees = JSON.parse(typeof updateData.attendees === 'string' 
+                ? updateData.attendees 
+                : JSON.stringify(updateData.attendees));
+              
+              const existingAttendees = existingEvent.attendees 
+                ? JSON.parse(typeof existingEvent.attendees === 'string'
+                  ? existingEvent.attendees
+                  : JSON.stringify(existingEvent.attendees))
+                : [];
+              
+              // Check if attendees array changed in any way
+              wasAttendeeUpdate = JSON.stringify(updatedAttendees) !== JSON.stringify(existingAttendees);
+              console.log(`[WEBSOCKET] Attendee change detected: ${wasAttendeeUpdate}`);
+            } catch (e) {
+              console.error(`[WEBSOCKET] Error checking attendee changes:`, e);
+            }
+          }
+          
+          // Check if resources were updated
+          if (updateData.resources !== undefined) {
+            try {
+              const updatedResources = JSON.parse(typeof updateData.resources === 'string' 
+                ? updateData.resources 
+                : JSON.stringify(updateData.resources));
+              
+              const existingResources = existingEvent.resources 
+                ? JSON.parse(typeof existingEvent.resources === 'string'
+                  ? existingEvent.resources
+                  : JSON.stringify(existingEvent.resources))
+                : [];
+              
+              // Check if resources array changed in any way
+              wasResourceUpdate = JSON.stringify(updatedResources) !== JSON.stringify(existingResources);
+              console.log(`[WEBSOCKET] Resource change detected: ${wasResourceUpdate}`);
+            } catch (e) {
+              console.error(`[WEBSOCKET] Error checking resource changes:`, e);
+            }
+          }
+          
           // Notify the user who made the change
           notifyEventChanged(req.user.id, eventId, 'updated', {
             title: updatedEvent.title,
@@ -4704,8 +4750,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             editMode: editMode, // Include the edit mode in the notification
             synced: syncSuccessful, // Include sync status
             wasRecurrenceStateChange, // Add flag for recurrence state change
+            wasAttendeeUpdate, // Add flag for attendee updates
+            wasResourceUpdate, // Add flag for resource updates
             recurrenceRule: updatedEvent.recurrenceRule,
-            isRecurring: updatedEvent.isRecurring
+            isRecurring: updatedEvent.isRecurring,
+            hasAttendees, // Include info about whether the event has attendees
+            // Safely check for resources with proper error handling
+            hasResources: (() => {
+              try {
+                return updatedEvent.resources ? 
+                  (typeof updatedEvent.resources === 'string' ? 
+                    JSON.parse(updatedEvent.resources).length > 0 : 
+                    Array.isArray(updatedEvent.resources) && updatedEvent.resources.length > 0) 
+                  : false;
+              } catch (e) {
+                console.error('[WEBSOCKET] Error parsing resources for notification:', e);
+                return false;
+              }
+            })()
           });
           
           console.log(`WebSocket notification sent for event update: ${updatedEvent.title} (ID: ${eventId})`);
@@ -4733,7 +4795,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
             metadata: JSON.stringify({
               editMode: editMode,
               isRecurring: updatedEvent.isRecurring,
-              synced: syncSuccessful
+              synced: syncSuccessful,
+              wasAttendeeUpdate, // Add attendee update flag
+              wasResourceUpdate, // Add resource update flag
+              hasAttendees, // Add info about whether event has attendees
+              // Safely check for resources with proper error handling
+              hasResources: (() => {
+                try {
+                  return updatedEvent.resources ? 
+                    (typeof updatedEvent.resources === 'string' ? 
+                      JSON.parse(updatedEvent.resources).length > 0 : 
+                      Array.isArray(updatedEvent.resources) && updatedEvent.resources.length > 0) 
+                    : false;
+                } catch (e) {
+                  console.error('[WEBSOCKET] Error parsing resources for notification metadata:', e);
+                  return false;
+                }
+              })()
             })
           });
         } catch (wsError) {
