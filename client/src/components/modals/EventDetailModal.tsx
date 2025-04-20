@@ -487,10 +487,11 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const shouldShowCancelButton = (hasAttendees || hasResources) && (isUsersOwnCalendar || effectiveCanEdit || isDKPandey);
   
   // Process attendees from event data with improved handling of different formats
+  // and additional error protection
   const processedAttendees = useMemo(() => {
     try {
-      // If no attendees data, return empty array
-      if (!event.attendees) return [];
+      // If no attendees data or event is missing, return empty array
+      if (!event || !event.attendees) return [];
 
       // If it's already an array, use it directly
       if (Array.isArray(event.attendees)) {
@@ -517,9 +518,10 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       return [{ id: `attendee-fallback-${Date.now()}`, email: String(event.attendees) }];
     } catch (e) {
       console.error('Error processing attendees:', e);
+      // Return empty array on error to ensure component can still render
       return [];
     }
-  }, [event.attendees]);
+  }, [event?.attendees]);
 
   // Handle Delete Event action with enhanced client-side removal
   const handleDelete = async () => {
