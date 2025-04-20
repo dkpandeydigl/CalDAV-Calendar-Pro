@@ -3084,7 +3084,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const editMode = req.query.editMode === 'single' ? 'single' : 'all';
       console.log(`[RECURRENCE] Edit mode for event ${eventId} in update-with-sync: ${editMode}`);
       
-      const eventData = req.body;
+      // NEW ENHANCED FIX: Check if this is a recurrence state change request
+      const isRecurrenceStateChange = req.query.recurrenceChanged === 'true';
+      
+      console.log(`[RECURRENCE] Recurrence state change for event ${eventId} in update-with-sync: ${isRecurrenceStateChange}`);
+      
+      // Get the existing event to preserve critical data
+      const existingEvent = await storage.getEvent(eventId);
+      if (!existingEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      const eventData = { ...req.body };
       
       // Convert arrays to JSON strings if needed
       if (eventData.attendees && Array.isArray(eventData.attendees)) {
@@ -3094,6 +3105,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (eventData.resources && Array.isArray(eventData.resources)) {
         eventData.resources = JSON.stringify(eventData.resources);
       }
+      
+      // CRITICAL BUGFIX: Preserve attendees and resources if they're missing in the update
+      // This prevents attendees/resources from being lost during updates
+      if ((!eventData.attendees || eventData.attendees === '[]' || eventData.attendees === 'null') && existingEvent.attendees) {
+        console.log(`[ATTENDEE PRESERVATION] Preserving existing attendees that were missing or empty in the update`);
+        eventData.attendees = existingEvent.attendees;
+      }
+      
+      if ((!eventData.resources || eventData.resources === '[]' || eventData.resources === 'null') && existingEvent.resources) {
+        console.log(`[RESOURCE PRESERVATION] Preserving existing resources that were missing or empty in the update`);
+        eventData.resources = existingEvent.resources;
+      }
+      
+      // ENHANCED PRESERVATION: Compare attendance counts to determine if data might be lost
+      if (eventData.attendees && typeof eventData.attendees === 'string' && existingEvent.attendees && typeof existingEvent.attendees === 'string') {
+        try {
+          const parsedUpdateAttendees = JSON.parse(eventData.attendees);
+          const parsedExistingAttendees = JSON.parse(existingEvent.attendees);
+          
+          // If update has fewer attendees than existing, this might indicate data loss during form submission
+          if (Array.isArray(parsedUpdateAttendees) && Array.isArray(parsedExistingAttendees) && 
+              parsedUpdateAttendees.length < parsedExistingAttendees.length) {
+            console.log(`[ATTENDEE PRESERVATION] Update has fewer attendees (${parsedUpdateAttendees.length}) than existing (${parsedExistingAttendees.length}) - preserving existing`);
+            eventData.attendees = existingEvent.attendees;
+          }
+          // If it's an empty array but we have existing attendees, preserve them
+          else if (Array.isArray(parsedUpdateAttendees) && parsedUpdateAttendees.length === 0 && 
+                   Array.isArray(parsedExistingAttendees) && parsedExistingAttendees.length > 0) {
+            console.log(`[ATTENDEE PRESERVATION] Parsed attendees is an empty array, preserving existing attendees`);
+            eventData.attendees = existingEvent.attendees;
+          }
+        } catch (e) {
+          // If parsing fails, keep the original value
+          console.error(`[ATTENDEE PRESERVATION] Error parsing attendees:`, e);
+        }
+      }
+      
+      // ENHANCED PRESERVATION: Compare resource counts to determine if data might be lost
+      if (eventData.resources && typeof eventData.resources === 'string' && existingEvent.resources && typeof existingEvent.resources === 'string') {
+        try {
+          const parsedUpdateResources = JSON.parse(eventData.resources);
+          const parsedExistingResources = JSON.parse(existingEvent.resources);
+          
+          // If update has fewer resources than existing, this might indicate data loss during form submission
+          if (Array.isArray(parsedUpdateResources) && Array.isArray(parsedExistingResources) && 
+              parsedUpdateResources.length < parsedExistingResources.length) {
+            console.log(`[RESOURCE PRESERVATION] Update has fewer resources (${parsedUpdateResources.length}) than existing (${parsedExistingResources.length}) - preserving existing`);
+            eventData.resources = existingEvent.resources;
+          }
+          // If it's an empty array but we have existing resources, preserve them
+          else if (Array.isArray(parsedUpdateResources) && parsedUpdateResources.length === 0 && 
+                   Array.isArray(parsedExistingResources) && parsedExistingResources.length > 0) {
+            console.log(`[RESOURCE PRESERVATION] Parsed resources is an empty array, preserving existing resources`);
+            eventData.resources = existingEvent.resources;
+          }
+        } catch (e) {
+          // If parsing fails, keep the original value
+          console.error(`[RESOURCE PRESERVATION] Error parsing resources:`, e);
+        }
+      }
+      
+      // Debug logging for attendees and resources
+      console.log(`[ENHANCED SYNC DEBUG] Updating event ${eventId} with attendees and resources:`, {
+        hasAttendees: !!eventData.attendees,
+        attendeesType: typeof eventData.attendees,
+        hasResources: !!eventData.resources,
+        resourcesType: typeof eventData.resources
+      });
       
       // Use enhanced sync service for update with immediate sync
       const result = await enhancedSyncService.updateEventWithSync(userId, eventId, eventData, editMode as 'single' | 'all');
