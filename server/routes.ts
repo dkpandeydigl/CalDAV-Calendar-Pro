@@ -3198,6 +3198,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // Test endpoint for checking attendee preservation 
+  app.get("/api/test/attendee-preservation/:eventId", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const eventId = parseInt(req.params.eventId);
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Get original event
+      const originalEvent = await storage.getEvent(eventId);
+      
+      if (!originalEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      console.log(`[ATTENDEES TEST] Original event ID ${eventId} attendees data:`, originalEvent.attendees);
+      
+      // Create minimal update data that doesn't include attendees
+      const minimalUpdate = {
+        title: originalEvent.title + " (Updated)",
+        description: originalEvent.description,
+        startDate: originalEvent.startDate,
+        endDate: originalEvent.endDate
+      };
+      
+      console.log(`[ATTENDEES TEST] Update data for event ID ${eventId}:`, minimalUpdate);
+      
+      // Use the enhanced sync service to update the event
+      const result = await enhancedSyncService.updateEventWithSync(userId, eventId, minimalUpdate);
+      
+      // Get the updated event
+      const updatedEvent = await storage.getEvent(eventId);
+      
+      if (!updatedEvent) {
+        return res.status(500).json({ message: "Failed to retrieve updated event" });
+      }
+      
+      console.log(`[ATTENDEES TEST] Updated event ID ${eventId} attendees data:`, updatedEvent.attendees);
+      
+      // Check if attendees were preserved
+      const originalAttendees = originalEvent.attendees ? 
+        (typeof originalEvent.attendees === 'string' ? JSON.parse(originalEvent.attendees) : originalEvent.attendees) : 
+        [];
+      
+      const updatedAttendees = updatedEvent.attendees ? 
+        (typeof updatedEvent.attendees === 'string' ? JSON.parse(updatedEvent.attendees) : updatedEvent.attendees) : 
+        [];
+      
+      const originalCount = Array.isArray(originalAttendees) ? originalAttendees.length : 0;
+      const updatedCount = Array.isArray(updatedAttendees) ? updatedAttendees.length : 0;
+      
+      res.json({
+        success: true,
+        eventId,
+        originalTitle: originalEvent.title,
+        updatedTitle: updatedEvent.title,
+        originalAttendeeCount: originalCount,
+        updatedAttendeeCount: updatedCount,
+        attendeesPreserved: originalCount === updatedCount && originalCount > 0,
+        originalAttendees: originalAttendees,
+        updatedAttendees: updatedAttendees
+      });
+    } catch (err) {
+      console.error("Error testing attendee preservation:", err);
+      res.status(500).json({ 
+        message: "Error testing attendee preservation", 
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
   
   // Regular event creation endpoint
   app.post("/api/events", isAuthenticated, async (req, res) => {
