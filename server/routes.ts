@@ -4005,17 +4005,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (sameUidEvents && sameUidEvents.length > 0) {
               console.log(`[ENHANCED FIX] Found ${sameUidEvents.length} events with UID ${existingEvent.uid}`);
               
-              // Make sure they're all marked as pending sync
+              // CRITICAL FIX: Make sure ALL events with the same UID are updated
+              // The bug is here! We were skipping the original event with condition (event.id !== eventId)
+              console.log(`[CRITICAL BUG FIX] Updating ALL events with UID ${existingEvent.uid}, including original event ${eventId}`);
               for (const event of sameUidEvents) {
-                if (event.id !== eventId) {
-                  console.log(`[ENHANCED FIX] Marking related event ${event.id} for sync`);
-                  
-                  await storage.updateEvent(event.id, {
-                    isRecurring: updateData.isRecurring,
-                    recurrenceRule: updateData.recurrenceRule,
-                    syncStatus: 'pending'
-                  });
-                }
+                // FIXED: Removed the "if (event.id !== eventId)" condition that was causing the bug
+                // Now we update ALL events with the same UID, including the original one
+                console.log(`[CRITICAL BUG FIX] Updating event ${event.id} (${event.id === eventId ? 'ORIGINAL' : 'related'}) with new recurrence properties`);
+                
+                await storage.updateEvent(event.id, {
+                  isRecurring: updateData.isRecurring,
+                  recurrenceRule: updateData.recurrenceRule,
+                  syncStatus: 'pending'
+                });
               }
             }
           } catch (error) {
