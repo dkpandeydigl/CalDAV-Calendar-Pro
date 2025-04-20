@@ -1467,20 +1467,15 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
                                 <h4 className="font-medium text-sm">Description Templates</h4>
                                 <div className="max-h-60 overflow-y-auto space-y-1">
                                   {descriptionTemplates.map(template => (
-                                    <div
+                                    <Button
                                       key={template.id}
-                                      role="button"
-                                      tabIndex={0}
-                                      className="w-full text-left font-normal text-xs h-auto py-2 px-3 hover:bg-secondary rounded cursor-pointer"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="w-full justify-start font-normal text-xs h-auto py-2"
                                       onClick={() => handleSelectTemplate(template)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                          handleSelectTemplate(template);
-                                        }
-                                      }}
                                     >
                                       {template.name}
-                                    </div>
+                                    </Button>
                                   ))}
                                 </div>
                               </div>
