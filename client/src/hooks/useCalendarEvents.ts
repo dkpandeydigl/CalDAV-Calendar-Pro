@@ -1294,11 +1294,30 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
       }
       
       // Make sure recurrenceRule is properly serialized if it's present
-      if (data.recurrenceRule && typeof data.recurrenceRule === 'object') {
+      if (data.recurrenceRule) {
+        if (typeof data.recurrenceRule === 'object') {
+          data = {
+            ...data,
+            recurrenceRule: JSON.stringify(data.recurrenceRule),
+            // FIXED: Explicitly set isRecurring=true when recurrenceRule is provided
+            isRecurring: true
+          };
+        } else if (typeof data.recurrenceRule === 'string' && data.recurrenceRule.startsWith('FREQ=')) {
+          // FIXED: Handle string-based recurrence rules (RRULE format)
+          data = {
+            ...data,
+            // Keep the recurrenceRule as is since it's already in the correct format
+            isRecurring: true // Ensure isRecurring flag is set correctly
+          };
+          console.log('Setting isRecurring=true for string-based RRULE:', data.recurrenceRule);
+        }
+      } else if (data.recurrenceRule === null) {
+        // FIXED: Explicitly handle null recurrenceRule
         data = {
           ...data,
-          recurrenceRule: JSON.stringify(data.recurrenceRule)
+          isRecurring: false
         };
+        console.log('Setting isRecurring=false for null recurrenceRule');
       }
       
       // Make sure resources are properly serialized if they're present

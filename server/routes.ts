@@ -3985,8 +3985,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           else if (typeof rrule === 'string' && rrule.startsWith('FREQ=')) {
             console.log(`[RECURRENCE DEBUG] Valid RRULE string format detected in update: ${rrule}`);
             
-            // It's already in the correct format, just ensure isRecurring is true
+            // FIXED: Explicitly set isRecurring to true to handle transition from non-recurring to recurring
             updateData.isRecurring = true;
+            console.log(`[RECURRENCE DEBUG] Explicitly set isRecurring=true for valid RRULE string`);
           } 
           // If we got a JSON object (from older client versions), try to extract RRULE
           else if (typeof rrule === 'string' && (rrule.startsWith('{') || rrule.includes('originalData'))) {
@@ -4001,16 +4002,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 // Direct RRULE property
                 updateData.recurrenceRule = parsedRule.rrule;
                 updateData.isRecurring = true;
+                console.log(`[RECURRENCE DEBUG] Extracted rrule property and set isRecurring=true`);
               } else if (parsedRule.rruleString) {
                 // RRULE string property
                 updateData.recurrenceRule = parsedRule.rruleString;
                 updateData.isRecurring = true;
+                console.log(`[RECURRENCE DEBUG] Extracted rruleString property and set isRecurring=true`);
               } else if (parsedRule.originalData && parsedRule.originalData.pattern && parsedRule.originalData.pattern !== 'None') {
                 // Has original pattern data but no RRULE
                 console.log(`[RECURRENCE DEBUG] Found originalData but no RRULE string in update, using fallback FREQ value`);
                 const pattern = parsedRule.originalData.pattern.toUpperCase();
                 updateData.recurrenceRule = `FREQ=${pattern}`;
                 updateData.isRecurring = true;
+                console.log(`[RECURRENCE DEBUG] Set fallback FREQ pattern and isRecurring=true`);
               } else {
                 // No valid recurrence data found
                 console.log(`[RECURRENCE DEBUG] No valid recurrence data found in JSON during update, clearing recurrenceRule`);
@@ -4026,6 +4030,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 if (match) {
                   updateData.recurrenceRule = match[0];
                   updateData.isRecurring = true;
+                  console.log(`[RECURRENCE DEBUG] Extracted FREQ pattern and set isRecurring=true`);
                 } else {
                   // Preserve existing recurrence if we can't parse the new one
                   console.log(`[RECURRENCE DEBUG] Preserving existing recurrence rule due to parse error`);
@@ -4040,10 +4045,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
             }
           } else if (rrule) {
-            console.log(`[RECURRENCE DEBUG] Unknown recurrence format in update, trying to preserve: ${typeof rrule}`);
-            // In case of unknown format but not null, try to keep existing recurrence
-            updateData.recurrenceRule = existingEvent.recurrenceRule;
-            updateData.isRecurring = existingEvent.isRecurring;
+            // FIXED: Check for valid recurrence pattern in string even if it's not JSON
+            if (typeof rrule === 'string' && rrule.includes('FREQ=')) {
+              console.log(`[RECURRENCE DEBUG] Found FREQ pattern in non-standard format, extracting`);
+              const match = rrule.match(/FREQ=[^}]+/);
+              if (match) {
+                updateData.recurrenceRule = match[0];
+                updateData.isRecurring = true;
+                console.log(`[RECURRENCE DEBUG] Extracted FREQ pattern and set isRecurring=true`);
+              } else {
+                // Fallback to preserve existing
+                updateData.recurrenceRule = existingEvent.recurrenceRule;
+                updateData.isRecurring = existingEvent.isRecurring;
+              }
+            } else {
+              console.log(`[RECURRENCE DEBUG] Unknown recurrence format in update, trying to preserve: ${typeof rrule}`);
+              // In case of unknown format but not null, try to keep existing recurrence
+              updateData.recurrenceRule = existingEvent.recurrenceRule;
+              updateData.isRecurring = existingEvent.isRecurring;
+            }
           } else {
             // Empty recurrence rule
             updateData.recurrenceRule = null;
@@ -4060,6 +4080,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[RECURRENCE DEBUG] Recurrence rule not included in update, preserving existing values`);
         updateData.recurrenceRule = existingEvent.recurrenceRule;
         updateData.isRecurring = existingEvent.isRecurring;
+      }
+      
+      // FIXED: Double-check recurrence flag to ensure consistency between recurrenceRule and isRecurring
+      if (updateData.recurrenceRule && updateData.recurrenceRule !== null) {
+        if (!updateData.isRecurring) {
+          console.log(`[RECURRENCE DEBUG] Found inconsistency: recurrenceRule exists but isRecurring=false, fixing`);
+          updateData.isRecurring = true;
+        }
+      } else if (updateData.isRecurring && (!updateData.recurrenceRule || updateData.recurrenceRule === null)) {
+        console.log(`[RECURRENCE DEBUG] Found inconsistency: isRecurring=true but no recurrenceRule, fixing`);
+        updateData.isRecurring = false;
       }
       
       // Handle date conversions
