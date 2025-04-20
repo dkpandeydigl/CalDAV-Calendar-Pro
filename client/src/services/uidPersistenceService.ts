@@ -11,7 +11,7 @@
  * 5. Real-time synchronization across clients via WebSockets
  */
 
-import { openDB, IDBPDatabase } from 'idb';
+import { openDB, deleteDB, IDBPDatabase } from 'idb';
 import { WebSocketNotification } from './websocketService';
 
 interface UIDMapping {
@@ -31,7 +31,8 @@ interface UIDSyncMessage {
 
 // Database configuration
 const DB_NAME = 'caldav-client-uids';
-const DB_VERSION = 1;
+// Increment version to force a fresh database creation
+const DB_VERSION = 2; // Incremented from 1 to fix object store not found error
 const UID_STORE = 'uid-mappings';
 
 class UIDPersistenceService {
@@ -196,6 +197,24 @@ class UIDPersistenceService {
   public async getUID(eventId: number): Promise<string | null> {
     try {
       const dbInstance = await this.db;
+      
+      // Check if the object store exists
+      if (!dbInstance.objectStoreNames.contains(UID_STORE)) {
+        console.warn(`Object store ${UID_STORE} doesn't exist, recreating database`);
+        
+        // Close the current database connection
+        dbInstance.close();
+        
+        // Delete the database to recreate it
+        await deleteDB(DB_NAME);
+        
+        // Re-initialize the database with the correct schema
+        this.db = this.initDatabase();
+        
+        // Since we just recreated the database, there's no stored UID yet
+        return null;
+      }
+      
       const mapping = await dbInstance.get(UID_STORE, eventId);
       
       if (mapping) {
@@ -216,6 +235,24 @@ class UIDPersistenceService {
   public async getEventIdByUID(uid: string): Promise<number | null> {
     try {
       const dbInstance = await this.db;
+      
+      // Check if the object store exists
+      if (!dbInstance.objectStoreNames.contains(UID_STORE)) {
+        console.warn(`Object store ${UID_STORE} doesn't exist in getEventIdByUID, recreating database`);
+        
+        // Close the current database connection
+        dbInstance.close();
+        
+        // Delete the database to recreate it
+        await deleteDB(DB_NAME);
+        
+        // Re-initialize the database with the correct schema
+        this.db = this.initDatabase();
+        
+        // Since we just recreated the database, there's no stored mapping yet
+        return null;
+      }
+      
       const mapping = await dbInstance.getFromIndex(UID_STORE, 'uid', uid);
       
       if (mapping) {
