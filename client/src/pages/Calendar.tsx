@@ -369,55 +369,56 @@ function CalendarContent() {
       setEventDetailOpen(false);
       
       try {
+        console.debug("Starting copy of event:", event.id, event.title);
+        
         // Get a robust, persistently stored UID using proper IndexedDB for RFC compliance
         const newUID = await getOrGenerateUID();
+        console.debug(`Generated new RFC-compliant UID: ${newUID}`);
         
-        // Create a clean RFC 5545 compliant event with proper typing
-        const copiedEvent: ICalendarEventCreate = {
+        // Create a complete CalendarEvent object with all required fields
+        // Note: We're skipping the ICalendarEventCreate intermediate step and creating a proper CalendarEvent directly
+        const eventForForm: CalendarEvent = {
+          id: 0, // Temporary ID, will be replaced when saved
+          uid: newUID,
           calendarId: event.calendarId,
           title: `Copy of ${event.title}`,
-          description: event.description || '',
-          location: event.location || '',
+          description: event.description,
+          location: event.location,
           startDate: new Date(event.startDate),
           endDate: new Date(event.endDate),
           allDay: Boolean(event.allDay),
           timezone: event.timezone || 'UTC',
-          uid: newUID,
-          status: 'CONFIRMED',
+          recurrenceRule: event.recurrenceRule,
+          isRecurring: Boolean(event.recurrenceRule),
           syncStatus: 'local',
+          busyStatus: 'busy',
+          
           // Strip attendees and resources for the copy to avoid notifications
           // RFC 5545 requires all attendee invitations to be explicit
-          attendees: [],
-          resources: []
-        };
-        
-        // Log for verification
-        console.log('Copying event with RFC-compliant UID:', { 
-          originalId: event.id,
-          originalUID: event.uid,
-          newUID: copiedEvent.uid,
-          title: copiedEvent.title
-        });
-        
-        // Create a proper CalendarEvent object to avoid type conflicts
-        // The ImprovedEventFormModal expects a standard CalendarEvent type from the schema
-        const eventForForm: CalendarEvent = {
-          id: 0, // Temporary ID, will be replaced when saved
-          uid: copiedEvent.uid,
-          calendarId: copiedEvent.calendarId,
-          title: copiedEvent.title,
-          description: copiedEvent.description,
-          location: copiedEvent.location,
-          startDate: copiedEvent.startDate,
-          endDate: copiedEvent.endDate,
-          allDay: copiedEvent.allDay,
-          timezone: copiedEvent.timezone,
-          syncStatus: 'local',
           attendees: null,
           resources: null,
-          // Set other required fields with defaults
-          busyStatus: 'busy'
+          
+          // Additional required fields with sensible defaults
+          etag: null,
+          url: null,
+          rawData: null,
+          syncError: null,
+          lastSyncAttempt: null,
+          emailSent: null,
+          emailError: null,
+          lastModifiedBy: null,
+          lastModifiedByName: null,
+          lastModifiedAt: new Date(),
+          organizer: null // No organizer initially for a copied event
         };
+        
+        // Log for debugging
+        console.debug('Created copy with complete CalendarEvent type:', { 
+          originalId: event.id,
+          originalUID: event.uid,
+          newUID: eventForForm.uid,
+          title: eventForForm.title
+        });
         
         // Set the properly formatted event for the form
         setSelectedEvent(eventForForm);
