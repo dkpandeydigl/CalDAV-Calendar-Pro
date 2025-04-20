@@ -462,10 +462,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       console.log(`[RECURRENCE FIX TEST] Step 3: Testing corrupted UID fix`);
-      // Create event with corrupted UID
+      // Create event with severely corrupted UID (direct injection into iCalendar)
       const corruptedEvent = {
         ...recurringEvent,
-        uid: `${recurringEvent.uid}\r\nDESCRIPTION:Corrupted`
+        uid: `${recurringEvent.uid}\r\nDESCRIPTION:Corrupted\r\nDTSTART:20230101T000000Z\r\nSEQUENCE:999`
       };
       
       // Generate ICS with corrupted UID
@@ -478,8 +478,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check if corrupted UID was sanitized
       const originalUid = recurringEvent.uid;
-      const uidSanitized = corruptedIcs.includes(`UID:${originalUid}`) && 
-                           !corruptedIcs.includes(`UID:${corruptedEvent.uid}`);
+      // First check if the corrupted UID appears intact in the output (it shouldn't)
+      const corruptedUidIsPresent = corruptedIcs.includes(`\r\nDTSTART:20230101`) || 
+                                   corruptedIcs.includes(`\r\nSEQUENCE:999`);
+      // Then check if the sanitized version is used instead
+      const sanitizedUidIsPresent = corruptedIcs.includes(`UID:${originalUid}`);
+      
+      console.log(`UID Sanitization Check - Corrupted Present: ${corruptedUidIsPresent}, Sanitized Present: ${sanitizedUidIsPresent}`);
+      
+      const uidSanitized = !corruptedUidIsPresent && sanitizedUidIsPresent;
       
       console.log(`[RECURRENCE FIX TEST] Step 4: Testing missing recurrence rule fix`);
       // Create recurring event with missing recurrence rule
