@@ -353,18 +353,10 @@ export function useDeletedEventsTracker() {
   const filterDeletedEvents = useCallback((events: Event[] | undefined): Event[] => {
     if (!events) return [];
     
-    if (events.length > 0) {
-      // Debug output - show all events before filtering
+    // Only log if there are a small number of events to avoid console spam
+    if (events.length > 0 && events.length < 5) {
+      // Debug output - show minimal info about events
       console.log(`[DeletedEventsTracker] Pre-filtering event count: ${events.length}`);
-      console.log(`[DeletedEventsTracker] Events to be filtered:`, events.map(e => ({
-        id: e.id,
-        title: e.title,
-        uid: e.uid ? e.uid.substring(0, 10) + '...' : 'null',
-        startDate: e.startDate ? new Date(e.startDate).toLocaleString() : 'null',
-        endDate: e.endDate ? new Date(e.endDate).toLocaleString() : 'null',
-        syncStatus: e.syncStatus || 'unknown',
-        calendarId: e.calendarId
-      })));
     }
     
     // Force untrack any synced or imported events regardless of deleted status
@@ -400,7 +392,7 @@ export function useDeletedEventsTracker() {
       // ALWAYS keep synced or needs_sync events regardless of deleted status
       // This ensures reimported events are not filtered out
       if (event.syncStatus === 'synced' || event.syncStatus === 'needs_sync') {
-        console.log(`[DeletedEventsTracker] Keeping event with syncStatus=${event.syncStatus}: ${event.title} (ID: ${event.id})`);
+        // Don't log synced events to reduce console spam
         return true;
       }
 
@@ -468,10 +460,11 @@ export function useDeletedEventsTracker() {
     // Clean immediately on mount
     cleanAllEventCaches();
     
-    // Then clean every 5 seconds
+    // Use a less aggressive interval (30 seconds instead of 5 seconds)
+    // This will reduce unnecessary processing and console logs
     const interval = setInterval(() => {
       cleanAllEventCaches();
-    }, 5000);
+    }, 30000);
     
     return () => clearInterval(interval);
   }, [cleanAllEventCaches]);
