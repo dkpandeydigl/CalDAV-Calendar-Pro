@@ -4358,16 +4358,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               // Update all events except the one we just updated
               for (const event of eventsWithSameUid) {
-                if (event.id !== updatedEvent.id) {
-                  console.log(`[CRITICAL FIX] Updating recurrence state for event ID ${event.id} with UID ${event.uid}`);
-                  
-                  // Update only the recurrence properties
-                  await storage.updateEvent(event.id, {
-                    isRecurring: updateData.isRecurring,
-                    recurrenceRule: updateData.recurrenceRule,
-                    syncStatus: 'pending' // Mark for sync
-                  });
-                }
+                // FIXED: Update ALL events with this UID, including the original event
+                console.log(`[CRITICAL FIX] Updating recurrence state for event ID ${event.id} with UID ${event.uid}`);
+                
+                // Update ALL events with the same recurrence properties
+                await storage.updateEvent(event.id, {
+                  isRecurring: updateData.isRecurring,
+                  recurrenceRule: updateData.recurrenceRule,
+                  sequence: event.sequence ? (event.sequence + 1) : 1, // Increment sequence
+                  dtstamp: new Date().toISOString(), // Update timestamp
+                  syncStatus: 'pending' // Mark for sync
+                });
               }
               
               console.log(`[CRITICAL FIX] Successfully updated recurrence state for all events with UID ${updatedEvent.uid}`);
