@@ -14,8 +14,9 @@ import { syncService } from './sync-service';
 import { preserveOrGenerateUID, registerUIDMapping } from './uid-management';
 import { Event, InsertEvent, ServerConnection } from '../shared/schema';
 import { generateEventICalString, prepareAttendeeForIcal, prepareResourceForIcal } from './ical-helpers';
-import { notifyEventChanged, broadcastMessage, getActiveConnections } from './websocket-handler';
+import { broadcastMessage, getActiveConnections } from './websocket-handler';
 import { WebSocket } from 'ws';
+import { notifyEventChangeWithMetadata } from './websocket-notifications';
 
 // Define relevant message types for WebSocket notifications
 export type SyncOperationType = 'create' | 'update' | 'delete' | 'sync';
@@ -1094,8 +1095,8 @@ export class EnhancedSyncService {
         )
       );
       
-      // Add flags to indicate attendee and resource status
-      notifyEventChanged(userId, event, action, {
+      // Use the enhanced notification function with metadata
+      notifyEventChangeWithMetadata(userId, event, action, {
         wasAttendeeUpdate: hasAttendees,
         wasResourceUpdate: hasResources,
         wasRecurrenceStateChange: event.isRecurring === true,

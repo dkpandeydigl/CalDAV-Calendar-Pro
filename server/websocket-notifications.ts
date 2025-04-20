@@ -262,7 +262,7 @@ export function notifyEventChangeWithMetadata(
     };
     
     // Send the notification to the user
-    service.sendNotificationToUser(userId, notification);
+    service.broadcastToUser(userId, notification);
     
     // Log the notification
     console.log(`[WebSocket] Sent enhanced event ${action} notification for event ${eventId} to user ${userId} with metadata: ${JSON.stringify(metadata)}`);
