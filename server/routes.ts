@@ -4104,7 +4104,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isRecurrenceStateChange
       });
       
-      // SUPER ENHANCED FIX: Extra handling for explicit recurrence state changes
+      // SUPER ENHANCED FIX: Extra handling for explicit recurrence state changes and updates with attendees/resources
+      const updatedHasAttendees = updateData.attendees && updateData.attendees !== 'null' && updateData.attendees !== '[]';
+      const updatedHasResources = updateData.resources && updateData.resources !== 'null' && updateData.resources !== '[]';
+      const isAttendeeResourceUpdate = updatedHasAttendees || updatedHasResources;
+      
+      // CRUCIAL FIX: Special handling for recurring events with attendees to prevent recurrence loss
+      if (existingEvent.isRecurring && isAttendeeResourceUpdate) {
+        console.log(`⚠️ [CRITICAL BUGFIX] Detected attendee/resource update for a recurring event ID ${eventId}`);
+        console.log(`⚠️ [CRITICAL BUGFIX] Ensuring recurrence data is preserved during attendee/resource update`);
+        
+        // Force isRecurring flag to true to maintain recurrence state during attendee updates
+        updateData.isRecurring = true;
+        
+        // If recurrenceRule is missing or null, use the existing one
+        if (!updateData.recurrenceRule || updateData.recurrenceRule === 'null') {
+          console.log(`⚠️ [CRITICAL BUGFIX] Restoring original recurrence rule: ${existingEvent.recurrenceRule}`);
+          updateData.recurrenceRule = existingEvent.recurrenceRule;
+        }
+        
+        // Flag this as a recurrence state change to ensure related events are updated
+        isRecurrenceStateChange = true;
+      }
+      
+      // Original recurrence state change handling
       if (isRecurrenceStateChange) {
         console.log(`[SUPER ENHANCED FIX] Handling explicit recurrence state change request`);
         console.log(`[DEBUG RECURRENCE] Current: isRecurring=${existingEvent.isRecurring}, rule=${existingEvent.recurrenceRule}`);
@@ -4139,14 +4162,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.log(`[CRITICAL BUG FIX] Updating event ${event.id} (${event.id === eventId ? 'ORIGINAL' : 'related'}) with recurrence properties`);
                 console.log(`[CRITICAL BUG FIX] Setting isRecurring=${updateData.isRecurring}, rule=${updateData.recurrenceRule}`);
                 
-                // Update with force modified timestamp to ensure it gets pushed to server
-                await storage.updateEvent(event.id, {
+                // CRUCIAL BUGFIX: Determine if we're updating attendees/resources in the current iteration
+                const isCurrentEventUpdate = event.id === eventId;
+                const updatePayload: any = {
                   isRecurring: updateData.isRecurring,
                   recurrenceRule: updateData.recurrenceRule,
                   syncStatus: 'pending',
                   dtstamp: new Date().toISOString(), // Force timestamp update
                   sequence: (event.sequence || 0) + 1 // Increment sequence number
-                });
+                };
+                
+                // For the specific event being updated, include the attendees/resources if present
+                if (isCurrentEventUpdate && isAttendeeResourceUpdate) {
+                  console.log(`⚠️ [CRITICAL BUGFIX] Including attendees/resources in update for event ID ${eventId}`);
+                  if (hasAttendees) {
+                    updatePayload.attendees = updateData.attendees;
+                  }
+                  if (hasResources) {
+                    updatePayload.resources = updateData.resources;
+                  }
+                }
+                
+                // Update with force modified timestamp to ensure it gets pushed to server
+                await storage.updateEvent(event.id, updatePayload);
               }
               
               // Double-check that the update succeeded for the original event
@@ -4445,6 +4483,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateData.lastSyncAttempt = new Date(); // Update sync timestamp
       }
       
+      // SUPER ENHANCED BUGFIX: Check if this event has related recurrences before updating
+      if (existingEvent.isRecurring && existingEvent.uid) {
+        console.log(`⚠️ [CRITICAL BUGFIX] Pre-update check for recurring event with UID ${existingEvent.uid}`);
+        try {
+          // Find all events with the same UID to verify recurrence state is consistent
+          const relatedEvents = await storage.getEventsByUid(existingEvent.uid);
+          
+          if (relatedEvents && relatedEvents.length > 1) {
+            console.log(`⚠️ [CRITICAL BUGFIX] Found ${relatedEvents.length} occurrences for UID ${existingEvent.uid}`);
+            
+            // Check if there's a mismatch between the events with same UID 
+            // where one event is recurring and others are not
+            const hasRecurringMismatch = relatedEvents.some(e => e.isRecurring !== existingEvent.isRecurring);
+            
+            if (hasRecurringMismatch) {
+              console.log(`🔄 [CRITICAL RECOVERY] Fixing isRecurring mismatch among occurrences of UID ${existingEvent.uid}`);
+              
+              // Force all events to match the main event's recurrence state
+              for (const event of relatedEvents) {
+                if (event.isRecurring !== existingEvent.isRecurring) {
+                  await storage.updateEvent(event.id, {
+                    isRecurring: existingEvent.isRecurring,
+                    recurrenceRule: existingEvent.recurrenceRule,
+                    syncStatus: 'pending'
+                  });
+                  console.log(`🔄 [CRITICAL RECOVERY] Fixed event ${event.id}, set isRecurring=${existingEvent.isRecurring}`);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error in pre-update recurrence check:", error);
+          // Continue with the update even if this check fails
+        }
+      }
+
       // Instead of using regular update and sync, use the enhanced sync service with edit mode support
       console.log(`[RECURRENCE] Using enhanced sync service to update event ${eventId} with edit mode: ${editMode}`);
       
