@@ -2988,6 +2988,8 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
                               attendees: attendeesJson,
                               resources: resourcesJson,
                               recurrenceRule,
+                              // CRITICAL: Ensure isRecurring flag is explicitly set to match recurrenceRule
+                              isRecurring: recurrence.pattern !== 'None',
                               syncStatus: 'local',
                               emailSent: new Date().toISOString(), // Convert date to ISO string for the database
                               emailError: null
