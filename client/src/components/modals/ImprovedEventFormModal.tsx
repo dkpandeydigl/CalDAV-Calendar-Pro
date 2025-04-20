@@ -1311,12 +1311,12 @@ export const ImprovedEventFormModal: FC<EventFormModalProps> = ({
                   <TabsList className="flex flex-wrap h-auto min-h-12 w-full justify-evenly rounded-lg overflow-visible gap-1 p-1 bg-muted/20 border border-muted/30">
                     <TabsTrigger 
                       value="basic" 
-                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${title || location || description ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.basic ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-md transition-all hover:bg-background/80 data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-primary data-[state=active]:border-0 py-2 ${form.getValues('title') || form.getValues('location') || form.getValues('description') ? 'bg-primary/5 before:absolute before:top-1 before:right-1 before:w-2 before:h-2 before:bg-primary before:rounded-full' : ''} ${tabErrors.basic ? 'border-red-500 before:right-auto before:left-1 before:bg-red-500' : ''}`}
                     >
                       {tabErrors.basic && (
                         <AlertCircle className="h-4 w-4 text-red-500 absolute top-1 left-1" />
                       )}
-                      <Calendar className={`h-4 w-4 ${title || location || description ? 'text-primary' : ''} ${tabErrors.basic ? 'text-red-500' : ''}`} />
+                      <Calendar className={`h-4 w-4 ${form.getValues('title') || form.getValues('location') || form.getValues('description') ? 'text-primary' : ''} ${tabErrors.basic ? 'text-red-500' : ''}`} />
                       <span className={tabErrors.basic ? 'text-red-500 font-medium' : ''}>Details</span>
                     </TabsTrigger>
                     
