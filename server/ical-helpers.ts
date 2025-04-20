@@ -284,10 +284,25 @@ export function generateEventICalString(event: {
     }
   }
   
-  // FIXED: Enhanced recurrence rule handling with better logging
+  // CRITICAL FIX: Enhanced recurrence rule handling with better logging and validation
   if (event.recurrenceRule) {
-    console.log(`[ICAL] Adding recurrence rule to event ${event.uid}: ${event.recurrenceRule}`);
-    ics.push(`RRULE:${event.recurrenceRule}`);
+    // Ensure the RRULE has the required FREQ= component
+    let rruleValue = event.recurrenceRule;
+    
+    // Strip any existing RRULE: prefix if it was incorrectly included
+    if (rruleValue.startsWith('RRULE:')) {
+      rruleValue = rruleValue.substring(6);
+    }
+    
+    // Validate the RRULE has a FREQ component
+    if (!rruleValue.includes('FREQ=')) {
+      console.error(`[ICAL CRITICAL] Invalid RRULE missing FREQ component: ${rruleValue}`);
+      // Add a default FREQ if missing
+      rruleValue = `FREQ=DAILY;${rruleValue}`;
+    }
+    
+    console.log(`[ICAL CRITICAL] Adding recurrence rule to event ${event.uid}: ${rruleValue}`);
+    ics.push(`RRULE:${rruleValue}`);
   } else {
     console.log(`[ICAL] No recurrence rule provided for event ${event.uid}`);
   }

@@ -827,7 +827,30 @@ export class EnhancedSyncService {
         console.log(`[RECURRENCE] Fixed inconsistency by removing recurrence rule`);
       }
       
-      // Generate the ICS data for this event with sanitized recurrence rule
+      // CRITICAL FIX: Double check recurrence rule one more time
+      // This ensures the recurrence rule is properly synced to the server
+      if (event.isRecurring && !processedRecurrenceRule) {
+        console.error(`[CRITICAL RECURRENCE SYNC] Event ${event.id} with UID ${event.uid} is marked as recurring but has no recurrence rule before ICS generation!`);
+        
+        // Try to recover the recurrence rule from the event
+        if (event.recurrenceRule) {
+          console.log(`[CRITICAL RECURRENCE SYNC] Recovering recurrence rule from event: ${event.recurrenceRule}`);
+          processedRecurrenceRule = event.recurrenceRule;
+        } else {
+          // Last resort: force a basic daily recurrence as default
+          processedRecurrenceRule = "FREQ=DAILY;COUNT=3";
+          console.log(`[CRITICAL RECURRENCE SYNC] Applied default recurrence rule: ${processedRecurrenceRule}`);
+          
+          // Update the database with the emergency recurrence rule
+          await storage.updateEvent(event.id, {
+            recurrenceRule: processedRecurrenceRule
+          });
+        }
+      }
+      
+      console.log(`[CRITICAL ICS GEN] Generating ICS for event ${event.uid} with recurrence rule: ${processedRecurrenceRule || 'NONE'}`);
+      
+      // Generate the ICS data for this event with sanitized recurrence rule and extra logging
       const icsData = generateEventICalString({
         uid: event.uid,
         title: event.title,
@@ -841,7 +864,7 @@ export class EnhancedSyncService {
           email: connection.username,
           name: (await storage.getUser(userId))?.fullName || connection.username
         },
-        recurrenceRule: processedRecurrenceRule, // This is now guaranteed to be consistent with isRecurring
+        recurrenceRule: processedRecurrenceRule, // This should now never be null for recurring events
         allDay: event.allDay
       });
       
