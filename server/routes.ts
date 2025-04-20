@@ -4065,7 +4065,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const editMode = req.query.editMode === 'single' ? 'single' : 'all';
       
       // NEW ENHANCED FIX: Check if this is a recurrence state change request
-      const isRecurrenceStateChange = req.query.recurrenceChanged === 'true';
+      let isRecurrenceStateChange = req.query.recurrenceChanged === 'true';
       
       console.log(`[RECURRENCE] Edit mode for event ${eventId}: ${editMode}, Recurrence change: ${isRecurrenceStateChange}`);
       
