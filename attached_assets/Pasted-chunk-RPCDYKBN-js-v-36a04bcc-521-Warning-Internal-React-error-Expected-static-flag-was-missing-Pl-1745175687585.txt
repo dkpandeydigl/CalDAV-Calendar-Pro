@@ -1,0 +1,31 @@
+chunk-RPCDYKBN.js?v=36a04bcc:521 Warning: Internal React error: Expected static flag was missing. Please notify the React team.
+    at EventDetailModal (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/components/modals/EventDetailModal.tsx?t=1745175486843:55:3)
+    at div
+    at CalendarContent (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/pages/Calendar.tsx?t=1745175486843:363:95)
+    at Calendar
+    at ProtectedRoute (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/lib/protected-route.tsx:22:14)
+    at Route (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.…/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=36a04bcc:323:16)
+    at Switch (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.…/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=36a04bcc:379:17)
+    at Router
+    at AppContent (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/App.tsx?t=1745175486843&v=rXccofgHv5zhMrh5a9YbU:148:34)
+    at CalendarProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/contexts/CalendarContext.tsx:33:36)
+    at EnhancedSyncProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/contexts/EnhancedSyncContext.tsx:21:40)
+    at NotificationProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/contexts/NotificationContext.tsx:32:40)
+    at AuthProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.dev/src/hooks/use-auth.tsx:26:32)
+    at QueryClientProvider (https://9f146d1b-fc8b-463a-80f7-08078a9a5f68-00-31umlqr7rafdc.spock.replit.…rkspace/node_modules/.vite/deps/@tanstack_react-query.js?v=36a04bcc:2805:3)
+    at App
+printWarning	@	chunk-RPCDYKBN.js?v=36a04bcc:521
+error	@	chunk-RPCDYKBN.js?v=36a04bcc:505
+renderWithHooks	@	chunk-RPCDYKBN.js?v=36a04bcc:11590
+updateFunctionComponent	@	chunk-RPCDYKBN.js?v=36a04bcc:14582
+beginWork	@	chunk-RPCDYKBN.js?v=36a04bcc:15924
+beginWork$1	@	chunk-RPCDYKBN.js?v=36a04bcc:19753
+performUnitOfWork	@	chunk-RPCDYKBN.js?v=36a04bcc:19198
+workLoopSync	@	chunk-RPCDYKBN.js?v=36a04bcc:19137
+renderRootSync	@	chunk-RPCDYKBN.js?v=36a04bcc:19116
+recoverFromConcurrentError	@	chunk-RPCDYKBN.js?v=36a04bcc:18736
+performSyncWorkOnRoot	@	chunk-RPCDYKBN.js?v=36a04bcc:18879
+flushSyncCallbacks	@	chunk-RPCDYKBN.js?v=36a04bcc:9119
+(anonymous)	@	chunk-RPCDYKBN.js?v=36a04bcc:18627
+PrintEventModal.tsx:353 Uncaught TypeError: event.attendees.map is not a function
+    at PrintEventModal (PrintEventModal.tsx:353:38)

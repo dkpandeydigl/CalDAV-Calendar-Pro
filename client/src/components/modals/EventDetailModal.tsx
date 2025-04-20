@@ -504,18 +504,31 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   }, [event?.attendees]);
   
   // Always use our enhanced extractResourcesFromRawData function to deduplicate resources
-  // from all possible sources
-  const resources = extractResourcesFromRawData();
+  // from all possible sources - wrap in useMemo to fix React static flag issue
+  const resources = useMemo(() => {
+    try {
+      return extractResourcesFromRawData();
+    } catch (error) {
+      console.error('Error extracting resources:', error);
+      return [];
+    }
+  }, [event, extractResourcesFromRawData]);
   
-  const hasResources = Array.isArray(resources) && resources.length > 0;
+  const hasResources = useMemo(() => {
+    return Array.isArray(resources) && resources.length > 0;
+  }, [resources]);
   
   // Special case for DK Pandey who needs to be able to cancel any event
-  const isDKPandey = user?.id === 4 && user?.username === 'dk.pandey@xgenplus.com';
+  const isDKPandey = useMemo(() => {
+    return user?.id === 4 && user?.username === 'dk.pandey@xgenplus.com';
+  }, [user?.id, user?.username]);
   
   // Only show cancel button if:
   // 1. The event has attendees or resources, AND
   // 2. The user is the owner OR it's DK Pandey (who has special admin privileges)
-  const shouldShowCancelButton = (hasAttendees || hasResources) && (isUsersOwnCalendar || effectiveCanEdit || isDKPandey);
+  const shouldShowCancelButton = useMemo(() => {
+    return (hasAttendees || hasResources) && (isUsersOwnCalendar || effectiveCanEdit || isDKPandey);
+  }, [hasAttendees, hasResources, isUsersOwnCalendar, effectiveCanEdit, isDKPandey]);
   
   // Process attendees from event data with improved handling of different formats
   // and additional error protection

@@ -342,20 +342,44 @@ END:VCALENDAR
             
             <div>
               {/* Attendees section */}
-              {event.attendees && event.attendees.length > 0 && (
+              {event.attendees && (
                 <>
                   <div className="info-row">
                     <Users className="h-5 w-5 text-muted-foreground" />
-                    <span className="font-medium">Attendees ({event.attendees.length})</span>
+                    <span className="font-medium">
+                      Attendees ({Array.isArray(event.attendees) ? event.attendees.length : '1'})
+                    </span>
                   </div>
                   
                   <div className="attendees-list">
-                    {event.attendees.map((attendee, index) => (
-                      <div key={index} className="attendee-item">
-                        <span>{attendee.name || attendee.email}</span>
-                        <span className="attendee-status"> • {formatAttendeeStatus(attendee.partstat || '')}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      // Handle different types of attendees data
+                      if (Array.isArray(event.attendees)) {
+                        return event.attendees.map((attendee, index) => (
+                          <div key={index} className="attendee-item">
+                            <span>{attendee.name || attendee.email}</span>
+                            <span className="attendee-status"> • {formatAttendeeStatus(attendee.partstat || '')}</span>
+                          </div>
+                        ));
+                      } else if (typeof event.attendees === 'object' && event.attendees !== null) {
+                        // Single attendee as object
+                        const attendee = event.attendees;
+                        return (
+                          <div className="attendee-item">
+                            <span>{attendee.name || attendee.email}</span>
+                            <span className="attendee-status"> • {formatAttendeeStatus(attendee.partstat || '')}</span>
+                          </div>
+                        );
+                      } else if (typeof event.attendees === 'string') {
+                        // String email
+                        return (
+                          <div className="attendee-item">
+                            <span>{event.attendees}</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   
                   <Separator className="my-4" />
@@ -363,19 +387,42 @@ END:VCALENDAR
               )}
               
               {/* Resources section */}
-              {event.resources && event.resources.length > 0 && (
+              {event.resources && (
                 <>
                   <div className="info-row">
                     <FileText className="h-5 w-5 text-muted-foreground" />
-                    <span className="font-medium">Resources ({event.resources.length})</span>
+                    <span className="font-medium">
+                      Resources ({Array.isArray(event.resources) ? event.resources.length : '1'})
+                    </span>
                   </div>
                   
                   <div className="attendees-list">
-                    {event.resources.map((resource, index) => (
-                      <div key={index} className="attendee-item">
-                        <span>{resource.name || resource.email}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      // Handle different types of resources data
+                      if (Array.isArray(event.resources)) {
+                        return event.resources.map((resource, index) => (
+                          <div key={index} className="attendee-item">
+                            <span>{resource.name || resource.adminName || resource.email || resource.adminEmail}</span>
+                          </div>
+                        ));
+                      } else if (typeof event.resources === 'object' && event.resources !== null) {
+                        // Single resource as object
+                        const resource = event.resources;
+                        return (
+                          <div className="attendee-item">
+                            <span>{resource.name || resource.adminName || resource.email || resource.adminEmail}</span>
+                          </div>
+                        );
+                      } else if (typeof event.resources === 'string') {
+                        // String email or description
+                        return (
+                          <div className="attendee-item">
+                            <span>{event.resources}</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   
                   <Separator className="my-4" />
