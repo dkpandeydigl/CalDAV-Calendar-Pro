@@ -181,7 +181,49 @@ export function generateEventICalString(event: {
   ];
   
   // Add required properties
-  ics.push(`UID:${event.uid}`);
+  // CRITICAL FIX: Sanitize the UID to prevent embedding of complete ICS content
+  // This fixes the bug where UIDs were getting corrupted with embedded event data
+  let sanitizedUid = event.uid;
+  
+  // Check if the UID contains embedded ICS data and fix it
+  if (sanitizedUid.includes('BEGIN:VCALENDAR') || sanitizedUid.includes('\n') || sanitizedUid.includes('\r')) {
+    console.log(`[CRITICAL FIX] Detected corrupt UID with embedded ICS data: ${sanitizedUid.substring(0, 50)}...`);
+    
+    // Extract just the base UID without the embedded data - first try exact pattern
+    if (sanitizedUid.includes('@caldavclient.local')) {
+      const baseUidRegex = /(event-\d+-[a-z0-9]+@caldavclient\.local)/;
+      const uidMatch = sanitizedUid.match(baseUidRegex);
+      
+      if (uidMatch && uidMatch[1]) {
+        sanitizedUid = uidMatch[1];
+        console.log(`[CRITICAL FIX] Extracted clean UID with pattern match: ${sanitizedUid}`);
+      } else {
+        // Try a more generic approach - grab everything up to the first line break or embedded ICS tag
+        const genericMatch = sanitizedUid.split(/[\r\n]|BEGIN:VCALENDAR/)[0];
+        if (genericMatch && genericMatch.length > 0) {
+          sanitizedUid = genericMatch.trim();
+          console.log(`[CRITICAL FIX] Extracted clean UID with generic splitting: ${sanitizedUid}`);
+        } else {
+          // If all extraction fails, generate a new UID
+          sanitizedUid = `regenerated-${Date.now()}@caldavclient.local`;
+          console.log(`[CRITICAL FIX] Generated clean replacement UID: ${sanitizedUid}`);
+        }
+      }
+    } else {
+      // For non-standard UIDs, just take everything before first line break
+      const genericMatch = sanitizedUid.split(/[\r\n]/)[0];
+      if (genericMatch && genericMatch.length > 0) {
+        sanitizedUid = genericMatch.trim();
+        console.log(`[CRITICAL FIX] Extracted generic UID: ${sanitizedUid}`);
+      } else {
+        // Last resort
+        sanitizedUid = `regenerated-${Date.now()}@caldavclient.local`;
+        console.log(`[CRITICAL FIX] Generated replacement UID as last resort: ${sanitizedUid}`);
+      }
+    }
+  }
+  
+  ics.push(`UID:${sanitizedUid}`);
   ics.push(`DTSTAMP:${formatICalDate(now)}`);
   ics.push(`CREATED:${formatICalDate(now)}`);
   ics.push(`LAST-MODIFIED:${formatICalDate(now)}`);
