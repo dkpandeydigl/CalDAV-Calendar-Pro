@@ -459,6 +459,9 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     sendEmail
   } = useEmailPreview();
   
+  // RecurrenceSettings type is the same as RecurrenceConfig, which represents our recurrence configuration
+  type RecurrenceSettings = RecurrenceConfig;
+  
   // RFC 5545 compliant recurrence rule generator
   const generateRRuleString = (recurrence: RecurrenceSettings): string => {
     if (recurrence.pattern === 'None') {
@@ -486,7 +489,7 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
       };
       
       const byDayValue = recurrence.weekdays
-        .map(day => dayMap[day])
+        .map((day: string) => dayMap[day])
         .filter(Boolean)
         .join(',');
         
@@ -496,14 +499,14 @@ const ImprovedEventFormModal: React.FC<EventFormModalProps> = ({ open, event, se
     }
     
     // Add end condition
-    if (recurrence.endType === 'Until' && recurrence.endDate) {
+    if (recurrence.endType === 'On' && recurrence.endDate) {
       // Format date as YYYYMMDD for UNTIL
       const untilDate = recurrence.endDate;
       const year = untilDate.getFullYear();
       const month = String(untilDate.getMonth() + 1).padStart(2, '0');
       const day = String(untilDate.getDate()).padStart(2, '0');
       rrule += `;UNTIL=${year}${month}${day}T235959Z`;
-    } else if (recurrence.endType === 'Count' && recurrence.occurrences) {
+    } else if (recurrence.endType === 'After' && recurrence.occurrences) {
       rrule += `;COUNT=${recurrence.occurrences}`;
     }
     
