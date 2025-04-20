@@ -403,10 +403,39 @@ export class EnhancedSyncService {
         console.log(`[RECURRENCE RFC FIX] Will perform a fresh sync after update to refresh instances`);
       }
       
+      // CRITICAL FIX: Preserve attendees and resources in addition to UID
+      // This ensures we don't lose attendees/resources during event updates
+      console.log(`[ATTENDEES FIX] Original event attendees:`, 
+        typeof originalEvent.attendees === 'string' ? 
+          (originalEvent.attendees || 'none') : 
+          JSON.stringify(originalEvent.attendees || 'none'));
+      console.log(`[ATTENDEES FIX] Update data contains attendees:`, 
+        processedEventData.attendees !== undefined ? 'yes' : 'no');
+
+      // If update data doesn't explicitly modify attendees, preserve the original ones
+      if (processedEventData.attendees === undefined && originalEvent.attendees) {
+        console.log(`[ATTENDEES FIX] Preserving original attendees as update doesn't modify them`);
+        processedEventData.attendees = originalEvent.attendees;
+      }
+      
+      // If update data doesn't explicitly modify resources, preserve the original ones
+      if (processedEventData.resources === undefined && originalEvent.resources) {
+        console.log(`[ATTENDEES FIX] Preserving original resources as update doesn't modify them`);
+        processedEventData.resources = originalEvent.resources;
+      }
+
       // Ensure the UID doesn't change
       const eventWithUID = {
         ...processedEventData,
-        uid: preservedUID
+        uid: preservedUID,
+        // Make absolutely sure attendees are preserved properly
+        attendees: processedEventData.attendees !== undefined ? 
+          processedEventData.attendees : 
+          originalEvent.attendees,
+        // Make absolutely sure resources are preserved properly
+        resources: processedEventData.resources !== undefined ? 
+          processedEventData.resources : 
+          originalEvent.resources
       };
       
       // First special handling of related events was moved to be integrated with other recurrence changes above
