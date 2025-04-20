@@ -89,17 +89,24 @@ export class EnhancedSyncService {
    * @param userId The user ID
    * @param eventId The event ID to update
    * @param eventData The updated event data
+   * @param editMode Optional parameter to specify how to handle recurring event edits 
+   *                 'single' or 'all' (default is 'all')
    * @returns The updated event with server sync status
    */
-  async updateEventWithSync(userId: number, eventId: number, eventData: Partial<Event>): Promise<{
+  async updateEventWithSync(
+    userId: number, 
+    eventId: number, 
+    eventData: Partial<Event>, 
+    editMode: 'single' | 'all' = 'all'
+  ): Promise<{
     event: Event;
     synced: boolean;
     syncDetails?: any;
   }> {
-    console.log(`[Enhanced Sync] Updating event ${eventId} for user ${userId}`);
+    console.log(`[RECURRENCE] Updating event ${eventId} for user ${userId} with edit mode: ${editMode}`);
     
     try {
-      // Get the original event first
+      // Get the original event for comparison
       const originalEvent = await storage.getEvent(eventId);
       
       if (!originalEvent) {
@@ -109,21 +116,193 @@ export class EnhancedSyncService {
       // Preserve the original UID - never change it during updates
       const preservedUID = preserveOrGenerateUID(originalEvent, eventData.rawData);
       
-      // Handle recurrence rule consistency when updating
+      // Create deep copy of event data to prevent mutation
       let processedEventData = { ...eventData };
       
-      // Fix inconsistency between isRecurring flag and recurrenceRule property
-      if (processedEventData.isRecurring === true && !processedEventData.recurrenceRule) {
-        console.log(`[Enhanced Sync] Warning: Event marked as recurring but has no recurrence rule. Using original if available.`);
-        // If isRecurring is true but no recurrenceRule, check if original had one
-        if (originalEvent.recurrenceRule) {
-          processedEventData.recurrenceRule = originalEvent.recurrenceRule;
-          console.log(`[Enhanced Sync] Restored original recurrence rule: ${originalEvent.recurrenceRule}`);
+      // ENHANCE RECURRENCE HANDLING
+      console.log(`[RECURRENCE] Original event: isRecurring=${originalEvent.isRecurring}, rule=${originalEvent.recurrenceRule}`);
+      console.log(`[RECURRENCE] Update data: isRecurring=${processedEventData.isRecurring}, rule=${processedEventData.recurrenceRule}`);
+    
+      // Case 1: Converting non-recurring to recurring event
+      if (
+        (!originalEvent.isRecurring || originalEvent.isRecurring === false) && 
+        processedEventData.isRecurring === true
+      ) {
+        console.log(`[RECURRENCE] Converting non-recurring event to recurring`);
+        
+        // Ensure recurrence rule is set when isRecurring flag is true
+        if (!processedEventData.recurrenceRule) {
+          console.log(`[RECURRENCE] No recurrence rule provided for conversion, defaulting to DAILY`);
+          processedEventData.recurrenceRule = "FREQ=DAILY;COUNT=1";
+        } else if (typeof processedEventData.recurrenceRule === 'object') {
+          // Convert object to RFC 5545 RRULE format string
+          try {
+            const formattedRule = formatObjectToRRule(processedEventData.recurrenceRule);
+            if (formattedRule) {
+              processedEventData.recurrenceRule = formattedRule;
+              console.log(`[RECURRENCE] Converted object to RRULE format: ${processedEventData.recurrenceRule}`);
+            } else {
+              processedEventData.recurrenceRule = "FREQ=DAILY;COUNT=1";
+              console.warn(`[RECURRENCE] Failed to format object, using default: ${processedEventData.recurrenceRule}`);
+            }
+          } catch (e) {
+            console.error(`[RECURRENCE] Error formatting object`, e);
+            processedEventData.recurrenceRule = "FREQ=DAILY;COUNT=1";
+          }
+        } else if (typeof processedEventData.recurrenceRule === 'string') {
+          // Check if string is already in RRULE format or needs conversion
+          if (!processedEventData.recurrenceRule.startsWith('FREQ=')) {
+            // Try to parse any JSON strings to extract RRULE format
+            try {
+              const parsed = JSON.parse(processedEventData.recurrenceRule);
+              
+              // Check if it's our config format
+              if (parsed.pattern && typeof parsed.pattern === 'string') {
+                const rrule = formatRecurrenceConfigToRRule(parsed);
+                if (rrule) {
+                  processedEventData.recurrenceRule = rrule;
+                  console.log(`[RECURRENCE] Converted JSON config to RRULE: ${processedEventData.recurrenceRule}`);
+                } else {
+                  processedEventData.recurrenceRule = "FREQ=DAILY;COUNT=1";
+                  console.warn(`[RECURRENCE] Failed to format JSON config, using default: ${processedEventData.recurrenceRule}`);
+                }
+              } else {
+                // Try to extract pattern
+                const pattern = extractPatternFromObject(parsed);
+                if (pattern) {
+                  processedEventData.recurrenceRule = `FREQ=${pattern.toUpperCase()};COUNT=1`;
+                  console.log(`[RECURRENCE] Extracted pattern from JSON: ${processedEventData.recurrenceRule}`);
+                } else {
+                  processedEventData.recurrenceRule = "FREQ=DAILY;COUNT=1";
+                  console.warn(`[RECURRENCE] No pattern in JSON, using default: ${processedEventData.recurrenceRule}`);
+                }
+              }
+            } catch (e) {
+              // If not JSON, look for any FREQ pattern in the string
+              const freqMatch = processedEventData.recurrenceRule.match(/FREQ=([A-Z]+)/i);
+              if (freqMatch) {
+                const freq = freqMatch[1].toUpperCase();
+                processedEventData.recurrenceRule = `FREQ=${freq};COUNT=1`;
+                console.log(`[RECURRENCE] Extracted FREQ from string: ${processedEventData.recurrenceRule}`);
+              } else {
+                // No pattern found, default to DAILY
+                processedEventData.recurrenceRule = "FREQ=DAILY;COUNT=1";
+                console.warn(`[RECURRENCE] No valid pattern in string, using default: ${processedEventData.recurrenceRule}`);
+              }
+            }
+          } else {
+            console.log(`[RECURRENCE] Using existing RRULE string: ${processedEventData.recurrenceRule}`);
+          }
         }
-      } else if (processedEventData.isRecurring === false && processedEventData.recurrenceRule) {
-        // Clear recurrence rule if isRecurring is false
-        console.log(`[Enhanced Sync] Clearing recurrence rule for non-recurring event`);
+      } 
+      // Case 2: Converting recurring to non-recurring event
+      else if (
+        originalEvent.isRecurring === true && 
+        processedEventData.isRecurring === false
+      ) {
+        console.log(`[RECURRENCE] Converting recurring event to non-recurring`);
+        // Clear recurrence rule when isRecurring flag is false
         processedEventData.recurrenceRule = null;
+      }
+      // Case 3: Updating a recurring event
+      else if (
+        originalEvent.isRecurring === true && 
+        (processedEventData.isRecurring === true || processedEventData.isRecurring === undefined)
+      ) {
+        console.log(`[RECURRENCE] Updating recurring event with edit mode: ${editMode}`);
+        
+        // If edit mode is 'single', handle differently based on whether we have recurrenceId
+        if (editMode === 'single') {
+          console.log(`[RECURRENCE] Editing single occurrence of recurring event`);
+          
+          // Ensure recurrenceId is set for this instance
+          if (!processedEventData.recurrenceId) {
+            // If no recurrenceId provided, use the original start date
+            processedEventData.recurrenceId = originalEvent.startDate;
+            console.log(`[RECURRENCE] Setting recurrenceId to original start date: ${processedEventData.recurrenceId}`);
+          }
+          
+          // When editing a single occurrence, we may want to inherit the original recurrence rule
+          // But mark this as an exception
+          if (!processedEventData.recurrenceRule && originalEvent.recurrenceRule) {
+            processedEventData.recurrenceRule = originalEvent.recurrenceRule;
+            console.log(`[RECURRENCE] Inheriting original recurrence rule for single occurrence: ${processedEventData.recurrenceRule}`);
+          }
+        } 
+        // If edit mode is 'all', ensure recurrence rule is properly updated
+        else {
+          console.log(`[RECURRENCE] Editing all occurrences of recurring event`);
+          
+          // If recurrence rule is being changed
+          if (processedEventData.recurrenceRule) {
+            // Apply the same transformations as for new recurring events
+            if (typeof processedEventData.recurrenceRule === 'object') {
+              try {
+                const formattedRule = formatObjectToRRule(processedEventData.recurrenceRule);
+                if (formattedRule) {
+                  processedEventData.recurrenceRule = formattedRule;
+                  console.log(`[RECURRENCE] Updated RRULE format: ${processedEventData.recurrenceRule}`);
+                } else {
+                  // Keep original if formatting fails
+                  processedEventData.recurrenceRule = originalEvent.recurrenceRule;
+                  console.warn(`[RECURRENCE] Failed to format object, keeping original: ${processedEventData.recurrenceRule}`);
+                }
+              } catch (e) {
+                console.error(`[RECURRENCE] Error formatting object`, e);
+                processedEventData.recurrenceRule = originalEvent.recurrenceRule;
+              }
+            } else if (typeof processedEventData.recurrenceRule === 'string') {
+              if (!processedEventData.recurrenceRule.startsWith('FREQ=')) {
+                try {
+                  const parsed = JSON.parse(processedEventData.recurrenceRule);
+                  const rrule = formatRecurrenceConfigToRRule(parsed);
+                  if (rrule) {
+                    processedEventData.recurrenceRule = rrule;
+                    console.log(`[RECURRENCE] Converted JSON to RRULE for update: ${processedEventData.recurrenceRule}`);
+                  } else {
+                    processedEventData.recurrenceRule = originalEvent.recurrenceRule;
+                    console.warn(`[RECURRENCE] Failed to format JSON, keeping original: ${processedEventData.recurrenceRule}`);
+                  }
+                } catch (e) {
+                  const freqMatch = processedEventData.recurrenceRule.match(/FREQ=([A-Z]+)/i);
+                  if (freqMatch) {
+                    const freq = freqMatch[1].toUpperCase();
+                    processedEventData.recurrenceRule = `FREQ=${freq};COUNT=1`;
+                    console.log(`[RECURRENCE] Extracted FREQ for update: ${processedEventData.recurrenceRule}`);
+                  } else {
+                    processedEventData.recurrenceRule = originalEvent.recurrenceRule;
+                    console.warn(`[RECURRENCE] No valid pattern in string, keeping original: ${processedEventData.recurrenceRule}`);
+                  }
+                }
+              }
+            }
+          } 
+          // If no recurrence rule provided in update but we're editing all occurrences
+          else if (!processedEventData.recurrenceRule && originalEvent.recurrenceRule) {
+            // Keep original recurrence rule
+            processedEventData.recurrenceRule = originalEvent.recurrenceRule;
+            console.log(`[RECURRENCE] Keeping original recurrence rule: ${processedEventData.recurrenceRule}`);
+          }
+        }
+      }
+      // Case 4: Updating a non-recurring event (no recurrence changes)
+      else if (
+        (!originalEvent.isRecurring || originalEvent.isRecurring === false) && 
+        (processedEventData.isRecurring === false || processedEventData.isRecurring === undefined)
+      ) {
+        console.log(`[RECURRENCE] Updating non-recurring event (no recurrence changes)`);
+        // Ensure recurrence rule is null
+        processedEventData.recurrenceRule = null;
+        processedEventData.isRecurring = false;
+      }
+      
+      // Ensure isRecurring flag matches recurrenceRule state
+      if (processedEventData.recurrenceRule && processedEventData.recurrenceRule !== null) {
+        processedEventData.isRecurring = true;
+        console.log(`[RECURRENCE] Setting isRecurring=true to match recurrenceRule`);
+      } else if (processedEventData.recurrenceRule === null && processedEventData.isRecurring !== false) {
+        processedEventData.isRecurring = false;
+        console.log(`[RECURRENCE] Setting isRecurring=false to match null recurrenceRule`);
       }
       
       // Ensure the UID doesn't change
@@ -303,33 +482,202 @@ export class EnhancedSyncService {
         }
       }
       
-      // Pre-process recurrence rule to ensure proper format
+      // FIXED RECURRENCE HANDLING: Pre-process recurrence rule to ensure proper format
       let processedRecurrenceRule = event.recurrenceRule;
       
+      console.log(`[RECURRENCE] Initial recurrence state: isRecurring=${event.isRecurring}, rule=${typeof event.recurrenceRule === 'string' ? event.recurrenceRule : typeof event.recurrenceRule}`);
+      
       // Ensure recurrence rule is properly set based on isRecurring flag
-      if (event.isRecurring && event.recurrenceRule) {
-        // If recurrenceRule is an object or JSON string, format it properly
-        if (typeof event.recurrenceRule === 'object') {
-          // If it's already an object, convert to string
-          processedRecurrenceRule = JSON.stringify(event.recurrenceRule);
+      if (event.isRecurring) {
+        if (!event.recurrenceRule) {
+          // Event is marked as recurring but has no recurrence rule
+          console.warn(`[RECURRENCE] Event ${event.id} is marked as recurring but has no recurrence rule. Will default to DAILY.`);
+          // Set a default recurrence rule for consistency
+          processedRecurrenceRule = "FREQ=DAILY;COUNT=1";
+        } else if (typeof event.recurrenceRule === 'object') {
+          // If it's an object, convert to proper RFC 5545 RRULE format
+          try {
+            // Format object to RFC 5545 RRULE string format
+            const formattedRule = formatObjectToRRule(event.recurrenceRule);
+            if (formattedRule) {
+              processedRecurrenceRule = formattedRule;
+              console.log(`[RECURRENCE] Converted object to RRULE format: ${processedRecurrenceRule}`);
+            } else {
+              // If formatting fails, default to basic DAILY
+              processedRecurrenceRule = "FREQ=DAILY;COUNT=1";
+              console.warn(`[RECURRENCE] Failed to format object, using default: ${processedRecurrenceRule}`);
+            }
+          } catch (e) {
+            console.error(`[RECURRENCE] Error formatting object`, e);
+            processedRecurrenceRule = "FREQ=DAILY;COUNT=1";
+          }
         } else if (typeof event.recurrenceRule === 'string') {
-          // If it's a string, check if it's already in RRULE format
-          if (!event.recurrenceRule.startsWith('FREQ=')) {
+          // If it's a string, check if it's already in valid RRULE format
+          if (event.recurrenceRule.startsWith('FREQ=')) {
+            // Already a valid RRULE string, use as is
+            processedRecurrenceRule = event.recurrenceRule;
+            console.log(`[RECURRENCE] Using existing RRULE string: ${processedRecurrenceRule}`);
+          } else if (event.recurrenceRule.startsWith('{')) {
+            // It's a JSON string, parse and convert to RRULE format
             try {
-              // Try to parse as JSON if not in RRULE format
               const parsed = JSON.parse(event.recurrenceRule);
-              processedRecurrenceRule = JSON.stringify(parsed);
+              
+              // Check if it's our recurrence config format
+              if (parsed.pattern && typeof parsed.pattern === 'string') {
+                const rrule = formatRecurrenceConfigToRRule(parsed);
+                if (rrule) {
+                  processedRecurrenceRule = rrule;
+                  console.log(`[RECURRENCE] Converted JSON config to RRULE: ${processedRecurrenceRule}`);
+                } else {
+                  processedRecurrenceRule = "FREQ=DAILY;COUNT=1";
+                  console.warn(`[RECURRENCE] Failed to format JSON config, using default: ${processedRecurrenceRule}`);
+                }
+              } else {
+                // Unknown JSON format, try to extract pattern
+                const pattern = extractPatternFromObject(parsed);
+                if (pattern) {
+                  processedRecurrenceRule = `FREQ=${pattern.toUpperCase()};COUNT=1`;
+                  console.log(`[RECURRENCE] Extracted pattern from JSON: ${processedRecurrenceRule}`);
+                } else {
+                  processedRecurrenceRule = "FREQ=DAILY;COUNT=1";
+                  console.warn(`[RECURRENCE] No pattern in JSON, using default: ${processedRecurrenceRule}`);
+                }
+              }
             } catch (e) {
-              // Keep as is if can't parse
-              console.log(`[Enhanced Sync] Keeping recurrence rule as-is: ${event.recurrenceRule}`);
+              console.error(`[RECURRENCE] Error parsing JSON string`, e);
+              processedRecurrenceRule = "FREQ=DAILY;COUNT=1";
+            }
+          } else {
+            // Unknown string format that doesn't start with FREQ= or {
+            // Try to see if it contains a FREQ= pattern
+            const freqMatch = event.recurrenceRule.match(/FREQ=([A-Z]+)/i);
+            if (freqMatch) {
+              const freq = freqMatch[1].toUpperCase();
+              processedRecurrenceRule = `FREQ=${freq};COUNT=1`;
+              console.log(`[RECURRENCE] Extracted FREQ from unknown string: ${processedRecurrenceRule}`);
+            } else {
+              // No valid pattern found, default to DAILY
+              processedRecurrenceRule = "FREQ=DAILY;COUNT=1";
+              console.warn(`[RECURRENCE] No valid pattern in string, using default: ${processedRecurrenceRule}`);
             }
           }
         }
-        console.log(`[Enhanced Sync] Processing recurrence rule for event ${event.id}: ${processedRecurrenceRule}`);
-      } else if (!event.isRecurring) {
-        // Ensure recurrenceRule is undefined for non-recurring events
-        processedRecurrenceRule = undefined;
-        console.log(`[Enhanced Sync] Event ${event.id} is not recurring, clearing recurrence rule`);
+      } else {
+        // Event is not recurring, clear recurrence rule
+        processedRecurrenceRule = null;
+        console.log(`[RECURRENCE] Event ${event.id} is not recurring, cleared recurrence rule`);
+      }
+      
+      console.log(`[RECURRENCE] Final processed rule: ${processedRecurrenceRule}`);
+      
+      // Helper function to convert recurrence config object to RRULE string
+      function formatRecurrenceConfigToRRule(config: any): string | null {
+        if (!config || typeof config !== 'object') return null;
+        
+        // Extract pattern from config
+        const pattern = config.pattern || config.frequency;
+        if (!pattern || pattern === 'None') return null;
+        
+        // Start building RRULE string
+        let rrule = `FREQ=${pattern.toUpperCase()};`;
+        
+        // Add interval if present
+        if (config.interval && config.interval > 1) {
+          rrule += `INTERVAL=${config.interval};`;
+        }
+        
+        // Add weekdays for weekly pattern
+        if ((pattern === 'Weekly' || pattern === 'WEEKLY') && 
+            config.weekdays && Array.isArray(config.weekdays) && config.weekdays.length > 0) {
+          
+          const dayMap: Record<string, string> = {
+            'Monday': 'MO', 'Tuesday': 'TU', 'Wednesday': 'WE', 'Thursday': 'TH',
+            'Friday': 'FR', 'Saturday': 'SA', 'Sunday': 'SU'
+          };
+          
+          const days = config.weekdays
+            .map((day: string) => dayMap[day] || '')
+            .filter(Boolean)
+            .join(',');
+          
+          if (days) {
+            rrule += `BYDAY=${days};`;
+          }
+        }
+        
+        // Add count or until date
+        if (config.endType === 'After' && config.occurrences) {
+          rrule += `COUNT=${config.occurrences};`;
+        } else if (config.endType === 'On' && (config.untilDate || config.endDate)) {
+          const dateStr = config.untilDate || config.endDate;
+          if (dateStr) {
+            try {
+              const date = new Date(dateStr);
+              // Format as YYYYMMDD
+              const formatted = date.toISOString().replace(/[-:]/g, '').split('.')[0].replace('T', '');
+              rrule += `UNTIL=${formatted};`;
+            } catch (e) {
+              console.error('[RECURRENCE] Error formatting until date', e);
+            }
+          }
+        }
+        
+        // Remove trailing semicolon and return
+        return rrule.endsWith(';') ? rrule.slice(0, -1) : rrule;
+      }
+      
+      // Helper function to format object to RRULE string
+      function formatObjectToRRule(obj: any): string | null {
+        if (!obj || typeof obj !== 'object') return null;
+        
+        // If it has a pattern property, treat it as our recurrence config
+        if (obj.pattern) {
+          return formatRecurrenceConfigToRRule(obj);
+        }
+        
+        // Try to extract a pattern
+        const pattern = extractPatternFromObject(obj);
+        if (pattern) {
+          return `FREQ=${pattern.toUpperCase()};COUNT=1`;
+        }
+        
+        return null;
+      }
+      
+      // Helper function to extract pattern from object
+      function extractPatternFromObject(obj: any): string | null {
+        if (!obj || typeof obj !== 'object') return null;
+        
+        // Check common pattern properties
+        if (obj.pattern && obj.pattern !== 'None') {
+          return obj.pattern;
+        }
+        
+        if (obj.frequency) {
+          return obj.frequency;
+        }
+        
+        if (obj.freq) {
+          return obj.freq;
+        }
+        
+        if (obj.FREQ) {
+          return obj.FREQ;
+        }
+        
+        if (obj.Frequency) {
+          return obj.Frequency;
+        }
+        
+        // If we have a raw RRULE string, extract the FREQ part
+        if (obj.rrule && typeof obj.rrule === 'string') {
+          const match = obj.rrule.match(/FREQ=([A-Z]+)/i);
+          if (match) {
+            return match[1];
+          }
+        }
+        
+        return null;
       }
       
       // Generate the ICS data for this event
