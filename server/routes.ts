@@ -4296,6 +4296,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.warn(`[RECURRENCE] Falling back to regular update for event ${eventId}`);
         updatedEvent = await storage.updateEvent(eventId, updateData);
         
+        // CRITICAL FIX: Ensure recurrence is properly propagated to all events with the same UID
+        // This fixes the issue when converting a regular event to recurring or vice versa
+        if (updatedEvent.uid && 
+            (existingEvent.isRecurring !== updateData.isRecurring || 
+             existingEvent.recurrenceRule !== updateData.recurrenceRule)) {
+          try {
+            console.log(`[CRITICAL FIX] Recurrence state changed from ${existingEvent.isRecurring} to ${updateData.isRecurring}`);
+            console.log(`[CRITICAL FIX] Recurrence rule changed from ${existingEvent.recurrenceRule} to ${updateData.recurrenceRule}`);
+            console.log(`[CRITICAL FIX] Ensuring all events with UID ${updatedEvent.uid} have consistent recurrence state`);
+            
+            // Find all events with the same UID
+            const eventsWithSameUid = await storage.getEventsByUid(updatedEvent.uid);
+            
+            if (eventsWithSameUid && eventsWithSameUid.length > 1) {
+              console.log(`[CRITICAL FIX] Found ${eventsWithSameUid.length} events with the same UID ${updatedEvent.uid}`);
+              
+              // Update all events except the one we just updated
+              for (const event of eventsWithSameUid) {
+                if (event.id !== updatedEvent.id) {
+                  console.log(`[CRITICAL FIX] Updating recurrence state for event ID ${event.id} with UID ${event.uid}`);
+                  
+                  // Update only the recurrence properties
+                  await storage.updateEvent(event.id, {
+                    isRecurring: updateData.isRecurring,
+                    recurrenceRule: updateData.recurrenceRule,
+                    syncStatus: 'pending' // Mark for sync
+                  });
+                }
+              }
+              
+              console.log(`[CRITICAL FIX] Successfully updated recurrence state for all events with UID ${updatedEvent.uid}`);
+            } else {
+              console.log(`[CRITICAL FIX] No additional events found with UID ${updatedEvent.uid}`);
+            }
+          } catch (recurrenceUpdateError) {
+            console.error(`[CRITICAL FIX] Error updating recurrence state for events with the same UID:`, recurrenceUpdateError);
+            // Continue without failing the request
+          }
+        }
+        
         // Trigger immediate sync if recurrence was changed
         if (updateData.syncStatus === 'pending' && req.user) {
           try {

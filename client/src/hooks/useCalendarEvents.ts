@@ -1464,6 +1464,25 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         return { previousEvents, allQueryKeys };
       }
 
+      // CRITICAL FIX FOR RECURRENCE STATE CONSISTENCY
+      // Check if this is a recurrence state change (non-recurring -> recurring)
+      const isConvertingToRecurring = (
+        data.recurrenceRule && 
+        !eventToUpdate.isRecurring &&
+        (
+          data.isRecurring === true || 
+          // If recurrenceRule is provided but isRecurring is not explicitly set,
+          // we should still mark it as recurring
+          data.isRecurring === undefined
+        )
+      );
+      
+      if (isConvertingToRecurring) {
+        console.log(`CRITICAL FIX: Converting event ${id} from non-recurring to recurring in client cache`);
+        console.log(`Original state: isRecurring=${eventToUpdate.isRecurring}, recurrenceRule=${eventToUpdate.recurrenceRule}`);
+        console.log(`New data: isRecurring=${data.isRecurring}, recurrenceRule=${data.recurrenceRule}`);
+      }
+      
       // Create an updated version of the event with proper typing
       const updatedEvent: Event = { 
         // First spread the original event to get all fields
@@ -1477,11 +1496,19 @@ export const useCalendarEvents = (startDate?: Date, endDate?: Date) => {
         title: data.title || eventToUpdate.title,
         startDate: data.startDate || eventToUpdate.startDate,
         endDate: data.endDate || eventToUpdate.endDate,
+        // CRITICAL FIX: Ensure isRecurring is correctly set based on recurrenceRule
+        // If data contains a recurrenceRule, ensure isRecurring is set to true
+        isRecurring: isConvertingToRecurring ? true : (data.isRecurring !== undefined ? data.isRecurring : eventToUpdate.isRecurring),
         // Set sync status to 'syncing' when updating to show immediate feedback
         syncStatus: data.syncStatus || 'syncing',
         syncError: data.syncError || null,
         lastSyncAttempt: data.lastSyncAttempt || new Date()
       };
+      
+      // CRITICAL FIX: Additional logging for recurrence state changes
+      if (isConvertingToRecurring) {
+        console.log(`CRITICAL FIX: Updated event in cache now has isRecurring=${updatedEvent.isRecurring}, recurrenceRule=${updatedEvent.recurrenceRule}`);
+      }
       
       console.log(`Optimistically updating event ${id} in UI`, updatedEvent);
       
