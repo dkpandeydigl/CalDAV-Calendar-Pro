@@ -183,6 +183,11 @@ export interface ICalendarEvent {
   lastModifiedBy?: number | null;
   lastModifiedByName?: string | null;
   lastModifiedAt?: Date | null;
+  /**
+   * Runtime flag to indicate if this event is a copy of another event.
+   * This is not stored in the database, only used during event creation.
+   */
+  isCopy?: boolean;
 }
 
 /**
