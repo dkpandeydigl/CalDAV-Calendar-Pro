@@ -3109,7 +3109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Update event with enhanced synchronization
+  // Update event with enhanced synchronization and attendee preservation
   app.post("/api/events/:id/update-with-sync", isAuthenticated, async (req, res) => {
     try {
       const userId = req.user!.id;
@@ -3119,20 +3119,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid event ID" });
       }
       
+      // First, get the original event to check for attendees
+      const originalEvent = await storage.getEvent(eventId);
+      
+      if (!originalEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // Log original event attendees for debugging
+      console.log(`[ATTENDEE PRESERVATION] Original event #${eventId} attendees:`, 
+        typeof originalEvent.attendees === 'string' 
+          ? originalEvent.attendees 
+          : JSON.stringify(originalEvent.attendees));
+      
+      console.log(`[ATTENDEE PRESERVATION] Original event #${eventId} resources:`, 
+        typeof originalEvent.resources === 'string' 
+          ? originalEvent.resources 
+          : JSON.stringify(originalEvent.resources));
+      
       // Get the edit mode from query parameter (default to 'all')
       const editMode = req.query.editMode === 'single' ? 'single' : 'all';
       console.log(`[RECURRENCE] Edit mode for event ${eventId} in update-with-sync: ${editMode}`);
       
       const eventData = req.body;
       
+      // CRITICAL ATTENDEE FIX: Explicitly preserve attendees if not in update data
+      if (!('attendees' in eventData) && originalEvent.attendees) {
+        console.log(`[ATTENDEE PRESERVATION] Request doesn't include attendees, preserving original attendees`);
+        eventData.attendees = originalEvent.attendees;
+      } else if (eventData.attendees === null && originalEvent.attendees) {
+        console.log(`[ATTENDEE PRESERVATION] Request has null attendees, treating as 'keep original'`);
+        eventData.attendees = originalEvent.attendees;
+      }
+      
+      // CRITICAL RESOURCE FIX: Explicitly preserve resources if not in update data
+      if (!('resources' in eventData) && originalEvent.resources) {
+        console.log(`[ATTENDEE PRESERVATION] Request doesn't include resources, preserving original resources`);
+        eventData.resources = originalEvent.resources;
+      } else if (eventData.resources === null && originalEvent.resources) {
+        console.log(`[ATTENDEE PRESERVATION] Request has null resources, treating as 'keep original'`);
+        eventData.resources = originalEvent.resources;
+      }
+      
       // Convert arrays to JSON strings if needed
       if (eventData.attendees && Array.isArray(eventData.attendees)) {
+        console.log(`[ATTENDEE PRESERVATION] Converting attendee array to JSON string`, eventData.attendees);
         eventData.attendees = JSON.stringify(eventData.attendees);
       }
       
       if (eventData.resources && Array.isArray(eventData.resources)) {
+        console.log(`[ATTENDEE PRESERVATION] Converting resource array to JSON string`, eventData.resources);
         eventData.resources = JSON.stringify(eventData.resources);
       }
+      
+      // Final log before update
+      console.log(`[ATTENDEE PRESERVATION] Update data for event #${eventId}:`, {
+        hasAttendees: 'attendees' in eventData,
+        attendeesValue: eventData.attendees,
+        hasResources: 'resources' in eventData,
+        resourcesValue: eventData.resources
+      });
       
       // Use enhanced sync service for update with immediate sync
       const result = await enhancedSyncService.updateEventWithSync(userId, eventId, eventData, editMode as 'single' | 'all');
