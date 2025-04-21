@@ -3154,11 +3154,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // CRITICAL RESOURCE FIX: Explicitly preserve resources if not in update data
       if (!('resources' in eventData) && originalEvent.resources) {
-        console.log(`[ATTENDEE PRESERVATION] Request doesn't include resources, preserving original resources`);
+        console.log(`[RESOURCE PRESERVATION] Request doesn't include resources, preserving original resources`);
         eventData.resources = originalEvent.resources;
       } else if (eventData.resources === null && originalEvent.resources) {
-        console.log(`[ATTENDEE PRESERVATION] Request has null resources, treating as 'keep original'`);
+        console.log(`[RESOURCE PRESERVATION] Request has null resources, treating as 'keep original'`);
         eventData.resources = originalEvent.resources;
+      } else if (eventData.resources && Array.isArray(eventData.resources) && eventData.resources.length === 0 && originalEvent.resources) {
+        // Also handle empty array case for resources (which is different from undefined or null)
+        console.log(`[RESOURCE PRESERVATION] Request has empty resources array, treating as 'keep original'`);
+        eventData.resources = originalEvent.resources;
+      }
+      
+      // Debug log any existing resources
+      let originalResourceCount = 0;
+      if (originalEvent.resources) {
+        try {
+          const parsedResources = typeof originalEvent.resources === 'string' 
+            ? JSON.parse(originalEvent.resources) 
+            : originalEvent.resources;
+          
+          if (Array.isArray(parsedResources)) {
+            originalResourceCount = parsedResources.length;
+            console.log(`[RESOURCE PRESERVATION] Original event has ${originalResourceCount} resources:`, parsedResources);
+          }
+        } catch (e) {
+          console.error(`[RESOURCE PRESERVATION] Error parsing original resources:`, e);
+        }
       }
       
       // Convert arrays to JSON strings if needed
@@ -3168,14 +3189,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       if (eventData.resources && Array.isArray(eventData.resources)) {
-        console.log(`[ATTENDEE PRESERVATION] Converting resource array to JSON string`, eventData.resources);
+        console.log(`[RESOURCE PRESERVATION] Converting resource array to JSON string`, eventData.resources);
         eventData.resources = JSON.stringify(eventData.resources);
+        
+        // Verify the string conversion was successful
+        try {
+          const resourceCount = JSON.parse(eventData.resources).length;
+          console.log(`[RESOURCE PRESERVATION] Verified JSON string contains ${resourceCount} resources`);
+        } catch (e) {
+          console.error(`[RESOURCE PRESERVATION] Error verifying resource JSON string:`, e);
+        }
       }
       
-      // Final log before update
-      console.log(`[ATTENDEE PRESERVATION] Update data for event #${eventId}:`, {
+      // Final log before update - separating attendee and resource data for clarity
+      console.log(`[ATTENDEE PRESERVATION] Attendee data for event #${eventId} before update:`, {
         hasAttendees: 'attendees' in eventData,
-        attendeesValue: eventData.attendees,
+        attendeesValue: eventData.attendees
+      });
+      
+      console.log(`[RESOURCE PRESERVATION] Resource data for event #${eventId} before update:`, {
         hasResources: 'resources' in eventData,
         resourcesValue: eventData.resources
       });
@@ -3245,6 +3277,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Test endpoint for checking resource preservation
+  app.get("/api/test/resource-preservation/:eventId", isAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+      const eventId = parseInt(req.params.eventId);
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Get original event
+      const originalEvent = await storage.getEvent(eventId);
+      
+      if (!originalEvent) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      console.log(`[RESOURCES TEST] Original event ID ${eventId} resources data:`, originalEvent.resources);
+      
+      // Create minimal update data that doesn't include resources
+      const minimalUpdate = {
+        title: originalEvent.title + " (Resource Test)",
+        description: originalEvent.description,
+        startDate: originalEvent.startDate,
+        endDate: originalEvent.endDate
+      };
+      
+      console.log(`[RESOURCES TEST] Update data for event ID ${eventId}:`, minimalUpdate);
+      
+      // Use the enhanced sync service to update the event
+      const result = await enhancedSyncService.updateEventWithSync(userId, eventId, minimalUpdate);
+      
+      // Get the updated event
+      const updatedEvent = await storage.getEvent(eventId);
+      
+      if (!updatedEvent) {
+        return res.status(500).json({ message: "Failed to retrieve updated event" });
+      }
+      
+      console.log(`[RESOURCES TEST] Updated event ID ${eventId} resources data:`, updatedEvent.resources);
+      
+      // Check if resources were preserved
+      const originalResources = originalEvent.resources ? 
+        (typeof originalEvent.resources === 'string' ? JSON.parse(originalEvent.resources) : originalEvent.resources) : 
+        [];
+      
+      const updatedResources = updatedEvent.resources ? 
+        (typeof updatedEvent.resources === 'string' ? JSON.parse(updatedEvent.resources) : updatedEvent.resources) : 
+        [];
+      
+      const originalCount = Array.isArray(originalResources) ? originalResources.length : 0;
+      const updatedCount = Array.isArray(updatedResources) ? updatedResources.length : 0;
+      
+      res.json({
+        success: true,
+        eventId,
+        originalTitle: originalEvent.title,
+        updatedTitle: updatedEvent.title,
+        originalResourceCount: originalCount,
+        updatedResourceCount: updatedCount,
+        resourcesPreserved: originalCount === updatedCount && originalCount > 0,
+        originalResources: originalResources,
+        updatedResources: updatedResources
+      });
+    } catch (err) {
+      console.error("Error testing resource preservation:", err);
+      res.status(500).json({ 
+        message: "Error testing resource preservation", 
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
+  });
+  
   // Test endpoint for checking attendee preservation 
   app.get("/api/test/attendee-preservation/:eventId", isAuthenticated, async (req, res) => {
     try {
