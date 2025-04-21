@@ -1,0 +1,52 @@
+Fix Attendees Getting Removed on Event Update
+Goal:
+Fix the issue where attendees are getting removed from events after updating them in the CalDAV client. The CalDAV server expects attendees to persist unless explicitly changed or cleared by the client.
+
+✅ Context:
+How our system works:
+
+The client sends event data (including attendees and resources) to the server in JSON format.
+
+The server stores attendees and resources as JSON strings in the database.
+
+When syncing to CalDAV, we convert them to proper iCalendar format (ATTENDEE;...:mailto:).
+
+When parsing from CalDAV, we convert ATTENDEE properties back into JSON for internal use.
+
+✅ Current Problem:
+When we update an event without modifying the attendees, they are getting removed from the .ics file sent to the CalDAV server. This happens even when the original event had attendees, and the user didn’t intend to remove them.
+
+✅ What needs to be fixed:
+Preserve attendees and resources properly
+If the client doesn’t send attendees or sends null or an empty array, the backend should preserve the original attendees from the event stored in the DB.
+
+Enhance the update route logic
+Modify the routes.ts (/api/events/:id/update-with-sync) route to add logic that restores original attendees when they are not included or passed as an empty array.
+
+Ensure attendees are stored correctly
+Convert the attendee array into a JSON string only if it's a valid non-empty array.
+
+Validate during sync to CalDAV
+Ensure that in enhanced-sync-service.ts, attendees are properly parsed and passed to the iCalendar generator, and no corrupted/missing data is used.
+
+Ensure iCalendar format includes all required attendee fields
+
+Include ATTENDEE;CN=...;ROLE=...;PARTSTAT=...:mailto:...
+
+Add optional RSVP=TRUE if the attendee is expecting a response
+
+For resources, use CUTYPE=RESOURCE
+
+✅ Add Logging:
+Log final attendee data before saving the event to the database
+
+Log parsed attendees before generating the iCal string
+
+Log inside the iCalendar generation when building ATTENDEE lines
+
+✅ Expected Outcome:
+If the frontend doesn’t change attendees, the backend will preserve existing ones.
+
+Updated events will retain their attendees on the CalDAV server.
+
+No attendee loss occurs during update, unless the client explicitly removes them.
