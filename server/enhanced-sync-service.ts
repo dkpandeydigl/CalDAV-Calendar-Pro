@@ -403,40 +403,62 @@ export class EnhancedSyncService {
         console.log(`[RECURRENCE RFC FIX] Will perform a fresh sync after update to refresh instances`);
       }
       
-      // CRITICAL FIX: Preserve attendees and resources in addition to UID
-      // This ensures we don't lose attendees/resources during event updates
-      console.log(`[ATTENDEES FIX] Original event attendees:`, 
-        typeof originalEvent.attendees === 'string' ? 
-          (originalEvent.attendees || 'none') : 
-          JSON.stringify(originalEvent.attendees || 'none'));
-      console.log(`[ATTENDEES FIX] Update data contains attendees:`, 
-        processedEventData.attendees !== undefined ? 'yes' : 'no');
-
-      // If update data doesn't explicitly modify attendees, preserve the original ones
-      if (processedEventData.attendees === undefined && originalEvent.attendees) {
-        console.log(`[ATTENDEES FIX] Preserving original attendees as update doesn't modify them`);
-        processedEventData.attendees = originalEvent.attendees;
+      // CRITICAL FIX V2: Stronger attendee/resource preservation during updates
+      // Format of attendees can vary - normalize for easier debugging
+      const originalAttendees = typeof originalEvent.attendees === 'string' 
+          ? originalEvent.attendees 
+          : (originalEvent.attendees ? JSON.stringify(originalEvent.attendees) : 'null');
+          
+      const originalResources = typeof originalEvent.resources === 'string'
+          ? originalEvent.resources
+          : (originalEvent.resources ? JSON.stringify(originalEvent.resources) : 'null');
+      
+      console.log(`[ATTENDEES FIX V2] Original event #${eventId} attendees: ${originalAttendees}`);
+      console.log(`[ATTENDEES FIX V2] Original event #${eventId} resources: ${originalResources}`);
+      console.log(`[ATTENDEES FIX V2] Update explicitly includes attendees: ${processedEventData.attendees !== undefined ? 'yes' : 'no'}`);
+      console.log(`[ATTENDEES FIX V2] Update explicitly includes resources: ${processedEventData.resources !== undefined ? 'yes' : 'no'}`);
+      
+      // DIRECT PRESERVATION: Always keep attendees/resources unless explicitly modified
+      // This is a stronger approach than the previous implementation
+      
+      // Create a completely new object to avoid any reference issues
+      const updatedFields = { ...processedEventData };
+      
+      // Apply mandatory UID preservation
+      updatedFields.uid = preservedUID;
+      
+      // Forced attendee preservation unless explicitly changed
+      if (updatedFields.attendees === undefined && originalEvent.attendees) {
+        console.log(`[ATTENDEES FIX V2] PRESERVING original attendees`);
+        updatedFields.attendees = originalEvent.attendees;
+      } else if (updatedFields.attendees === null && originalEvent.attendees) {
+        // Also guard against null - treat null as "keep original"
+        console.log(`[ATTENDEES FIX V2] PRESERVING original attendees (null case)`);
+        updatedFields.attendees = originalEvent.attendees;
+      } else {
+        console.log(`[ATTENDEES FIX V2] Using provided attendees:`, 
+          typeof updatedFields.attendees === 'string' 
+            ? updatedFields.attendees 
+            : JSON.stringify(updatedFields.attendees));
       }
       
-      // If update data doesn't explicitly modify resources, preserve the original ones
-      if (processedEventData.resources === undefined && originalEvent.resources) {
-        console.log(`[ATTENDEES FIX] Preserving original resources as update doesn't modify them`);
-        processedEventData.resources = originalEvent.resources;
+      // Forced resource preservation unless explicitly changed
+      if (updatedFields.resources === undefined && originalEvent.resources) {
+        console.log(`[ATTENDEES FIX V2] PRESERVING original resources`);
+        updatedFields.resources = originalEvent.resources;
+      } else if (updatedFields.resources === null && originalEvent.resources) {
+        // Also guard against null - treat null as "keep original"
+        console.log(`[ATTENDEES FIX V2] PRESERVING original resources (null case)`);
+        updatedFields.resources = originalEvent.resources;
+      } else {
+        console.log(`[ATTENDEES FIX V2] Using provided resources:`, 
+          typeof updatedFields.resources === 'string' 
+            ? updatedFields.resources 
+            : JSON.stringify(updatedFields.resources));
       }
-
-      // Ensure the UID doesn't change
-      const eventWithUID = {
-        ...processedEventData,
-        uid: preservedUID,
-        // Make absolutely sure attendees are preserved properly
-        attendees: processedEventData.attendees !== undefined ? 
-          processedEventData.attendees : 
-          originalEvent.attendees,
-        // Make absolutely sure resources are preserved properly
-        resources: processedEventData.resources !== undefined ? 
-          processedEventData.resources : 
-          originalEvent.resources
-      };
+      
+      // This is our final update object with proper preservation
+      const eventWithUID = updatedFields;
       
       // First special handling of related events was moved to be integrated with other recurrence changes above
       // Single unified implementation improves code clarity
